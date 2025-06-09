@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "20",
+  "repository_name": "query-forge",
+  "title": "Query Forge",
+  "package": "query_forge",
+  "language": "python",
+  "field": "Database and compiler engineering",
+  "focus": "SQL subset parser, relational plans, join optimization and independent SQLite comparisons",
+  "ai_connection": "Efficient and explainable data preparation and analysis",
+  "smoke_commands": [
+    {
+      "name": "demo",
+      "args": []
+    },
+    {
+      "name": "evaluate",
+      "args": []
+    }
+  ],
+  "layout": {
+    "docs_root": "manual",
+    "tests_root": "conformance",
+    "tools_root": "tools",
+    "config_root": "catalogs",
+    "examples_root": "explain",
+    "verifier": "tools/check_engine.py",
+    "source_roots": [
+      "src"
+    ],
+    "documents": {
+      "architecture": "manual/compiler-pipeline.md",
+      "design": "manual/sql-and-numeric-contract.md",
+      "review": "manual/conformance-findings.md",
+      "experiments": "manual/plan-work-counts.md",
+      "publishing": "manual/distributing-the-engine.md",
+      "validation": "manual/check-results.md"
+    }
+  }
+}

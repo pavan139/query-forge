@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools==78.1.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "query-forge"
+version = "0.1.0"
+description = "Typed SQL subset compiler, cost optimizer and batch-oriented relational executor"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+query-forge = "query_forge.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
