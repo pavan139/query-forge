@@ -1,0 +1,315 @@
+{
+  "experiment": "actual typed SQL plan and operator work",
+  "sql": "SELECT a.segment, COUNT(*) AS n, SUM(e.value) AS total\nFROM accounts a JOIN events e ON a.id=e.account_id\nJOIN marks m ON e.account_id=m.account_id\nWHERE m.tag='keep' AND e.value>=10 GROUP BY a.segment",
+  "optimized": {
+    "columns": [
+      "a.segment",
+      "n",
+      "total"
+    ],
+    "rows": [
+      [
+        null,
+        19,
+        597.0
+      ],
+      [
+        "blue",
+        9,
+        275.0
+      ]
+    ],
+    "work": {
+      "scanned_rows": 1284,
+      "materialized_cells": 2568,
+      "predicate_evaluations": 1204,
+      "nested_pairs": 0,
+      "hash_build_rows": 31,
+      "hash_probes": 805,
+      "joined_rows": 56,
+      "aggregate_rows": 28,
+      "emitted_batches": 85,
+      "peak_hash_rows": 28
+    },
+    "plan": {
+      "operator": "Project",
+      "relations": [
+        "a",
+        "e",
+        "m"
+      ],
+      "child": {
+        "operator": "Group",
+        "relations": [
+          "a",
+          "e",
+          "m"
+        ],
+        "child": {
+          "operator": "Join",
+          "relations": [
+            "a",
+            "e",
+            "m"
+          ],
+          "algorithm": "hash",
+          "build": "left",
+          "keys": [
+            [
+              "e.account_id",
+              "a.id"
+            ]
+          ],
+          "children": [
+            {
+              "operator": "Join",
+              "relations": [
+                "e",
+                "m"
+              ],
+              "algorithm": "hash",
+              "build": "right",
+              "keys": [
+                [
+                  "e.account_id",
+                  "m.account_id"
+                ]
+              ],
+              "children": [
+                {
+                  "operator": "Filter",
+                  "relations": [
+                    "e"
+                  ],
+                  "child": {
+                    "operator": "Scan",
+                    "relations": [
+                      "e"
+                    ],
+                    "table": "events",
+                    "alias": "e",
+                    "projected": [
+                      "account_id",
+                      "value"
+                    ],
+                    "estimated_rows": 1200.0,
+                    "estimated_cost": 1320.0
+                  },
+                  "predicate": "Expr(op='>=', args=(Column(qualifier='e', name='value', dtype='REAL'), Literal(value=10)))",
+                  "estimated_rows": 396.0,
+                  "estimated_cost": 2520.0
+                },
+                {
+                  "operator": "Filter",
+                  "relations": [
+                    "m"
+                  ],
+                  "child": {
+                    "operator": "Scan",
+                    "relations": [
+                      "m"
+                    ],
+                    "table": "marks",
+                    "alias": "m",
+                    "projected": [
+                      "account_id",
+                      "tag"
+                    ],
+                    "estimated_rows": 4.0,
+                    "estimated_cost": 4.4
+                  },
+                  "predicate": "Expr(op='=', args=(Column(qualifier='m', name='tag', dtype='TEXT'), Literal(value='keep')))",
+                  "estimated_rows": 2.0,
+                  "estimated_cost": 8.4
+                }
+              ],
+              "estimated_rows": 9.5783,
+              "estimated_cost": 2935.9783
+            },
+            {
+              "operator": "Scan",
+              "relations": [
+                "a"
+              ],
+              "table": "accounts",
+              "alias": "a",
+              "projected": [
+                "id",
+                "segment"
+              ],
+              "estimated_rows": 80.0,
+              "estimated_cost": 88.0
+            }
+          ],
+          "estimated_rows": 9.267,
+          "estimated_cost": 3122.8235
+        },
+        "group_keys": [
+          "a.segment"
+        ]
+      }
+    },
+    "catalog_analysis_cells": 5150
+  },
+  "reference": {
+    "columns": [
+      "a.segment",
+      "n",
+      "total"
+    ],
+    "rows": [
+      [
+        null,
+        19,
+        597.0
+      ],
+      [
+        "blue",
+        9,
+        275.0
+      ]
+    ],
+    "work": {
+      "scanned_rows": 1284,
+      "materialized_cells": 5132,
+      "predicate_evaluations": 99,
+      "nested_pairs": 100644,
+      "hash_build_rows": 0,
+      "hash_probes": 0,
+      "joined_rows": 1218,
+      "aggregate_rows": 28,
+      "emitted_batches": 87,
+      "peak_hash_rows": 0
+    },
+    "plan": {
+      "operator": "Project",
+      "relations": [
+        "a",
+        "e",
+        "m"
+      ],
+      "child": {
+        "operator": "Group",
+        "relations": [
+          "a",
+          "e",
+          "m"
+        ],
+        "child": {
+          "operator": "Filter",
+          "relations": [
+            "a",
+            "e",
+            "m"
+          ],
+          "child": {
+            "operator": "Filter",
+            "relations": [
+              "a",
+              "e",
+              "m"
+            ],
+            "child": {
+              "operator": "Join",
+              "relations": [
+                "a",
+                "e",
+                "m"
+              ],
+              "algorithm": "nested",
+              "build": "right",
+              "keys": [
+                [
+                  "e.account_id",
+                  "m.account_id"
+                ]
+              ],
+              "children": [
+                {
+                  "operator": "Join",
+                  "relations": [
+                    "a",
+                    "e"
+                  ],
+                  "algorithm": "nested",
+                  "build": "left",
+                  "keys": [
+                    [
+                      "a.id",
+                      "e.account_id"
+                    ]
+                  ],
+                  "children": [
+                    {
+                      "operator": "Scan",
+                      "relations": [
+                        "a"
+                      ],
+                      "table": "accounts",
+                      "alias": "a",
+                      "projected": [
+                        "id",
+                        "segment",
+                        "unused",
+                        "extra"
+                      ],
+                      "estimated_rows": 80.0,
+                      "estimated_cost": 96.0
+                    },
+                    {
+                      "operator": "Scan",
+                      "relations": [
+                        "e"
+                      ],
+                      "table": "events",
+                      "alias": "e",
+                      "projected": [
+                        "account_id",
+                        "value",
+                        "label",
+                        "unused"
+                      ],
+                      "estimated_rows": 1200.0,
+                      "estimated_cost": 1440.0
+                    }
+                  ],
+                  "estimated_rows": 1161.0,
+                  "estimated_cost": 98697.0
+                },
+                {
+                  "operator": "Scan",
+                  "relations": [
+                    "m"
+                  ],
+                  "table": "marks",
+                  "alias": "m",
+                  "projected": [
+                    "account_id",
+                    "tag",
+                    "unused"
+                  ],
+                  "estimated_rows": 4.0,
+                  "estimated_cost": 4.6
+                }
+              ],
+              "estimated_rows": 56.1634,
+              "estimated_cost": 103401.7634
+            },
+            "predicate": "Expr(op='=', args=(Column(qualifier='m', name='tag', dtype='TEXT'), Literal(value='keep')))",
+            "estimated_rows": 18.5339,
+            "estimated_cost": 103457.9268
+          },
+          "predicate": "Expr(op='>=', args=(Column(qualifier='e', name='value', dtype='REAL'), Literal(value=10)))",
+          "estimated_rows": 6.1162,
+          "estimated_cost": 103476.4607
+        },
+        "group_keys": [
+          "a.segment"
+        ]
+      }
+    },
+    "catalog_analysis_cells": 5150
+  },
+  "matches_sqlite": true,
+  "metric_scope": "Work counts are executed operators; catalog-analysis cells are reported separately. No elapsed-time or production-scale speedup claim."
+}
