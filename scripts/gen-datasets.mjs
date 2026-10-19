@@ -3636,6 +3636,7 @@ async function docSchool(q, ds) {
   const scoreRange = await one('SELECT min(score)::text AS lo, max(score)::text AS hi FROM exam_scores');
   const formula = await one("WITH q AS (SELECT student_id, course_id, CASE WHEN exam_date < DATE '2025-01-01' THEN '2024-Fall' ELSE '2025-Spring' END AS term, avg(score) FILTER (WHERE exam_type = 'quiz') AS qa, max(score) FILTER (WHERE exam_type = 'midterm') AS m, max(score) FILTER (WHERE exam_type = 'final') AS f FROM exam_scores GROUP BY 1, 2, 3) SELECT count(*) AS checked, max(abs(round(0.2 * qa + 0.35 * m + 0.45 * f, 2) - e.final_score))::text AS maxdiff FROM q JOIN enrollments e USING (student_id, course_id, term) WHERE e.final_score IS NOT NULL");
   must(Number(formula.maxdiff) <= 0.011, 'final_score follows the weighted formula');
+  const rngs = await one("SELECT min(exam_date) FILTER (WHERE exam_type = 'midterm' AND exam_date < DATE '2025-01-01')::text AS m1, max(exam_date) FILTER (WHERE exam_type = 'midterm' AND exam_date < DATE '2025-01-01')::text AS m2, min(exam_date) FILTER (WHERE exam_type = 'final' AND exam_date < DATE '2025-01-01')::text AS f1, max(exam_date) FILTER (WHERE exam_type = 'final' AND exam_date < DATE '2025-01-01')::text AS f2, min(exam_date) FILTER (WHERE exam_type = 'midterm' AND exam_date >= DATE '2025-03-01')::text AS sm1, max(exam_date) FILTER (WHERE exam_type = 'midterm' AND exam_date >= DATE '2025-03-01')::text AS sm2 FROM exam_scores");
   const orphanExams = await q.val("SELECT count(*) FROM exam_scores x WHERE NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.student_id = x.student_id AND e.course_id = x.course_id AND ((x.exam_date < DATE '2025-01-01' AND e.term = '2024-Fall') OR (x.exam_date >= DATE '2025-01-01' AND e.term = '2025-Spring')))");
   must(orphanExams === 0, 'every exam belongs to an enrollment');
   const noFinalExam = await q.val("SELECT count(*) FROM enrollments e WHERE e.term = '2024-Fall' AND NOT EXISTS (SELECT 1 FROM exam_scores x WHERE x.student_id = e.student_id AND x.course_id = e.course_id AND x.exam_type = 'final' AND x.exam_date < DATE '2025-01-01')");
@@ -3656,9 +3657,9 @@ async function docSchool(q, ds) {
     conventions: [
       `**Students:** 120 students, 30 per grade level (${grades}). Grade 9 to 12 students were born in the school years you would expect (grade 9: September 2009 - August 2010 and so on); ${birthOdd} students are a year younger or older than their grade (held back or skipped ahead). Student ids are in order of enrollment (oldest cohort first). Cohort first days: ${cohort}; ${transfers} students joined at another time (transfers), and ${springOnly.split(',').length} students (ids ${springOnly}) joined in January 2025, so they have **no 2024-Fall enrollments**. ${noEmail} students have no email yet.`,
       `**Teachers:** ${tch.n} teachers hired ${tch.h1} to ${tch.h2}, salaries ${money(tch.lo)} to ${money(tch.hi)}; subjects: ${subjects}.`,
-      `**Courses:** 18 courses with 1 to 4 credits. Courses are grade-appropriate (Algebra I and English 9 are for grade 9 only, Physics and Pre-Calculus for grades 11-12, and so on), so enrollments respect the grade level. Students take ${perStudent} in the fall (this is a simplified catalog, not a full timetable).`,
+      `**Courses:** 18 courses with 1 to 4 credits. Courses are grade-appropriate (Algebra I and English 9 are for grade 9 only, Physics and Pre-Calculus for grades 11-12, and so on), so enrollments respect the grade level. In the fall a student takes between 2 and 6 courses (${perStudent}); this is a simplified catalog, not a full timetable.`,
       `**Terms and scores:** ${enr}. Courses are year-long for most students (many Fall enrollments continue in Spring) but the Spring term is incomplete: \`final_score\` is NULL while a course is running. The only Spring scores that exist (${springScored.n}) are for course ${springScored.courses} (Health & Wellness), a half-term course that ended in March.`,
-      `**Exams:** ${commas(ex.n)} results between ${ex.lo} and ${ex.hi}: ${exTypes}; scores run from ${scoreRange.lo} to ${scoreRange.hi}. Every exam belongs to an enrollment (same student and course, exam date inside that term). Fall enrollments have 1-2 quizzes, one midterm (mid October) and one final (December 9-19); Spring enrollments have quizzes (late January to early April) and a midterm (mid March), but no finals yet.`,
+      `**Exams:** ${commas(ex.n)} results between ${ex.lo} and ${ex.hi}: ${exTypes}; scores run from ${scoreRange.lo} to ${scoreRange.hi}. Every exam belongs to an enrollment (same student and course, exam date inside that term). Fall enrollments have 1-2 quizzes, one midterm (${rngs.m1} to ${rngs.m2}) and one final (${rngs.f1} to ${rngs.f2}); Spring enrollments have 1-2 quizzes (late January to early April) and a midterm (${rngs.sm1} to ${rngs.sm2}), but no finals yet (except the half-term Health & Wellness course, whose midterm was in February and final in March).`,
       `**final_score** is derived from the exams: \`0.20 * average(quiz scores) + 0.35 * midterm + 0.45 * final\`, rounded to 2 decimals (verified for all ${formula.checked} scored enrollments; rounding differences are at most ${formula.maxdiff}). Students differ in ability, courses differ slightly in difficulty, and scores are roughly bell-shaped around the high 70s.`,
       `**Clubs:** 8 clubs with ${clubs} members (150 memberships). A student can be in several clubs (up to ${multiClub.mx}; ${multiClub.many} students are in two or more). Join dates fall at the start of a school year (September) or in January 2025 and never before the student enrolled.`,
     ],
@@ -3879,6 +3880,7 @@ function buildMessy() {
     const date = dstr(rng.int(lo, dnum('2024-11-30')));
     let cents = Math.round(clamp(rng.logNormal(Math.log(70), 0.9), 4.5, 2400) * 100);
     if (rng.chance(0.4)) cents = Math.floor(cents / 100) * 100 + 99;
+    if (rng.chance(0.05)) cents = rng.int(100000, 450000); // a few big business orders (>= $1,000)
     const status = rng.weighted(STATUS_BASE, STATUS_W);
     const curBase = p && p.country.code === 'DE' && rng.chance(0.7) ? 'EUR' : 'USD';
     orderBase.push({
@@ -4097,6 +4099,193 @@ function buildBlank() {
   };
 }
 
+// ---- documentation: messy ---------------------------------------------------------------------
+async function docMessy(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  // raw_customers
+  const nameCases = await one(`SELECT
+      count(*) FILTER (WHERE full_name IS NULL) AS nulls,
+      count(*) FILTER (WHERE full_name = '') AS empties,
+      count(*) FILTER (WHERE full_name <> btrim(full_name) OR full_name ~ '  ') AS spaces,
+      count(*) FILTER (WHERE full_name = lower(full_name) AND full_name ~ '[a-z]') AS lower_case,
+      count(*) FILTER (WHERE full_name = upper(full_name) AND full_name ~ '[A-Z]') AS upper_case,
+      count(*) FILTER (WHERE full_name LIKE '%,%') AS last_first
+    FROM raw_customers`);
+  const emailCases = await one(`SELECT
+      count(*) FILTER (WHERE email IS NULL) AS nulls,
+      count(*) FILTER (WHERE email = '') AS empties,
+      count(*) FILTER (WHERE email <> btrim(email)) AS spaces,
+      count(*) FILTER (WHERE email <> lower(email)) AS has_upper,
+      count(*) FILTER (WHERE btrim(email) <> '' AND btrim(email) !~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$') AS invalid
+    FROM raw_customers`);
+  const invalidEmails = await list("SELECT '''' || email || '''' AS v FROM raw_customers WHERE btrim(email) <> '' AND btrim(email) !~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$' ORDER BY row_id");
+  const phoneFormats = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN phone IS NULL THEN 'NULL'
+      WHEN phone = '' THEN 'empty'
+      WHEN phone ~ '^\\(\\d{3}\\) \\d{3}-\\d{4}$' THEN '(555) 123-4567'
+      WHEN phone ~ '^\\d{3}\\.\\d{3}\\.\\d{4}$' THEN '555.123.4567'
+      WHEN phone ~ '^\\+1 \\d{3} \\d{3} \\d{4}$' THEN '+1 555 123 4567'
+      WHEN phone ~ '^\\d{10}$' THEN '5551234567'
+      WHEN phone ~ '^\\d{3}-\\d{3}-\\d{4}$' THEN '555-123-4567'
+      WHEN phone ~ '^1-\\d{3}-\\d{3}-\\d{4}$' THEN '1-555-123-4567'
+      ELSE 'international (UK/DE)' END AS format, count(*) AS n FROM raw_customers GROUP BY 1) t ORDER BY n DESC, format`);
+  const dateFormats = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN signup_date IS NULL THEN 'NULL'
+      WHEN signup_date = '' THEN 'empty'
+      WHEN signup_date = 'unknown' THEN 'unknown'
+      WHEN signup_date ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN '2024-03-15'
+      WHEN signup_date ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN '03/15/2024'
+      WHEN signup_date ~ '^\\d{2}-[A-Za-z]{3}-\\d{4}$' THEN '15-Mar-2024'
+      WHEN signup_date ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN '2024/3/5'
+      ELSE 'other' END AS format, count(*) AS n FROM raw_customers GROUP BY 1) t ORDER BY n DESC, format`);
+  must((await q.val("SELECT count(*) FROM raw_customers WHERE signup_date IS NOT NULL AND signup_date NOT IN ('', 'unknown') AND signup_date !~ '^\\d{4}-\\d{2}-\\d{2}$' AND signup_date !~ '^\\d{2}/\\d{2}/\\d{4}$' AND signup_date !~ '^\\d{2}-[A-Za-z]{3}-\\d{4}$' AND signup_date !~ '^\\d{4}/\\d{1,2}/\\d{1,2}$'")) === 0, 'all signup dates are in one of the documented formats');
+  const ambiguous = await q.val("SELECT count(*) FROM raw_customers WHERE signup_date ~ '^\\d{2}/\\d{2}/\\d{4}$' AND substr(signup_date, 1, 2)::int <= 12 AND substr(signup_date, 4, 2)::int <= 12");
+  const countries = await list(`SELECT (CASE WHEN canon = 'missing' THEN 'NULL or empty' ELSE canon || ': ' || string_agg(DISTINCT quote_literal(country), ', ') END) || ' (' || count(*) || ' rows)' AS v FROM (SELECT country, CASE
+      WHEN country IN ('USA', 'U.S.', 'United States', 'us', 'United States of America', 'US') THEN 'United States'
+      WHEN country IN ('Canada', 'CA', 'canada') THEN 'Canada'
+      WHEN country IN ('UK', 'United Kingdom', 'uk') THEN 'United Kingdom'
+      WHEN country IN ('Germany', 'DE', 'germany') THEN 'Germany'
+      ELSE 'missing' END AS canon FROM raw_customers) t GROUP BY canon ORDER BY count(*) DESC`);
+  const cNull = await one("SELECT count(*) FILTER (WHERE country IS NULL) AS cn, count(*) FILTER (WHERE country = '') AS ce, count(*) FILTER (WHERE city IS NULL) AS yn, count(*) FILTER (WHERE city = '') AS ye FROM raw_customers");
+  const cityOdd = await q.val("SELECT count(*) FROM raw_customers WHERE city IN ('NYC', 'new york city', 'New York City')");
+  const dupEmail = await one("SELECT count(*) AS groups, coalesce(sum(n), 0) AS rows FROM (SELECT count(*) AS n FROM raw_customers WHERE btrim(email) ~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$' GROUP BY lower(btrim(email)) HAVING count(*) > 1) t");
+  const distinctEmails = await q.val("SELECT count(DISTINCT lower(btrim(email))) FROM raw_customers WHERE btrim(email) ~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$'");
+
+  // raw_orders
+  const ro = await one("SELECT count(*) AS n, count(DISTINCT upper(replace(btrim(order_ref), '-', ''))) AS refs FROM raw_orders");
+  const exactDups = await q.val("SELECT count(*) FROM (SELECT 1 FROM raw_orders GROUP BY order_ref, customer_email, order_date, amount, currency, status HAVING count(*) > 1) t");
+  const refDups = await q.val("SELECT count(*) FROM (SELECT 1 FROM raw_orders GROUP BY order_ref HAVING count(*) > 1) t");
+  const conflicts = await list("SELECT order_ref AS v FROM raw_orders GROUP BY order_ref HAVING count(*) > 1 AND count(DISTINCT (customer_email, order_date, amount, currency, status)) > 1 ORDER BY order_ref");
+  must(refDups - exactDups === 6 && conflicts.split(',').length === 6, '10 exact and 6 conflicting duplicate refs');
+  const refFormats = await list("SELECT format || ': ' || n AS v FROM (SELECT CASE WHEN order_ref ~ '^ORD-\\d+$' THEN 'ORD-1001' WHEN order_ref ~ '^ord-\\d+$' THEN 'ord-1001' WHEN order_ref ~ '^ORD\\d+$' THEN 'ORD1001' ELSE 'other' END AS format, count(*) AS n FROM raw_orders GROUP BY 1) t ORDER BY n DESC, format");
+  const amountFormats = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN amount IS NULL THEN 'NULL'
+      WHEN amount = '' THEN 'empty'
+      WHEN amount = 'N/A' THEN 'N/A'
+      WHEN amount ~ '^\\(' THEN '(45.00) accounting negative'
+      WHEN amount ~ '^-' THEN 'negative (-45.00, -$45.00)'
+      WHEN amount ~ '^\\$[0-9,]+\\.\\d\\d$' AND amount ~ ',' THEN '$1,234.50 (with comma)'
+      WHEN amount ~ '^\\$' THEN '$99.00'
+      WHEN amount ~ '^\\s+.*\\s+$' THEN 'padded with spaces'
+      WHEN amount ~ '^\\d+$' THEN '99 (whole number)'
+      WHEN amount ~ '^\\d+\\.\\d$' THEN '99.5 (one decimal)'
+      WHEN amount ~ '^\\d+\\.\\d\\d$' THEN '99.50'
+      ELSE 'other' END AS format, count(*) AS n FROM raw_orders GROUP BY 1) t ORDER BY n DESC, format`);
+  const outliers = await list("SELECT '''' || amount || '''' AS v FROM raw_orders WHERE amount IN ('999999.99', '1000000', '0.01') ORDER BY row_id");
+  const currencies = await list("SELECT coalesce('''' || currency || '''', 'NULL') || ' ' || count(*) AS v FROM raw_orders GROUP BY currency ORDER BY count(*) DESC, currency");
+  const statuses = await list(`SELECT (CASE WHEN canon = 'missing' THEN 'NULL' ELSE canon || ': ' || string_agg(DISTINCT quote_literal(status), ', ') END) || ' (' || count(*) || ' rows)' AS v FROM (SELECT status, CASE
+      WHEN lower(btrim(status)) = 'delivered' THEN 'delivered'
+      WHEN lower(btrim(status)) = 'shipped' THEN 'shipped'
+      WHEN lower(btrim(status)) IN ('cancelled', 'canceled') THEN 'cancelled'
+      WHEN lower(btrim(status)) = 'pending' THEN 'pending'
+      WHEN lower(btrim(status)) = 'returned' THEN 'returned'
+      ELSE 'missing' END AS canon FROM raw_orders) t GROUP BY canon ORDER BY count(*) DESC`);
+  const orderDates = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN order_date IS NULL THEN 'NULL'
+      WHEN order_date = '' THEN 'empty'
+      WHEN order_date ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN '2024-03-15'
+      WHEN order_date ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN '03/15/2024'
+      WHEN order_date ~ '^\\d{2}-[A-Za-z]{3}-\\d{4}$' THEN '15-Mar-2024'
+      WHEN order_date ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN '2024/3/5'
+      WHEN order_date ~ '^[A-Za-z]+ \\d{1,2}, \\d{4}$' THEN 'March 15, 2024'
+      ELSE 'other' END AS format, count(*) AS n FROM raw_orders GROUP BY 1) t ORDER BY n DESC, format`);
+  const orphans = await q.val("SELECT count(*) FROM raw_orders o WHERE btrim(o.customer_email) <> '' AND NOT EXISTS (SELECT 1 FROM raw_customers c WHERE lower(btrim(c.email)) = lower(btrim(o.customer_email)))");
+  const guests = await q.val("SELECT count(*) FROM raw_orders WHERE customer_email LIKE '%guest.%'");
+
+  // survey
+  const q1 = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN q1_satisfaction IS NULL THEN 'NULL'
+      WHEN q1_satisfaction = '' THEN 'empty'
+      WHEN q1_satisfaction ~ '^[1-5]$' THEN 'digit 1-5'
+      WHEN q1_satisfaction ~ '^\\s*[1-5]\\s*$' THEN 'digit with a space'
+      WHEN q1_satisfaction ~* '^(one|two|three|four|five)$' THEN 'word (one ... five)'
+      WHEN q1_satisfaction ~ '^[1-5]/5$' THEN '4/5 style'
+      ELSE 'out of range (0, 11)' END AS format, count(*) AS n FROM survey_responses GROUP BY 1) t ORDER BY n DESC, format`);
+  const q2 = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN q2_recommend IS NULL THEN 'NULL'
+      WHEN q2_recommend = '' THEN 'empty'
+      WHEN q2_recommend ~ '^\\d{1,2}$' AND q2_recommend::int <= 10 THEN 'digits 0-10'
+      WHEN q2_recommend ~ '^\\s*\\d{1,2}\\s*$' THEN 'digits with spaces'
+      WHEN q2_recommend = 'N/A' THEN 'N/A'
+      WHEN q2_recommend = 'ten' THEN 'the word ten'
+      WHEN lower(q2_recommend) IN ('yes', 'no', 'maybe') THEN 'yes / no / maybe'
+      ELSE 'out of range (15)' END AS format, count(*) AS n FROM survey_responses GROUP BY 1) t ORDER BY n DESC, format`);
+  const resp = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE WHEN respondent IS NULL THEN 'NULL' WHEN respondent = 'anonymous' THEN 'anonymous' WHEN respondent ~ '@' THEN 'email' WHEN respondent ~ '^cust-' THEN 'customer code (cust-0042)' ELSE 'first name + initial' END AS format, count(*) AS n FROM survey_responses GROUP BY 1) t ORDER BY n DESC, format`);
+  const outOfRange = await list("SELECT 'response ' || response_id || ' (q1 ' || coalesce(q1_satisfaction, 'NULL') || ', q2 ' || coalesce(q2_recommend, 'NULL') || ')' AS v FROM survey_responses WHERE q1_satisfaction IN ('0', '11') OR q2_recommend = '15' ORDER BY response_id");
+  const submitted = await list(`SELECT format || ': ' || n AS v FROM (SELECT CASE
+      WHEN submitted IS NULL THEN 'NULL'
+      WHEN submitted = '' THEN 'empty'
+      WHEN submitted ~ '^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$' THEN '2024-05-03 14:22:10'
+      WHEN submitted ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN '2024-05-03T14:22:10Z'
+      WHEN submitted ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN '05/03/2024'
+      ELSE 'May 3, 2024' END AS format, count(*) AS n FROM survey_responses GROUP BY 1) t ORDER BY n DESC, format`);
+  const commentOdd = await one("SELECT count(*) FILTER (WHERE q3_comment IS NULL) AS nulls, count(*) FILTER (WHERE q3_comment = '') AS empties, count(*) FILTER (WHERE lower(btrim(q3_comment)) IN ('n/a', 'none', '-', 'no comment')) AS placeholders, count(*) FILTER (WHERE q3_comment <> btrim(q3_comment)) AS padded FROM survey_responses");
+
+  // sales
+  const sales = await one("SELECT (SELECT count(*) FROM product_sales_wide) AS wide, (SELECT count(*) FROM monthly_sales_long) AS long, (SELECT round(sum(jan + feb + mar + apr + may + jun), 2)::text FROM product_sales_wide) AS wide_total, (SELECT round(sum(revenue), 2)::text FROM monthly_sales_long) AS long_total");
+  must(sales.wide_total === sales.long_total, 'wide and long tables hold the same numbers');
+  must((await q.val("SELECT count(*) FROM monthly_sales_long l JOIN product_sales_wide w USING (product) WHERE l.revenue <> CASE l.month WHEN 'Jan' THEN w.jan WHEN 'Feb' THEN w.feb WHEN 'Mar' THEN w.mar WHEN 'Apr' THEN w.apr WHEN 'May' THEN w.may ELSE w.jun END")) === 0, 'long = unpivot(wide)');
+
+  return {
+    about:
+      'Messy Data Co. is for **data cleaning**. Every business column is `text` on purpose (just as it would arrive in a CSV export), so values need `TRIM`, `LOWER`/`UPPER`, `REPLACE`, `CASE`, `NULLIF`, `COALESCE` and `CAST` before they can be compared, joined or summed. ' +
+      'No cleaning has been done in the data itself and there is no "correct" cleaned table to look up: the lists below describe exactly what kind of dirt exists so that exercises and their expected results can be written safely. ' +
+      '"As of" date: **2024-12-01** (orders run up to 2024-11-30).',
+    tableNotes: {
+      raw_customers: [
+        'Join key for `raw_orders`: `lower(btrim(email))`.',
+        'Phone, date and country columns show the exact variants listed in "How the data was built" below.',
+      ],
+      raw_orders: ['`row_id` is an import row number, not an order id: the same order can appear in several rows (see duplicates).'],
+      product_sales_wide: ['One row per product, one column per month, no NULLs. `monthly_sales_long` holds exactly the same 60 numbers.'],
+    },
+    conventions: [
+      `**raw_customers** (120 rows) were created from 105 different people; ${ds.extra.dupPeople} of them appear twice (written differently), which is why there are 105 + ${ds.extra.dupPeople} = 120 rows. Cleaned, valid email addresses identify ${distinctEmails} distinct people; ${dupEmail.groups} email addresses occur twice, the other duplicates have to be found by name (or have a missing / broken email in one of the two rows).`,
+      `**Names** (\`full_name\`): ${nameCases.lower_case} are all lowercase, ${nameCases.upper_case} are all uppercase, others are mixed or alternating case (like \`aLiCe sMiTh\`), ${nameCases.spaces} have leading, trailing or repeated inner spaces, ${nameCases.last_first} are written "Last, First"; ${nameCases.nulls} NULL and ${nameCases.empties} empty strings.`,
+      `**Emails:** ${emailCases.has_upper} contain capital letters, ${emailCases.spaces} have leading or trailing spaces, ${emailCases.nulls} are NULL and ${emailCases.empties} are empty strings; ${emailCases.invalid} are not valid addresses: ${invalidEmails}.`,
+      `**Phones** - formats: ${phoneFormats}. (Canadian numbers share the US formats; UK and German numbers use \`+44 20 7946 0xxx\` / \`+49 30 ...\` styles.)`,
+      `**signup_date** (text) - formats: ${dateFormats}. In \`MM/DD/YYYY\` dates, ${ambiguous} could also be read as \`DD/MM/YYYY\` (both parts <= 12): by convention here they are month first. Dates run from 2021-01-01 to 2024-10-31.`,
+      `**country** - ${countries}; the "NULL or empty" group is ${cNull.cn} NULL plus ${cNull.ce} empty values. \`CA\` means Canada here (not California) and \`DE\` Germany. **city** has casing and spacing variants and New York appears as \`NYC\` / \`new york city\` / \`New York City\` in ${cityOdd} row(s); ${cNull.yn} NULL and ${cNull.ye} empty.`,
+      `**raw_orders** (${ro.n} rows) contain ${ro.refs} distinct orders once \`order_ref\` is normalised (\`upper(replace(btrim(order_ref), '-', ''))\`). \`order_ref\` formats: ${refFormats}. **${exactDups} rows are exact duplicates** of another row (everything equal except \`row_id\`), and **${refDups - exactDups} order refs appear twice with conflicting data** (${conflicts}): different amount, status or date.`,
+      `**amount** (text) - formats: ${amountFormats}. Strange values: negative amounts / refunds, and outliers ${outliers}. \`$\` and thousands separators appear only on some rows; a few amounts are in euros (see currency) but are not converted.`,
+      `**currency** - ${currencies}. **status** - ${statuses}. **order_date** - formats: ${orderDates}; orders run from 2023-06-01 to 2024-11-30.`,
+      `**customer_email** in \`raw_orders\` uses the same dirty email styles as the customer table. After cleaning, ${orphans} order rows have an email that is not found in \`raw_customers\` (${guests} are guest checkouts such as \`guest.123@example.com\`; the others belong to customers whose email is missing or invalid in the customer table).`,
+      `**survey_responses** (80 rows, wide format - one column per question): \`respondent\` - ${resp}; \`q1_satisfaction\` (1-5) - ${q1}; \`q2_recommend\` (0-10) - ${q2}; \`submitted\` - ${submitted}. Comments: ${commentOdd.nulls} NULL, ${commentOdd.empties} empty, ${commentOdd.placeholders} placeholders such as \`n/a\` or \`none\`, ${commentOdd.padded} with stray spaces. Out-of-range answers: ${outOfRange}.`,
+      `**product_sales_wide / monthly_sales_long:** ${sales.wide} products x 6 months (Jan to Jun) = ${sales.long} long rows; the two tables contain the same ${sales.long} numbers (total ${money(sales.long_total)}), so unpivoting the wide table must reproduce the long table and pivoting the long table must reproduce the wide one. Month names in the long table are 3-letter English abbreviations.`,
+    ],
+    quirks: [
+      `**Text everywhere.** Dates, amounts and scores are text, so \`ORDER BY\` sorts them as strings ('10' before '9', '03/15/2024' before '12/01/2023'). Casting a dirty value directly (\`'N/A'::numeric\`, \`'unknown'::date\`) raises an error: clean first, or guard with \`CASE\` / \`NULLIF\`.`,
+      `**Empty string vs NULL.** Many columns use both: for example ${nameCases.empties} empty and ${nameCases.nulls} NULL names, ${emailCases.empties} empty and ${emailCases.nulls} NULL emails. \`NULLIF(col, '')\` and \`COALESCE\` are the tools; \`IS NULL\` alone misses the empty strings.`,
+      `**Duplicates come in two flavours:** exact duplicate rows (${exactDups} in \`raw_orders\`) that \`DISTINCT\` removes, and near-duplicates (the same person or order written differently) that only match after cleaning.`,
+      `**Case-sensitive comparisons.** Because the database collation is \`C\`, 'Delivered' <> 'delivered' and uppercase letters sort before lowercase ones.`,
+      'These tables intentionally have **no foreign keys** and, except for the id columns, no constraints: dirty data cannot satisfy them.',
+    ],
+    facts: [
+      await f('Rows per table', "SELECT (SELECT count(*) FROM raw_customers) || ' / ' || (SELECT count(*) FROM raw_orders) || ' / ' || (SELECT count(*) FROM survey_responses) || ' / ' || (SELECT count(*) FROM product_sales_wide) || ' / ' || (SELECT count(*) FROM monthly_sales_long)"),
+      await f('Distinct valid emails in raw_customers after LOWER + TRIM', "SELECT count(DISTINCT lower(btrim(email))) FROM raw_customers WHERE btrim(email) ~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$'", 'int'),
+      await f('Email addresses that appear in more than one raw_customers row (after cleaning)', "SELECT count(*) FROM (SELECT 1 FROM raw_customers WHERE btrim(email) ~* '^[a-z0-9._-]+@[a-z0-9.-]+\\.[a-z]+$' GROUP BY lower(btrim(email)) HAVING count(*) > 1) t", 'int'),
+      await f('Distinct raw_orders statuses before and after cleaning', "SELECT count(DISTINCT status) || ' raw, ' || count(DISTINCT lower(replace(replace(btrim(status), 'canceled', 'cancelled'), '  ', ' '))) || ' cleaned' FROM raw_orders"),
+      await f('Distinct raw_orders after removing exact duplicates', 'SELECT count(*) FROM (SELECT DISTINCT order_ref, customer_email, order_date, amount, currency, status FROM raw_orders) t', 'int'),
+      await f('Sum of the clean numeric amounts (plain 123.45, $-prefixed or padded amounts; no negatives, N/A or outliers)', "SELECT round(sum(replace(replace(btrim(amount), '$', ''), ',', '')::numeric), 2) FROM raw_orders WHERE amount ~ '^\\s*\\$?[0-9,]+(\\.[0-9]+)?\\s*$' AND btrim(amount) NOT IN ('999999.99', '1000000', '0.01')", 'money'),
+      await f('Orders where amount is NULL, empty or N/A', "SELECT count(*) FROM raw_orders WHERE amount IS NULL OR amount IN ('', 'N/A')", 'int'),
+      await f('Total revenue per product over the half year (wide table)', 'SELECT product, round(jan + feb + mar + apr + may + jun, 2) AS total FROM product_sales_wide ORDER BY total DESC LIMIT 3', 'pairs'),
+      await f('Best month overall (from the long table)', 'SELECT month || \' (\' || round(sum(revenue), 2) || \')\' FROM monthly_sales_long GROUP BY month ORDER BY sum(revenue) DESC LIMIT 1'),
+      await f('Survey: answers to q1 that cast cleanly to 1-5 after TRIM', "SELECT count(*) FROM survey_responses WHERE btrim(q1_satisfaction) ~ '^[1-5]$'", 'int'),
+    ],
+    topics: [
+      'Normalising text: `TRIM`, `LOWER`, `UPPER`, `INITCAP`, `REPLACE`, `REGEXP_REPLACE`, `SPLIT_PART`; normalising phones to digits only.',
+      '`NULLIF(col, \'\')`, `COALESCE`, `CASE` mapping many spellings to one canonical value (countries, statuses, currencies).',
+      'Parsing dates and numbers from text with `CASE` on a regex (`~`) and `TO_DATE` / `::numeric`; handling `N/A` safely.',
+      'Finding duplicates: `GROUP BY ... HAVING count(*) > 1`, `ROW_NUMBER() OVER (PARTITION BY ...)`, `DISTINCT ON`; exact vs near duplicates.',
+      'Joining dirty keys after cleaning (`lower(btrim(...))`) and finding orphans with anti-joins.',
+      'Reshaping: unpivot `product_sales_wide` (`UNION ALL` or `CROSS JOIN LATERAL (VALUES ...)`), pivot `monthly_sales_long` (`FILTER` or `CASE`); survey wide-to-long.',
+    ],
+  };
+}
+
 // =============================================================================
 // documentation (content/DATASETS.md) - every number comes from querying the data
 // =============================================================================
@@ -4107,7 +4296,7 @@ const commas = (v) => {
   return i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (d !== undefined ? '.' + d : '');
 };
 const money = (v) => (Number(v) < 0 ? '-$' : '$') + commas(Math.abs(Number(v)).toFixed(2));
-const oneLine = (sql) => sql.replace(/\s+/g, ' ').trim();
+const oneLine = (sql) => sql.replace(/\s*\n\s*/g, ' ').trim();
 const code = (s) => '`' + String(s).replace(/`/g, "'") + '`';
 /** A statement made in the prose of the documentation must be true of the data. */
 function must(cond, message) {
