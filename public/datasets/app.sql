@@ -22,7 +22,7 @@ CREATE TABLE subscriptions (
     subscription_id integer PRIMARY KEY,
     user_id         integer NOT NULL REFERENCES users (user_id),
     plan            text NOT NULL,
-    price           numeric(6,2) NOT NULL,
+    price           numeric(6,2) NOT NULL CHECK (price > 0),
     started_at      date NOT NULL,
     cancelled_at    date
 );
@@ -30,7 +30,7 @@ CREATE TABLE subscriptions (
 CREATE TABLE daily_steps (
     user_id integer NOT NULL REFERENCES users (user_id),
     day     date NOT NULL,
-    steps   integer NOT NULL,
+    steps   integer NOT NULL CHECK (steps >= 0),
     PRIMARY KEY (user_id, day)
 );
 

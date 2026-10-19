@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "check-datasets": "node scripts/check-datasets.mjs",
+    "sql": "node scripts/sql.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.18.6",

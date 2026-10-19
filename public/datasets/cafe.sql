@@ -5,7 +5,7 @@ CREATE TABLE menu_items (
     item_id      integer PRIMARY KEY,
     name         text NOT NULL,
     category     text NOT NULL,
-    price        numeric(5,2) NOT NULL,
+    price        numeric(5,2) NOT NULL CHECK (price > 0),
     calories     integer,
     is_vegan     boolean NOT NULL,
     is_available boolean NOT NULL,
@@ -19,14 +19,14 @@ CREATE TABLE customers (
     email          text,
     city           text NOT NULL,
     joined_on      date NOT NULL,
-    loyalty_points integer NOT NULL DEFAULT 0
+    loyalty_points integer NOT NULL DEFAULT 0 CHECK (loyalty_points >= 0)
 );
 
 CREATE TABLE staff (
     staff_id    integer PRIMARY KEY,
     name        text NOT NULL,
     role        text NOT NULL,
-    hourly_rate numeric(5,2) NOT NULL,
+    hourly_rate numeric(5,2) NOT NULL CHECK (hourly_rate > 0),
     hired_on    date NOT NULL,
     manager_id  integer REFERENCES staff (staff_id)
 );

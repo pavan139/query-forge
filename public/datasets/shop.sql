@@ -19,9 +19,9 @@ CREATE TABLE products (
     name        text NOT NULL,
     category_id integer NOT NULL REFERENCES categories (category_id),
     supplier_id integer REFERENCES suppliers (supplier_id),
-    price       numeric(10,2) NOT NULL,
-    cost        numeric(10,2) NOT NULL,
-    stock_qty   integer NOT NULL,
+    price       numeric(10,2) NOT NULL CHECK (price > 0),
+    cost        numeric(10,2) NOT NULL CHECK (cost >= 0),
+    stock_qty   integer NOT NULL CHECK (stock_qty >= 0),
     is_active   boolean NOT NULL,
     created_at  date NOT NULL
 );
@@ -53,16 +53,16 @@ CREATE TABLE order_items (
     order_item_id integer PRIMARY KEY,
     order_id      integer NOT NULL REFERENCES orders (order_id),
     product_id    integer NOT NULL REFERENCES products (product_id),
-    quantity      integer NOT NULL,
+    quantity      integer NOT NULL CHECK (quantity > 0),
     unit_price    numeric(10,2) NOT NULL,
-    discount      numeric(3,2) NOT NULL DEFAULT 0,
+    discount      numeric(3,2) NOT NULL DEFAULT 0 CHECK (discount BETWEEN 0 AND 1),
     UNIQUE (order_id, product_id)
 );
 
 CREATE TABLE payments (
     payment_id integer PRIMARY KEY,
     order_id   integer NOT NULL REFERENCES orders (order_id),
-    amount     numeric(10,2) NOT NULL,
+    amount     numeric(10,2) NOT NULL CHECK (amount > 0),
     method     text NOT NULL,
     paid_at    timestamp NOT NULL
 );

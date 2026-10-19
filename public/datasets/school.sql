@@ -24,7 +24,7 @@ CREATE TABLE courses (
     title      text NOT NULL,
     subject    text NOT NULL,
     teacher_id integer REFERENCES teachers (teacher_id),
-    credits    integer NOT NULL,
+    credits    integer NOT NULL CHECK (credits > 0),
     room       text NOT NULL
 );
 
@@ -32,7 +32,7 @@ CREATE TABLE enrollments (
     student_id  integer NOT NULL REFERENCES students (student_id),
     course_id   integer NOT NULL REFERENCES courses (course_id),
     term        text NOT NULL,
-    final_score numeric(5,2),
+    final_score numeric(5,2) CHECK (final_score BETWEEN 0 AND 100),
     PRIMARY KEY (student_id, course_id, term)
 );
 
@@ -42,7 +42,7 @@ CREATE TABLE exam_scores (
     course_id  integer NOT NULL REFERENCES courses (course_id),
     exam_date  date NOT NULL,
     exam_type  text NOT NULL,
-    score      numeric(5,2) NOT NULL
+    score      numeric(5,2) NOT NULL CHECK (score BETWEEN 0 AND 100)
 );
 
 CREATE TABLE clubs (

@@ -11,9 +11,10 @@
  *                                    by querying the generated data in PGlite)
  *
  * Usage:
- *   node scripts/gen-datasets.mjs                 # everything (takes ~1 minute)
+ *   node scripts/gen-datasets.mjs                 # everything (takes ~20 seconds)
  *   node scripts/gen-datasets.mjs --skip-docs     # SQL + catalog only (fast)
- *   node scripts/gen-datasets.mjs --only cafe,app # dev mode: just those SQL files
+ *   node scripts/gen-datasets.mjs --only=cafe,app # dev mode: write just those SQL files
+ *   node scripts/gen-datasets.mjs --docs-only=bank --docs-file=/tmp/x.md   # dev: docs for one dataset
  *
  * Re-running produces byte-identical output.
  */
@@ -559,7 +560,7 @@ function buildCafe() {
         ['item_id', 'integer', 'PRIMARY KEY', 'Unique id of the menu item'],
         ['name', 'text', 'NOT NULL', 'Name of the item as printed on the menu'],
         ['category', 'text', 'NOT NULL', 'Menu section: Coffee, Tea, Pastry, Sandwich, Dessert or Juice'],
-        ['price', 'numeric(5,2)', 'NOT NULL', 'Current price in dollars'],
+        ['price', 'numeric(5,2)', 'NOT NULL CHECK (price > 0)', 'Current price in dollars'],
         ['calories', 'integer', '', 'Calories per serving (empty when we have not measured it yet)'],
         ['is_vegan', 'boolean', 'NOT NULL', 'TRUE if the item contains no animal products'],
         ['is_available', 'boolean', 'NOT NULL', 'TRUE if we can sell it today'],
@@ -577,7 +578,7 @@ function buildCafe() {
         ['email', 'text', '', 'Email address (empty if the customer did not share one)'],
         ['city', 'text', 'NOT NULL', 'City where the customer lives'],
         ['joined_on', 'date', 'NOT NULL', 'Date the customer joined the loyalty program'],
-        ['loyalty_points', 'integer', 'NOT NULL DEFAULT 0', 'Loyalty points collected so far'],
+        ['loyalty_points', 'integer', 'NOT NULL DEFAULT 0 CHECK (loyalty_points >= 0)', 'Loyalty points collected so far'],
       ],
       custRows,
     ),
@@ -588,7 +589,7 @@ function buildCafe() {
         ['staff_id', 'integer', 'PRIMARY KEY', 'Unique id of the staff member'],
         ['name', 'text', 'NOT NULL', 'Full name'],
         ['role', 'text', 'NOT NULL', 'Job role: Manager, Barista, Baker or Cashier'],
-        ['hourly_rate', 'numeric(5,2)', 'NOT NULL', 'Pay per hour in dollars'],
+        ['hourly_rate', 'numeric(5,2)', 'NOT NULL CHECK (hourly_rate > 0)', 'Pay per hour in dollars'],
         ['hired_on', 'date', 'NOT NULL', 'Date the person was hired'],
         ['manager_id', 'integer', 'REFERENCES staff (staff_id)', 'The staff member this person reports to (empty for the top manager)'],
       ],
@@ -1121,9 +1122,9 @@ function buildShop() {
       ['name', 'text', 'NOT NULL', 'Product name'],
       ['category_id', 'integer', 'NOT NULL REFERENCES categories (category_id)', 'Category the product belongs to'],
       ['supplier_id', 'integer', 'REFERENCES suppliers (supplier_id)', 'Who supplies the product (empty when sourced directly)'],
-      ['price', 'numeric(10,2)', 'NOT NULL', 'Current selling price in dollars'],
-      ['cost', 'numeric(10,2)', 'NOT NULL', 'What the product costs us, in dollars'],
-      ['stock_qty', 'integer', 'NOT NULL', 'Units currently in the warehouse'],
+      ['price', 'numeric(10,2)', 'NOT NULL CHECK (price > 0)', 'Current selling price in dollars'],
+      ['cost', 'numeric(10,2)', 'NOT NULL CHECK (cost >= 0)', 'What the product costs us, in dollars'],
+      ['stock_qty', 'integer', 'NOT NULL CHECK (stock_qty >= 0)', 'Units currently in the warehouse'],
       ['is_active', 'boolean', 'NOT NULL', 'TRUE if the product is still for sale'],
       ['created_at', 'date', 'NOT NULL', 'Date the product was added to the catalog'],
     ], productRows),
@@ -1152,14 +1153,14 @@ function buildShop() {
       ['order_item_id', 'integer', 'PRIMARY KEY', 'Unique id of the order line'],
       ['order_id', 'integer', 'NOT NULL REFERENCES orders (order_id)', 'Order this line belongs to'],
       ['product_id', 'integer', 'NOT NULL REFERENCES products (product_id)', 'Product that was bought'],
-      ['quantity', 'integer', 'NOT NULL', 'How many units were bought'],
+      ['quantity', 'integer', 'NOT NULL CHECK (quantity > 0)', 'How many units were bought'],
       ['unit_price', 'numeric(10,2)', 'NOT NULL', 'Price per unit at the time of the order, in dollars'],
-      ['discount', 'numeric(3,2)', 'NOT NULL DEFAULT 0', 'Discount on this line as a fraction (0.10 = 10% off)'],
+      ['discount', 'numeric(3,2)', 'NOT NULL DEFAULT 0 CHECK (discount BETWEEN 0 AND 1)', 'Discount on this line as a fraction (0.10 = 10% off)'],
     ], itemRows, { constraints: ['UNIQUE (order_id, product_id)'] }),
     T('payments', 'Payments received for orders (an order can be paid in more than one payment).', [
       ['payment_id', 'integer', 'PRIMARY KEY', 'Unique id of the payment'],
       ['order_id', 'integer', 'NOT NULL REFERENCES orders (order_id)', 'Order the payment is for'],
-      ['amount', 'numeric(10,2)', 'NOT NULL', 'Amount paid in dollars'],
+      ['amount', 'numeric(10,2)', 'NOT NULL CHECK (amount > 0)', 'Amount paid in dollars'],
       ['method', 'text', 'NOT NULL', 'Payment method: card, paypal, gift_card or bank_transfer'],
       ['paid_at', 'timestamp', 'NOT NULL', 'Date and time the payment was received'],
     ], paymentRows),
@@ -1273,9 +1274,7 @@ async function docShop(q, ds) {
       await f('Best-selling product by units (delivered orders)', "SELECT p.name || ' (' || sum(i.quantity) || ' units)' FROM order_items i JOIN orders o ON o.order_id = i.order_id JOIN products p ON p.product_id = i.product_id WHERE o.status = 'delivered' GROUP BY p.product_id, p.name ORDER BY sum(i.quantity) DESC, p.name LIMIT 1"),
       await f('Top customer by delivered revenue', "SELECT c.first_name || ' ' || c.last_name || ' (customer ' || c.customer_id || ', ' || round(sum(i.quantity * i.unit_price * (1 - i.discount)), 2) || ')' FROM customers c JOIN orders o ON o.customer_id = c.customer_id JOIN order_items i ON i.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY sum(i.quantity * i.unit_price * (1 - i.discount)) DESC LIMIT 1"),
       await f('Payments received by method (count and dollars)', "SELECT method, count(*) || ' / ' || round(sum(amount), 2) FROM payments GROUP BY 1 ORDER BY sum(amount) DESC", 'pairs'),
-      await f('Average review rating', 'SELECT round(avg(rating), 2) FROM reviews'),
       await f('Products with at least 8 reviews, best average first', 'SELECT p.name, round(avg(r.rating), 2) || \' (\' || count(*) || \' reviews)\' AS rating FROM reviews r JOIN products p ON p.product_id = r.product_id GROUP BY p.product_id, p.name HAVING count(*) >= 8 ORDER BY avg(r.rating) DESC, p.name LIMIT 3', 'pairs'),
-      await f('Orders using a discount code', 'SELECT count(*) FROM orders WHERE discount_code IS NOT NULL', 'int'),
     ],
     topics: [
       'INNER / LEFT JOIN across `customers`, `orders`, `order_items`, `products`, `categories`; anti-joins for customers 141-150 and the never-ordered products.',
@@ -1508,7 +1507,7 @@ function buildCompany() {
       ['manager_id', 'integer', 'REFERENCES employees (emp_id)', 'The employee this person reports to (empty for the CEO)'],
       ['job_title', 'text', 'NOT NULL', 'Job title'],
       ['hire_date', 'date', 'NOT NULL', 'First day at the company'],
-      ['salary', 'numeric(10,2)', 'NOT NULL', 'Current yearly salary in dollars'],
+      ['salary', 'numeric(10,2)', 'NOT NULL CHECK (salary > 0)', 'Current yearly salary in dollars'],
       ['employment_type', 'text', 'NOT NULL', 'full_time, part_time or contractor'],
       ['city', 'text', 'NOT NULL', 'City where the employee works'],
       ['terminated_on', 'date', '', 'Last day at the company (empty for current employees)'],
@@ -1531,7 +1530,7 @@ function buildCompany() {
       ['emp_id', 'integer', 'NOT NULL REFERENCES employees (emp_id)', 'Employee assigned to the project'],
       ['project_id', 'integer', 'NOT NULL REFERENCES projects (project_id)', 'Project the employee works on'],
       ['role', 'text', 'NOT NULL', 'Role on the project: lead, developer, analyst, designer, tester or consultant'],
-      ['hours_per_week', 'integer', 'NOT NULL', 'Weekly hours the employee spends on the project'],
+      ['hours_per_week', 'integer', 'NOT NULL CHECK (hours_per_week BETWEEN 1 AND 40)', 'Weekly hours the employee spends on the project'],
       ['assigned_on', 'date', 'NOT NULL', 'Day the employee joined the project'],
     ], assignRows, { constraints: ['PRIMARY KEY (emp_id, project_id)'] }),
   ];
@@ -1624,10 +1623,8 @@ async function docCompany(q, ds) {
       await f('Total yearly payroll of current employees', 'SELECT sum(salary) FROM employees WHERE terminated_on IS NULL', 'money'),
       await f('Average salary per department', 'SELECT d.name, round(avg(e.salary), 2) FROM departments d JOIN employees e ON e.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY avg(e.salary) DESC', 'pairs'),
       await f('Second-highest distinct salary in Engineering (dept 2)', 'SELECT DISTINCT salary FROM employees WHERE dept_id = 2 ORDER BY salary DESC OFFSET 1 LIMIT 1', 'money'),
-      await f('Employees with the top salary of their department (rank 1, ties included)', 'SELECT count(*) FROM (SELECT RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS r FROM employees WHERE dept_id IS NOT NULL) t WHERE r = 1', 'int'),
-      await f('Direct reports of the CEO', 'SELECT count(*) FROM employees WHERE manager_id = 1', 'int'),
+      await f('RANK vs DENSE_RANK on Engineering salaries (top of the list)', 'SELECT salary, RANK() OVER (ORDER BY salary DESC) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC) AS dense_rnk, count(*) AS people FROM employees WHERE dept_id = 2 GROUP BY salary ORDER BY salary DESC LIMIT 6', 'table'),
       await f('Manager with the most direct reports', 'SELECT m.job_title || \' (emp \' || m.emp_id || \', \' || count(*) || \' reports)\' FROM employees e JOIN employees m ON m.emp_id = e.manager_id GROUP BY m.emp_id, m.job_title ORDER BY count(*) DESC, m.emp_id LIMIT 1'),
-      await f('Total raise of the CEO since hire (first vs last salary_history row)', 'SELECT round(100.0 * (max(salary) - min(salary)) / min(salary), 1) || \'%\' FROM salary_history WHERE emp_id = 1'),
       await f('Total budget of active projects', "SELECT sum(budget) FROM projects WHERE status = 'active'", 'money'),
       await f('Projects per department (including departments with none)', 'SELECT d.name, count(p.project_id) FROM departments d LEFT JOIN projects p ON p.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY d.dept_id', 'pairs'),
       await f('Employee working on the most projects', 'SELECT e.first_name || \' \' || e.last_name || \' (emp \' || e.emp_id || \', \' || count(*) || \' projects)\' FROM project_assignments a JOIN employees e ON e.emp_id = a.emp_id GROUP BY e.emp_id, e.first_name, e.last_name ORDER BY count(*) DESC, e.emp_id LIMIT 1'),
@@ -1835,9 +1832,11 @@ function buildMovies() {
     const rating = rng.weighted(['G', 'PG', 'PG-13', 'R'], RATING_W[m.primary]);
     let budget = BASE_BUDGET[m.primary] * rng.logNormal(0, 0.55) * (1 + (m.year - 1975) / 60);
     if (lang !== 'English') budget *= 0.5;
-    budget = clamp(r1(budget), 0.5, 350);
+    budget = r1(Math.max(budget, 0.5));
+    if (budget > 300) budget = r1(300 * rng.float(0.8, 0.98)); // soften the top of the range instead of clipping
     const mult = rng.logNormal(Math.log(m.primary === 9 ? 3.4 : 2.3), 0.7);
-    const box = clamp(r1(budget * mult), 0.2, 1500);
+    let box = r1(Math.max(budget * mult, 0.2));
+    if (box > 1400) box = r1(1400 * rng.float(0.8, 0.99));
     return {
       id,
       title: m.title,
@@ -2128,7 +2127,7 @@ function buildMovies() {
       ['movie_id', 'integer', 'PRIMARY KEY', 'Unique id of the movie (ids are in release-year order)'],
       ['title', 'text', 'NOT NULL', 'Movie title'],
       ['release_year', 'integer', 'NOT NULL', 'Year the movie was released'],
-      ['duration_min', 'integer', 'NOT NULL', 'Running time in minutes'],
+      ['duration_min', 'integer', 'NOT NULL CHECK (duration_min > 0)', 'Running time in minutes'],
       ['age_rating', 'text', 'NOT NULL', 'Age rating: G, PG, PG-13 or R'],
       ['language', 'text', 'NOT NULL', 'Original language of the movie'],
       ['budget_musd', 'numeric(6,1)', '', 'Production budget in millions of US dollars (empty when unknown)'],
@@ -2165,7 +2164,7 @@ function buildMovies() {
     T('ratings', 'Star ratings users gave to movies (at most one rating per user per movie).', [
       ['user_id', 'integer', 'NOT NULL REFERENCES users (user_id)', 'User who rated'],
       ['movie_id', 'integer', 'NOT NULL REFERENCES movies (movie_id)', 'Movie that was rated'],
-      ['stars', 'numeric(2,1)', 'NOT NULL CHECK (stars BETWEEN 0.5 AND 5.0)', 'Rating from 0.5 to 5.0 in steps of 0.5'],
+      ['stars', 'numeric(2,1)', 'NOT NULL CHECK (stars BETWEEN 0.5 AND 5.0 AND stars * 2 = round(stars * 2))', 'Rating from 0.5 to 5.0 in steps of 0.5'],
       ['rated_at', 'timestamp', 'NOT NULL', 'Date and time of the rating'],
     ], ratingRows, { constraints: ['PRIMARY KEY (user_id, movie_id)'] }),
     T('watch_history', 'Every time a user pressed play (January to June 2024).', [
@@ -2173,7 +2172,7 @@ function buildMovies() {
       ['user_id', 'integer', 'NOT NULL REFERENCES users (user_id)', 'User who watched'],
       ['movie_id', 'integer', 'NOT NULL REFERENCES movies (movie_id)', 'Movie that was watched'],
       ['started_at', 'timestamp', 'NOT NULL', 'Date and time playback started'],
-      ['minutes_watched', 'integer', 'NOT NULL', 'Minutes actually watched (never more than the movie length)'],
+      ['minutes_watched', 'integer', 'NOT NULL CHECK (minutes_watched >= 0)', 'Minutes actually watched (never more than the movie length)'],
       ['device', 'text', 'NOT NULL', 'Device used: tv, mobile, web or tablet'],
     ], watchRows),
   ];
@@ -2262,14 +2261,12 @@ async function docMovies(q, ds) {
       'Ratings and plays are generated independently: a user can rate a film that never appears in their watch history, and vice versa.',
     ],
     facts: [
-      await f('Number of films / people / users', "SELECT (SELECT count(*) FROM movies) || ' / ' || (SELECT count(*) FROM people) || ' / ' || (SELECT count(*) FROM users)"),
       await f('Average rating of all ratings', 'SELECT round(avg(stars), 2) FROM ratings'),
       await f('Most-rated film', 'SELECT m.title || \' (\' || count(*) || \' ratings, average \' || round(avg(r.stars), 2) || \')\' FROM ratings r JOIN movies m ON m.movie_id = r.movie_id GROUP BY m.movie_id, m.title ORDER BY count(*) DESC, m.title LIMIT 1'),
       await f('Highest average rating among films with at least 25 ratings', 'SELECT m.title || \' (\' || round(avg(r.stars), 2) || \' from \' || count(*) || \' ratings)\' FROM ratings r JOIN movies m ON m.movie_id = r.movie_id GROUP BY m.movie_id, m.title HAVING count(*) >= 25 ORDER BY avg(r.stars) DESC, m.title LIMIT 1'),
       await f('Director with the most films', "SELECT p.full_name || ' (' || count(*) || ' films)' FROM movie_cast c JOIN people p ON p.person_id = c.person_id WHERE c.role = 'director' GROUP BY p.person_id, p.full_name ORDER BY count(*) DESC, p.person_id LIMIT 1"),
       await f('Actor with the most credits', "SELECT p.full_name || ' (' || count(*) || ' films)' FROM movie_cast c JOIN people p ON p.person_id = c.person_id WHERE c.role = 'actor' GROUP BY p.person_id, p.full_name ORDER BY count(*) DESC, p.person_id LIMIT 1"),
       await f('Highest-grossing film (box_office_musd)', 'SELECT title || \' (\' || box_office_musd || \' million)\' FROM movies WHERE box_office_musd IS NOT NULL ORDER BY box_office_musd DESC LIMIT 1'),
-      await f('Films per age rating', 'SELECT age_rating, count(*) FROM movies GROUP BY 1 ORDER BY 1', 'pairs'),
       await f('Users per plan', 'SELECT plan, count(*) FROM users GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
       await f('Total minutes watched in the watch history', 'SELECT sum(minutes_watched) FROM watch_history', 'int'),
       await f('Plays per month (2024)', "SELECT to_char(started_at, 'YYYY-MM') AS month, count(*) FROM watch_history GROUP BY to_char(started_at, 'YYYY-MM') ORDER BY 1", 'pairs'),
@@ -2692,22 +2689,26 @@ function buildBank() {
     planted.bursts.push({ account: a.id, start: tstr(t0), n: plan.n, total: r2(sumDebits) });
   }
 
-  // (2) unusually large single debits: more than 10x the account's average debit
+  // (2) unusually large single debits. Each one is more than 10x the account's average debit AND more
+  // than 10x the average absolute amount over all of the account's rows (so both common ways of
+  // writing the "10x the account average" query find it).
   const largePlans = [
-    { txn: 'card_payment', merchant: 'Meridian Fine Jewelers', category: 'shopping', after: '2024-10-21', before: '2024-12-15' },
-    { txn: 'withdrawal', desc: 'Large cash withdrawal at branch', after: '2024-09-16', before: '2024-11-20' },
+    { txn: 'card_payment', merchant: 'Meridian Fine Jewelers', category: 'shopping', types: ['checking'], after: '2024-10-21', before: '2024-12-15' },
+    { txn: 'withdrawal', desc: 'Large cash withdrawal at branch', types: ['savings', 'checking'], after: '2024-09-16', before: '2024-11-20' },
   ];
   for (const plan of largePlans) {
     let best = null;
-    for (const a of accs.filter((x) => x.type === 'checking' && x.status === 'active' && x.opened < '2024-01-02' && !burstUsed.has(x.id))) {
+    for (const a of accs.filter((x) => plan.types.includes(x.type) && x.status === 'active' && x.opened < '2024-01-02' && !burstUsed.has(x.id))) {
       const rows = out.get(a.id);
       const debits = rows.filter((r) => r.amount < 0);
-      if (debits.length < 14) continue;
-      const D = sum(debits.map((r) => -r.amount));
+      const n = rows.length;
       const nd = debits.length;
+      if (n < 16 || nd < 11) continue;
+      const D = sum(debits.map((r) => -r.amount));
+      const sumAbs = sum(rows.map((r) => Math.abs(r.amount)));
+      const need = Math.max(1500, Math.ceil((11 * D) / (nd - 10) / 50) * 50, Math.ceil((11 * sumAbs) / (n - 10) / 50) * 50);
       const series = balanceSeries(a);
-      const need = Math.max(1500, Math.ceil((11 * D) / (nd - 10) / 50) * 50);
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < 8; k++) {
         const d = addDays(plan.after, rng.int(0, daysBetween(plan.after, plan.before)));
         const t = tsec(d, rng.int(10, 16), rng.int(0, 59), rng.int(0, 59));
         let minAfter = Infinity;
@@ -2718,21 +2719,29 @@ function buildBank() {
         });
         const room = Math.min(before, minAfter) + a.limit - 25;
         if (room < need) continue;
-        // prefer the account where the planted amount is the biggest multiple of its normal debit
-        const score = need / (D / nd);
-        if (!best || score > best.score) best = { a, t, amount: need + 50 * rng.int(0, 6), score, room };
+        const slack = room - need;
+        if (!best || slack < best.slack) best = { a, t, amount: Math.min(need + 50 * rng.int(0, 6), Math.floor(room / 50) * 50), need, slack };
       }
     }
     if (!best) throw new Error('bank: no account suitable for a large amount');
     const a = best.a;
-    const amount = Math.min(best.amount, Math.floor(best.room / 50) * 50);
     out.get(a.id).push({
-      t: best.t, amount: -amount, type: plan.txn, merchant: plan.merchant || null, category: plan.category || null,
+      t: best.t, amount: -best.amount, type: plan.txn, merchant: plan.merchant || null, category: plan.category || null,
       desc: plan.merchant ? `Card purchase - ${plan.merchant}` : plan.desc, acc: a.id, planted: true,
     });
-    out.get(a.id).sort((x, y) => x.t - y.t);
+    const rowsA = out.get(a.id);
+    rowsA.sort((x, y) => x.t - y.t);
+    if (a.type === 'savings') {
+      // interest after the withdrawal is earned on the smaller balance
+      const rate = personas.get(a.id).rateApy;
+      let bal = 0;
+      for (const r of rowsA) {
+        if (r.type === 'interest' && r.t > best.t) r.amount = r2((bal * rate) / 100 / 12);
+        bal = r2(bal + r.amount);
+      }
+    }
     burstUsed.add(a.id);
-    planted.large.push({ account: a.id, time: tstr(best.t), amount });
+    planted.large.push({ account: a.id, time: tstr(best.t), amount: best.amount });
   }
 
   // keep ordinary spending ordinary: no unplanted card payment / ATM withdrawal may be more than
@@ -2821,7 +2830,7 @@ function buildBank() {
       ['account_type', 'text', 'NOT NULL', 'checking, savings or credit'],
       ['opened_on', 'date', 'NOT NULL', 'Day the account was opened'],
       ['status', 'text', 'NOT NULL', 'active, frozen or closed'],
-      ['overdraft_limit', 'numeric(10,2)', 'NOT NULL DEFAULT 0', 'How far below zero the balance may go (the credit limit for credit accounts)'],
+      ['overdraft_limit', 'numeric(10,2)', 'NOT NULL DEFAULT 0 CHECK (overdraft_limit >= 0)', 'How far below zero the balance may go (the credit limit for credit accounts)'],
     ], accountRows),
     T('transactions', 'Every movement of money in 2024: positive amounts are money in, negative amounts are money out.', [
       ['txn_id', 'integer', 'PRIMARY KEY', 'Unique id of the transaction (ids are in time order)'],
@@ -2836,10 +2845,10 @@ function buildBank() {
     T('loans', 'Loans granted to customers.', [
       ['loan_id', 'integer', 'PRIMARY KEY', 'Unique id of the loan'],
       ['customer_id', 'integer', 'NOT NULL REFERENCES customers (customer_id)', 'Customer who borrowed the money'],
-      ['principal', 'numeric(12,2)', 'NOT NULL', 'Amount borrowed in dollars'],
+      ['principal', 'numeric(12,2)', 'NOT NULL CHECK (principal > 0)', 'Amount borrowed in dollars'],
       ['annual_rate', 'numeric(5,2)', 'NOT NULL', 'Yearly interest rate in percent (5.25 means 5.25%)'],
       ['start_date', 'date', 'NOT NULL', 'Day the loan was paid out'],
-      ['term_months', 'integer', 'NOT NULL', 'Length of the loan in months'],
+      ['term_months', 'integer', 'NOT NULL CHECK (term_months > 0)', 'Length of the loan in months'],
       ['status', 'text', 'NOT NULL', 'active, paid_off or defaulted'],
     ], loanRows),
   ];
@@ -2900,9 +2909,13 @@ async function docBank(q, ds) {
   const large = await q.rows("SELECT txn_id, account_id, txn_time::text AS txn_time, amount::text AS amount, description, round(-amount / avg_debit, 1)::text AS times_average FROM (SELECT t.*, avg(-amount) OVER (PARTITION BY account_id) AS avg_debit FROM transactions t WHERE amount < 0) x WHERE -amount > 10 * avg_debit ORDER BY account_id");
   must(large.length === 2, 'exactly two debits above 10x the average debit');
   const largeText = large.map((l) => `txn ${l.txn_id} on account ${l.account_id} (${l.txn_time}): ${money(l.amount)} - ${l.description}, ${l.times_average} times the account's average debit`).join('; ');
+  const largeAll = await q.rows("SELECT txn_id FROM (SELECT t.*, avg(abs(amount)) OVER (PARTITION BY account_id) AS av FROM transactions t) x WHERE abs(amount) > 10 * av AND description NOT IN ('Balance brought forward', 'Opening deposit') ORDER BY txn_id");
+  const largeAllWithOpening = await q.val("SELECT count(*) FROM (SELECT t.*, avg(abs(amount)) OVER (PARTITION BY account_id) AS av FROM transactions t) x WHERE abs(amount) > 10 * av");
+  must(largeAll.map((r) => r.txn_id).sort((a, b) => a - b).join() === large.map((r) => r.txn_id).sort((a, b) => a - b).join(), 'both definitions of a large amount flag the same two rows');
   const ln = await one('SELECT count(*) AS n, round(sum(principal), 2)::text AS total, min(principal)::text AS lo, max(principal)::text AS hi, min(annual_rate)::text AS r1, max(annual_rate)::text AS r2, min(start_date)::text AS s1, max(start_date)::text AS s2 FROM loans');
   const loanStatus = await list('SELECT status || \' \' || count(*) AS v FROM loans GROUP BY status ORDER BY count(*) DESC');
   const early = await q.val("SELECT count(*) FROM loans WHERE status = 'paid_off' AND start_date + (term_months || ' months')::interval > DATE '2024-12-31'");
+  const paidOff = await one("SELECT count(*) AS n FROM loans WHERE status = 'paid_off'");
   const multi = await q.val('SELECT count(*) FROM (SELECT customer_id FROM loans GROUP BY customer_id HAVING count(*) > 1) t');
   const badLoan = await q.val("SELECT count(*) FROM loans l JOIN customers c USING (customer_id) WHERE c.kyc_status <> 'verified' OR c.created_at > l.start_date");
   must(badLoan === 0, 'loans only for verified customers who joined before the loan');
@@ -2928,22 +2941,20 @@ async function docBank(q, ds) {
     quirks: [
       `**Customers without accounts:** ${noAcc} - anti-join practice; the rejected ones are what you would expect for failed identity checks. Customers with a rejected KYC status who do have accounts only have \`frozen\` ones.`,
       `**Three suspicious bursts** (at least 4 debits of 500 or more within the same clock hour; each burst fits into about 10 minutes): ${burstText}. They happen at night, on accounts that had enough money to cover them.`,
-      `**Two unusually large debits** (more than 10 times the account's average debit): ${largeText}.`,
-      `**Loan status consistency:** ${early === 0 ? 'every' : 'most'} \`paid_off\` loan has run its full term by the end of 2024${early === 0 ? '' : ` (${early} were repaid early)`}; no \`active\` loan has reached the end of its term; defaulted loans all have rates of at least ${defaultedRate.lo}%.`,
+      `**Two unusually large debits.** ${largeText}. Both are more than 10 times the average *debit* of their account (\`-amount > 10 * AVG(-amount)\` over the account's negative rows) **and** more than 10 times the average *absolute amount* of all the account's rows. If you use the second form on all rows you also catch ${largeAllWithOpening - 2} \`Balance brought forward\` / \`Opening deposit\` rows (opening balances are big compared with everyday transactions); exclude them by description and exactly these two remain.`,
+      `**Loan status consistency:** ${paidOff.n} loans are \`paid_off\`: ${paidOff.n - early} completed their full term by the end of 2024 and ${early} ${early === 1 ? 'was' : 'were'} repaid early; no \`active\` loan has reached the end of its term; defaulted loans all have rates of at least ${defaultedRate.lo}%.`,
       `**Year-end balances:** accounts with a negative balance on 2024-12-31 - ${endBal}. Negative checking balances are overdrafts; negative credit balances are debt.`,
       '`merchant` and `category` are NULL for every transaction that is not a `card_payment` (and set for every card payment).',
     ],
     facts: [
-      await f('Accounts by type', 'SELECT account_type, count(*) FROM accounts GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
       await f('Transactions by type (count)', 'SELECT txn_type, count(*) FROM transactions GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
-      await f('Total of all positive amounts / negative amounts', 'SELECT round(sum(amount) FILTER (WHERE amount > 0), 2) || \' / \' || round(sum(amount) FILTER (WHERE amount < 0), 2) FROM transactions'),
       await f('Salary deposits in total', "SELECT sum(amount) FROM transactions WHERE description LIKE 'Salary - %'", 'money'),
       await f('Month with the most transactions', "SELECT to_char(txn_time, 'YYYY-MM') || ' (' || count(*) || ' transactions)' FROM transactions GROUP BY to_char(txn_time, 'YYYY-MM') ORDER BY count(*) DESC LIMIT 1"),
-      await f('Largest card payment (including the planted ones)', "SELECT -amount || ' at ' || merchant || ' (account ' || account_id || ')' FROM transactions WHERE txn_type = 'card_payment' ORDER BY amount LIMIT 1"),
       await f('Card spending per category (dollars)', "SELECT category, round(-sum(amount), 2) FROM transactions WHERE txn_type = 'card_payment' GROUP BY 1 ORDER BY 2 DESC", 'pairs'),
       await f('Average year-end balance per account type', 'SELECT a.account_type, round(avg(b), 2) FROM (SELECT account_id, sum(amount) AS b FROM transactions GROUP BY account_id) t JOIN accounts a ON a.account_id = t.account_id GROUP BY 1 ORDER BY 1', 'pairs'),
       await f('Interest credited to savings accounts in 2024', "SELECT sum(t.amount) FROM transactions t JOIN accounts a ON a.account_id = t.account_id WHERE t.txn_type = 'interest' AND a.account_type = 'savings'", 'money'),
       await f('Burst detector: 4 or more debits of 500+ within one clock hour', "SELECT account_id, count(*) AS debits, min(txn_time)::text AS first_txn, sum(-amount) AS total FROM transactions WHERE amount <= -500 AND txn_type IN ('card_payment', 'withdrawal') GROUP BY account_id, date_trunc('hour', txn_time) HAVING count(*) >= 4 ORDER BY account_id", 'table'),
+      await f('Same two rows with the all-rows definition: abs(amount) above 10 times the average absolute amount (opening rows excluded)', "SELECT txn_id, account_id, amount, description FROM (SELECT t.*, avg(abs(amount)) OVER (PARTITION BY account_id) AS av FROM transactions t) x WHERE abs(amount) > 10 * av AND description NOT IN ('Balance brought forward', 'Opening deposit') ORDER BY account_id", 'table'),
       await f('Debits above 10 times the account\'s average debit', 'SELECT txn_id, account_id, amount, description FROM (SELECT t.*, avg(-amount) OVER (PARTITION BY account_id) AS avg_debit FROM transactions t WHERE amount < 0) x WHERE -amount > 10 * avg_debit ORDER BY account_id', 'table'),
       await f('Loans: count and total principal per status', 'SELECT status, count(*) || \' loans, \' || sum(principal) FROM loans GROUP BY 1 ORDER BY count(*) DESC', 'pairs'),
     ],
@@ -3210,14 +3221,14 @@ function buildApp() {
       ['subscription_id', 'integer', 'PRIMARY KEY', 'Unique id of the subscription'],
       ['user_id', 'integer', 'NOT NULL REFERENCES users (user_id)', 'User who subscribed'],
       ['plan', 'text', 'NOT NULL', 'monthly or annual'],
-      ['price', 'numeric(6,2)', 'NOT NULL', 'Price paid per billing period in dollars'],
+      ['price', 'numeric(6,2)', 'NOT NULL CHECK (price > 0)', 'Price paid per billing period in dollars'],
       ['started_at', 'date', 'NOT NULL', 'Day the subscription started'],
       ['cancelled_at', 'date', '', 'Day the subscription was cancelled (empty while still active)'],
     ], subRows),
     T('daily_steps', 'Daily step counts for a group of 40 users who connected their step tracker (March to May 2024). Days without a row mean the tracker sent nothing.', [
       ['user_id', 'integer', 'NOT NULL REFERENCES users (user_id)', 'User who walked'],
       ['day', 'date', 'NOT NULL', 'The calendar day'],
-      ['steps', 'integer', 'NOT NULL', 'Number of steps recorded that day'],
+      ['steps', 'integer', 'NOT NULL CHECK (steps >= 0)', 'Number of steps recorded that day'],
     ], stepRows, { constraints: ['PRIMARY KEY (user_id, day)'] }),
   ];
 
@@ -3303,7 +3314,6 @@ async function docApp(q, ds) {
     ],
     facts: [
       await f('Users who opened / started a workout / completed a workout / subscribed', "SELECT count(DISTINCT user_id) FILTER (WHERE event_name = 'app_open') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_started') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_completed') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'subscription_started') FROM events"),
-      await f('Events per type', 'SELECT event_name, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
       await f('Events per month', "SELECT to_char(event_time, 'YYYY-MM') AS month, count(*) FROM events GROUP BY to_char(event_time, 'YYYY-MM') ORDER BY 1", 'pairs'),
       await f('Busiest weekday (0 = Sunday) by number of events', 'SELECT extract(dow FROM event_time)::int AS dow, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC LIMIT 3', 'pairs'),
       await f('Busiest hour of the day by number of events', 'SELECT extract(hour FROM event_time)::int AS hour, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC LIMIT 3', 'pairs'),
@@ -3313,7 +3323,6 @@ async function docApp(q, ds) {
       await f('Median days from signup to first subscription', 'SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY s.started_at - u.signup_date) FROM (SELECT user_id, min(started_at) AS started_at FROM subscriptions GROUP BY user_id) s JOIN users u ON u.user_id = s.user_id'),
       await f('Average completed workout duration and calories per type', "SELECT properties->>'workout_type' AS workout_type, round(avg((properties->>'duration_min')::int), 1) || ' min, ' || round(avg((properties->>'calories')::int)) || ' kcal' FROM events WHERE event_name = 'workout_completed' GROUP BY 1 ORDER BY 1", 'pairs'),
       await f('Longest streak of consecutive step-tracking days', "WITH d AS (SELECT user_id, day, day - (row_number() OVER (PARTITION BY user_id ORDER BY day))::int AS g FROM daily_steps) SELECT 'user ' || user_id || ': ' || count(*) || ' days' FROM d GROUP BY user_id, g ORDER BY count(*) DESC, user_id LIMIT 1"),
-      await f('Most active user (events)', 'SELECT user_id || \' (\' || count(*) || \' events)\' FROM events GROUP BY user_id ORDER BY count(*) DESC, user_id LIMIT 1'),
     ],
     topics: [
       'Funnels (open -> workout_started -> workout_completed -> subscription) overall and by platform, referral source or country; conversion with `COUNT(DISTINCT ...) FILTER`.',
@@ -3568,14 +3577,14 @@ function buildSchool() {
       ['title', 'text', 'NOT NULL', 'Course title'],
       ['subject', 'text', 'NOT NULL', 'Subject area of the course'],
       ['teacher_id', 'integer', 'REFERENCES teachers (teacher_id)', 'Teacher who teaches the course (empty if nobody is assigned yet)'],
-      ['credits', 'integer', 'NOT NULL', 'Credits earned for completing the course'],
+      ['credits', 'integer', 'NOT NULL CHECK (credits > 0)', 'Credits earned for completing the course'],
       ['room', 'text', 'NOT NULL', 'Classroom where the course meets'],
     ], courseRows),
     T('enrollments', 'Which student takes which course in which term, with the final score once it is known.', [
       ['student_id', 'integer', 'NOT NULL REFERENCES students (student_id)', 'The student'],
       ['course_id', 'integer', 'NOT NULL REFERENCES courses (course_id)', 'The course'],
       ['term', 'text', 'NOT NULL', 'School term: 2024-Fall or 2025-Spring'],
-      ['final_score', 'numeric(5,2)', '', 'Final course score from 0 to 100 (empty while the course is still running or the score is missing)'],
+      ['final_score', 'numeric(5,2)', 'CHECK (final_score BETWEEN 0 AND 100)', 'Final course score from 0 to 100 (empty while the course is still running or the score is missing)'],
     ], enrollRows, { constraints: ['PRIMARY KEY (student_id, course_id, term)'] }),
     T('exam_scores', 'Individual quiz, midterm and final exam results.', [
       ['exam_id', 'integer', 'PRIMARY KEY', 'Unique id of the exam result'],
@@ -3583,7 +3592,7 @@ function buildSchool() {
       ['course_id', 'integer', 'NOT NULL REFERENCES courses (course_id)', 'Course the exam belongs to'],
       ['exam_date', 'date', 'NOT NULL', 'Day the exam was taken'],
       ['exam_type', 'text', 'NOT NULL', 'quiz, midterm or final'],
-      ['score', 'numeric(5,2)', 'NOT NULL', 'Score from 0 to 100'],
+      ['score', 'numeric(5,2)', 'NOT NULL CHECK (score BETWEEN 0 AND 100)', 'Score from 0 to 100'],
     ], examRows),
     T('clubs', 'Student clubs and the teacher who advises each one.', [
       ['club_id', 'integer', 'PRIMARY KEY', 'Unique id of the club'],
@@ -3674,7 +3683,6 @@ async function docSchool(q, ds) {
       'There is no letter-grade column: letter grades (A-F) are a good CASE WHEN exercise (A = 90 and up, B = 80-89, C = 70-79, D = 60-69, F = below 60).',
     ],
     facts: [
-      await f('Students / teachers / courses', "SELECT (SELECT count(*) FROM students) || ' / ' || (SELECT count(*) FROM teachers) || ' / ' || (SELECT count(*) FROM courses)"),
       await f('Enrollments per term', 'SELECT term, count(*) FROM enrollments GROUP BY 1 ORDER BY 1', 'pairs'),
       await f('Average final score of 2024-Fall by course (highest first)', "SELECT c.title, round(avg(e.final_score), 2) FROM enrollments e JOIN courses c ON c.course_id = e.course_id WHERE e.term = '2024-Fall' AND e.final_score IS NOT NULL GROUP BY c.course_id, c.title ORDER BY avg(e.final_score) DESC, c.title LIMIT 5", 'pairs'),
       await f('Student with the best average final score in 2024-Fall (at least 3 scored courses)', "SELECT s.first_name || ' ' || s.last_name || ' (student ' || s.student_id || ', ' || round(avg(e.final_score), 2) || ')' FROM enrollments e JOIN students s ON s.student_id = e.student_id WHERE e.term = '2024-Fall' AND e.final_score IS NOT NULL GROUP BY s.student_id, s.first_name, s.last_name HAVING count(*) >= 3 ORDER BY avg(e.final_score) DESC, s.student_id LIMIT 1"),
@@ -3682,7 +3690,6 @@ async function docSchool(q, ds) {
       await f('Fall enrollments below 60 (failing)', "SELECT count(*) FROM enrollments WHERE term = '2024-Fall' AND final_score < 60", 'int'),
       await f('Average exam score by exam type', 'SELECT exam_type, round(avg(score), 2) FROM exam_scores GROUP BY 1 ORDER BY 1', 'pairs'),
       await f('Students with no club', 'SELECT count(*) FROM students s WHERE NOT EXISTS (SELECT 1 FROM club_members m WHERE m.student_id = s.student_id)', 'int'),
-      await f('Largest club', 'SELECT c.name || \' (\' || count(*) || \' members)\' FROM club_members m JOIN clubs c ON c.club_id = m.club_id GROUP BY c.club_id, c.name ORDER BY count(*) DESC LIMIT 1'),
       await f('Average teacher salary by subject (top 3)', 'SELECT subject, round(avg(salary), 2) FROM teachers GROUP BY 1 ORDER BY avg(salary) DESC, subject LIMIT 3', 'pairs'),
       await f('Teacher teaching the most students in 2024-Fall', "SELECT t.full_name || ' (' || count(*) || ' enrollments)' FROM enrollments e JOIN courses c ON c.course_id = e.course_id JOIN teachers t ON t.teacher_id = c.teacher_id WHERE e.term = '2024-Fall' GROUP BY t.teacher_id, t.full_name ORDER BY count(*) DESC, t.teacher_id LIMIT 1"),
       await f('Grade-level averages of Fall final scores', "SELECT s.grade_level, round(avg(e.final_score), 2) FROM enrollments e JOIN students s ON s.student_id = e.student_id WHERE e.term = '2024-Fall' GROUP BY 1 ORDER BY 1", 'pairs'),
@@ -3881,6 +3888,7 @@ function buildMessy() {
     let cents = Math.round(clamp(rng.logNormal(Math.log(70), 0.9), 4.5, 2400) * 100);
     if (rng.chance(0.4)) cents = Math.floor(cents / 100) * 100 + 99;
     if (rng.chance(0.05)) cents = rng.int(100000, 450000); // a few big business orders (>= $1,000)
+    if (rng.chance(0.14)) cents = Math.max(500, Math.round(cents / 500) * 500); // round amounts such as 50 or 120
     const status = rng.weighted(STATUS_BASE, STATUS_W);
     const curBase = p && p.country.code === 'DE' && rng.chance(0.7) ? 'EUR' : 'USD';
     orderBase.push({
@@ -4353,7 +4361,7 @@ async function columnStats(q, t, c) {
   } else if (c.type === 'boolean') {
     const r = await q.rows(`SELECT ${col}::text AS v, count(*) AS n FROM ${t.name} GROUP BY 1 ORDER BY 1 DESC`);
     cell = r.map((x) => `${x.v === null ? 'NULL' : x.v} (${commas(x.n)})`).join(', ');
-  } else if (base.dist <= 12 && base.dist > 0 && (isKey ? base.dist <= 8 : (total - base.nulls) / base.dist >= 2)) {
+  } else if (base.dist <= (isKey ? 8 : 12) && base.dist > 0 && (total - base.nulls) / base.dist >= 2) {
     const r = await q.rows(`SELECT ${col}::text AS v, count(*) AS n FROM ${t.name} WHERE ${col} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1`);
     cell = r.map((x) => `${code(isNumericType(c.type) ? x.v : "'" + x.v + "'")} (${commas(x.n)})`).join(', ');
   } else if (isNumericType(c.type) || isTemporal(c.type)) {
@@ -4384,8 +4392,8 @@ This document describes the nine practice databases that SQL Quest lessons run o
 **Everything below is generated.** The tables, the catalog (\`content/datasets/catalog.json\`) and every number in this file come from \`scripts/gen-datasets.mjs\`, which builds the data with a seeded random number generator and then *queries the generated data* with PGlite to produce the statistics and "handy facts". If you need to change a dataset, change the generator and re-run it; do not edit \`public/datasets/*.sql\` or this file by hand.
 
 \`\`\`bash
-node scripts/gen-datasets.mjs      # regenerate SQL, catalog and this document (about a minute)
-node scripts/check-datasets.mjs    # load every dataset into a fresh PGlite and run sanity checks
+node scripts/gen-datasets.mjs      # regenerate SQL, catalog and this document (about 20 seconds)
+node scripts/check-datasets.mjs    # load every dataset into a fresh PGlite and run sanity checks (about 30 seconds)
 \`\`\`
 
 ## Ground rules that hold for every dataset
@@ -4502,16 +4510,16 @@ async function writeDocs(datasets, opts = {}) {
 // =============================================================================
 
 const REGISTRY = [
-  { build: typeof buildCafe === 'function' ? buildCafe : null, doc: typeof docCafe === 'function' ? docCafe : null },
-  { build: typeof buildShop === 'function' ? buildShop : null, doc: typeof docShop === 'function' ? docShop : null },
-  { build: typeof buildCompany === 'function' ? buildCompany : null, doc: typeof docCompany === 'function' ? docCompany : null },
-  { build: typeof buildMovies === 'function' ? buildMovies : null, doc: typeof docMovies === 'function' ? docMovies : null },
-  { build: typeof buildBank === 'function' ? buildBank : null, doc: typeof docBank === 'function' ? docBank : null },
-  { build: typeof buildApp === 'function' ? buildApp : null, doc: typeof docApp === 'function' ? docApp : null },
-  { build: typeof buildSchool === 'function' ? buildSchool : null, doc: typeof docSchool === 'function' ? docSchool : null },
-  { build: typeof buildMessy === 'function' ? buildMessy : null, doc: typeof docMessy === 'function' ? docMessy : null },
-  { build: typeof buildBlank === 'function' ? buildBlank : null, doc: typeof docBlank === 'function' ? docBlank : null },
-].filter((r) => r.build);
+  { build: buildCafe, doc: docCafe },
+  { build: buildShop, doc: docShop },
+  { build: buildCompany, doc: docCompany },
+  { build: buildMovies, doc: docMovies },
+  { build: buildBank, doc: docBank },
+  { build: buildApp, doc: docApp },
+  { build: buildSchool, doc: docSchool },
+  { build: buildMessy, doc: docMessy },
+  { build: buildBlank, doc: null },
+];
 
 async function main() {
   const args = process.argv.slice(2);

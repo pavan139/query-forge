@@ -17,7 +17,7 @@ CREATE TABLE employees (
     manager_id      integer REFERENCES employees (emp_id),
     job_title       text NOT NULL,
     hire_date       date NOT NULL,
-    salary          numeric(10,2) NOT NULL,
+    salary          numeric(10,2) NOT NULL CHECK (salary > 0),
     employment_type text NOT NULL,
     city            text NOT NULL,
     terminated_on   date
@@ -44,7 +44,7 @@ CREATE TABLE project_assignments (
     emp_id         integer NOT NULL REFERENCES employees (emp_id),
     project_id     integer NOT NULL REFERENCES projects (project_id),
     role           text NOT NULL,
-    hours_per_week integer NOT NULL,
+    hours_per_week integer NOT NULL CHECK (hours_per_week BETWEEN 1 AND 40),
     assigned_on    date NOT NULL,
     PRIMARY KEY (emp_id, project_id)
 );
