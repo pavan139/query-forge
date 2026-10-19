@@ -30,6 +30,8 @@ export function Celebrations() {
           if (sound) playSound('level');
           return;
         }
+        // Tiny XP amounts (reading a step) count silently.
+        if (e.type === 'xp' && e.amount < 5) return;
         const id = nextId++;
         setToasts((t) => [...t.slice(-4), { id, e }]);
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), e.type === 'achievement' ? 5000 : e.type === 'xp' ? 1800 : 3500);

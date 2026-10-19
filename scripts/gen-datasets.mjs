@@ -643,18 +643,24 @@ async function docCafe(q) {
   const closedDays = await q.val("SELECT count(*) FROM orders WHERE order_time::date IN ('2024-11-28', '2024-12-25')");
   const noServ = await q.val('SELECT count(*) FROM menu_items m WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.item_id = m.item_id)');
   const veganAvail = await q.val('SELECT count(*) FROM menu_items WHERE is_vegan');
+  const perDay = (await q.rows("WITH d AS (SELECT order_time::date AS d, count(*) AS n FROM orders GROUP BY 1) SELECT round(avg(n) FILTER (WHERE extract(dow FROM d) NOT IN (0, 6)), 2)::text AS weekday, round(avg(n) FILTER (WHERE extract(dow FROM d) IN (0, 6)), 2)::text AS weekend FROM d"))[0];
+  const tipsBy = await list("SELECT payment_method || ' ' || round(avg(tip), 2) AS v FROM orders GROUP BY payment_method ORDER BY payment_method");
+  const tipRange = (await q.rows('SELECT min(tip) FILTER (WHERE tip > 0)::text AS lo, max(tip)::text AS hi FROM orders'))[0];
+  const catUnits = await list('SELECT m.category || \' \' || sum(o.quantity) AS v FROM orders o JOIN menu_items m ON m.item_id = o.item_id GROUP BY m.category ORDER BY sum(o.quantity) DESC, m.category');
+  const bakerOrders = await q.val("SELECT count(*) FROM orders o JOIN staff s ON s.staff_id = o.staff_id WHERE s.role = 'Baker'");
+  const monthOrders = await list("SELECT to_char(order_time, 'Mon') || ' ' || count(*) AS v FROM orders GROUP BY date_trunc('month', order_time), to_char(order_time, 'Mon') ORDER BY date_trunc('month', order_time)");
 
   return {
     about:
       'The café is deliberately tiny so that learners can look at a whole table on one screen. Start single-table lessons with `menu_items` (32 rows) and `customers` (28 rows); `orders` is the only table big enough to need LIMIT and aggregation. ' +
       '"As of" date: **2024-12-31** (the last order is in the morning of that day).',
     conventions: [
-      `Orders cover **${span.a.slice(0, 10)} to ${span.b.slice(0, 10)}** (${span.days} of the 92 calendar days have at least one order). Order times are between ${String(span.h1).padStart(2, '0')}:00 and ${String(span.h2 + 1).padStart(2, '0')}:00 (opening hours 07:00-19:00, last hour is ${span.h2}:xx). Mornings (07:00-09:59) and lunch (12:00-13:59) are busiest; weekends are slightly busier than weekdays and December is the busiest month.`,
+      `Orders cover **${span.a.slice(0, 10)} to ${span.b.slice(0, 10)}** (${span.days} of the 92 calendar days have at least one order). Order times are between ${String(span.h1).padStart(2, '0')}:00 and ${String(span.h2 + 1).padStart(2, '0')}:00 (opening hours 07:00-19:00, last hour is ${span.h2}:xx). The busiest time of day is the morning rush (see the facts below); orders per month: ${monthOrders}. On days that have orders, a weekday averages ${perDay.weekday} orders and a Saturday or Sunday ${perDay.weekend}.`,
       `The café is closed on Thanksgiving (2024-11-28) and Christmas Day (2024-12-25): ${closedDays} orders on those two dates.`,
       'There is **no separate price column on orders**: the line total is `quantity * menu_items.price` (current menu price). `menu_items.is_available` describes today\'s menu, so past orders may contain items that are unavailable now. No order contains an item before its `added_on` date.',
-      'Coffee is the best-selling category by far, then pastries and sandwiches. Morning orders are mostly coffee and pastries, lunch orders mostly sandwiches and juice, afternoons coffee, tea and dessert.',
-      'Staff hierarchy has three levels: manager (staff 1) → shift leads (staff 2 the senior barista, staff 3 the head baker) → the rest. Bakers (staff 3 and 6) never serve orders, so `orders.staff_id` only contains baristas, cashiers and the manager.',
-      'Customers who joined the loyalty program are numbered in join-date order. Loyalty points grow with how long someone has been a member; they are **not** computed from the orders table.',
+      `Units sold per category (best first): ${catUnits}. The item mix follows the time of day: coffee and pastries in the morning, sandwiches and juice around lunch, coffee, tea and dessert in the afternoon.`,
+      `Staff hierarchy has three levels: manager (staff 1) → shift leads (staff 2 the senior barista, staff 3 the head baker) → the rest. Bakers (staff 3 and 6) do not work the counter: ${bakerOrders} orders were served by a baker, so \`orders.staff_id\` only contains baristas, cashiers and the manager.`,
+      'Customers who joined the loyalty program are numbered in join-date order. Loyalty points roughly track how long someone has been a member; they are **not** computed from the orders table.',
     ],
     quirks: [
       `**${(await q.val('SELECT count(*) FROM menu_items WHERE calories IS NULL'))} menu items have NULL calories:** ${nullCal}. (Teas have calories = 0, which is a real value and not NULL.)`,
@@ -662,7 +668,7 @@ async function docCafe(q) {
       `**${(await q.val('SELECT count(*) FROM customers WHERE email IS NULL'))} customers have no email** (customer_id ${noEmail}).`,
       `**Customers who never ordered:** customer_id ${neverOrdered} (anti-join / \`NOT EXISTS\` / \`LEFT JOIN ... IS NULL\` practice). Customers ${zeroPts} have 0 loyalty points; the maximum is ${await q.val('SELECT max(loyalty_points) FROM customers')}.`,
       `**Walk-in orders:** ${walk} of ${nOrders} orders (${((walk / nOrders) * 100).toFixed(0)}%) have \`customer_id\` NULL.`,
-      `**Tips:** ${nullTips} orders (${((nullTips / nOrders) * 100).toFixed(0)}%) have a NULL tip ("not recorded"), another ${zeroTips} have an explicit tip of 0.00; the rest are between 0.25 and 5.00. Cash payers tip less often than card or app payers.`,
+      `**Tips:** ${nullTips} orders (${((nullTips / nOrders) * 100).toFixed(0)}%) have a NULL tip ("not recorded"), another ${zeroTips} have an explicit tip of 0.00; the rest are between ${tipRange.lo} and ${tipRange.hi}. Average recorded tip by payment method: ${tipsBy} (cash payers tip the least).`,
       `**Quantity** is 1 for most orders; ${multi} orders have quantity 2 to 4.`,
       '`staff.manager_id` is NULL for exactly one person (the manager) and the table is a classic self-join / recursive-CTE example in miniature.',
     ],
@@ -1178,6 +1184,104 @@ function buildShop() {
       'Dates run from January 2023 to December 2024, with busy Black Friday seasons.',
     tables,
     extra: { NEVER_ORDERED_PRODUCTS: [...NEVER_ORDERED_PRODUCTS], INACTIVE, PRICE_CHANGE, unpaidOrders: [...unpaid], splitOrders: [...splitIds] },
+  };
+}
+
+// ---- documentation: shop ------------------------------------------------------------------
+async function docShop(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+  const ex = ds.extra;
+
+  const neverCust = await one("SELECT count(*) AS n, min(customer_id) AS lo, max(customer_id) AS hi, min(signup_date)::text AS s1, max(signup_date)::text AS s2 FROM customers c WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id)");
+  const neverProd = await list("SELECT product_id || ' ' || name AS v FROM products p WHERE NOT EXISTS (SELECT 1 FROM order_items i WHERE i.product_id = p.product_id) ORDER BY product_id");
+  const nullSup = await list('SELECT product_id || \' \' || name AS v FROM products WHERE supplier_id IS NULL ORDER BY product_id');
+  const inactive = await list('SELECT product_id || \' \' || name AS v FROM products WHERE NOT is_active ORDER BY product_id');
+  const zeroStock = await list('SELECT product_id::text AS v FROM products WHERE stock_qty = 0 ORDER BY product_id');
+  const nullSupEmail = await list('SELECT name AS v FROM suppliers WHERE contact_email IS NULL ORDER BY supplier_id');
+  const orderDates = await one('SELECT min(order_date)::text AS lo, max(order_date)::text AS hi, count(*) AS n FROM orders');
+  const years = await list("SELECT extract(year FROM order_date)::int || ': ' || count(*) AS v FROM orders GROUP BY extract(year FROM order_date) ORDER BY 1");
+  const months = await list("SELECT to_char(order_date, 'Mon') || ' ' || count(*) AS v FROM orders WHERE order_date >= '2024-01-01' GROUP BY date_trunc('month', order_date), to_char(order_date, 'Mon') ORDER BY date_trunc('month', order_date)");
+  const bf = await list("SELECT order_date::text || ' (' || count(*) || ' orders)' AS v FROM orders WHERE order_date IN ('2023-11-24', '2024-11-29') GROUP BY order_date ORDER BY order_date");
+  const statusShare = await list('SELECT status || \' \' || count(*) || \' (\' || round(100.0 * count(*) / (SELECT count(*) FROM orders), 1) || \'%)\' AS v FROM orders GROUP BY status ORDER BY count(*) DESC');
+  const proc = await one("SELECT count(*) AS n, min(order_date)::text AS lo FROM orders WHERE status = 'processing'");
+  const shipped = await one("SELECT count(*) AS n, count(*) FILTER (WHERE order_date < '2024-12-01') AS old FROM orders WHERE status = 'shipped'");
+  const noShipDate = await one("SELECT count(*) FILTER (WHERE shipped_date IS NULL) AS nulls, count(*) FILTER (WHERE shipped_date IS NULL AND status IN ('processing', 'cancelled')) AS expected FROM orders");
+  const codes = await list('SELECT discount_code || \' \' || count(*) AS v FROM orders WHERE discount_code IS NOT NULL GROUP BY discount_code ORDER BY count(*) DESC, discount_code');
+  const codeShare = await one('SELECT count(*) FILTER (WHERE discount_code IS NOT NULL) AS n, round(100.0 * count(*) FILTER (WHERE discount_code IS NOT NULL) / count(*), 1)::text AS pct FROM orders');
+  const noCodeDisc = await one('SELECT count(*) AS lines, count(*) FILTER (WHERE discount > 0) AS disc FROM order_items i JOIN orders o USING (order_id) WHERE o.discount_code IS NULL');
+  const priceDiff = await one('SELECT count(*) AS lines, count(DISTINCT i.product_id) AS prods FROM order_items i JOIN products p USING (product_id) WHERE i.unit_price <> p.price');
+  const priceChangeText = Object.entries(ex.PRICE_CHANGE).map(([id, [d, old]]) => `product ${id} (before ${d}: ${old.toFixed(2)})`).join(', ');
+  const pay = await one(`WITH t AS (SELECT order_id, round(sum(quantity * unit_price * (1 - discount)), 2) AS total FROM order_items GROUP BY order_id),
+    p AS (SELECT order_id, sum(amount) AS paid, count(*) AS n FROM payments GROUP BY order_id)
+    SELECT count(*) FILTER (WHERE p.order_id IS NULL AND o.status <> 'cancelled') AS unpaid,
+           count(*) FILTER (WHERE p.n = 2) AS split,
+           count(*) FILTER (WHERE p.order_id IS NOT NULL AND p.paid <> t.total) AS mismatch,
+           count(*) FILTER (WHERE p.order_id IS NOT NULL AND o.status = 'cancelled') AS paid_cancelled,
+           count(*) FILTER (WHERE p.order_id IS NULL AND o.status = 'cancelled') AS cancelled_unpaid
+    FROM orders o JOIN t USING (order_id) LEFT JOIN p USING (order_id)`);
+  const unpaidStatus = await list("WITH p AS (SELECT DISTINCT order_id FROM payments) SELECT o.status || ' ' || count(*) AS v FROM orders o WHERE o.status <> 'cancelled' AND NOT EXISTS (SELECT 1 FROM p WHERE p.order_id = o.order_id) GROUP BY o.status ORDER BY count(*) DESC, o.status");
+  const rev = await one('SELECT count(*) AS n, count(review_text) AS txt, round(avg(rating), 2)::text AS av, min(created_at)::text AS lo, max(created_at)::text AS hi FROM reviews');
+  const ratingDist = await list('SELECT rating || \' stars: \' || count(*) AS v FROM reviews GROUP BY rating ORDER BY rating DESC');
+  const badReviews = await q.val("SELECT count(*) FROM reviews r WHERE NOT EXISTS (SELECT 1 FROM order_items i JOIN orders o USING (order_id) WHERE o.customer_id = r.customer_id AND i.product_id = r.product_id AND o.status = 'delivered' AND o.order_date < r.created_at)");
+  const skew = await one("WITH c AS (SELECT customer_id, count(*) AS n FROM orders GROUP BY 1) SELECT max(n) AS mx, percentile_cont(0.5) WITHIN GROUP (ORDER BY n)::text AS med, count(*) FILTER (WHERE n = 1) AS once, count(*) AS buyers FROM c");
+  const signupOrder = await q.val('SELECT count(*) FROM customers a JOIN customers b ON b.customer_id = a.customer_id + 1 WHERE b.signup_date < a.signup_date');
+  const states = await one('SELECT count(DISTINCT state) AS states, count(DISTINCT city) AS cities FROM customers');
+  const segs = await list('SELECT segment || \' \' || count(*) AS v FROM customers GROUP BY segment ORDER BY count(*) DESC');
+  const giftShip = await q.val('SELECT count(*) FROM orders o JOIN customers c USING (customer_id) WHERE o.ship_city <> c.city');
+  const tree = await list('WITH RECURSIVE t AS (SELECT category_id, name, 1 AS depth FROM categories WHERE parent_id IS NULL UNION ALL SELECT c.category_id, c.name, t.depth + 1 FROM categories c JOIN t ON c.parent_id = t.category_id) SELECT \'level \' || depth || \': \' || count(*) AS v FROM t GROUP BY depth ORDER BY depth');
+  const emptyCats = await list('SELECT name AS v FROM categories c WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.category_id) ORDER BY category_id');
+
+  return {
+    about:
+      'ShopSmart is the workhorse dataset: eight related tables that are small enough to query instantly but rich enough for joins, aggregation, subqueries, CTEs, window functions and date analysis. ' +
+      'The "as of" date is **2024-12-31**: the newest orders are still being processed or shipped, and nothing is dated later.',
+    conventions: [
+      `**Dates.** Customers signed up between 2022-06-01 and 2024-10-31 (customer ids are in signup order: ${signupOrder} out-of-order pairs). Orders run **${orderDates.lo} to ${orderDates.hi}** (${commas(orderDates.n)} orders); every order is placed after its customer's signup date. Orders per year: ${years}. 2024 orders per month: ${months}.`,
+      `**Seasonality and growth.** Order volume is lowest in January and February, grows through the year and peaks in November and December, with spikes on Black Friday (${bf}). 2024 has clearly more orders than 2023 because the customer base grew.`,
+      `**Order status** share: ${statusShare}. \`processing\` orders are the newest ones (${proc.n} orders, oldest from ${proc.lo}). ${shipped.n} orders are \`shipped\`; ${shipped.old} of them were placed before 2024-12-01 and are "stuck" in shipped (lost parcels) - a deliberate oddity you can query. \`shipped_date\` is on or after \`order_date\` (0 to 5 days later) and is NULL exactly for \`processing\` and \`cancelled\` orders (${noShipDate.nulls} NULLs, ${noShipDate.expected} of them expected).`,
+      `**Order total.** There is no total column. The total of an order is \`ROUND(SUM(quantity * unit_price * (1 - discount)), 2)\` over its \`order_items\`, and the \`payments\` of that order add up to exactly this amount (${pay.mismatch} orders differ).`,
+      `**Discount codes** appear on ${codeShare.n} orders (${codeShare.pct}%): ${codes}. A code fixes the line discount of the whole order: WELCOME10 = 0.10 (first orders), SUMMER15 = 0.15 (mid-June to August), BLACKFRIDAY = 0.20 (Black Friday window), LOYALTY5 = 0.05 (repeat customers), FREESHIP = 0 (free shipping only). Orders *without* a code have discount 0 on most lines; ${noCodeDisc.disc} of their ${commas(noCodeDisc.lines)} lines carry a 0.05 or 0.10 clearance discount.`,
+      `**Prices over time.** \`order_items.unit_price\` is the price at the time of the order. It equals \`products.price\` for most lines, but ${priceDiff.prods} products changed price during the period, so ${priceDiff.lines} lines differ from today's price: ${priceChangeText}. Always use \`order_items.unit_price\` for revenue, never \`products.price\`.`,
+      `**Order size.** 1 to 5 distinct products per order; the same product never appears twice in one order (UNIQUE on order_id + product_id). Quantities are mostly 1; cheap products (under $20) are often bought in 2 to 5 units, expensive ones (over $500) always 1.`,
+      `**Customer behaviour is skewed.** ${skew.buyers} customers have orders: the most active has ${skew.mx} orders, the median is ${skew.med}, and ${skew.once} customers ordered exactly once. Customers live in ${states.cities} cities in ${states.states} states; segments: ${segs}. For ${commas(giftShip)} orders \`ship_city\` differs from the customer's own city (gifts).`,
+      `**Reviews** (${rev.n} rows, ${rev.lo} to ${rev.hi}) are written only by customers who received a *delivered* order containing the product, and always after that order (${badReviews} violations). Ratings are skewed to 4 and 5 stars: ${ratingDist} (average ${rev.av}). ${rev.n - rev.txt} reviews have no text.`,
+      `**Category tree.** ${tree}. Products only point to leaf or mid-level categories; categories without any product: ${emptyCats}.`,
+    ],
+    quirks: [
+      `**Customers ${neverCust.lo} to ${neverCust.hi} never ordered** (${neverCust.n} customers, all signed up between ${neverCust.s1} and ${neverCust.s2}): the classic \`LEFT JOIN ... WHERE o.order_id IS NULL\` / \`NOT EXISTS\` exercise.`,
+      `**Products never ordered:** ${neverProd}.`,
+      `**Products with NULL supplier_id:** ${nullSup}.`,
+      `**Inactive products** (\`is_active = FALSE\`): ${inactive}. They have no orders after they were discontinued. **Products with stock_qty = 0:** ids ${zeroStock}.`,
+      `**Suppliers without a contact email:** ${nullSupEmail}. **Customers without a phone:** ${await q.val('SELECT count(*) FROM customers WHERE phone IS NULL')}; **without a birth_date:** ${await q.val('SELECT count(*) FROM customers WHERE birth_date IS NULL')}.`,
+      `**Unpaid orders:** ${pay.unpaid} non-cancelled orders have no payment row (${unpaidStatus}). Cancelled orders never have payments (${pay.paid_cancelled} do, ${pay.cancelled_unpaid} don't).`,
+      `**Split payments:** ${pay.split} orders were paid in two payments (often a gift card plus card or PayPal). Returned orders were paid in full - there are no refund rows or negative payments.`,
+      `**Order status vs. dates.** \`shipped_date\` is NULL for ${noShipDate.nulls} orders; \`discount_code\` is NULL for ${commas(await q.val('SELECT count(*) FROM orders WHERE discount_code IS NULL'))} orders.`,
+    ],
+    facts: [
+      await f('Orders by status', 'SELECT status, count(*) FROM orders GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
+      await f('Revenue of delivered orders (all time)', "SELECT sum(i.quantity * i.unit_price * (1 - i.discount)) FROM order_items i JOIN orders o ON o.order_id = i.order_id WHERE o.status = 'delivered'", 'money'),
+      await f('Revenue of delivered orders placed in 2024', "SELECT sum(i.quantity * i.unit_price * (1 - i.discount)) FROM order_items i JOIN orders o ON o.order_id = i.order_id WHERE o.status = 'delivered' AND o.order_date >= '2024-01-01'", 'money'),
+      await f('Number of orders placed in 2024', "SELECT count(*) FROM orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'", 'int'),
+      await f('Average delivered order value', "SELECT round(avg(t.total), 2) FROM (SELECT o.order_id, sum(i.quantity * i.unit_price * (1 - i.discount)) AS total FROM orders o JOIN order_items i ON i.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY o.order_id) t", 'money'),
+      await f('Month with the most orders', "SELECT to_char(order_date, 'YYYY-MM') || ' (' || count(*) || ' orders)' FROM orders GROUP BY 1 ORDER BY count(*) DESC LIMIT 1"),
+      await f('Best-selling product by units (delivered orders)', "SELECT p.name || ' (' || sum(i.quantity) || ' units)' FROM order_items i JOIN orders o ON o.order_id = i.order_id JOIN products p ON p.product_id = i.product_id WHERE o.status = 'delivered' GROUP BY p.product_id, p.name ORDER BY sum(i.quantity) DESC, p.name LIMIT 1"),
+      await f('Top customer by delivered revenue', "SELECT c.first_name || ' ' || c.last_name || ' (customer ' || c.customer_id || ', ' || round(sum(i.quantity * i.unit_price * (1 - i.discount)), 2) || ')' FROM customers c JOIN orders o ON o.customer_id = c.customer_id JOIN order_items i ON i.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY sum(i.quantity * i.unit_price * (1 - i.discount)) DESC LIMIT 1"),
+      await f('Payments received by method (count and dollars)', "SELECT method, count(*) || ' / ' || round(sum(amount), 2) FROM payments GROUP BY 1 ORDER BY sum(amount) DESC", 'pairs'),
+      await f('Average review rating', 'SELECT round(avg(rating), 2) FROM reviews'),
+      await f('Products with at least 8 reviews, best average first', 'SELECT p.name, round(avg(r.rating), 2) || \' (\' || count(*) || \' reviews)\' AS rating FROM reviews r JOIN products p ON p.product_id = r.product_id GROUP BY p.product_id, p.name HAVING count(*) >= 8 ORDER BY avg(r.rating) DESC, p.name LIMIT 3', 'pairs'),
+      await f('Orders using a discount code', 'SELECT count(*) FROM orders WHERE discount_code IS NOT NULL', 'int'),
+    ],
+    topics: [
+      'INNER / LEFT JOIN across `customers`, `orders`, `order_items`, `products`, `categories`; anti-joins for customers 141-150 and the never-ordered products.',
+      'GROUP BY / HAVING for revenue per category, month, segment or state; conditional aggregation with `FILTER` and `CASE`.',
+      'Subqueries and CTEs: order totals, customers above the average, products never ordered, top-N per group.',
+      'Self-referencing `categories` (3 levels) with recursive CTEs.',
+      'Window functions: running revenue per month, rank customers by spend, previous order date per customer (`LAG`).',
+      'Date analysis: seasonality, 2023 vs 2024, days between order and shipment.',
+      'Data-quality reasoning: unpaid orders, split payments, price changes, stuck shipments.',
+    ],
   };
 }
 
@@ -3573,7 +3677,7 @@ const isTemporal = (t) => /^(date|timestamp)/.test(t);
 /** value-range / enumerated-values cell for the column table */
 async function columnStats(q, t, c) {
   const col = c.name;
-  const isKey = /PRIMARY KEY/.test(c.constraints) || t.constraints.some((k) => /PRIMARY KEY/.test(k) && new RegExp(`\\b${col}\\b`).test(k));
+  const isKey = /PRIMARY KEY|REFERENCES/.test(c.constraints) || t.constraints.some((k) => /PRIMARY KEY/.test(k) && new RegExp(`\\b${col}\\b`).test(k));
   const base = (await q.rows(`SELECT count(*) FILTER (WHERE ${col} IS NULL) AS nulls, count(DISTINCT ${col}) AS dist FROM ${t.name}`))[0];
   let cell = '';
   const total = t.rows.length;
@@ -3582,7 +3686,7 @@ async function columnStats(q, t, c) {
   } else if (c.type === 'boolean') {
     const r = await q.rows(`SELECT ${col}::text AS v, count(*) AS n FROM ${t.name} GROUP BY 1 ORDER BY 1 DESC`);
     cell = r.map((x) => `${x.v === null ? 'NULL' : x.v} (${commas(x.n)})`).join(', ');
-  } else if (base.dist <= 12 && !isKey && base.dist > 0) {
+  } else if (base.dist <= 12 && base.dist > 0 && (isKey ? base.dist <= 8 : (total - base.nulls) / base.dist >= 2)) {
     const r = await q.rows(`SELECT ${col}::text AS v, count(*) AS n FROM ${t.name} WHERE ${col} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1`);
     cell = r.map((x) => `${code(isNumericType(c.type) ? x.v : "'" + x.v + "'")} (${commas(x.n)})`).join(', ');
   } else if (isNumericType(c.type) || isTemporal(c.type)) {
@@ -3677,6 +3781,7 @@ async function writeDocs(datasets, opts = {}) {
     await db.exec(ds.sql);
     const info = ds.doc ? await ds.doc(q, ds) : {};
 
+    if (info.about) out.push(info.about, '');
     out.push('### Tables', '');
     out.push('| table | rows | what it holds |', '|---|---|---|');
     for (const t of ds.tables) out.push(`| ${code(t.name)} | ${commas(t.rows.length)} | ${esc(t.description)} |`);
@@ -3684,7 +3789,6 @@ async function writeDocs(datasets, opts = {}) {
     out.push('### Relationships', '');
     const rel = relationshipLines(ds);
     out.push(...(rel.length ? rel : ['- none']), '');
-    if (info.about) out.push(info.about, '');
 
     out.push('### Columns', '');
     for (const t of ds.tables) {

@@ -115,6 +115,7 @@ function ExerciseView({ step, dataset, done, draftKey, onDone, test }: { step: E
         solved={done && !test}
         onPass={(p: PassInfo) => onDone({ attempts: p.attempts, hints: p.hints, revealed: p.revealed })}
         onSubmit={(correct, sql) => test?.onAnswer(correct, sql)}
+        showSchema={typeof window !== 'undefined' && window.innerWidth >= 1280}
       />
     </div>
   );

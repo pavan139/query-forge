@@ -301,6 +301,8 @@ export const useStore = create<AppState>()(
         if (amount <= 0) return;
         const today = dayKey();
         const before = levelFromXp(get().totalXp).level;
+        const goal = get().profile.dailyGoal;
+        const todayBefore = get().xpByDay[today] ?? 0;
         const h = new Date().getHours();
         set((s) => ({
           totalXp: s.totalXp + amount,
@@ -309,6 +311,10 @@ export const useStore = create<AppState>()(
           counters: { ...s.counters, nightOwl: s.counters.nightOwl || h >= 22, earlyBird: s.counters.earlyBird || (h >= 4 && h < 7) },
         }));
         emit({ type: 'xp', amount, reason });
+        if (todayBefore < goal && todayBefore + amount >= goal) {
+          emit({ type: 'toast', tone: 'success', message: `🎯 Daily goal reached — ${goal} XP today! Great work.` });
+          emit({ type: 'confetti' });
+        }
         const after = levelFromXp(get().totalXp).level;
         if (after > before) {
           const t = titleFor(after);

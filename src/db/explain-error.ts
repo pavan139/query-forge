@@ -72,7 +72,8 @@ export function explainError(err: SqlError, sql: string, names: NameHints = { ta
           tips: [`Write '${col}' (single quotes) instead of "${col}".`, "Remember: 'single quotes' = text value, \"double quotes\" = column/table name."],
         };
       }
-      const dym = closest(col.split('.').pop() ?? col, names.columns);
+      const pgHint = /Perhaps you meant to reference the column "([^"]+)"/.exec(err.hint ?? '')?.[1];
+      const dym = pgHint ?? closest(col.split('.').pop() ?? col, names.columns);
       const isAlias = /column "?\w+"? does not exist/.test(msg) && /\bAS\b/i.test(stmt) && /\b(WHERE|GROUP BY|HAVING)\b/i.test(stmt);
       return {
         title: `There is no column called "${col}"`,
