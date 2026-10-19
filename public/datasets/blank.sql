@@ -1,0 +1,1 @@
+-- Blank database: it starts empty. Create your own tables with CREATE TABLE!

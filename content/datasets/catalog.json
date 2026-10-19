@@ -1,0 +1,1714 @@
+[
+  {
+    "id": "cafe",
+    "name": "Bean & Bloom Café",
+    "icon": "☕",
+    "tagline": "A tiny neighborhood café: perfect for your very first queries.",
+    "description": "Bean & Bloom is a cosy café with a short menu, a handful of regulars and a few months of orders. The tables are small enough to read at a glance, so it is the ideal place to learn SELECT, WHERE, ORDER BY and your first JOIN. Some values are missing on purpose (emails, calories, tips) so you can meet NULL early.",
+    "tables": [
+      {
+        "name": "menu_items",
+        "description": "Everything on the menu: one row per drink, pastry, sandwich, dessert or juice.",
+        "rowCount": 32,
+        "columns": [
+          {
+            "name": "item_id",
+            "type": "integer",
+            "description": "Unique id of the menu item (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Name of the item as printed on the menu"
+          },
+          {
+            "name": "category",
+            "type": "text",
+            "description": "Menu section: Coffee, Tea, Pastry, Sandwich, Dessert or Juice"
+          },
+          {
+            "name": "price",
+            "type": "numeric(5,2)",
+            "description": "Current price in dollars"
+          },
+          {
+            "name": "calories",
+            "type": "integer",
+            "description": "Calories per serving (empty when we have not measured it yet)"
+          },
+          {
+            "name": "is_vegan",
+            "type": "boolean",
+            "description": "TRUE if the item contains no animal products"
+          },
+          {
+            "name": "is_available",
+            "type": "boolean",
+            "description": "TRUE if we can sell it today"
+          },
+          {
+            "name": "added_on",
+            "type": "date",
+            "description": "Date the item was added to the menu"
+          }
+        ]
+      },
+      {
+        "name": "customers",
+        "description": "Café regulars who joined the loyalty program.",
+        "rowCount": 28,
+        "columns": [
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Unique id of the customer (primary key)"
+          },
+          {
+            "name": "first_name",
+            "type": "text",
+            "description": "Given name"
+          },
+          {
+            "name": "last_name",
+            "type": "text",
+            "description": "Family name"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "Email address (empty if the customer did not share one)"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City where the customer lives"
+          },
+          {
+            "name": "joined_on",
+            "type": "date",
+            "description": "Date the customer joined the loyalty program"
+          },
+          {
+            "name": "loyalty_points",
+            "type": "integer",
+            "description": "Loyalty points collected so far"
+          }
+        ]
+      },
+      {
+        "name": "staff",
+        "description": "The café team, including who reports to whom.",
+        "rowCount": 10,
+        "columns": [
+          {
+            "name": "staff_id",
+            "type": "integer",
+            "description": "Unique id of the staff member (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Full name"
+          },
+          {
+            "name": "role",
+            "type": "text",
+            "description": "Job role: Manager, Barista, Baker or Cashier"
+          },
+          {
+            "name": "hourly_rate",
+            "type": "numeric(5,2)",
+            "description": "Pay per hour in dollars"
+          },
+          {
+            "name": "hired_on",
+            "type": "date",
+            "description": "Date the person was hired"
+          },
+          {
+            "name": "manager_id",
+            "type": "integer",
+            "description": "The staff member this person reports to (empty for the top manager) → staff.staff_id"
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "description": "One row per order: a single menu item (with a quantity) bought by a customer or a walk-in.",
+        "rowCount": 180,
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "integer",
+            "description": "Unique id of the order (primary key)"
+          },
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Who ordered (empty for walk-in customers without a loyalty card) → customers.customer_id"
+          },
+          {
+            "name": "item_id",
+            "type": "integer",
+            "description": "What was ordered → menu_items.item_id"
+          },
+          {
+            "name": "staff_id",
+            "type": "integer",
+            "description": "Staff member who served the order → staff.staff_id"
+          },
+          {
+            "name": "quantity",
+            "type": "integer",
+            "description": "How many of the item were ordered"
+          },
+          {
+            "name": "order_time",
+            "type": "timestamp",
+            "description": "Date and time the order was placed"
+          },
+          {
+            "name": "payment_method",
+            "type": "text",
+            "description": "How the customer paid: cash, card or app"
+          },
+          {
+            "name": "tip",
+            "type": "numeric(4,2)",
+            "description": "Tip in dollars (empty when no tip information was recorded)"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "shop",
+    "name": "ShopSmart",
+    "icon": "🛒",
+    "tagline": "An online store with customers, orders, payments and reviews.",
+    "description": "ShopSmart is a small online store with two years of orders, 60 products, 150 customers and their payments and reviews. It is the main playground for joins, GROUP BY, subqueries and CTEs, with realistic quirks like customers who never ordered and orders that are not paid yet. Dates run from January 2023 to December 2024, with busy Black Friday seasons.",
+    "tables": [
+      {
+        "name": "categories",
+        "description": "Product categories arranged as a tree: top-level departments with sub-categories below them.",
+        "rowCount": 14,
+        "columns": [
+          {
+            "name": "category_id",
+            "type": "integer",
+            "description": "Unique id of the category (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Category name"
+          },
+          {
+            "name": "parent_id",
+            "type": "integer",
+            "description": "The category this one sits under (empty for top-level departments) → categories.category_id"
+          }
+        ]
+      },
+      {
+        "name": "suppliers",
+        "description": "Companies that supply the products we sell.",
+        "rowCount": 8,
+        "columns": [
+          {
+            "name": "supplier_id",
+            "type": "integer",
+            "description": "Unique id of the supplier (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Company name"
+          },
+          {
+            "name": "country",
+            "type": "text",
+            "description": "Country where the supplier is based"
+          },
+          {
+            "name": "contact_email",
+            "type": "text",
+            "description": "Contact email (empty if we do not have one)"
+          }
+        ]
+      },
+      {
+        "name": "products",
+        "description": "The product catalog: one row per item we sell, with price, cost and stock.",
+        "rowCount": 60,
+        "columns": [
+          {
+            "name": "product_id",
+            "type": "integer",
+            "description": "Unique id of the product (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Product name"
+          },
+          {
+            "name": "category_id",
+            "type": "integer",
+            "description": "Category the product belongs to → categories.category_id"
+          },
+          {
+            "name": "supplier_id",
+            "type": "integer",
+            "description": "Who supplies the product (empty when sourced directly) → suppliers.supplier_id"
+          },
+          {
+            "name": "price",
+            "type": "numeric(10,2)",
+            "description": "Current selling price in dollars"
+          },
+          {
+            "name": "cost",
+            "type": "numeric(10,2)",
+            "description": "What the product costs us, in dollars"
+          },
+          {
+            "name": "stock_qty",
+            "type": "integer",
+            "description": "Units currently in the warehouse"
+          },
+          {
+            "name": "is_active",
+            "type": "boolean",
+            "description": "TRUE if the product is still for sale"
+          },
+          {
+            "name": "created_at",
+            "type": "date",
+            "description": "Date the product was added to the catalog"
+          }
+        ]
+      },
+      {
+        "name": "customers",
+        "description": "People who have created an account on the shop.",
+        "rowCount": 150,
+        "columns": [
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Unique id of the customer (primary key)"
+          },
+          {
+            "name": "first_name",
+            "type": "text",
+            "description": "Given name"
+          },
+          {
+            "name": "last_name",
+            "type": "text",
+            "description": "Family name"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "Email address (unique per customer)"
+          },
+          {
+            "name": "phone",
+            "type": "text",
+            "description": "Phone number (empty if not provided)"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City where the customer lives"
+          },
+          {
+            "name": "state",
+            "type": "text",
+            "description": "Two-letter US state code"
+          },
+          {
+            "name": "signup_date",
+            "type": "date",
+            "description": "Date the account was created"
+          },
+          {
+            "name": "birth_date",
+            "type": "date",
+            "description": "Date of birth (empty if not provided)"
+          },
+          {
+            "name": "segment",
+            "type": "text",
+            "description": "Customer type: Consumer, Corporate or Home Office"
+          }
+        ]
+      },
+      {
+        "name": "orders",
+        "description": "One row per order placed in the shop.",
+        "rowCount": 900,
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "integer",
+            "description": "Unique id of the order (primary key)"
+          },
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Customer who placed the order → customers.customer_id"
+          },
+          {
+            "name": "order_date",
+            "type": "date",
+            "description": "Day the order was placed"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "description": "Order status: processing, shipped, delivered, cancelled or returned"
+          },
+          {
+            "name": "shipped_date",
+            "type": "date",
+            "description": "Day the order left the warehouse (empty if it has not shipped, or was cancelled)"
+          },
+          {
+            "name": "ship_city",
+            "type": "text",
+            "description": "City the order is shipped to"
+          },
+          {
+            "name": "discount_code",
+            "type": "text",
+            "description": "Promo code used at checkout (empty when no code was used)"
+          }
+        ]
+      },
+      {
+        "name": "order_items",
+        "description": "The products inside each order (one row per product per order).",
+        "rowCount": 2296,
+        "columns": [
+          {
+            "name": "order_item_id",
+            "type": "integer",
+            "description": "Unique id of the order line (primary key)"
+          },
+          {
+            "name": "order_id",
+            "type": "integer",
+            "description": "Order this line belongs to → orders.order_id"
+          },
+          {
+            "name": "product_id",
+            "type": "integer",
+            "description": "Product that was bought → products.product_id"
+          },
+          {
+            "name": "quantity",
+            "type": "integer",
+            "description": "How many units were bought"
+          },
+          {
+            "name": "unit_price",
+            "type": "numeric(10,2)",
+            "description": "Price per unit at the time of the order, in dollars"
+          },
+          {
+            "name": "discount",
+            "type": "numeric(3,2)",
+            "description": "Discount on this line as a fraction (0.10 = 10% off)"
+          }
+        ]
+      },
+      {
+        "name": "payments",
+        "description": "Payments received for orders (an order can be paid in more than one payment).",
+        "rowCount": 778,
+        "columns": [
+          {
+            "name": "payment_id",
+            "type": "integer",
+            "description": "Unique id of the payment (primary key)"
+          },
+          {
+            "name": "order_id",
+            "type": "integer",
+            "description": "Order the payment is for → orders.order_id"
+          },
+          {
+            "name": "amount",
+            "type": "numeric(10,2)",
+            "description": "Amount paid in dollars"
+          },
+          {
+            "name": "method",
+            "type": "text",
+            "description": "Payment method: card, paypal, gift_card or bank_transfer"
+          },
+          {
+            "name": "paid_at",
+            "type": "timestamp",
+            "description": "Date and time the payment was received"
+          }
+        ]
+      },
+      {
+        "name": "reviews",
+        "description": "Star ratings and comments written by customers about products they bought.",
+        "rowCount": 320,
+        "columns": [
+          {
+            "name": "review_id",
+            "type": "integer",
+            "description": "Unique id of the review (primary key)"
+          },
+          {
+            "name": "product_id",
+            "type": "integer",
+            "description": "Product being reviewed → products.product_id"
+          },
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Customer who wrote the review → customers.customer_id"
+          },
+          {
+            "name": "rating",
+            "type": "integer",
+            "description": "Star rating from 1 (bad) to 5 (great)"
+          },
+          {
+            "name": "review_text",
+            "type": "text",
+            "description": "Written comment (empty when the customer only left stars)"
+          },
+          {
+            "name": "created_at",
+            "type": "date",
+            "description": "Day the review was written"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "company",
+    "name": "Acme Corp",
+    "icon": "🏢",
+    "tagline": "Departments, employees, managers, salaries and projects.",
+    "description": "Acme Corp is a mid-sized company with 55 employees spread across seven departments and a five-level management chain from the CEO down to individual contributors. Use it to learn self joins, recursive CTEs and window functions such as RANK() over salaries, and to practice finding departments without people. It also has a full salary history and a handful of projects with assignments.",
+    "tables": [
+      {
+        "name": "departments",
+        "description": "The departments of Acme Corp, with where they are based and their yearly budget.",
+        "rowCount": 7,
+        "columns": [
+          {
+            "name": "dept_id",
+            "type": "integer",
+            "description": "Unique id of the department (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Department name"
+          },
+          {
+            "name": "location",
+            "type": "text",
+            "description": "City where the department is headquartered"
+          },
+          {
+            "name": "budget",
+            "type": "numeric(12,2)",
+            "description": "Yearly budget in dollars"
+          }
+        ]
+      },
+      {
+        "name": "employees",
+        "description": "Everyone who works (or used to work) at Acme Corp, including who their manager is.",
+        "rowCount": 55,
+        "columns": [
+          {
+            "name": "emp_id",
+            "type": "integer",
+            "description": "Unique id of the employee (primary key)"
+          },
+          {
+            "name": "first_name",
+            "type": "text",
+            "description": "Given name"
+          },
+          {
+            "name": "last_name",
+            "type": "text",
+            "description": "Family name"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "Work email address"
+          },
+          {
+            "name": "dept_id",
+            "type": "integer",
+            "description": "Department the employee belongs to (empty if not assigned to one yet) → departments.dept_id"
+          },
+          {
+            "name": "manager_id",
+            "type": "integer",
+            "description": "The employee this person reports to (empty for the CEO) → employees.emp_id"
+          },
+          {
+            "name": "job_title",
+            "type": "text",
+            "description": "Job title"
+          },
+          {
+            "name": "hire_date",
+            "type": "date",
+            "description": "First day at the company"
+          },
+          {
+            "name": "salary",
+            "type": "numeric(10,2)",
+            "description": "Current yearly salary in dollars"
+          },
+          {
+            "name": "employment_type",
+            "type": "text",
+            "description": "full_time, part_time or contractor"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City where the employee works"
+          },
+          {
+            "name": "terminated_on",
+            "type": "date",
+            "description": "Last day at the company (empty for current employees)"
+          }
+        ]
+      },
+      {
+        "name": "salary_history",
+        "description": "Every salary change an employee has had, from the day they were hired.",
+        "rowCount": 167,
+        "columns": [
+          {
+            "name": "emp_id",
+            "type": "integer",
+            "description": "Employee whose salary changed → employees.emp_id (part of the primary key)"
+          },
+          {
+            "name": "effective_date",
+            "type": "date",
+            "description": "Day the new salary started (part of the primary key)"
+          },
+          {
+            "name": "salary",
+            "type": "numeric(10,2)",
+            "description": "Yearly salary in dollars from that day on"
+          }
+        ]
+      },
+      {
+        "name": "projects",
+        "description": "Company projects, each owned by one department.",
+        "rowCount": 14,
+        "columns": [
+          {
+            "name": "project_id",
+            "type": "integer",
+            "description": "Unique id of the project (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Project name"
+          },
+          {
+            "name": "dept_id",
+            "type": "integer",
+            "description": "Department that owns the project → departments.dept_id"
+          },
+          {
+            "name": "start_date",
+            "type": "date",
+            "description": "Planned or actual start date"
+          },
+          {
+            "name": "end_date",
+            "type": "date",
+            "description": "Day the project finished (empty while it is still going or not started)"
+          },
+          {
+            "name": "budget",
+            "type": "numeric(12,2)",
+            "description": "Project budget in dollars"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "description": "planned, active, completed or on_hold"
+          }
+        ]
+      },
+      {
+        "name": "project_assignments",
+        "description": "Which employees work on which projects, in what role and for how many hours a week.",
+        "rowCount": 96,
+        "columns": [
+          {
+            "name": "emp_id",
+            "type": "integer",
+            "description": "Employee assigned to the project → employees.emp_id (part of the primary key)"
+          },
+          {
+            "name": "project_id",
+            "type": "integer",
+            "description": "Project the employee works on → projects.project_id (part of the primary key)"
+          },
+          {
+            "name": "role",
+            "type": "text",
+            "description": "Role on the project: lead, developer, analyst, designer, tester or consultant"
+          },
+          {
+            "name": "hours_per_week",
+            "type": "integer",
+            "description": "Weekly hours the employee spends on the project"
+          },
+          {
+            "name": "assigned_on",
+            "type": "date",
+            "description": "Day the employee joined the project"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "movies",
+    "name": "FlickNest",
+    "icon": "🎬",
+    "tagline": "A streaming service with movies, cast, ratings and viewing history.",
+    "description": "FlickNest is a movie streaming service with 110 invented films, their genres, directors and casts, 220 subscribers, ratings and half a year of viewing history. It is made for many-to-many relationships, window functions, ranking and aggregation, and the watch history even contains binge sessions for you to untangle. All titles and people are fictional.",
+    "tables": [
+      {
+        "name": "movies",
+        "description": "The FlickNest film catalog.",
+        "rowCount": 110,
+        "columns": [
+          {
+            "name": "movie_id",
+            "type": "integer",
+            "description": "Unique id of the movie (ids are in release-year order) (primary key)"
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "description": "Movie title"
+          },
+          {
+            "name": "release_year",
+            "type": "integer",
+            "description": "Year the movie was released"
+          },
+          {
+            "name": "duration_min",
+            "type": "integer",
+            "description": "Running time in minutes"
+          },
+          {
+            "name": "age_rating",
+            "type": "text",
+            "description": "Age rating: G, PG, PG-13 or R"
+          },
+          {
+            "name": "language",
+            "type": "text",
+            "description": "Original language of the movie"
+          },
+          {
+            "name": "budget_musd",
+            "type": "numeric(6,1)",
+            "description": "Production budget in millions of US dollars (empty when unknown)"
+          },
+          {
+            "name": "box_office_musd",
+            "type": "numeric(7,1)",
+            "description": "Worldwide box office in millions of US dollars (empty when unknown)"
+          }
+        ]
+      },
+      {
+        "name": "genres",
+        "description": "The twelve genres a movie can belong to.",
+        "rowCount": 12,
+        "columns": [
+          {
+            "name": "genre_id",
+            "type": "integer",
+            "description": "Unique id of the genre (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Genre name"
+          }
+        ]
+      },
+      {
+        "name": "movie_genres",
+        "description": "Links movies to their genres (a movie can have one to three genres).",
+        "rowCount": 207,
+        "columns": [
+          {
+            "name": "movie_id",
+            "type": "integer",
+            "description": "The movie → movies.movie_id (part of the primary key)"
+          },
+          {
+            "name": "genre_id",
+            "type": "integer",
+            "description": "One of the movie's genres → genres.genre_id (part of the primary key)"
+          }
+        ]
+      },
+      {
+        "name": "people",
+        "description": "Actors, directors and writers who worked on the movies.",
+        "rowCount": 90,
+        "columns": [
+          {
+            "name": "person_id",
+            "type": "integer",
+            "description": "Unique id of the person (primary key)"
+          },
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "Full name"
+          },
+          {
+            "name": "birth_year",
+            "type": "integer",
+            "description": "Year of birth (empty when unknown)"
+          },
+          {
+            "name": "country",
+            "type": "text",
+            "description": "Country the person is from"
+          }
+        ]
+      },
+      {
+        "name": "movie_cast",
+        "description": "Who worked on each movie and in which role (actor, director or writer).",
+        "rowCount": 650,
+        "columns": [
+          {
+            "name": "movie_id",
+            "type": "integer",
+            "description": "The movie → movies.movie_id (part of the primary key)"
+          },
+          {
+            "name": "person_id",
+            "type": "integer",
+            "description": "The person → people.person_id (part of the primary key)"
+          },
+          {
+            "name": "role",
+            "type": "text",
+            "description": "What the person did on the movie: actor, director or writer (part of the primary key)"
+          },
+          {
+            "name": "character_name",
+            "type": "text",
+            "description": "Character played (only for actors)"
+          },
+          {
+            "name": "billing_order",
+            "type": "integer",
+            "description": "Position in the credits, 1 = top billed (only for actors)"
+          }
+        ]
+      },
+      {
+        "name": "users",
+        "description": "FlickNest subscribers.",
+        "rowCount": 220,
+        "columns": [
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "Unique id of the user (primary key)"
+          },
+          {
+            "name": "username",
+            "type": "text",
+            "description": "Public username"
+          },
+          {
+            "name": "country",
+            "type": "text",
+            "description": "Country of the user"
+          },
+          {
+            "name": "signup_date",
+            "type": "date",
+            "description": "Day the user signed up"
+          },
+          {
+            "name": "plan",
+            "type": "text",
+            "description": "Subscription plan: free, basic or premium"
+          }
+        ]
+      },
+      {
+        "name": "ratings",
+        "description": "Star ratings users gave to movies (at most one rating per user per movie).",
+        "rowCount": 1800,
+        "columns": [
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "User who rated → users.user_id (part of the primary key)"
+          },
+          {
+            "name": "movie_id",
+            "type": "integer",
+            "description": "Movie that was rated → movies.movie_id (part of the primary key)"
+          },
+          {
+            "name": "stars",
+            "type": "numeric(2,1)",
+            "description": "Rating from 0.5 to 5.0 in steps of 0.5"
+          },
+          {
+            "name": "rated_at",
+            "type": "timestamp",
+            "description": "Date and time of the rating"
+          }
+        ]
+      },
+      {
+        "name": "watch_history",
+        "description": "Every time a user pressed play (January to June 2024).",
+        "rowCount": 3598,
+        "columns": [
+          {
+            "name": "watch_id",
+            "type": "integer",
+            "description": "Unique id of the viewing (primary key)"
+          },
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "User who watched → users.user_id"
+          },
+          {
+            "name": "movie_id",
+            "type": "integer",
+            "description": "Movie that was watched → movies.movie_id"
+          },
+          {
+            "name": "started_at",
+            "type": "timestamp",
+            "description": "Date and time playback started"
+          },
+          {
+            "name": "minutes_watched",
+            "type": "integer",
+            "description": "Minutes actually watched (never more than the movie length)"
+          },
+          {
+            "name": "device",
+            "type": "text",
+            "description": "Device used: tv, mobile, web or tablet"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "bank",
+    "name": "Harbor Bank",
+    "icon": "🏦",
+    "tagline": "Accounts, a year of transactions, loans and a few suspicious patterns.",
+    "description": "Harbor Bank has five branches, 80 customers, about 125 accounts and a full year of transactions: salaries, rent, card payments, fees and interest. Practice running balances, monthly summaries, GROUP BY with dates and window functions, then play detective: a few accounts show suspicious bursts of activity. Every amount is in US dollars and the data covers calendar year 2024.",
+    "tables": [
+      {
+        "name": "branches",
+        "description": "Harbor Bank branch offices.",
+        "rowCount": 5,
+        "columns": [
+          {
+            "name": "branch_id",
+            "type": "integer",
+            "description": "Unique id of the branch (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Branch name"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City where the branch is located"
+          },
+          {
+            "name": "opened_on",
+            "type": "date",
+            "description": "Day the branch opened"
+          }
+        ]
+      },
+      {
+        "name": "customers",
+        "description": "People and households who bank with Harbor Bank.",
+        "rowCount": 80,
+        "columns": [
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Unique id of the customer (primary key)"
+          },
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "Full name"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City where the customer lives"
+          },
+          {
+            "name": "date_of_birth",
+            "type": "date",
+            "description": "Date of birth"
+          },
+          {
+            "name": "kyc_status",
+            "type": "text",
+            "description": "Identity check status: verified, pending or rejected"
+          },
+          {
+            "name": "created_at",
+            "type": "date",
+            "description": "Day the customer record was created"
+          }
+        ]
+      },
+      {
+        "name": "accounts",
+        "description": "Bank accounts (checking, savings and credit card accounts). One customer can have several.",
+        "rowCount": 126,
+        "columns": [
+          {
+            "name": "account_id",
+            "type": "integer",
+            "description": "Unique id of the account (primary key)"
+          },
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Customer who owns the account → customers.customer_id"
+          },
+          {
+            "name": "branch_id",
+            "type": "integer",
+            "description": "Branch that manages the account → branches.branch_id"
+          },
+          {
+            "name": "account_type",
+            "type": "text",
+            "description": "checking, savings or credit"
+          },
+          {
+            "name": "opened_on",
+            "type": "date",
+            "description": "Day the account was opened"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "description": "active, frozen or closed"
+          },
+          {
+            "name": "overdraft_limit",
+            "type": "numeric(10,2)",
+            "description": "How far below zero the balance may go (the credit limit for credit accounts)"
+          }
+        ]
+      },
+      {
+        "name": "transactions",
+        "description": "Every movement of money in 2024: positive amounts are money in, negative amounts are money out.",
+        "rowCount": 3674,
+        "columns": [
+          {
+            "name": "txn_id",
+            "type": "integer",
+            "description": "Unique id of the transaction (ids are in time order) (primary key)"
+          },
+          {
+            "name": "account_id",
+            "type": "integer",
+            "description": "Account the transaction belongs to → accounts.account_id"
+          },
+          {
+            "name": "txn_time",
+            "type": "timestamp",
+            "description": "Date and time of the transaction"
+          },
+          {
+            "name": "amount",
+            "type": "numeric(12,2)",
+            "description": "Amount in dollars: positive = money in, negative = money out"
+          },
+          {
+            "name": "txn_type",
+            "type": "text",
+            "description": "deposit, withdrawal, transfer_in, transfer_out, card_payment, fee or interest"
+          },
+          {
+            "name": "merchant",
+            "type": "text",
+            "description": "Shop or company paid (only for card payments)"
+          },
+          {
+            "name": "category",
+            "type": "text",
+            "description": "Spending category (only for card payments)"
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "description": "Short text shown on the statement"
+          }
+        ]
+      },
+      {
+        "name": "loans",
+        "description": "Loans granted to customers.",
+        "rowCount": 40,
+        "columns": [
+          {
+            "name": "loan_id",
+            "type": "integer",
+            "description": "Unique id of the loan (primary key)"
+          },
+          {
+            "name": "customer_id",
+            "type": "integer",
+            "description": "Customer who borrowed the money → customers.customer_id"
+          },
+          {
+            "name": "principal",
+            "type": "numeric(12,2)",
+            "description": "Amount borrowed in dollars"
+          },
+          {
+            "name": "annual_rate",
+            "type": "numeric(5,2)",
+            "description": "Yearly interest rate in percent (5.25 means 5.25%)"
+          },
+          {
+            "name": "start_date",
+            "type": "date",
+            "description": "Day the loan was paid out"
+          },
+          {
+            "name": "term_months",
+            "type": "integer",
+            "description": "Length of the loan in months"
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "description": "active, paid_off or defaulted"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "app",
+    "name": "FitTrack",
+    "icon": "🏃",
+    "tagline": "Product analytics for a fitness app: events, funnels, retention and streaks.",
+    "description": "FitTrack is a fitness app with 300 users, about 7,000 tracked events, subscriptions and a table of daily step counts. It is built for product analytics: funnels, weekly retention by signup cohort, sessionization, streaks (gaps and islands) and reading JSON properties. Events come in bursts (sessions) separated by hours or days of silence.",
+    "tables": [
+      {
+        "name": "users",
+        "description": "People who installed FitTrack in the first half of 2024.",
+        "rowCount": 300,
+        "columns": [
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "Unique id of the user (primary key)"
+          },
+          {
+            "name": "signup_date",
+            "type": "date",
+            "description": "Day the user created an account"
+          },
+          {
+            "name": "country",
+            "type": "text",
+            "description": "Country of the user"
+          },
+          {
+            "name": "platform",
+            "type": "text",
+            "description": "Device platform: ios, android or web"
+          },
+          {
+            "name": "referral_source",
+            "type": "text",
+            "description": "How the user found the app: organic, ads, friend or social"
+          },
+          {
+            "name": "birth_year",
+            "type": "integer",
+            "description": "Year of birth (empty when the user did not say)"
+          }
+        ]
+      },
+      {
+        "name": "events",
+        "description": "The raw event log of the app: one row per tap that FitTrack recorded.",
+        "rowCount": 7010,
+        "columns": [
+          {
+            "name": "event_id",
+            "type": "bigint",
+            "description": "Unique id of the event (ids are in time order) (primary key)"
+          },
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "User who triggered the event → users.user_id"
+          },
+          {
+            "name": "event_time",
+            "type": "timestamp",
+            "description": "Date and time of the event"
+          },
+          {
+            "name": "event_name",
+            "type": "text",
+            "description": "app_open, workout_started, workout_completed, goal_set, subscription_started, share or settings_changed"
+          },
+          {
+            "name": "properties",
+            "type": "jsonb",
+            "description": "Extra details about the event, stored as JSON (the keys depend on event_name)"
+          }
+        ]
+      },
+      {
+        "name": "subscriptions",
+        "description": "Paid subscriptions bought by users (a user can subscribe again after cancelling).",
+        "rowCount": 105,
+        "columns": [
+          {
+            "name": "subscription_id",
+            "type": "integer",
+            "description": "Unique id of the subscription (primary key)"
+          },
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "User who subscribed → users.user_id"
+          },
+          {
+            "name": "plan",
+            "type": "text",
+            "description": "monthly or annual"
+          },
+          {
+            "name": "price",
+            "type": "numeric(6,2)",
+            "description": "Price paid per billing period in dollars"
+          },
+          {
+            "name": "started_at",
+            "type": "date",
+            "description": "Day the subscription started"
+          },
+          {
+            "name": "cancelled_at",
+            "type": "date",
+            "description": "Day the subscription was cancelled (empty while still active)"
+          }
+        ]
+      },
+      {
+        "name": "daily_steps",
+        "description": "Daily step counts for a group of 40 users who connected their step tracker (March to May 2024). Days without a row mean the tracker sent nothing.",
+        "rowCount": 3062,
+        "columns": [
+          {
+            "name": "user_id",
+            "type": "integer",
+            "description": "User who walked → users.user_id (part of the primary key)"
+          },
+          {
+            "name": "day",
+            "type": "date",
+            "description": "The calendar day (part of the primary key)"
+          },
+          {
+            "name": "steps",
+            "type": "integer",
+            "description": "Number of steps recorded that day"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "school",
+    "name": "Maple High School",
+    "icon": "🏫",
+    "tagline": "Students, courses, exam scores and clubs: grades and rankings.",
+    "description": "Maple High School has 120 students, 12 teachers, 18 courses and two terms of enrollments with exam results. It is a friendly place to practice averages, GROUP BY, HAVING and ranking functions, and to see how LEFT JOIN reveals students without clubs or courses without teachers. The 2025-Spring term is still in progress, so many final scores are empty.",
+    "tables": [
+      {
+        "name": "teachers",
+        "description": "The teaching staff of Maple High School.",
+        "rowCount": 12,
+        "columns": [
+          {
+            "name": "teacher_id",
+            "type": "integer",
+            "description": "Unique id of the teacher (primary key)"
+          },
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "Full name"
+          },
+          {
+            "name": "subject",
+            "type": "text",
+            "description": "Main subject the teacher is responsible for"
+          },
+          {
+            "name": "hire_date",
+            "type": "date",
+            "description": "Day the teacher started at the school"
+          },
+          {
+            "name": "salary",
+            "type": "numeric(9,2)",
+            "description": "Yearly salary in dollars"
+          }
+        ]
+      },
+      {
+        "name": "students",
+        "description": "Students currently enrolled at the school (grades 9 to 12).",
+        "rowCount": 120,
+        "columns": [
+          {
+            "name": "student_id",
+            "type": "integer",
+            "description": "Unique id of the student (lower ids enrolled earlier) (primary key)"
+          },
+          {
+            "name": "first_name",
+            "type": "text",
+            "description": "Given name"
+          },
+          {
+            "name": "last_name",
+            "type": "text",
+            "description": "Family name"
+          },
+          {
+            "name": "grade_level",
+            "type": "integer",
+            "description": "Current grade: 9 (freshman) to 12 (senior)"
+          },
+          {
+            "name": "birth_date",
+            "type": "date",
+            "description": "Date of birth"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "School email address (empty if not issued yet)"
+          },
+          {
+            "name": "enrolled_on",
+            "type": "date",
+            "description": "First day at Maple High School"
+          }
+        ]
+      },
+      {
+        "name": "courses",
+        "description": "Courses offered during the 2024-25 school year.",
+        "rowCount": 18,
+        "columns": [
+          {
+            "name": "course_id",
+            "type": "integer",
+            "description": "Unique id of the course (primary key)"
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "description": "Course title"
+          },
+          {
+            "name": "subject",
+            "type": "text",
+            "description": "Subject area of the course"
+          },
+          {
+            "name": "teacher_id",
+            "type": "integer",
+            "description": "Teacher who teaches the course (empty if nobody is assigned yet) → teachers.teacher_id"
+          },
+          {
+            "name": "credits",
+            "type": "integer",
+            "description": "Credits earned for completing the course"
+          },
+          {
+            "name": "room",
+            "type": "text",
+            "description": "Classroom where the course meets"
+          }
+        ]
+      },
+      {
+        "name": "enrollments",
+        "description": "Which student takes which course in which term, with the final score once it is known.",
+        "rowCount": 626,
+        "columns": [
+          {
+            "name": "student_id",
+            "type": "integer",
+            "description": "The student → students.student_id (part of the primary key)"
+          },
+          {
+            "name": "course_id",
+            "type": "integer",
+            "description": "The course → courses.course_id (part of the primary key)"
+          },
+          {
+            "name": "term",
+            "type": "text",
+            "description": "School term: 2024-Fall or 2025-Spring (part of the primary key)"
+          },
+          {
+            "name": "final_score",
+            "type": "numeric(5,2)",
+            "description": "Final course score from 0 to 100 (empty while the course is still running or the score is missing)"
+          }
+        ]
+      },
+      {
+        "name": "exam_scores",
+        "description": "Individual quiz, midterm and final exam results.",
+        "rowCount": 1758,
+        "columns": [
+          {
+            "name": "exam_id",
+            "type": "integer",
+            "description": "Unique id of the exam result (primary key)"
+          },
+          {
+            "name": "student_id",
+            "type": "integer",
+            "description": "Student who took the exam → students.student_id"
+          },
+          {
+            "name": "course_id",
+            "type": "integer",
+            "description": "Course the exam belongs to → courses.course_id"
+          },
+          {
+            "name": "exam_date",
+            "type": "date",
+            "description": "Day the exam was taken"
+          },
+          {
+            "name": "exam_type",
+            "type": "text",
+            "description": "quiz, midterm or final"
+          },
+          {
+            "name": "score",
+            "type": "numeric(5,2)",
+            "description": "Score from 0 to 100"
+          }
+        ]
+      },
+      {
+        "name": "clubs",
+        "description": "Student clubs and the teacher who advises each one.",
+        "rowCount": 8,
+        "columns": [
+          {
+            "name": "club_id",
+            "type": "integer",
+            "description": "Unique id of the club (primary key)"
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "description": "Club name"
+          },
+          {
+            "name": "advisor_id",
+            "type": "integer",
+            "description": "Teacher who advises the club (empty if still looking for one) → teachers.teacher_id"
+          }
+        ]
+      },
+      {
+        "name": "club_members",
+        "description": "Which students belong to which clubs.",
+        "rowCount": 150,
+        "columns": [
+          {
+            "name": "club_id",
+            "type": "integer",
+            "description": "The club → clubs.club_id (part of the primary key)"
+          },
+          {
+            "name": "student_id",
+            "type": "integer",
+            "description": "The student → students.student_id (part of the primary key)"
+          },
+          {
+            "name": "joined_on",
+            "type": "date",
+            "description": "Day the student joined the club"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "messy",
+    "name": "Messy Data Co.",
+    "icon": "🧹",
+    "tagline": "Dirty, real-world data: clean it with TRIM, LOWER, CASE, CAST and more.",
+    "description": "Messy Data Co. exports its data from old systems, so everything arrives as text: names in odd cases, phone numbers in many formats, dates written five different ways and duplicates hiding in plain sight. Use it to practice cleaning with TRIM, LOWER, REPLACE, CASE, COALESCE, NULLIF and CAST, finding duplicates, and reshaping data with pivot and unpivot. Nothing here is secret or personal: all names and emails are made up.",
+    "tables": [
+      {
+        "name": "raw_customers",
+        "description": "A customer list exported from several old systems: inconsistent spelling, formats and duplicates. Every column is text.",
+        "rowCount": 120,
+        "columns": [
+          {
+            "name": "row_id",
+            "type": "integer",
+            "description": "Row number of the import (primary key)"
+          },
+          {
+            "name": "full_name",
+            "type": "text",
+            "description": "Customer name as typed (casing, spacing and order vary)"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "Email address as typed (may have capitals, spaces or be invalid)"
+          },
+          {
+            "name": "phone",
+            "type": "text",
+            "description": "Phone number in many different formats"
+          },
+          {
+            "name": "signup_date",
+            "type": "text",
+            "description": "Signup date as text in several different formats"
+          },
+          {
+            "name": "country",
+            "type": "text",
+            "description": "Country name or code as typed"
+          },
+          {
+            "name": "city",
+            "type": "text",
+            "description": "City as typed"
+          }
+        ]
+      },
+      {
+        "name": "raw_orders",
+        "description": "An order export with text amounts, mixed date formats, duplicate rows and inconsistent statuses.",
+        "rowCount": 300,
+        "columns": [
+          {
+            "name": "row_id",
+            "type": "integer",
+            "description": "Row number of the import (primary key)"
+          },
+          {
+            "name": "order_ref",
+            "type": "text",
+            "description": "Order reference such as ORD-1001 (a few are written differently or appear twice)"
+          },
+          {
+            "name": "customer_email",
+            "type": "text",
+            "description": "Email of the customer who ordered, as typed"
+          },
+          {
+            "name": "order_date",
+            "type": "text",
+            "description": "Order date as text in several formats"
+          },
+          {
+            "name": "amount",
+            "type": "text",
+            "description": "Order amount as text (currency symbols, commas, spaces, N/A ...)"
+          },
+          {
+            "name": "currency",
+            "type": "text",
+            "description": "Currency as typed: USD, usd, $, EUR ..."
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "description": "Order status with different spellings and casing"
+          }
+        ]
+      },
+      {
+        "name": "survey_responses",
+        "description": "Answers to a customer survey in wide format (one column per question), also stored as messy text.",
+        "rowCount": 80,
+        "columns": [
+          {
+            "name": "response_id",
+            "type": "integer",
+            "description": "Unique id of the response (primary key)"
+          },
+          {
+            "name": "respondent",
+            "type": "text",
+            "description": "Who answered: an email, a short name, an id or nothing"
+          },
+          {
+            "name": "q1_satisfaction",
+            "type": "text",
+            "description": "How satisfied are you, 1 to 5? (digits, words, blanks ...)"
+          },
+          {
+            "name": "q2_recommend",
+            "type": "text",
+            "description": "How likely are you to recommend us, 0 to 10?"
+          },
+          {
+            "name": "q3_comment",
+            "type": "text",
+            "description": "Free-text comment"
+          },
+          {
+            "name": "submitted",
+            "type": "text",
+            "description": "When the survey was submitted, as text in several formats"
+          }
+        ]
+      },
+      {
+        "name": "product_sales_wide",
+        "description": "Monthly revenue per product in wide format: one column per month (a good table to unpivot).",
+        "rowCount": 10,
+        "columns": [
+          {
+            "name": "product",
+            "type": "text",
+            "description": "Product name (primary key)"
+          },
+          {
+            "name": "jan",
+            "type": "numeric",
+            "description": "January revenue in dollars"
+          },
+          {
+            "name": "feb",
+            "type": "numeric",
+            "description": "February revenue in dollars"
+          },
+          {
+            "name": "mar",
+            "type": "numeric",
+            "description": "March revenue in dollars"
+          },
+          {
+            "name": "apr",
+            "type": "numeric",
+            "description": "April revenue in dollars"
+          },
+          {
+            "name": "may",
+            "type": "numeric",
+            "description": "May revenue in dollars"
+          },
+          {
+            "name": "jun",
+            "type": "numeric",
+            "description": "June revenue in dollars"
+          }
+        ]
+      },
+      {
+        "name": "monthly_sales_long",
+        "description": "The same revenue figures in long format: one row per product and month (a good table to pivot).",
+        "rowCount": 60,
+        "columns": [
+          {
+            "name": "product",
+            "type": "text",
+            "description": "Product name (part of the primary key)"
+          },
+          {
+            "name": "month",
+            "type": "text",
+            "description": "Month abbreviation: Jan to Jun (part of the primary key)"
+          },
+          {
+            "name": "revenue",
+            "type": "numeric(10,2)",
+            "description": "Revenue in dollars"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "blank",
+    "name": "Blank Database",
+    "icon": "✨",
+    "tagline": "An empty database: create your own tables from scratch.",
+    "description": "This database starts completely empty. Use it to learn CREATE TABLE, INSERT, UPDATE, DELETE, constraints and indexes without any existing data getting in the way. Anything you create here is yours to experiment with.",
+    "tables": []
+  }
+]
