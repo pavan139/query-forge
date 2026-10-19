@@ -1212,7 +1212,11 @@ async function docShop(q, ds) {
   const codeShare = await one('SELECT count(*) FILTER (WHERE discount_code IS NOT NULL) AS n, round(100.0 * count(*) FILTER (WHERE discount_code IS NOT NULL) / count(*), 1)::text AS pct FROM orders');
   const noCodeDisc = await one('SELECT count(*) AS lines, count(*) FILTER (WHERE discount > 0) AS disc FROM order_items i JOIN orders o USING (order_id) WHERE o.discount_code IS NULL');
   const priceDiff = await one('SELECT count(*) AS lines, count(DISTINCT i.product_id) AS prods FROM order_items i JOIN products p USING (product_id) WHERE i.unit_price <> p.price');
-  const priceChangeText = Object.entries(ex.PRICE_CHANGE).map(([id, [d, old]]) => `product ${id} (before ${d}: ${old.toFixed(2)})`).join(', ');
+  const priceChangeText = Object.entries(ex.PRICE_CHANGE).map(([id, [d, old]]) => `product ${id} cost ${old.toFixed(2)} before ${d}`).join('; ');
+  const codeRates = await q.val("SELECT count(*) FROM orders o JOIN order_items i USING (order_id) WHERE o.discount_code IS NOT NULL AND i.discount <> CASE o.discount_code WHEN 'WELCOME10' THEN 0.10 WHEN 'SUMMER15' THEN 0.15 WHEN 'BLACKFRIDAY' THEN 0.20 WHEN 'LOYALTY5' THEN 0.05 ELSE 0 END");
+  must(codeRates === 0, 'discount codes fix the line discount');
+  must(noShipDate.nulls === noShipDate.expected, 'shipped_date is NULL only for processing/cancelled');
+  const bfAvg = await list("SELECT y || ': ' || bf || ' orders on Black Friday vs ' || round(nov / 30.0, 1) || ' on an average November day' AS v FROM (SELECT extract(year FROM order_date)::int AS y, count(*) FILTER (WHERE order_date IN ('2023-11-24', '2024-11-29')) AS bf, count(*) FILTER (WHERE extract(month FROM order_date) = 11) AS nov FROM orders GROUP BY 1) t ORDER BY y");
   const pay = await one(`WITH t AS (SELECT order_id, round(sum(quantity * unit_price * (1 - discount)), 2) AS total FROM order_items GROUP BY order_id),
     p AS (SELECT order_id, sum(amount) AS paid, count(*) AS n FROM payments GROUP BY order_id)
     SELECT count(*) FILTER (WHERE p.order_id IS NULL AND o.status <> 'cancelled') AS unpaid,
@@ -1239,11 +1243,11 @@ async function docShop(q, ds) {
       'The "as of" date is **2024-12-31**: the newest orders are still being processed or shipped, and nothing is dated later.',
     conventions: [
       `**Dates.** Customers signed up between 2022-06-01 and 2024-10-31 (customer ids are in signup order: ${signupOrder} out-of-order pairs). Orders run **${orderDates.lo} to ${orderDates.hi}** (${commas(orderDates.n)} orders); every order is placed after its customer's signup date. Orders per year: ${years}. 2024 orders per month: ${months}.`,
-      `**Seasonality and growth.** Order volume is lowest in January and February, grows through the year and peaks in November and December, with spikes on Black Friday (${bf}). 2024 has clearly more orders than 2023 because the customer base grew.`,
-      `**Order status** share: ${statusShare}. \`processing\` orders are the newest ones (${proc.n} orders, oldest from ${proc.lo}). ${shipped.n} orders are \`shipped\`; ${shipped.old} of them were placed before 2024-12-01 and are "stuck" in shipped (lost parcels) - a deliberate oddity you can query. \`shipped_date\` is on or after \`order_date\` (0 to 5 days later) and is NULL exactly for \`processing\` and \`cancelled\` orders (${noShipDate.nulls} NULLs, ${noShipDate.expected} of them expected).`,
+      `**Seasonality and growth.** Order volume is lowest in January and February, grows through the year and peaks in November and December, with spikes on Black Friday (${bfAvg}). 2024 has clearly more orders than 2023 because the customer base grew.`,
+      `**Order status** share: ${statusShare}. \`processing\` orders are the newest ones (${proc.n} orders, oldest from ${proc.lo}). ${shipped.n} orders are \`shipped\`; ${shipped.old} of them were placed before 2024-12-01 and are "stuck" in shipped (lost parcels) - a deliberate oddity you can query. \`shipped_date\` is on or after \`order_date\` (0 to 5 days later) and is NULL exactly for \`processing\` and \`cancelled\` orders (${noShipDate.nulls} NULLs).`,
       `**Order total.** There is no total column. The total of an order is \`ROUND(SUM(quantity * unit_price * (1 - discount)), 2)\` over its \`order_items\`, and the \`payments\` of that order add up to exactly this amount (${pay.mismatch} orders differ).`,
       `**Discount codes** appear on ${codeShare.n} orders (${codeShare.pct}%): ${codes}. A code fixes the line discount of the whole order: WELCOME10 = 0.10 (first orders), SUMMER15 = 0.15 (mid-June to August), BLACKFRIDAY = 0.20 (Black Friday window), LOYALTY5 = 0.05 (repeat customers), FREESHIP = 0 (free shipping only). Orders *without* a code have discount 0 on most lines; ${noCodeDisc.disc} of their ${commas(noCodeDisc.lines)} lines carry a 0.05 or 0.10 clearance discount.`,
-      `**Prices over time.** \`order_items.unit_price\` is the price at the time of the order. It equals \`products.price\` for most lines, but ${priceDiff.prods} products changed price during the period, so ${priceDiff.lines} lines differ from today's price: ${priceChangeText}. Always use \`order_items.unit_price\` for revenue, never \`products.price\`.`,
+      `**Prices over time.** \`order_items.unit_price\` is the price at the time of the order. 8 products changed price (${priceChangeText}); ${priceDiff.prods} of them have order lines at the old price, ${priceDiff.lines} lines in total, and all other lines equal today's \`products.price\`. Always use \`order_items.unit_price\` for revenue, never \`products.price\`.`,
       `**Order size.** 1 to 5 distinct products per order; the same product never appears twice in one order (UNIQUE on order_id + product_id). Quantities are mostly 1; cheap products (under $20) are often bought in 2 to 5 units, expensive ones (over $500) always 1.`,
       `**Customer behaviour is skewed.** ${skew.buyers} customers have orders: the most active has ${skew.mx} orders, the median is ${skew.med}, and ${skew.once} customers ordered exactly once. Customers live in ${states.cities} cities in ${states.states} states; segments: ${segs}. For ${commas(giftShip)} orders \`ship_city\` differs from the customer's own city (gifts).`,
       `**Reviews** (${rev.n} rows, ${rev.lo} to ${rev.hi}) are written only by customers who received a *delivered* order containing the product, and always after that order (${badReviews} violations). Ratings are skewed to 4 and 5 stars: ${ratingDist} (average ${rev.av}). ${rev.n - rev.txt} reviews have no text.`,
@@ -1265,7 +1269,7 @@ async function docShop(q, ds) {
       await f('Revenue of delivered orders placed in 2024', "SELECT sum(i.quantity * i.unit_price * (1 - i.discount)) FROM order_items i JOIN orders o ON o.order_id = i.order_id WHERE o.status = 'delivered' AND o.order_date >= '2024-01-01'", 'money'),
       await f('Number of orders placed in 2024', "SELECT count(*) FROM orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'", 'int'),
       await f('Average delivered order value', "SELECT round(avg(t.total), 2) FROM (SELECT o.order_id, sum(i.quantity * i.unit_price * (1 - i.discount)) AS total FROM orders o JOIN order_items i ON i.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY o.order_id) t", 'money'),
-      await f('Month with the most orders', "SELECT to_char(order_date, 'YYYY-MM') || ' (' || count(*) || ' orders)' FROM orders GROUP BY 1 ORDER BY count(*) DESC LIMIT 1"),
+      await f('Month with the most orders', "SELECT to_char(order_date, 'YYYY-MM') || ' (' || count(*) || ' orders)' FROM orders GROUP BY to_char(order_date, 'YYYY-MM') ORDER BY count(*) DESC LIMIT 1"),
       await f('Best-selling product by units (delivered orders)', "SELECT p.name || ' (' || sum(i.quantity) || ' units)' FROM order_items i JOIN orders o ON o.order_id = i.order_id JOIN products p ON p.product_id = i.product_id WHERE o.status = 'delivered' GROUP BY p.product_id, p.name ORDER BY sum(i.quantity) DESC, p.name LIMIT 1"),
       await f('Top customer by delivered revenue', "SELECT c.first_name || ' ' || c.last_name || ' (customer ' || c.customer_id || ', ' || round(sum(i.quantity * i.unit_price * (1 - i.discount)), 2) || ')' FROM customers c JOIN orders o ON o.customer_id = c.customer_id JOIN order_items i ON i.order_id = o.order_id WHERE o.status = 'delivered' GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY sum(i.quantity * i.unit_price * (1 - i.discount)) DESC LIMIT 1"),
       await f('Payments received by method (count and dollars)', "SELECT method, count(*) || ' / ' || round(sum(amount), 2) FROM payments GROUP BY 1 ORDER BY sum(amount) DESC", 'pairs'),
@@ -1546,6 +1550,100 @@ function buildCompany() {
   };
 }
 
+// ---- documentation: company -------------------------------------------------------------------
+async function docCompany(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  const levels = await list('WITH RECURSIVE t AS (SELECT emp_id, 1 AS lvl FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.emp_id, t.lvl + 1 FROM employees e JOIN t ON e.manager_id = t.emp_id) SELECT \'level \' || lvl || \': \' || count(*) AS v FROM t GROUP BY lvl ORDER BY lvl');
+  const maxDepth = await q.val('WITH RECURSIVE t AS (SELECT emp_id, 1 AS lvl FROM employees WHERE manager_id IS NULL UNION ALL SELECT e.emp_id, t.lvl + 1 FROM employees e JOIN t ON e.manager_id = t.emp_id) SELECT max(lvl) FROM t');
+  must(maxDepth === 5, 'hierarchy depth is 5');
+  const chain = async (id) => q.val(`WITH RECURSIVE c AS (SELECT emp_id, manager_id, job_title, 1 AS d FROM employees WHERE emp_id = ${id} UNION ALL SELECT e.emp_id, e.manager_id, e.job_title, c.d + 1 FROM employees e JOIN c ON e.emp_id = c.manager_id) SELECT string_agg(job_title, ' → ' ORDER BY d) FROM c`);
+  const chain1 = await chain(29);
+  const chain2 = await chain(54);
+  const headcount = await list('SELECT d.name || \' \' || count(e.emp_id) AS v FROM departments d LEFT JOIN employees e ON e.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY d.dept_id');
+  const noDept = await list('SELECT emp_id || \' \' || first_name || \' \' || last_name || \' (\' || job_title || \', \' || employment_type || \')\' AS v FROM employees WHERE dept_id IS NULL ORDER BY emp_id');
+  const noMgr = await list('SELECT emp_id || \' \' || job_title AS v FROM employees WHERE manager_id IS NULL');
+  const types = await list('SELECT employment_type || \' \' || count(*) AS v FROM employees GROUP BY employment_type ORDER BY count(*) DESC');
+  const term = await list('SELECT emp_id || \' \' || first_name || \' \' || last_name || \' (\' || terminated_on || \')\' AS v FROM employees WHERE terminated_on IS NOT NULL ORDER BY terminated_on');
+  const termReports = await q.val('SELECT count(*) FROM employees m WHERE m.terminated_on IS NOT NULL AND EXISTS (SELECT 1 FROM employees e WHERE e.manager_id = m.emp_id)');
+  must(termReports === 0, 'terminated employees have no direct reports');
+  const ties = await list('SELECT \'dept \' || coalesce(dept_id::text, \'NULL\') || \' salary \' || salary || \' x\' || count(*) || \' (emp \' || string_agg(emp_id::text, \', \' ORDER BY emp_id) || \')\' AS v FROM employees GROUP BY dept_id, salary HAVING count(*) > 1 ORDER BY dept_id, salary');
+  const sal = await one('SELECT min(salary)::text AS lo, max(salary)::text AS hi, round(avg(salary), 2)::text AS av FROM employees');
+  const hist = await one('SELECT count(*) AS n, count(DISTINCT emp_id) AS emps, min(effective_date)::text AS lo, max(effective_date)::text AS hi FROM salary_history');
+  const perEmp = await list('SELECT n || \' row\' || (CASE WHEN n = 1 THEN \'\' ELSE \'s\' END) || \': \' || count(*) AS v FROM (SELECT emp_id, count(*) AS n FROM salary_history GROUP BY emp_id) t GROUP BY n ORDER BY n');
+  const lastMatches = await q.val('SELECT count(*) FROM employees e WHERE e.salary = (SELECT h.salary FROM salary_history h WHERE h.emp_id = e.emp_id ORDER BY h.effective_date DESC LIMIT 1)');
+  const firstHire = await q.val('SELECT count(*) FROM employees e WHERE e.hire_date = (SELECT min(h.effective_date) FROM salary_history h WHERE h.emp_id = e.emp_id)');
+  must(lastMatches === 55 && firstHire === 55, 'salary_history starts at hire date and ends at current salary');
+  const cuts = await list('SELECT emp_id || \' on \' || effective_date || \' (\' || prev || \' to \' || salary || \')\' AS v FROM (SELECT *, lag(salary) OVER (PARTITION BY emp_id ORDER BY effective_date) AS prev FROM salary_history) t WHERE salary < prev ORDER BY emp_id');
+  const hires = await one('SELECT min(hire_date)::text AS lo, max(hire_date)::text AS hi FROM employees');
+  const projStatus = await list('SELECT status || \' \' || count(*) AS v FROM projects GROUP BY status ORDER BY count(*) DESC, status');
+  const emptyProj = await list('SELECT p.project_id || \' \' || p.name || \' (\' || p.status || \')\' AS v FROM projects p WHERE NOT EXISTS (SELECT 1 FROM project_assignments a WHERE a.project_id = p.project_id)');
+  const researchProj = await list('SELECT p.project_id || \' \' || p.name AS v FROM projects p JOIN departments d ON d.dept_id = p.dept_id WHERE d.name = \'Research\' ORDER BY p.project_id');
+  const unassigned = await one('SELECT count(*) AS n, string_agg(emp_id::text, \', \' ORDER BY emp_id) AS ids FROM employees e WHERE NOT EXISTS (SELECT 1 FROM project_assignments a WHERE a.emp_id = e.emp_id)');
+  const roles = await list('SELECT role || \' \' || count(*) AS v FROM project_assignments GROUP BY role ORDER BY count(*) DESC, role');
+  const planned = await one("SELECT string_agg(project_id::text, ', ' ORDER BY project_id) AS ids FROM projects WHERE status = 'planned'");
+  const assignBeforeStart = await q.val("SELECT count(*) FROM project_assignments a JOIN projects p USING (project_id) WHERE a.assigned_on < p.start_date");
+  const nAssign = await q.val('SELECT count(*) FROM project_assignments');
+  const hoursRange = await one('SELECT min(hours_per_week) AS lo, max(hours_per_week) AS hi, round(avg(hours_per_week), 1)::text AS av FROM project_assignments');
+
+  must((await q.val('SELECT count(*) FROM employees e JOIN employees m ON m.emp_id = e.manager_id WHERE m.emp_id >= e.emp_id OR m.hire_date > e.hire_date')) === 0, 'managers have lower ids and earlier hire dates');
+  must((await q.val("SELECT string_agg(job_title, ',' ORDER BY salary DESC, emp_id) FROM (SELECT * FROM employees ORDER BY salary DESC, emp_id LIMIT 6) t")).split(',').every((t) => t === 'Chief Executive Officer' || /^VP of /.test(t)), 'top 6 salaries are the CEO and five VPs');
+  must((await q.val('SELECT count(*) FROM employees WHERE salary % 500 <> 0')) === 0, 'salaries are multiples of 500');
+  must((await q.val("SELECT max(a.hours_per_week) FROM project_assignments a JOIN employees e USING (emp_id) WHERE e.employment_type = 'part_time'")) <= 8, 'part-timers work at most 8 hours per project');
+  must((await q.val("SELECT count(*) FROM projects WHERE (status = 'completed') <> (end_date IS NOT NULL)")) === 0, 'only completed projects have an end_date');
+  must(unassigned.ids === '1, 2, 3, 4, 5, 6, 7, 41, 45, 55', 'unassigned employee list');
+  const budgets = await one('SELECT min(budget)::text AS lo, max(budget)::text AS hi FROM projects');
+  return {
+    about:
+      'Acme Corp is a deliberately tidy organisation chart: one CEO at the top, a five-level management chain and enough salary data to make ranking and window-function questions interesting. ' +
+      '"As of" date: **2024-12-31** (that is when "current" salaries and project statuses are measured).',
+    conventions: [
+      `**Hierarchy.** \`employees.manager_id\` forms a tree with the CEO (emp_id 1) as the only root. Employees per level: ${levels}; the **maximum depth is ${maxDepth}** (CEO = level 1). Level 2 are the five VPs and the Chief of Staff, level 3 directors and managers, level 4 team leads, level 5 individual contributors. A manager always has a lower \`emp_id\` than their reports, and nobody was hired before their manager. Example chains: ${code(chain1)}; ${code(chain2)}.`,
+      `**Headcount per department:** ${headcount}.`,
+      `**Employment types:** ${types}. Part-time and contractor \`salary\` values are annualised rates, so they are comparable with full-time salaries. Hire dates run from ${hires.lo} to ${hires.hi}.`,
+      `**Salaries** run from ${money(sal.lo)} to ${money(sal.hi)} (average ${money(sal.av)}); the CEO earns the most, followed by the five VPs; below that, pay overlaps between levels (some team leads and contractors earn more than some directors). Salaries are multiples of 500.`,
+      `**salary_history** has ${hist.n} rows for all ${hist.emps} employees (${perEmp}). The first row of every employee is dated on their \`hire_date\`, the last row always equals the current \`employees.salary\`, and later raises come roughly every year to two and a half years, typically 3% to 10% (occasionally up to 20% for a promotion; the two pay-cut employees follow a fixed pattern). Dates range from ${hist.lo} to ${hist.hi}. Terminated employees have no row after their last day.`,
+      `**Projects** (${projStatus}): \`completed\` projects have an \`end_date\`; active, on-hold and planned projects have \`end_date\` NULL. Planned projects start in 2025 (project ids ${planned.ids}). Project budgets are between ${money(budgets.lo)} and ${money(budgets.hi)}. The owning department (\`projects.dept_id\`) is not necessarily where the team comes from: the Research department owns two projects but has no employees at all.`,
+      `**project_assignments** (${nAssign} rows): roles ${roles}. Weekly hours run from ${hoursRange.lo} to ${hoursRange.hi} (average ${hoursRange.av}); part-timers get at most 8. \`assigned_on\` is on or after the project start and the employee's hire date and never after a project's end or the employee's last day (the only exception: ${assignBeforeStart} assignments to the planned project 14, which were made in December 2024 before its January 2025 start).`,
+    ],
+    quirks: [
+      `**Research has no employees.** \`Research\` (dept_id 7) is a department with zero rows in \`employees\` - use it for \`LEFT JOIN\` / \`NOT EXISTS\` lessons. It still owns projects: ${researchProj}.`,
+      `**Two employees have no department** (NULL \`dept_id\`): ${noDept}. They are not counted in any department headcount.`,
+      `**Only one NULL manager:** ${noMgr}.`,
+      `**Terminated employees (\`terminated_on\` not NULL):** ${term}. They still appear in \`salary_history\`, \`project_assignments\` (only for dates before they left) and as normal rows in \`employees\`; none of them managed anybody.`,
+      `**Salary ties** (useful for \`RANK()\` vs \`DENSE_RANK()\` vs \`ROW_NUMBER()\`): ${ties}.`,
+      `**Pay cuts:** exactly two salary decreases exist in \`salary_history\`: ${cuts} (a temporary reduction in April 2020 that was later reversed with raises).`,
+      `**${unassigned.n} employees are on no project:** emp_id ${unassigned.ids} (the CEO, the Chief of Staff, the five VPs, one terminated account executive, one sales development rep and one marketing coordinator).`,
+      `**Projects without assignments:** ${emptyProj}.`,
+    ],
+    facts: [
+      await f('Employees in total / currently employed (terminated_on IS NULL)', "SELECT count(*) || ' / ' || count(*) FILTER (WHERE terminated_on IS NULL) FROM employees"),
+      await f('Employees per department (including those with none)', 'SELECT d.name, count(e.emp_id) FROM departments d LEFT JOIN employees e ON e.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY d.dept_id', 'pairs'),
+      await f('Total yearly payroll of current employees', 'SELECT sum(salary) FROM employees WHERE terminated_on IS NULL', 'money'),
+      await f('Average salary per department', 'SELECT d.name, round(avg(e.salary), 2) FROM departments d JOIN employees e ON e.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY avg(e.salary) DESC', 'pairs'),
+      await f('Second-highest distinct salary in Engineering (dept 2)', 'SELECT DISTINCT salary FROM employees WHERE dept_id = 2 ORDER BY salary DESC OFFSET 1 LIMIT 1', 'money'),
+      await f('Employees with the top salary of their department (rank 1, ties included)', 'SELECT count(*) FROM (SELECT RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS r FROM employees WHERE dept_id IS NOT NULL) t WHERE r = 1', 'int'),
+      await f('Direct reports of the CEO', 'SELECT count(*) FROM employees WHERE manager_id = 1', 'int'),
+      await f('Manager with the most direct reports', 'SELECT m.job_title || \' (emp \' || m.emp_id || \', \' || count(*) || \' reports)\' FROM employees e JOIN employees m ON m.emp_id = e.manager_id GROUP BY m.emp_id, m.job_title ORDER BY count(*) DESC, m.emp_id LIMIT 1'),
+      await f('Total raise of the CEO since hire (first vs last salary_history row)', 'SELECT round(100.0 * (max(salary) - min(salary)) / min(salary), 1) || \'%\' FROM salary_history WHERE emp_id = 1'),
+      await f('Total budget of active projects', "SELECT sum(budget) FROM projects WHERE status = 'active'", 'money'),
+      await f('Projects per department (including departments with none)', 'SELECT d.name, count(p.project_id) FROM departments d LEFT JOIN projects p ON p.dept_id = d.dept_id GROUP BY d.dept_id, d.name ORDER BY d.dept_id', 'pairs'),
+      await f('Employee working on the most projects', 'SELECT e.first_name || \' \' || e.last_name || \' (emp \' || e.emp_id || \', \' || count(*) || \' projects)\' FROM project_assignments a JOIN employees e ON e.emp_id = a.emp_id GROUP BY e.emp_id, e.first_name, e.last_name ORDER BY count(*) DESC, e.emp_id LIMIT 1'),
+    ],
+    topics: [
+      'LEFT JOIN with departments that have no employees; COALESCE for the two employees without a department.',
+      'Self joins: employee with manager name, employees earning more than their manager, peers with the same manager.',
+      'Recursive CTEs: whole reporting chain of an employee, all reports below a VP, depth of each person, org chart paths.',
+      'Aggregation by department and job level; HAVING; salary bands with CASE.',
+      'Window functions: RANK / DENSE_RANK / ROW_NUMBER over salary, running payroll, LAG on `salary_history` to compute raises and spot pay cuts.',
+      'Date arithmetic: tenure at hire date, time between raises, who was employed on a given day.',
+      'Many-to-many through `project_assignments` (employees x projects), anti-joins for people on no project.',
+    ],
+  };
+}
+
 // =============================================================================
 // 4. movies - FlickNest streaming
 // =============================================================================
@@ -1738,8 +1836,8 @@ function buildMovies() {
     let budget = BASE_BUDGET[m.primary] * rng.logNormal(0, 0.55) * (1 + (m.year - 1975) / 60);
     if (lang !== 'English') budget *= 0.5;
     budget = clamp(r1(budget), 0.5, 350);
-    const mult = rng.logNormal(Math.log(m.primary === 9 ? 3.4 : 2.3), 0.8);
-    const box = clamp(r1(budget * mult), 0.2, 1800);
+    const mult = rng.logNormal(Math.log(m.primary === 9 ? 3.4 : 2.3), 0.7);
+    const box = clamp(r1(budget * mult), 0.2, 1500);
     return {
       id,
       title: m.title,
@@ -1768,7 +1866,8 @@ function buildMovies() {
   const WRITER_DIRECTORS = [0, 1, 3, 5, 8, 12];
 
   // directors: quotas and career windows
-  const quota = allocate(110, DIRECTORS.map((i) => 1 / Math.pow(i + 1, 0.55)), 1);
+  // 20 busy directors share 102 films (a few direct many); the last 8 directed exactly one film
+  const quota = allocate(102, [...Array(20).keys()].map((i) => 1 / Math.pow(i + 1, 0.45)), 1).concat(Array(8).fill(1));
   const dWin = DIRECTORS.map((i) => {
     const len = clamp(Math.round(8 + quota[i] * 2.4), 12, 38);
     return { start: rng.int(1975, 2024 - len), len };
@@ -1896,11 +1995,14 @@ function buildMovies() {
     else if (DIRECTORS.includes(idx)) age = rng.int(27, 42);
     else if (WRITER_ONLY.includes(idx)) age = rng.int(24, 40);
     else age = rng.int(19, 36);
+    const maxY = Math.max(...ys);
+    let birthYear = Math.max(minY - age, maxY - 78); // nobody is older than 78 in a credit
+    if (birthYear > minY - 18) birthYear = minY - 18; // nobody is younger than 18
     return {
       idx,
       id: permId[idx] + 1,
       name: `${n.first} ${n.last}`,
-      birth: unknownBirth.has(idx) ? null : minY - age,
+      birth: unknownBirth.has(idx) ? null : birthYear,
       country: rng.pick(COUNTRY_BY_GROUP[n.g]),
     };
   });
@@ -2087,6 +2189,100 @@ function buildMovies() {
       'All titles and people are fictional.',
     tables,
     extra: { DUAL: DUAL.map(pid), noRatings: [...noRatings].map((i) => movies[i].id), inactive: [...inactive] },
+  };
+}
+
+// ---- documentation: movies --------------------------------------------------------------------
+async function docMovies(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  const m = await one('SELECT count(*) AS n, min(release_year) AS y1, max(release_year) AS y2, min(duration_min) AS d1, max(duration_min) AS d2, round(avg(duration_min), 1)::text AS dav FROM movies');
+  const decades = await list('SELECT (release_year / 10 * 10) || \'s: \' || count(*) AS v FROM movies GROUP BY release_year / 10 * 10 ORDER BY release_year / 10 * 10');
+  const langs = await list('SELECT language || \' \' || count(*) AS v FROM movies GROUP BY language ORDER BY count(*) DESC, language');
+  const rated = await list('SELECT age_rating || \' \' || count(*) AS v FROM movies GROUP BY age_rating ORDER BY age_rating');
+  const nulls = await one('SELECT count(*) FILTER (WHERE budget_musd IS NULL AND box_office_musd IS NULL) AS both, count(*) FILTER (WHERE budget_musd IS NULL AND box_office_musd IS NOT NULL) AS only_budget, count(*) FILTER (WHERE budget_musd IS NOT NULL AND box_office_musd IS NULL) AS only_box, count(*) FILTER (WHERE budget_musd IS NULL OR box_office_musd IS NULL) AS any FROM movies');
+  const flops = await q.val('SELECT count(*) FROM movies WHERE box_office_musd < budget_musd');
+  const gPer = await list('SELECT n || \' genre\' || (CASE WHEN n > 1 THEN \'s\' ELSE \'\' END) || \': \' || count(*) AS v FROM (SELECT movie_id, count(*) AS n FROM movie_genres GROUP BY movie_id) t GROUP BY n ORDER BY n');
+  const genreCounts = await list('SELECT g.name || \' \' || count(*) AS v FROM movie_genres mg JOIN genres g USING (genre_id) GROUP BY g.genre_id, g.name ORDER BY count(*) DESC, g.name');
+  const roles = await list('SELECT role || \' \' || count(*) || \' credits by \' || count(DISTINCT person_id) || \' people\' AS v FROM movie_cast GROUP BY role ORDER BY role');
+  must((await q.val("SELECT count(*) FROM (SELECT movie_id FROM movie_cast GROUP BY movie_id HAVING count(*) FILTER (WHERE role = 'director') <> 1 OR count(*) FILTER (WHERE role = 'actor') NOT BETWEEN 2 AND 6) t")) === 0, 'each movie has exactly 1 director and 2-6 actors');
+  must((await q.val('SELECT count(*) FROM movies a JOIN movies b ON b.movie_id = a.movie_id + 1 WHERE b.release_year < a.release_year')) === 0, 'movie ids are in release-year order');
+  must((await q.val("SELECT count(*) FROM movie_cast WHERE (role = 'actor') <> (character_name IS NOT NULL) OR (role = 'actor') <> (billing_order IS NOT NULL)")) === 0, 'character_name and billing_order only for actors');
+  const writers = await one("SELECT count(DISTINCT movie_id) AS withw FROM movie_cast WHERE role = 'writer'");
+  const dual = await list("SELECT p.person_id || ' ' || p.full_name || ' (' || count(*) FILTER (WHERE c.role = 'director') || ' directed, ' || count(*) FILTER (WHERE c.role = 'actor') || ' acted)' AS v FROM people p JOIN movie_cast c USING (person_id) GROUP BY p.person_id, p.full_name HAVING count(*) FILTER (WHERE c.role = 'director') > 0 AND count(*) FILTER (WHERE c.role = 'actor') > 0 ORDER BY p.person_id");
+  const topDir = await list("SELECT p.full_name || ' (person ' || p.person_id || ', ' || count(*) || ' films)' AS v FROM movie_cast c JOIN people p USING (person_id) WHERE c.role = 'director' GROUP BY p.person_id, p.full_name ORDER BY count(*) DESC, p.person_id LIMIT 3");
+  const dirDist = await one("SELECT count(*) AS dirs, count(*) FILTER (WHERE n = 1) AS once, max(n) AS mx FROM (SELECT person_id, count(*) AS n FROM movie_cast WHERE role = 'director' GROUP BY person_id) t");
+  const ageRange = await one('SELECT min(m.release_year - p.birth_year) AS lo, max(m.release_year - p.birth_year) AS hi FROM movie_cast c JOIN movies m USING (movie_id) JOIN people p USING (person_id) WHERE p.birth_year IS NOT NULL');
+  const dirWrit = await q.val("SELECT count(*) FROM movie_cast d JOIN movie_cast w ON w.movie_id = d.movie_id AND w.person_id = d.person_id AND w.role = 'writer' WHERE d.role = 'director'");
+  const unk = await q.val('SELECT count(*) FROM people WHERE birth_year IS NULL');
+  const peopleCountries = await one('SELECT count(DISTINCT country) AS n FROM people');
+  const usr = await one('SELECT count(*) AS n, min(signup_date)::text AS lo, max(signup_date)::text AS hi FROM users');
+  const plans = await list('SELECT plan || \' \' || count(*) AS v FROM users GROUP BY plan ORDER BY count(*) DESC');
+  const rt = await one('SELECT count(*) AS n, round(avg(stars), 2)::text AS av, min(rated_at)::text AS lo, max(rated_at)::text AS hi, count(DISTINCT user_id) AS users, count(DISTINCT movie_id) AS movies FROM ratings');
+  must((await q.val('SELECT count(*) FROM ratings r JOIN users u USING (user_id) JOIN movies m USING (movie_id) WHERE r.rated_at::date < u.signup_date OR extract(year FROM r.rated_at) < m.release_year')) === 0, 'ratings come after signup and release year');
+  const noRated = await list('SELECT m.movie_id || \' \' || m.title AS v FROM movies m WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.movie_id = m.movie_id) ORDER BY m.movie_id');
+  const noRatedN = await q.val('SELECT count(*) FROM movies m WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.movie_id = m.movie_id)');
+  const noRatingUsers = await list('SELECT user_id::text AS v FROM users u WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = u.user_id) ORDER BY user_id');
+  const rSkew = await one('WITH c AS (SELECT movie_id, count(*) AS n FROM ratings GROUP BY movie_id) SELECT max(n) AS mx, percentile_cont(0.5) WITHIN GROUP (ORDER BY n)::text AS med, count(*) FILTER (WHERE n <= 3) AS tiny FROM c');
+  const stars = await list('SELECT stars || \': \' || count(*) AS v FROM ratings GROUP BY stars ORDER BY stars');
+  const wh = await one('SELECT count(*) AS n, min(started_at)::text AS lo, max(started_at)::text AS hi, count(DISTINCT user_id) AS users, count(DISTINCT movie_id) AS movies FROM watch_history');
+  must((await q.val('SELECT count(*) FROM watch_history w JOIN movies m USING (movie_id) JOIN users u USING (user_id) WHERE w.minutes_watched > m.duration_min OR w.started_at::date < u.signup_date')) === 0, 'watch minutes <= duration and after signup');
+  const noWatch = await q.val('SELECT count(*) FROM users u WHERE NOT EXISTS (SELECT 1 FROM watch_history w WHERE w.user_id = u.user_id)');
+  const devices = await list('SELECT device || \' \' || count(*) AS v FROM watch_history GROUP BY device ORDER BY count(*) DESC');
+  const gaps = await one("WITH g AS (SELECT started_at - lag(started_at) OVER (PARTITION BY user_id ORDER BY started_at) AS gap FROM watch_history) SELECT to_char(max(gap) FILTER (WHERE gap <= interval '30 minutes'), 'HH24:MI:SS') AS within, to_char(min(gap) FILTER (WHERE gap > interval '30 minutes'), 'HH24:MI:SS') AS between FROM g");
+  const sess = await one("WITH g AS (SELECT user_id, started_at, started_at - lag(started_at) OVER (PARTITION BY user_id ORDER BY started_at) AS gap FROM watch_history), s AS (SELECT user_id, sum(CASE WHEN gap IS NULL OR gap > interval '30 minutes' THEN 1 ELSE 0 END) AS n, count(*) AS plays FROM g GROUP BY user_id) SELECT sum(n)::int AS sessions, sum(plays)::int AS plays FROM s");
+  const bingeSessions = await q.val("WITH g AS (SELECT user_id, started_at, CASE WHEN started_at - lag(started_at) OVER (PARTITION BY user_id ORDER BY started_at) > interval '30 minutes' OR lag(started_at) OVER (PARTITION BY user_id ORDER BY started_at) IS NULL THEN 1 ELSE 0 END AS new_s FROM watch_history), s AS (SELECT user_id, started_at, sum(new_s) OVER (PARTITION BY user_id ORDER BY started_at) AS sid FROM g) SELECT count(*) FROM (SELECT user_id, sid FROM s GROUP BY user_id, sid HAVING count(*) >= 3) t");
+  const completion = await one('SELECT count(*) FILTER (WHERE w.minutes_watched = m.duration_min) AS full, count(*) FILTER (WHERE w.minutes_watched < 0.5 * m.duration_min) AS under_half FROM watch_history w JOIN movies m USING (movie_id)');
+
+  must(dual.split('), ').length === 2, 'exactly two people both act and direct');
+  return {
+    about:
+      'FlickNest is built around **many-to-many** relationships (movies and genres, movies and people, users and movies) and around **time**: a rating history that spans three years and a half-year of viewing logs with realistic binge sessions. ' +
+      'All 110 titles and 90 people are invented. "As of" date: **2024-12-31** for ratings, **2024-06-30** for the end of the watch history.',
+    conventions: [
+      `**Movies:** ${m.n} films released ${m.y1} to ${m.y2} (by decade: ${decades}); running time ${m.d1} to ${m.d2} minutes (average ${m.dav}). Movie ids are assigned in release-year order. Languages: ${langs}. Age ratings: ${rated} (animation and family films are G/PG, horror is mostly R).`,
+      `**Money columns** are in *millions* of US dollars (\`budget_musd\`, \`box_office_musd\`). ${nulls.any} films (${((nulls.any / m.n) * 100).toFixed(0)}%) have a NULL budget and/or box office: ${nulls.both} have both NULL, ${nulls.only_budget} only the budget, ${nulls.only_box} only the box office. ${flops} films earned less than they cost.`,
+      `**Genres:** 12 genres; a film has ${gPer}. Films per genre (counting multi-genre films once per genre): ${genreCounts}.`,
+      `**Cast and crew** (\`movie_cast\`): ${roles}. Every film has **exactly one director** and **2 to 6 actors** (\`billing_order\` 1 = top billed, \`character_name\` only for actors) and ${writers.withw} films have one or two credited writers. The primary key is (movie_id, person_id, role), so one person may hold several roles on a film: ${dirWrit} films were written by their own director. A few directors direct many films: ${topDir}; ${dirDist.dirs} directors in total, ${dirDist.once} of them directed just one film.`,
+      `**People:** 90 people from ${peopleCountries.n} countries; the age at release (\`release_year - birth_year\`) for every credit is between ${ageRange.lo} and ${ageRange.hi}. ${unk} people have an unknown \`birth_year\`.`,
+      `**Users:** ${usr.n} subscribers who signed up ${usr.lo} to ${usr.hi}; plans: ${plans}.`,
+      `**Ratings:** ${commas(rt.n)} ratings by ${rt.users} users on ${rt.movies} films, from ${rt.lo.slice(0, 10)} to ${rt.hi.slice(0, 10)}; \`stars\` is a multiple of 0.5 between 0.5 and 5.0 (distribution - ${stars}; average ${rt.av}). A rating is never earlier than the user's signup date or the film's release year. Popularity is very uneven: the most-rated film has ${rSkew.mx} ratings, the median film ${rSkew.med}, and ${rSkew.tiny} films have 3 or fewer.`,
+      `**Watch history:** ${commas(wh.n)} plays by ${wh.users} users on ${wh.movies} films between ${wh.lo} and ${wh.hi}. Devices: ${devices}. \`minutes_watched\` never exceeds the film's \`duration_min\` (${commas(completion.full)} plays were watched to the very end, ${commas(completion.under_half)} stopped before the halfway point).`,
+      `**Binge sessions (sessionization).** Plays of one user come in clusters: inside a cluster consecutive plays start at most **${gaps.within}** apart (hh:mm:ss), while the next cluster of the same user starts at least **${gaps.between}** after the previous play. So a 30-minute inactivity rule gives exactly ${commas(sess.sessions)} sessions for the ${commas(sess.plays)} plays, and ${commas(bingeSessions)} of those sessions contain 3 or more plays. In a binge the first plays are short samples (a few minutes) and only the last one is watched properly.`,
+    ],
+    quirks: [
+      `**${noRatedN} films have no ratings at all:** ${noRated}.`,
+      `**${noRatingUsers.split(',').filter(Boolean).length} users never rated a film** (user_id ${noRatingUsers}); **${noWatch} users have no plays** in the watch history (they signed up but were inactive in January-June 2024).`,
+      `**Two people both act and direct:** ${dual}. (Other directors may also be credited as writers, but only these two appear as actors.)`,
+      `**${unk} people have a NULL birth_year.**`,
+      'The same person can appear several times for one film with different roles (director + writer), so always include `role` when counting or joining `movie_cast`.',
+      'A user may watch the same film more than once (replays), but rates it at most once (primary key on `ratings`).',
+      'Ratings and plays are generated independently: a user can rate a film that never appears in their watch history, and vice versa.',
+    ],
+    facts: [
+      await f('Number of films / people / users', "SELECT (SELECT count(*) FROM movies) || ' / ' || (SELECT count(*) FROM people) || ' / ' || (SELECT count(*) FROM users)"),
+      await f('Average rating of all ratings', 'SELECT round(avg(stars), 2) FROM ratings'),
+      await f('Most-rated film', 'SELECT m.title || \' (\' || count(*) || \' ratings, average \' || round(avg(r.stars), 2) || \')\' FROM ratings r JOIN movies m ON m.movie_id = r.movie_id GROUP BY m.movie_id, m.title ORDER BY count(*) DESC, m.title LIMIT 1'),
+      await f('Highest average rating among films with at least 25 ratings', 'SELECT m.title || \' (\' || round(avg(r.stars), 2) || \' from \' || count(*) || \' ratings)\' FROM ratings r JOIN movies m ON m.movie_id = r.movie_id GROUP BY m.movie_id, m.title HAVING count(*) >= 25 ORDER BY avg(r.stars) DESC, m.title LIMIT 1'),
+      await f('Director with the most films', "SELECT p.full_name || ' (' || count(*) || ' films)' FROM movie_cast c JOIN people p ON p.person_id = c.person_id WHERE c.role = 'director' GROUP BY p.person_id, p.full_name ORDER BY count(*) DESC, p.person_id LIMIT 1"),
+      await f('Actor with the most credits', "SELECT p.full_name || ' (' || count(*) || ' films)' FROM movie_cast c JOIN people p ON p.person_id = c.person_id WHERE c.role = 'actor' GROUP BY p.person_id, p.full_name ORDER BY count(*) DESC, p.person_id LIMIT 1"),
+      await f('Highest-grossing film (box_office_musd)', 'SELECT title || \' (\' || box_office_musd || \' million)\' FROM movies WHERE box_office_musd IS NOT NULL ORDER BY box_office_musd DESC LIMIT 1'),
+      await f('Films per age rating', 'SELECT age_rating, count(*) FROM movies GROUP BY 1 ORDER BY 1', 'pairs'),
+      await f('Users per plan', 'SELECT plan, count(*) FROM users GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
+      await f('Total minutes watched in the watch history', 'SELECT sum(minutes_watched) FROM watch_history', 'int'),
+      await f('Plays per month (2024)', "SELECT to_char(started_at, 'YYYY-MM') AS month, count(*) FROM watch_history GROUP BY to_char(started_at, 'YYYY-MM') ORDER BY 1", 'pairs'),
+      await f('Most-watched film (plays)', 'SELECT m.title || \' (\' || count(*) || \' plays)\' FROM watch_history w JOIN movies m ON m.movie_id = w.movie_id GROUP BY m.movie_id, m.title ORDER BY count(*) DESC, m.title LIMIT 1'),
+    ],
+    topics: [
+      'Many-to-many joins: films by genre, films by actor, actors who worked with a given director (`movie_cast` self join).',
+      'Aggregation and HAVING: average rating per film with a minimum number of ratings; films without ratings (LEFT JOIN / NOT EXISTS).',
+      'Window functions: rank films by rating within each genre or decade, running totals of plays, `LAG` between a user\'s consecutive plays.',
+      'Sessionization: group plays into sessions with a 30-minute gap rule (`LAG` + running `SUM` of a "new session" flag).',
+      'Conditional aggregation and `FILTER` for devices or plans; date truncation by week or month.',
+      'NULL-handling in `budget_musd` / `box_office_musd` (profit, ROI, `COALESCE`, `NULLIF`).',
+    ],
   };
 }
 
@@ -2662,6 +2858,106 @@ function buildBank() {
   };
 }
 
+// ---- documentation: bank ----------------------------------------------------------------------
+async function docBank(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  const kyc = await list('SELECT kyc_status || \' \' || count(*) AS v FROM customers GROUP BY kyc_status ORDER BY count(*) DESC');
+  const noAcc = await list("SELECT c.customer_id || ' (' || c.kyc_status || ')' AS v FROM customers c WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.customer_id = c.customer_id) ORDER BY c.customer_id");
+  const noAccN = await q.val('SELECT count(*) FROM customers c WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.customer_id = c.customer_id)');
+  const accPer = await list('SELECT n || \' account\' || (CASE WHEN n > 1 THEN \'s\' ELSE \'\' END) || \': \' || count(*) AS v FROM (SELECT customer_id, count(*) AS n FROM accounts GROUP BY customer_id) t GROUP BY n ORDER BY n');
+  const accTypes = await list('SELECT account_type || \' \' || count(*) AS v FROM accounts GROUP BY account_type ORDER BY count(*) DESC');
+  const accStatus = await list('SELECT status || \' \' || count(*) AS v FROM accounts GROUP BY status ORDER BY count(*) DESC');
+  const odl = await list('SELECT account_type || \' \' || min(overdraft_limit) || \'-\' || max(overdraft_limit) AS v FROM accounts GROUP BY account_type ORDER BY account_type');
+  const tx = await one('SELECT count(*) AS n, min(txn_time)::text AS lo, max(txn_time)::text AS hi, count(DISTINCT account_id) AS accts FROM transactions');
+  const types = await list('SELECT txn_type || \' \' || count(*) AS v FROM transactions GROUP BY txn_type ORDER BY count(*) DESC, txn_type');
+  const openers = await one("SELECT count(*) FILTER (WHERE description = 'Balance brought forward') AS bf, count(*) FILTER (WHERE description = 'Opening deposit') AS od FROM transactions");
+  const salary = await one("SELECT count(*) AS n, count(DISTINCT account_id) AS accts FROM transactions WHERE description LIKE 'Salary - %'");
+  const interest = await one("SELECT count(*) FILTER (WHERE amount > 0) AS pos, count(*) FILTER (WHERE amount < 0) AS neg FROM transactions WHERE txn_type = 'interest'");
+  const interestCheck = await one("SELECT count(*) FILTER (WHERE a.account_type = 'savings' AND t.amount > 0) AS sav_pos, count(*) FILTER (WHERE a.account_type = 'credit' AND t.amount < 0) AS cred_neg, count(*) AS total FROM transactions t JOIN accounts a USING (account_id) WHERE t.txn_type = 'interest'");
+  must(interestCheck.sav_pos + interestCheck.cred_neg === interestCheck.total, 'interest is positive on savings and negative on credit accounts');
+  const fees = await list("SELECT description || ' ' || count(*) AS v FROM transactions WHERE txn_type = 'fee' GROUP BY description ORDER BY count(*) DESC, description");
+  const cats = await list("SELECT category || ' ' || count(*) AS v FROM transactions WHERE txn_type = 'card_payment' GROUP BY category ORDER BY count(*) DESC");
+  must((await q.val("SELECT count(*) FROM transactions WHERE (txn_type = 'card_payment') <> (merchant IS NOT NULL) OR (merchant IS NULL) <> (category IS NULL)")) === 0, 'merchant and category only on card payments');
+  const pair = await one("SELECT (SELECT count(*) FROM transactions WHERE description = 'Transfer to savings') AS outs, (SELECT count(*) FROM transactions WHERE description = 'Transfer from checking') AS ins, (SELECT count(*) FROM transactions o JOIN transactions i ON i.txn_time = o.txn_time AND i.amount = -o.amount AND i.description = 'Transfer from checking' WHERE o.description = 'Transfer to savings') AS matched");
+  must(pair.outs === pair.ins && pair.ins === pair.matched, 'savings transfers come in matching pairs');
+  const payCredit = await one("SELECT count(*) AS n FROM transactions WHERE description = 'Payment received - thank you'");
+  const lastTx = await list("SELECT a.status || ' accounts: last activity between ' || min(l)::date || ' and ' || max(l)::date AS v FROM (SELECT account_id, max(txn_time) AS l FROM transactions GROUP BY account_id) t JOIN accounts a USING (account_id) WHERE a.status <> 'active' GROUP BY a.status ORDER BY a.status");
+  const endBal = await list("SELECT a.account_type || ' ' || count(*) FILTER (WHERE b < 0) || ' of ' || count(*) AS v FROM (SELECT account_id, sum(amount) AS b FROM transactions GROUP BY account_id) t JOIN accounts a USING (account_id) GROUP BY a.account_type ORDER BY a.account_type");
+  const goesNeg = await one("WITH r AS (SELECT t.account_id, a.account_type, sum(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_time, t.txn_id) AS bal FROM transactions t JOIN accounts a USING (account_id)) SELECT count(DISTINCT account_id) FILTER (WHERE account_type = 'checking' AND bal < 0) AS checking FROM r");
+  must((await q.val("SELECT count(*) FROM accounts a JOIN customers c USING (customer_id) WHERE c.kyc_status = 'rejected' AND a.status <> 'frozen'")) === 0, 'rejected customers only have frozen accounts');
+  must((await q.val('SELECT count(*) FROM loans WHERE term_months >= 240 AND annual_rate > 6.9')) === 0, 'long loans have low rates');
+  const terms = await one('SELECT min(term_months) AS lo, max(term_months) AS hi FROM loans');
+  must((await q.val("WITH r AS (SELECT t.txn_type, t.amount, a.overdraft_limit, sum(t.amount) OVER (PARTITION BY t.account_id ORDER BY t.txn_time, t.txn_id) AS bal FROM transactions t JOIN accounts a USING (account_id)) SELECT count(*) FROM r WHERE bal < -overdraft_limit - 0.001 AND amount < 0 AND txn_type NOT IN ('fee', 'interest')")) === 0, 'only fees and interest can push a balance below the overdraft limit');
+  must((await q.val("SELECT count(*) FROM (SELECT account_id, date_trunc('month', txn_time) FROM transactions WHERE description = 'Overdraft fee' GROUP BY 1, 2 HAVING count(*) > 1) t")) === 0, 'at most one overdraft fee per account and month');
+  must((await q.val("SELECT count(*) FROM loans WHERE status = 'active' AND start_date + (term_months || ' months')::interval <= DATE '2024-12-31'")) === 0, 'active loans have not reached the end of their term');
+  const planted = ds.extra.planted;
+  const bursts = await q.rows("SELECT account_id, count(*) AS n, min(txn_time)::text AS first_txn, max(txn_time)::text AS last_txn, sum(-amount) AS total FROM transactions WHERE amount <= -500 AND txn_type IN ('card_payment', 'withdrawal') GROUP BY account_id, date_trunc('hour', txn_time) HAVING count(*) >= 4 ORDER BY account_id");
+  must(bursts.length === 3, 'exactly three bursts');
+  const burstText = bursts.map((b) => `account ${b.account_id}: ${b.n} debits totalling ${money(b.total)} between ${b.first_txn} and ${b.last_txn}`).join('; ');
+  const large = await q.rows("SELECT txn_id, account_id, txn_time::text AS txn_time, amount::text AS amount, description, round(-amount / avg_debit, 1)::text AS times_average FROM (SELECT t.*, avg(-amount) OVER (PARTITION BY account_id) AS avg_debit FROM transactions t WHERE amount < 0) x WHERE -amount > 10 * avg_debit ORDER BY account_id");
+  must(large.length === 2, 'exactly two debits above 10x the average debit');
+  const largeText = large.map((l) => `txn ${l.txn_id} on account ${l.account_id} (${l.txn_time}): ${money(l.amount)} - ${l.description}, ${l.times_average} times the account's average debit`).join('; ');
+  const ln = await one('SELECT count(*) AS n, round(sum(principal), 2)::text AS total, min(principal)::text AS lo, max(principal)::text AS hi, min(annual_rate)::text AS r1, max(annual_rate)::text AS r2, min(start_date)::text AS s1, max(start_date)::text AS s2 FROM loans');
+  const loanStatus = await list('SELECT status || \' \' || count(*) AS v FROM loans GROUP BY status ORDER BY count(*) DESC');
+  const early = await q.val("SELECT count(*) FROM loans WHERE status = 'paid_off' AND start_date + (term_months || ' months')::interval > DATE '2024-12-31'");
+  const multi = await q.val('SELECT count(*) FROM (SELECT customer_id FROM loans GROUP BY customer_id HAVING count(*) > 1) t');
+  const badLoan = await q.val("SELECT count(*) FROM loans l JOIN customers c USING (customer_id) WHERE c.kyc_status <> 'verified' OR c.created_at > l.start_date");
+  must(badLoan === 0, 'loans only for verified customers who joined before the loan');
+  const defaultedRate = await one("SELECT min(annual_rate)::text AS lo FROM loans WHERE status = 'defaulted'");
+  const branchAcc = await list('SELECT b.city || \' \' || count(*) AS v FROM accounts a JOIN branches b USING (branch_id) GROUP BY b.branch_id, b.city ORDER BY b.branch_id');
+
+  return {
+    about:
+      'Harbor Bank is a transaction-heavy dataset: every row of `transactions` is a movement of money in calendar year **2024**, which makes it ideal for running balances, month-by-month reports and spotting unusual behaviour. ' +
+      '"As of" date: **2024-12-31 23:59**. Loans are dated back to 2015.',
+    conventions: [
+      `**Customers:** 80 people; KYC status: ${kyc}. Pending customers are mostly recent sign-ups. ${noAccN} customers have **no account** (customer_id ${noAcc}).`,
+      `**Accounts** (${accTypes}; status: ${accStatus}): accounts per customer - ${accPer}. A customer's first account is a checking account in most cases and extra accounts are opened months or years later. Accounts per branch: ${branchAcc}. \`overdraft_limit\` ranges by type: ${odl}; for \`credit\` accounts it is the credit limit.`,
+      `**Transactions:** ${commas(tx.n)} rows on ${tx.accts} accounts from ${tx.lo} to ${tx.hi}; types - ${types}. \`amount\` is signed: positive = money in, negative = money out. **Every account starts 2024 at zero**, so \`SUM(amount)\` over an account's rows is its balance at the end of 2024 and a running \`SUM(amount) OVER (PARTITION BY account_id ORDER BY txn_time, txn_id)\` is its balance at any moment.`,
+      `**Opening balances.** Instead of a balance column, accounts that existed before 2024 get one row at 2024-01-01 00:00:00 with description \`Balance brought forward\` (${openers.bf} accounts, type \`deposit\`); accounts opened during 2024 get an \`Opening deposit\` (${openers.od} accounts). Credit accounts start at zero without such a row. These rows are legitimate deposits; filter on the description if you want to exclude them from "activity".`,
+      `**Typical patterns.** ${salary.n} salary deposits (\`Salary - <employer>\`) on ${salary.accts} checking accounts, one per month on a fixed pay day; rent payments (\`transfer_out\`, \`Rent payment - <landlord>\`); card payments with a merchant and one of the categories ${cats}; ATM withdrawals; monthly interest on savings accounts (positive, on the last day of the month at 23:50) and **negative** interest on credit accounts that carry a balance (\`Interest charged\`, on the 25th); fees: ${fees}.`,
+      `**Paired transfers.** ${pair.outs} \`Transfer to savings\` rows on checking accounts each have exactly one matching \`Transfer from checking\` row on the customer's savings account with the same timestamp and opposite amount.`,
+      `**Credit accounts** hold card purchases (negative); on the 20th of each month the customer pays all, part or none of the amount owed (\`transfer_in\`, \`Payment received - thank you\`, ${payCredit.n} payments), a late fee is charged on the 21st if nothing was paid, and interest on the 25th. A negative balance on a credit account means money owed.`,
+      `**Overdrafts.** Debits are never declined by the generator unless they would push the balance below \`-overdraft_limit\`, so balances never fall below that limit except through fees and credit-card interest (which are always charged). ${goesNeg.checking} checking accounts dip below zero at some point and get an \`Overdraft fee\` of 35.00 (at most once per month).`,
+      `**Closed and frozen accounts** simply stop having transactions at some point (${lastTx}); there is no closing date column.`,
+      `**Loans:** ${ln.n} loans starting ${ln.s1} to ${ln.s2}; principal ${money(ln.lo)} to ${money(ln.hi)}; \`annual_rate\` ${ln.r1} to ${ln.r2} (percent); terms from ${terms.lo} to ${terms.hi} months; status: ${loanStatus}. Rates follow the kind of loan: long loans (20-30 years, mortgage-sized) have the low rates (at most 6.9%), small personal loans the high ones. Only verified customers have loans, always after they became customers. ${multi} customers have more than one loan. There are no loan-payment rows.`,
+    ],
+    quirks: [
+      `**Customers without accounts:** ${noAcc} - anti-join practice; the rejected ones are what you would expect for failed identity checks. Customers with a rejected KYC status who do have accounts only have \`frozen\` ones.`,
+      `**Three suspicious bursts** (at least 4 debits of 500 or more within the same clock hour; each burst fits into about 10 minutes): ${burstText}. They happen at night, on accounts that had enough money to cover them.`,
+      `**Two unusually large debits** (more than 10 times the account's average debit): ${largeText}.`,
+      `**Loan status consistency:** ${early === 0 ? 'every' : 'most'} \`paid_off\` loan has run its full term by the end of 2024${early === 0 ? '' : ` (${early} were repaid early)`}; no \`active\` loan has reached the end of its term; defaulted loans all have rates of at least ${defaultedRate.lo}%.`,
+      `**Year-end balances:** accounts with a negative balance on 2024-12-31 - ${endBal}. Negative checking balances are overdrafts; negative credit balances are debt.`,
+      '`merchant` and `category` are NULL for every transaction that is not a `card_payment` (and set for every card payment).',
+    ],
+    facts: [
+      await f('Accounts by type', 'SELECT account_type, count(*) FROM accounts GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
+      await f('Transactions by type (count)', 'SELECT txn_type, count(*) FROM transactions GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
+      await f('Total of all positive amounts / negative amounts', 'SELECT round(sum(amount) FILTER (WHERE amount > 0), 2) || \' / \' || round(sum(amount) FILTER (WHERE amount < 0), 2) FROM transactions'),
+      await f('Salary deposits in total', "SELECT sum(amount) FROM transactions WHERE description LIKE 'Salary - %'", 'money'),
+      await f('Month with the most transactions', "SELECT to_char(txn_time, 'YYYY-MM') || ' (' || count(*) || ' transactions)' FROM transactions GROUP BY to_char(txn_time, 'YYYY-MM') ORDER BY count(*) DESC LIMIT 1"),
+      await f('Largest card payment (including the planted ones)', "SELECT -amount || ' at ' || merchant || ' (account ' || account_id || ')' FROM transactions WHERE txn_type = 'card_payment' ORDER BY amount LIMIT 1"),
+      await f('Card spending per category (dollars)', "SELECT category, round(-sum(amount), 2) FROM transactions WHERE txn_type = 'card_payment' GROUP BY 1 ORDER BY 2 DESC", 'pairs'),
+      await f('Average year-end balance per account type', 'SELECT a.account_type, round(avg(b), 2) FROM (SELECT account_id, sum(amount) AS b FROM transactions GROUP BY account_id) t JOIN accounts a ON a.account_id = t.account_id GROUP BY 1 ORDER BY 1', 'pairs'),
+      await f('Interest credited to savings accounts in 2024', "SELECT sum(t.amount) FROM transactions t JOIN accounts a ON a.account_id = t.account_id WHERE t.txn_type = 'interest' AND a.account_type = 'savings'", 'money'),
+      await f('Burst detector: 4 or more debits of 500+ within one clock hour', "SELECT account_id, count(*) AS debits, min(txn_time)::text AS first_txn, sum(-amount) AS total FROM transactions WHERE amount <= -500 AND txn_type IN ('card_payment', 'withdrawal') GROUP BY account_id, date_trunc('hour', txn_time) HAVING count(*) >= 4 ORDER BY account_id", 'table'),
+      await f('Debits above 10 times the account\'s average debit', 'SELECT txn_id, account_id, amount, description FROM (SELECT t.*, avg(-amount) OVER (PARTITION BY account_id) AS avg_debit FROM transactions t WHERE amount < 0) x WHERE -amount > 10 * avg_debit ORDER BY account_id', 'table'),
+      await f('Loans: count and total principal per status', 'SELECT status, count(*) || \' loans, \' || sum(principal) FROM loans GROUP BY 1 ORDER BY count(*) DESC', 'pairs'),
+    ],
+    topics: [
+      'Running balance per account with a window `SUM`; balance on a given date; month-end balances; the account with the highest balance.',
+      'Monthly and weekly summaries (`date_trunc`), credits vs debits with `FILTER`, savings of each customer across all of their accounts.',
+      'Joins customers -> accounts -> transactions; customers without accounts or without transactions (LEFT JOIN).',
+      'Fraud-style detection: bursts in a short time window (`LAG`, self join on time), outliers vs the account average, merchants and categories never used before.',
+      'Loans: monthly payment formula, remaining principal, default analysis by rate, customers with both a loan and an overdraft.',
+      'Data-quality reasoning: paired transfers, signed amounts, accounts that stop being active.',
+    ],
+  };
+}
+
 // =============================================================================
 // 6. app - FitTrack fitness app analytics
 // =============================================================================
@@ -2936,6 +3232,98 @@ function buildApp() {
       'Events come in bursts (sessions) separated by hours or days of silence.',
     tables,
     extra: { silent: [...silent], stepUsers: stepUsers.map((u) => u.id), kinds },
+  };
+}
+
+// ---- documentation: app -----------------------------------------------------------------------
+async function docApp(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  const u = await one('SELECT count(*) AS n, min(signup_date)::text AS lo, max(signup_date)::text AS hi, count(*) FILTER (WHERE birth_year IS NULL) AS nobirth, min(birth_year) AS b1, max(birth_year) AS b2 FROM users');
+  const plat = await list('SELECT platform || \' \' || count(*) AS v FROM users GROUP BY platform ORDER BY count(*) DESC');
+  const refs = await list('SELECT referral_source || \' \' || count(*) AS v FROM users GROUP BY referral_source ORDER BY count(*) DESC');
+  const ctry = await list('SELECT country || \' \' || count(*) AS v FROM users GROUP BY country ORDER BY count(*) DESC, country LIMIT 5');
+  const ev = await one('SELECT count(*) AS n, min(event_time)::text AS lo, max(event_time)::text AS hi, count(DISTINCT user_id) AS users FROM events');
+  must((await q.val('SELECT count(*) FROM events e JOIN users u USING (user_id) WHERE e.event_time::date < u.signup_date')) === 0, 'no event before signup');
+  const silent = await one('SELECT count(*) AS n FROM users u WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.user_id)');
+  const names = await list('SELECT event_name || \' \' || count(*) || \' (\' || count(DISTINCT user_id) || \' users)\' AS v FROM events GROUP BY event_name ORDER BY count(*) DESC');
+  const funnel = await one("SELECT count(DISTINCT user_id) FILTER (WHERE event_name = 'app_open') AS opened, count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_started') AS started, count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_completed') AS completed, count(DISTINCT user_id) FILTER (WHERE event_name = 'subscription_started') AS subscribed FROM events");
+  const firstEv = await q.val("SELECT count(*) FROM (SELECT DISTINCT ON (user_id) user_id, event_name, event_time FROM events ORDER BY user_id, event_time, event_id) t JOIN users u USING (user_id) WHERE t.event_name = 'app_open' AND t.event_time::date = u.signup_date");
+  const firstTotal = await q.val('SELECT count(DISTINCT user_id) FROM events');
+  must(firstEv === firstTotal, 'every active user starts with an app_open on the signup day');
+  const keys = await list("SELECT event_name || ': ' || string_agg(DISTINCT k, ', ' ORDER BY k) AS v FROM (SELECT event_name, jsonb_object_keys(properties) AS k FROM events) t GROUP BY event_name ORDER BY event_name");
+  const vals = async (en, key) => list(`SELECT v FROM (SELECT properties->>'${key}' AS v, count(*) AS n FROM events WHERE event_name = '${en}' GROUP BY 1) t ORDER BY n DESC, v`);
+  const ranges = await one("SELECT min((properties->>'duration_min')::int) AS d1, max((properties->>'duration_min')::int) AS d2 FROM events WHERE event_name IN ('workout_started', 'workout_completed')");
+  const gaps = await one("WITH g AS (SELECT event_time - lag(event_time) OVER (PARTITION BY user_id ORDER BY event_time) AS gap FROM events) SELECT to_char(max(gap) FILTER (WHERE gap <= interval '30 minutes'), 'HH24:MI:SS') AS within, to_char(min(gap) FILTER (WHERE gap > interval '30 minutes'), 'HH24:MI:SS') AS between FROM g");
+  const sess = await one("WITH g AS (SELECT user_id, event_name, event_time - lag(event_time) OVER (PARTITION BY user_id ORDER BY event_time) AS gap FROM events) SELECT count(*) FILTER (WHERE gap IS NULL OR gap > interval '30 minutes') AS sessions, count(*) FILTER (WHERE event_name = 'app_open') AS opens, count(*) FILTER (WHERE (gap IS NULL OR gap > interval '30 minutes') AND event_name = 'app_open') AS opens_at_start FROM g");
+  must(sess.sessions === sess.opens && sess.opens_at_start === sess.opens, 'each session starts with exactly one app_open');
+  const perSession = await one("WITH g AS (SELECT user_id, event_time, CASE WHEN event_time - lag(event_time) OVER (PARTITION BY user_id ORDER BY event_time) > interval '30 minutes' OR lag(event_time) OVER (PARTITION BY user_id ORDER BY event_time) IS NULL THEN 1 ELSE 0 END AS s FROM events), t AS (SELECT user_id, sum(s) OVER (PARTITION BY user_id ORDER BY event_time) AS sid FROM g) SELECT round(avg(n), 2)::text AS av, max(n) AS mx FROM (SELECT count(*) AS n FROM t GROUP BY user_id, sid) x");
+  const retention = await list("SELECT 'week ' || wk || ': ' || active AS v FROM (SELECT ((e.event_time::date - u.signup_date) / 7) AS wk, count(DISTINCT e.user_id) AS active FROM events e JOIN users u USING (user_id) GROUP BY 1 ORDER BY 1 LIMIT 9) t");
+  const subs = await one('SELECT count(*) AS n, count(DISTINCT user_id) AS users, count(*) FILTER (WHERE cancelled_at IS NOT NULL) AS cancelled, min(started_at)::text AS lo, max(started_at)::text AS hi FROM subscriptions');
+  const plans = await list('SELECT plan || \' \' || count(*) || \' at \' || min(price) AS v FROM subscriptions GROUP BY plan ORDER BY plan');
+  const resub = await list('SELECT user_id::text AS v FROM subscriptions GROUP BY user_id HAVING count(*) > 1 ORDER BY user_id');
+  must((await q.val("SELECT count(*) FROM (SELECT user_id, event_time::date AS d, properties->>'plan' AS p, (properties->>'price')::numeric AS pr FROM events WHERE event_name = 'subscription_started') a FULL JOIN subscriptions s ON s.user_id = a.user_id AND s.started_at = a.d AND s.plan = a.p AND s.price = a.pr WHERE a.user_id IS NULL OR s.user_id IS NULL")) === 0, 'subscriptions match subscription_started events');
+  const cancelGap = await one('SELECT min(cancelled_at - started_at) AS lo, max(cancelled_at - started_at) AS hi FROM subscriptions WHERE cancelled_at IS NOT NULL');
+  const cancelByPlan = await list("SELECT plan || ' ' || count(*) FILTER (WHERE cancelled_at IS NOT NULL) || ' of ' || count(*) AS v FROM subscriptions GROUP BY plan ORDER BY plan");
+  const steps = await one('SELECT count(*) AS n, count(DISTINCT user_id) AS users, min(day)::text AS lo, max(day)::text AS hi, min(steps) AS s1, max(steps) AS s2, round(avg(steps))::int AS av FROM daily_steps');
+  const islands = await one("WITH d AS (SELECT user_id, day, day - (row_number() OVER (PARTITION BY user_id ORDER BY day))::int AS g FROM daily_steps), s AS (SELECT user_id, g, count(*) AS len FROM d GROUP BY user_id, g) SELECT count(*) AS streaks, max(len) AS longest, count(*) FILTER (WHERE len >= 30) AS long30, count(*) FILTER (WHERE len = 1) AS single FROM s");
+  const fullUser = await list("SELECT user_id::text AS v FROM daily_steps GROUP BY user_id HAVING count(*) = 92 ORDER BY user_id");
+  const lateStart = await q.val("SELECT count(*) FROM (SELECT user_id FROM daily_steps GROUP BY user_id HAVING min(day) > DATE '2024-03-01') t");
+  const possible = await q.val("SELECT sum(DATE '2024-05-31' - greatest(u.signup_date, DATE '2024-03-01') + 1)::int FROM users u WHERE u.user_id IN (SELECT user_id FROM daily_steps)");
+  const missing = possible - steps.n;
+  const signMonths = await list("SELECT to_char(signup_date, 'Mon') || ' ' || count(*) AS v FROM users GROUP BY date_trunc('month', signup_date), to_char(signup_date, 'Mon') ORDER BY date_trunc('month', signup_date)");
+  const janHalf = await q.val("SELECT count(*) FROM users WHERE signup_date <= '2024-01-15'");
+  const silentAds = await q.val("SELECT count(*) FROM users u WHERE u.referral_source = 'ads' AND NOT EXISTS (SELECT 1 FROM events e WHERE e.user_id = u.user_id)");
+  const quickSubs = await one("SELECT count(*) FILTER (WHERE s.started_at - u.signup_date <= 7) AS within7, count(*) AS n FROM subscriptions s JOIN users u USING (user_id)");
+  must((await q.val('SELECT count(DISTINCT user_id) FROM daily_steps')) === 40, '40 step users');
+
+  return {
+    about:
+      'FitTrack is a product-analytics playground: an event log (`events`) with JSON `properties`, a small `subscriptions` table that agrees with the `subscription_started` events, and a table of daily step counts with deliberate gaps. ' +
+      'Timestamps are plain `timestamp` values (no time zone, think "UTC"). "As of" date: **2024-07-31** (the end of the event log); step data covers March to May 2024.',
+    conventions: [
+      `**Users:** ${u.n} users who signed up ${u.lo} to ${u.hi} (per month: ${signMonths}; ${janHalf} of them joined in the first half of January - New Year's resolutions); platforms: ${plat}; referral source: ${refs}; top countries: ${ctry}. ${u.nobirth} users have no \`birth_year\` (the others are born ${u.b1} to ${u.b2}).`,
+      `**Events:** ${commas(ev.n)} events from ${ev.lo} to ${ev.hi} by ${ev.users} users: ${names}. No event is dated before its user's signup date, and every user who has events starts with an \`app_open\` on the signup day.`,
+      `**Funnel (users with at least one event of the type):** opened the app ${funnel.opened}, started a workout ${funnel.started}, completed a workout ${funnel.completed}, started a subscription ${funnel.subscribed} (of ${u.n} users; ${(100 * funnel.subscribed / u.n).toFixed(0)}% subscribed). The funnel is deliberately leaky: the rest of the users opened the app but never started a workout.`,
+      `**JSON \`properties\`** keys per event: ${keys}. Values - \`screen\`: ${await vals('app_open', 'screen')}; \`app_version\`: ${await vals('app_open', 'app_version')} (2.4.0 was released on 2024-03-12 and 2.5.0 on 2024-06-04; web users update immediately, mobile users update after 0-35 days, a few much later); \`workout_type\`: ${await vals('workout_started', 'workout_type')}; \`duration_min\` is ${ranges.d1} to ${ranges.d2} (integer) and \`calories\` is roughly duration times a per-sport rate; \`goal\`: ${await vals('goal_set', 'goal')} with \`target_per_week\` 2 to 6; \`plan\`: ${await vals('subscription_started', 'plan')} with \`price\` 9.99 (monthly) or 79.99 (annual); \`channel\` (share): ${await vals('share', 'channel')}; \`setting\` (settings_changed): ${await vals('settings_changed', 'setting')}. Use \`->>\` for text, \`(properties->>'price')::numeric\` for numbers and \`properties @> '{"plan": "annual"}'\` for containment. \`workout_started\` carries the planned duration and an estimated calorie count, \`workout_completed\` the actual calories.`,
+      `**Sessions.** Events arrive in bursts. Inside a session the gap between consecutive events of a user is at most **${gaps.within}** (hh:mm:ss) and a new session starts at least **${gaps.between}** after the previous event, so any inactivity timeout between 30 minutes and 3 hours gives the same answer: **${commas(sess.sessions)} sessions** (${perSession.av} events per session on average, at most ${perSession.mx}). Every session starts with exactly one \`app_open\`. A workout lasts under 30 minutes, so a workout never splits a session.`,
+      `**Retention decays by weeks since signup.** Users with any event in week 0, 1, 2, ...: ${retention} (later weeks are lower partly because recent cohorts have not had time to reach them). Users come back in irregular patterns, so weeks without activity in the middle are common.`,
+      `**Subscriptions:** ${subs.n} rows for ${subs.users} users, started ${subs.lo} to ${subs.hi}; plans ${plans}; cancelled: ${subs.cancelled} (${cancelByPlan}). A cancellation comes ${cancelGap.lo} to ${cancelGap.hi} days after the start. Each row matches exactly one \`subscription_started\` event of the same user, plan, price and day (and vice versa). ${quickSubs.within7} of the ${quickSubs.n} subscriptions start within 7 days of the user's signup.`,
+      `**daily_steps:** ${commas(steps.n)} rows for ${steps.users} users between ${steps.lo} and ${steps.hi}; \`steps\` ${commas(steps.s1)} to ${commas(steps.s2)} (average ${commas(steps.av)}), a bit lower on weekends. A missing row means "no data that day": ${commas(possible)} user-days would be possible (each user from 2024-03-01, or from their signup day if later - ${lateStart} users start after 2024-03-01), so ${commas(missing)} days are missing.`,
+    ],
+    quirks: [
+      `**${silent.n} users have no events at all** (signed up but never opened the app) - the anti-join example; ${silentAds} of them came from ads (ad traffic is over-represented among them).`,
+      `**Re-subscribers:** users ${resub} cancelled a subscription and later subscribed again (one user, several \`subscriptions\` rows).`,
+      `**Workouts that were never completed:** ${commas(await q.val("SELECT count(*) FROM events s WHERE s.event_name = 'workout_started' AND NOT EXISTS (SELECT 1 FROM events c WHERE c.user_id = s.user_id AND c.event_name = 'workout_completed' AND c.event_time > s.event_time AND c.event_time <= s.event_time + interval '30 minutes' AND c.properties->>'workout_type' = s.properties->>'workout_type')"))} \`workout_started\` events have no matching \`workout_completed\` within 30 minutes (abandoned workouts) - good for funnel conversion by workout type.`,
+      `**Streaks / islands.** In \`daily_steps\` the ${steps.users} users together have ${islands.streaks} runs of consecutive days; the longest run is ${islands.longest} days, ${islands.long30} runs last 30 days or more, ${islands.single} are single days. Users with all 92 days and no gap at all: ${fullUser}.`,
+      `**Counts at a glance:** ${commas(ev.users)} users have events, ${silent.n} have none; ${funnel.subscribed} users have a \`subscription_started\` event (= users with a subscription).`,
+      '`event_id` is a `bigint` (and `jsonb` is stored in normalised form: keys may print in a different order than they were written).',
+    ],
+    facts: [
+      await f('Users who opened / started a workout / completed a workout / subscribed', "SELECT count(DISTINCT user_id) FILTER (WHERE event_name = 'app_open') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_started') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'workout_completed') || ' / ' || count(DISTINCT user_id) FILTER (WHERE event_name = 'subscription_started') FROM events"),
+      await f('Events per type', 'SELECT event_name, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC', 'pairs'),
+      await f('Events per month', "SELECT to_char(event_time, 'YYYY-MM') AS month, count(*) FROM events GROUP BY to_char(event_time, 'YYYY-MM') ORDER BY 1", 'pairs'),
+      await f('Busiest weekday (0 = Sunday) by number of events', 'SELECT extract(dow FROM event_time)::int AS dow, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC LIMIT 3', 'pairs'),
+      await f('Busiest hour of the day by number of events', 'SELECT extract(hour FROM event_time)::int AS hour, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC LIMIT 3', 'pairs'),
+      await f('Sessions (30-minute inactivity rule)', "SELECT count(*) FROM (SELECT event_time - lag(event_time) OVER (PARTITION BY user_id ORDER BY event_time) AS gap FROM events) t WHERE gap IS NULL OR gap > interval '30 minutes'", 'int'),
+      await f('Share of users active 7-13 days after signup (week-1 retention, among users with events)', "SELECT round(100.0 * count(DISTINCT e.user_id) FILTER (WHERE e.event_time::date - u.signup_date BETWEEN 7 AND 13) / count(DISTINCT e.user_id), 1) || '%' FROM events e JOIN users u ON u.user_id = e.user_id"),
+      await f('Subscription revenue booked (sum of price over all subscriptions)', 'SELECT sum(price) FROM subscriptions', 'money'),
+      await f('Median days from signup to first subscription', 'SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY s.started_at - u.signup_date) FROM (SELECT user_id, min(started_at) AS started_at FROM subscriptions GROUP BY user_id) s JOIN users u ON u.user_id = s.user_id'),
+      await f('Average completed workout duration and calories per type', "SELECT properties->>'workout_type' AS workout_type, round(avg((properties->>'duration_min')::int), 1) || ' min, ' || round(avg((properties->>'calories')::int)) || ' kcal' FROM events WHERE event_name = 'workout_completed' GROUP BY 1 ORDER BY 1", 'pairs'),
+      await f('Longest streak of consecutive step-tracking days', "WITH d AS (SELECT user_id, day, day - (row_number() OVER (PARTITION BY user_id ORDER BY day))::int AS g FROM daily_steps) SELECT 'user ' || user_id || ': ' || count(*) || ' days' FROM d GROUP BY user_id, g ORDER BY count(*) DESC, user_id LIMIT 1"),
+      await f('Most active user (events)', 'SELECT user_id || \' (\' || count(*) || \' events)\' FROM events GROUP BY user_id ORDER BY count(*) DESC, user_id LIMIT 1'),
+    ],
+    topics: [
+      'Funnels (open -> workout_started -> workout_completed -> subscription) overall and by platform, referral source or country; conversion with `COUNT(DISTINCT ...) FILTER`.',
+      'Retention: weekly cohorts by signup week, week-N retention matrices, classic "users active in week k / users in cohort".',
+      'Sessionization with `LAG` and a running `SUM` of a new-session flag; events and duration per session.',
+      'Gaps and islands on `daily_steps` (streaks of consecutive days) and on weekly activity.',
+      'JSON: `->`, `->>`, `@>`, `jsonb_object_keys`, casting properties to numbers; aggregating by `properties->>\'workout_type\'`.',
+      'Time-to-event: days from signup to first workout / subscription; subscription lifetime and churn.',
+      'Anti-joins: users who never opened the app, users who started but never completed a workout.',
+    ],
   };
 }
 
@@ -3220,6 +3608,92 @@ function buildSchool() {
       'The 2025-Spring term is still in progress, so many final scores are empty.',
     tables,
     extra: { incomplete: [...incomplete].map((e) => [e.s.id, e.c]), springOnly: stu.filter((s) => s.springOnly).map((s) => s.id) },
+  };
+}
+
+// ---- documentation: school --------------------------------------------------------------------
+async function docSchool(q, ds) {
+  const f = q.fact;
+  const list = async (sql) => (await q.rows(sql)).map((r) => r.v).join(', ');
+  const one = async (sql) => (await q.rows(sql))[0];
+
+  const grades = await list('SELECT grade_level || \': \' || count(*) AS v FROM students GROUP BY grade_level ORDER BY grade_level');
+  const cohort = await list('SELECT grade_level || \': first day \' || mode() WITHIN GROUP (ORDER BY enrolled_on) AS v FROM students GROUP BY grade_level ORDER BY grade_level');
+  const transfers = await q.val("SELECT count(*) FROM students s WHERE enrolled_on <> (SELECT mode() WITHIN GROUP (ORDER BY enrolled_on) FROM students x WHERE x.grade_level = s.grade_level)");
+  const springOnly = await list("SELECT s.student_id::text AS v FROM students s WHERE NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.student_id = s.student_id AND e.term = '2024-Fall') ORDER BY s.student_id");
+  must(springOnly === ds.extra.springOnly.join(', '), 'spring-only students');
+  const noEmail = await q.val('SELECT count(*) FROM students WHERE email IS NULL');
+  const tch = await one('SELECT count(*) AS n, min(salary)::text AS lo, max(salary)::text AS hi, min(hire_date)::text AS h1, max(hire_date)::text AS h2 FROM teachers');
+  const subjects = await list('SELECT subject || \' \' || count(*) AS v FROM teachers GROUP BY subject ORDER BY subject');
+  const noCourseT = await list('SELECT t.teacher_id || \' \' || t.full_name || \' (\' || t.subject || \')\' AS v FROM teachers t WHERE NOT EXISTS (SELECT 1 FROM courses c WHERE c.teacher_id = t.teacher_id)');
+  const noTeacherC = await list('SELECT course_id || \' \' || title AS v FROM courses WHERE teacher_id IS NULL');
+  const enr = await list('SELECT term || \': \' || count(*) || \' enrollments, \' || count(final_score) || \' with a score\' AS v FROM enrollments GROUP BY term ORDER BY term');
+  const fallNull = await list("SELECT 'student ' || student_id || ' in course ' || course_id AS v FROM enrollments WHERE term = '2024-Fall' AND final_score IS NULL ORDER BY student_id");
+  const springScored = await one("SELECT count(*) AS n, string_agg(DISTINCT course_id::text, ', ') AS courses FROM enrollments WHERE term = '2025-Spring' AND final_score IS NOT NULL");
+  const perStudent = await list("SELECT n || ' course' || (CASE WHEN n > 1 THEN 's' ELSE '' END) || ': ' || count(*) AS v FROM (SELECT student_id, count(*) AS n FROM enrollments WHERE term = '2024-Fall' GROUP BY student_id) t GROUP BY n ORDER BY n");
+  const ex = await one('SELECT count(*) AS n, min(exam_date)::text AS lo, max(exam_date)::text AS hi FROM exam_scores');
+  const exTypes = await list('SELECT exam_type || \' \' || count(*) || \' (avg \' || round(avg(score), 1) || \')\' AS v FROM exam_scores GROUP BY exam_type ORDER BY exam_type');
+  const scoreRange = await one('SELECT min(score)::text AS lo, max(score)::text AS hi FROM exam_scores');
+  const formula = await one("WITH q AS (SELECT student_id, course_id, CASE WHEN exam_date < DATE '2025-01-01' THEN '2024-Fall' ELSE '2025-Spring' END AS term, avg(score) FILTER (WHERE exam_type = 'quiz') AS qa, max(score) FILTER (WHERE exam_type = 'midterm') AS m, max(score) FILTER (WHERE exam_type = 'final') AS f FROM exam_scores GROUP BY 1, 2, 3) SELECT count(*) AS checked, max(abs(round(0.2 * qa + 0.35 * m + 0.45 * f, 2) - e.final_score))::text AS maxdiff FROM q JOIN enrollments e USING (student_id, course_id, term) WHERE e.final_score IS NOT NULL");
+  must(Number(formula.maxdiff) <= 0.011, 'final_score follows the weighted formula');
+  const orphanExams = await q.val("SELECT count(*) FROM exam_scores x WHERE NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.student_id = x.student_id AND e.course_id = x.course_id AND ((x.exam_date < DATE '2025-01-01' AND e.term = '2024-Fall') OR (x.exam_date >= DATE '2025-01-01' AND e.term = '2025-Spring')))");
+  must(orphanExams === 0, 'every exam belongs to an enrollment');
+  const noFinalExam = await q.val("SELECT count(*) FROM enrollments e WHERE e.term = '2024-Fall' AND NOT EXISTS (SELECT 1 FROM exam_scores x WHERE x.student_id = e.student_id AND x.course_id = e.course_id AND x.exam_type = 'final' AND x.exam_date < DATE '2025-01-01')");
+  must(noFinalExam === 3, 'the three incomplete fall enrollments have no final exam');
+  const clubs = await list('SELECT c.name || \' \' || count(m.student_id) AS v FROM clubs c LEFT JOIN club_members m USING (club_id) GROUP BY c.club_id, c.name ORDER BY count(m.student_id) DESC, c.name');
+  const noClub = await q.val('SELECT count(*) FROM students s WHERE NOT EXISTS (SELECT 1 FROM club_members m WHERE m.student_id = s.student_id)');
+  const multiClub = await one('SELECT max(n) AS mx, count(*) FILTER (WHERE n >= 2) AS many FROM (SELECT student_id, count(*) AS n FROM club_members GROUP BY student_id) t');
+  const noAdvisor = await list('SELECT name AS v FROM clubs WHERE advisor_id IS NULL');
+  const advNoCourse = await list("SELECT c.name || ' (advisor ' || t.full_name || ')' AS v FROM clubs c JOIN teachers t ON t.teacher_id = c.advisor_id WHERE NOT EXISTS (SELECT 1 FROM courses x WHERE x.teacher_id = t.teacher_id)");
+  const gradeOK = await q.val("SELECT count(*) FROM enrollments e JOIN students s USING (student_id) WHERE (e.course_id = 1 AND s.grade_level <> 9) OR (e.course_id = 5 AND s.grade_level <> 9) OR (e.course_id = 6 AND s.grade_level <> 10) OR (e.course_id = 7 AND s.grade_level < 11) OR (e.course_id = 4 AND s.grade_level < 11) OR (e.course_id = 10 AND s.grade_level < 11)");
+  must(gradeOK === 0, 'grade-appropriate courses');
+  const birthOdd = await q.val("SELECT count(*) FROM students WHERE birth_date < (CASE grade_level WHEN 9 THEN DATE '2009-09-01' WHEN 10 THEN DATE '2008-09-01' WHEN 11 THEN DATE '2007-09-01' ELSE DATE '2006-09-01' END) OR birth_date >= (CASE grade_level WHEN 9 THEN DATE '2010-09-01' WHEN 10 THEN DATE '2009-09-01' WHEN 11 THEN DATE '2008-09-01' ELSE DATE '2007-09-01' END)");
+
+  return {
+    about:
+      'Maple High School is a compact, easy-to-picture dataset about grades and people: students sit in courses, take quizzes, midterms and finals, and join clubs. ' +
+      '"As of" date: **2025-04-10** (mid spring term): the 2024-Fall term is finished and its scores are final, the 2025-Spring term is still running.',
+    conventions: [
+      `**Students:** 120 students, 30 per grade level (${grades}). Grade 9 to 12 students were born in the school years you would expect (grade 9: September 2009 - August 2010 and so on); ${birthOdd} students are a year younger or older than their grade (held back or skipped ahead). Student ids are in order of enrollment (oldest cohort first). Cohort first days: ${cohort}; ${transfers} students joined at another time (transfers), and ${springOnly.split(',').length} students (ids ${springOnly}) joined in January 2025, so they have **no 2024-Fall enrollments**. ${noEmail} students have no email yet.`,
+      `**Teachers:** ${tch.n} teachers hired ${tch.h1} to ${tch.h2}, salaries ${money(tch.lo)} to ${money(tch.hi)}; subjects: ${subjects}.`,
+      `**Courses:** 18 courses with 1 to 4 credits. Courses are grade-appropriate (Algebra I and English 9 are for grade 9 only, Physics and Pre-Calculus for grades 11-12, and so on), so enrollments respect the grade level. Students take ${perStudent} in the fall (this is a simplified catalog, not a full timetable).`,
+      `**Terms and scores:** ${enr}. Courses are year-long for most students (many Fall enrollments continue in Spring) but the Spring term is incomplete: \`final_score\` is NULL while a course is running. The only Spring scores that exist (${springScored.n}) are for course ${springScored.courses} (Health & Wellness), a half-term course that ended in March.`,
+      `**Exams:** ${commas(ex.n)} results between ${ex.lo} and ${ex.hi}: ${exTypes}; scores run from ${scoreRange.lo} to ${scoreRange.hi}. Every exam belongs to an enrollment (same student and course, exam date inside that term). Fall enrollments have 1-2 quizzes, one midterm (mid October) and one final (December 9-19); Spring enrollments have quizzes (late January to early April) and a midterm (mid March), but no finals yet.`,
+      `**final_score** is derived from the exams: \`0.20 * average(quiz scores) + 0.35 * midterm + 0.45 * final\`, rounded to 2 decimals (verified for all ${formula.checked} scored enrollments; rounding differences are at most ${formula.maxdiff}). Students differ in ability, courses differ slightly in difficulty, and scores are roughly bell-shaped around the high 70s.`,
+      `**Clubs:** 8 clubs with ${clubs} members (150 memberships). A student can be in several clubs (up to ${multiClub.mx}; ${multiClub.many} students are in two or more). Join dates fall at the start of a school year (September) or in January 2025 and never before the student enrolled.`,
+    ],
+    quirks: [
+      `**Course without a teacher:** ${noTeacherC} (\`teacher_id\` is NULL) - use it for LEFT JOIN / COALESCE practice.`,
+      `**Teacher without a course:** ${noCourseT}. ${advNoCourse} - the teacher who teaches no course still advises a club.`,
+      `**Club without an advisor:** ${noAdvisor} (\`advisor_id\` is NULL).`,
+      `**Incomplete fall enrollments:** ${fallNull} have \`final_score\` NULL and no final exam (the student missed the final), although the term is over.`,
+      `**Spring-only students:** ${springOnly} have no 2024-Fall enrollments and ${noClub} students overall belong to no club.`,
+      `**Students without email:** ${noEmail} (NULL).`,
+      '`enrollments` has a composite primary key (student_id, course_id, term), so the same student can take the same course in both terms.',
+      'There is no letter-grade column: letter grades (A-F) are a good CASE WHEN exercise (A = 90 and up, B = 80-89, C = 70-79, D = 60-69, F = below 60).',
+    ],
+    facts: [
+      await f('Students / teachers / courses', "SELECT (SELECT count(*) FROM students) || ' / ' || (SELECT count(*) FROM teachers) || ' / ' || (SELECT count(*) FROM courses)"),
+      await f('Enrollments per term', 'SELECT term, count(*) FROM enrollments GROUP BY 1 ORDER BY 1', 'pairs'),
+      await f('Average final score of 2024-Fall by course (highest first)', "SELECT c.title, round(avg(e.final_score), 2) FROM enrollments e JOIN courses c ON c.course_id = e.course_id WHERE e.term = '2024-Fall' AND e.final_score IS NOT NULL GROUP BY c.course_id, c.title ORDER BY avg(e.final_score) DESC, c.title LIMIT 5", 'pairs'),
+      await f('Student with the best average final score in 2024-Fall (at least 3 scored courses)', "SELECT s.first_name || ' ' || s.last_name || ' (student ' || s.student_id || ', ' || round(avg(e.final_score), 2) || ')' FROM enrollments e JOIN students s ON s.student_id = e.student_id WHERE e.term = '2024-Fall' AND e.final_score IS NOT NULL GROUP BY s.student_id, s.first_name, s.last_name HAVING count(*) >= 3 ORDER BY avg(e.final_score) DESC, s.student_id LIMIT 1"),
+      await f('Fall enrollments with a final score of 90 or more', "SELECT count(*) FROM enrollments WHERE term = '2024-Fall' AND final_score >= 90", 'int'),
+      await f('Fall enrollments below 60 (failing)', "SELECT count(*) FROM enrollments WHERE term = '2024-Fall' AND final_score < 60", 'int'),
+      await f('Average exam score by exam type', 'SELECT exam_type, round(avg(score), 2) FROM exam_scores GROUP BY 1 ORDER BY 1', 'pairs'),
+      await f('Students with no club', 'SELECT count(*) FROM students s WHERE NOT EXISTS (SELECT 1 FROM club_members m WHERE m.student_id = s.student_id)', 'int'),
+      await f('Largest club', 'SELECT c.name || \' (\' || count(*) || \' members)\' FROM club_members m JOIN clubs c ON c.club_id = m.club_id GROUP BY c.club_id, c.name ORDER BY count(*) DESC LIMIT 1'),
+      await f('Average teacher salary by subject (top 3)', 'SELECT subject, round(avg(salary), 2) FROM teachers GROUP BY 1 ORDER BY avg(salary) DESC, subject LIMIT 3', 'pairs'),
+      await f('Teacher teaching the most students in 2024-Fall', "SELECT t.full_name || ' (' || count(*) || ' enrollments)' FROM enrollments e JOIN courses c ON c.course_id = e.course_id JOIN teachers t ON t.teacher_id = c.teacher_id WHERE e.term = '2024-Fall' GROUP BY t.teacher_id, t.full_name ORDER BY count(*) DESC, t.teacher_id LIMIT 1"),
+      await f('Grade-level averages of Fall final scores', "SELECT s.grade_level, round(avg(e.final_score), 2) FROM enrollments e JOIN students s ON s.student_id = e.student_id WHERE e.term = '2024-Fall' GROUP BY 1 ORDER BY 1", 'pairs'),
+    ],
+    topics: [
+      'AVG / MIN / MAX / COUNT with GROUP BY and HAVING: average score per course, per teacher, per grade level.',
+      'NULL logic: in-progress courses (`final_score IS NULL`), COALESCE, AVG ignoring NULLs, COUNT(*) vs COUNT(column).',
+      'LEFT JOIN: students in no club, courses without a teacher, teachers without courses.',
+      'Ranking: top student per grade (`RANK`, `DENSE_RANK`, `ROW_NUMBER`), percentiles, `NTILE`, running average of a student\'s exams.',
+      'CASE for letter grades; conditional aggregation (`FILTER`) for pass/fail counts.',
+      'Many-to-many through `enrollments` and `club_members`; checking consistency between `exam_scores` and `final_score`.',
+    ],
   };
 }
 
@@ -3635,6 +4109,10 @@ const commas = (v) => {
 const money = (v) => (Number(v) < 0 ? '-$' : '$') + commas(Math.abs(Number(v)).toFixed(2));
 const oneLine = (sql) => sql.replace(/\s+/g, ' ').trim();
 const code = (s) => '`' + String(s).replace(/`/g, "'") + '`';
+/** A statement made in the prose of the documentation must be true of the data. */
+function must(cond, message) {
+  if (!cond) throw new Error('DATASETS.md claim failed: ' + message);
+}
 const esc = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 
 function makeQ(db) {

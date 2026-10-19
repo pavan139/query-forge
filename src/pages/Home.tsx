@@ -78,44 +78,44 @@ export function Home() {
   return (
     <Page wide>
       {/* Hero */}
-      <section className="gradient-hero relative overflow-hidden rounded-3xl p-6 text-white shadow-pop sm:p-8">
-        <div className="absolute -top-10 -right-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-sm font-semibold opacity-90">
-              {greeting()}, {s.profile.name || 'friend'} 👋
+      <section className="card hero-soft relative overflow-hidden p-5 sm:p-8">
+        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium text-muted">
+              {greeting()}, {s.profile.name || 'friend'}
             </div>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              {completedLessons === 0 ? 'Your SQL journey starts today.' : xpToday >= s.profile.dailyGoal ? 'Daily goal smashed! 🎉' : "Let's keep the streak alive."}
+            <h1 className="mt-1 text-[24px] leading-tight font-bold tracking-tight sm:text-[34px]">
+              {completedLessons === 0 ? 'Your SQL journey starts today.' : xpToday >= s.profile.dailyGoal ? 'Daily goal reached. Nice work.' : 'Ready for today’s lesson?'}
             </h1>
-            <p className="mt-2 max-w-xl text-sm opacity-90">
-              {title.icon} Level {lv.level} · {title.title} — {completedLessons} of {totalLessons} lessons done. Every small step counts.
+            <p className="mt-1.5 max-w-xl text-[14px] text-muted sm:text-[15px]">
+              {title.icon} Level {lv.level} · {title.title} · {completedLessons} of {totalLessons} lessons done
             </p>
             {loc && (
-              <Link to={`/lesson/${next}`} className="btn btn-lg mt-5 bg-white font-bold text-primary shadow-lg hover:bg-white/90">
-                {s.lessons[next!] ? 'Continue' : 'Start'}: {loc.lesson.title} <ArrowRight size={18} />
+              <Link to={`/lesson/${next}`} className="btn btn-primary btn-lg mt-4 w-full sm:mt-5 sm:w-auto">
+                <span className="truncate">
+                  {s.lessons[next!] ? 'Continue' : 'Start'}: {loc.lesson.title}
+                </span>
+                <ArrowRight size={18} className="shrink-0" />
               </Link>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-5">
+          <div className="flex shrink-0 items-center justify-around gap-6 rounded-2xl bg-surface-2/60 p-3 md:justify-start md:bg-transparent md:p-0">
             <div className="text-center">
-              <div className="flex items-center justify-center gap-1 text-4xl font-extrabold">
-                <Flame size={34} className={s.streak.current > 0 ? 'fill-amber-300 text-amber-300' : 'text-white/60'} />
+              <div className="flex items-center justify-center gap-1 text-[34px] leading-none font-bold">
+                <Flame size={30} className={s.streak.current > 0 ? 'fill-accent text-accent' : 'text-muted'} />
                 {s.streak.current}
               </div>
-              <div className="text-xs font-semibold opacity-90">day streak</div>
-              {s.streak.freezes > 0 && <div className="mt-0.5 text-[10px] opacity-80">🧊 {s.streak.freezes} streak freeze{s.streak.freezes > 1 ? 's' : ''}</div>}
+              <div className="mt-1.5 text-xs font-medium text-muted">day streak</div>
+              {s.streak.freezes > 0 && <div className="mt-0.5 text-[10px] text-muted">🧊 {s.streak.freezes} freeze{s.streak.freezes > 1 ? 's' : ''}</div>}
             </div>
             <div className="text-center">
-              <div className="rounded-full bg-white/15 p-1">
-                <ProgressRing value={xpToday / s.profile.dailyGoal} size={86} stroke={8} color="#fde68a">
-                  <div className="text-white">
-                    <div className="text-lg leading-none font-extrabold">{xpToday}</div>
-                    <div className="text-[10px] opacity-80">/ {s.profile.dailyGoal} XP</div>
-                  </div>
-                </ProgressRing>
-              </div>
-              <div className="mt-1 text-xs font-semibold opacity-90">today's goal</div>
+              <ProgressRing value={xpToday / s.profile.dailyGoal} size={84} stroke={8} color="var(--c-primary)">
+                <div>
+                  <div className="text-lg leading-none font-bold">{xpToday}</div>
+                  <div className="text-[10px] text-muted">/ {s.profile.dailyGoal} XP</div>
+                </div>
+              </ProgressRing>
+              <div className="mt-1 text-xs font-medium text-muted">today</div>
             </div>
           </div>
         </div>
@@ -157,7 +157,7 @@ export function Home() {
                 </span>
               </div>
               <div className="h-3 overflow-hidden rounded-full bg-surface-3">
-                <div className="h-full rounded-full bg-gradient-to-r from-primary via-violet-500 to-pink" style={{ width: `${(completedLessons / Math.max(1, totalLessons)) * 100}%` }} />
+                <div className="h-full rounded-full bg-primary" style={{ width: `${(completedLessons / Math.max(1, totalLessons)) * 100}%` }} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-7">
@@ -207,7 +207,7 @@ export function Home() {
                           : `First one in ${t.daysUntil} day${t.daysUntil === 1 ? '' : 's'}`}
                   </div>
                 </div>
-                {anyLesson && t.available ? <span className="chip animate-pulse bg-pink !text-white">Ready</span> : <span className="text-xl">{t.kind === 'weekly' ? '📝' : '🗂️'}</span>}
+                {anyLesson && t.available ? <span className="chip bg-danger !text-white">Ready</span> : <span className="text-xl">{t.kind === 'weekly' ? '📝' : '🗂️'}</span>}
               </Link>
             ))}
           </section>
@@ -278,7 +278,7 @@ export function Home() {
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="card p-3.5">
-      <div className="text-2xl font-extrabold">{value}</div>
+      <div className="text-2xl font-bold">{value}</div>
       <div className="text-xs font-semibold text-muted">{label}</div>
     </div>
   );

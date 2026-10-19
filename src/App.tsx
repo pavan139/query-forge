@@ -44,9 +44,10 @@ export function App() {
   if (!onboarded) return <Onboarding />;
 
   return (
+    <>
+    <Celebrations />
     <Shell>
       <ScrollToTop />
-      <Celebrations />
       <Suspense
         fallback={
           <div className="flex h-64 items-center justify-center text-muted">
@@ -79,5 +80,6 @@ export function App() {
         </Routes>
       </Suspense>
     </Shell>
+    </>
   );
 }

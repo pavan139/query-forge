@@ -813,7 +813,7 @@
       {
         "name": "movie_cast",
         "description": "Who worked on each movie and in which role (actor, director or writer).",
-        "rowCount": 650,
+        "rowCount": 680,
         "columns": [
           {
             "name": "movie_id",
@@ -904,7 +904,7 @@
       {
         "name": "watch_history",
         "description": "Every time a user pressed play (January to June 2024).",
-        "rowCount": 3598,
+        "rowCount": 3601,
         "columns": [
           {
             "name": "watch_id",

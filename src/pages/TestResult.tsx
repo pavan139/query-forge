@@ -126,13 +126,13 @@ export default function TestResult() {
       <div className="card overflow-hidden">
         <div className={`flex flex-col items-center gap-5 p-6 sm:flex-row ${pass ? 'bg-success-soft' : 'bg-warn-soft'}`}>
           <ProgressRing value={t.score / 100} size={110} stroke={10} color={pass ? 'var(--c-success)' : 'var(--c-accent)'}>
-            <span className="text-2xl font-extrabold">{t.score}%</span>
+            <span className="text-2xl font-bold">{t.score}%</span>
           </ProgressRing>
           <div className="text-center sm:text-left">
             <div className="text-sm font-semibold text-muted">
               {t.title} · {friendlyDate(t.finishedAt)}
             </div>
-            <h1 className="text-2xl font-extrabold">{msg}</h1>
+            <h1 className="text-2xl font-bold">{msg}</h1>
             <p className="mt-1 text-sm text-fg-2">
               {t.correct} of {t.total} correct · +{t.xp} XP. Every question you missed has been added to your Daily Review for tomorrow.
             </p>

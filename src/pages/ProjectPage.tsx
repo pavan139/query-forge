@@ -29,13 +29,13 @@ export default function ProjectPage() {
         <ArrowLeft size={15} /> All projects
       </Link>
       <div className="card mb-6 overflow-hidden">
-        <div className="gradient-hero flex items-center gap-4 p-6 text-white">
+        <div className="hero-soft flex items-center gap-4 p-6">
           <div className="text-5xl">{p.icon}</div>
           <div className="flex-1">
-            <div className="text-xs font-bold tracking-widest uppercase opacity-80">Project · {ds?.icon} {ds?.name}</div>
-            <h1 className="text-2xl font-extrabold">{p.title}</h1>
+            <div className="text-xs font-semibold text-muted">Project · {ds?.icon} {ds?.name}</div>
+            <h1 className="text-2xl font-bold tracking-tight">{p.title}</h1>
           </div>
-          {progress?.completed && <CheckCircle2 size={32} />}
+          {progress?.completed && <CheckCircle2 size={30} className="text-success" />}
         </div>
         <div className="p-6">
           <Markdown md={p.md} />

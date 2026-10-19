@@ -41,12 +41,12 @@ export default function Learn() {
               <div className="mb-4 flex items-center gap-3">
                 <span className="text-3xl">{lvl.emoji}</span>
                 <div>
-                  <h2 className="text-xl font-extrabold">{lvl.title}</h2>
+                  <h2 className="text-xl font-bold">{lvl.title}</h2>
                   <p className="text-sm text-muted">{lvl.blurb}</p>
                 </div>
               </div>
               <div className="relative space-y-4 pl-8 sm:pl-10">
-                <div className="absolute top-2 bottom-2 left-3 w-1 rounded-full bg-gradient-to-b from-primary/40 via-pink/30 to-transparent sm:left-4" />
+                <div className="absolute top-2 bottom-2 left-3 w-1 rounded-full bg-surface-3 sm:left-4" />
                 {mods.map((m) => {
                   const done = m.lessons.filter((l) => lessons[l.id]?.completed).length;
                   const started = m.lessons.some((l) => lessons[l.id]);
@@ -79,7 +79,7 @@ export default function Learn() {
                               </span>
                             )}
                           </div>
-                          <h3 className="mt-1 text-lg font-extrabold group-hover:text-primary">{m.title}</h3>
+                          <h3 className="mt-1 text-lg font-bold group-hover:text-primary">{m.title}</h3>
                           <p className="text-sm text-muted">{m.subtitle}</p>
                           <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
                             <span>

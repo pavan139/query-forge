@@ -37,10 +37,10 @@ export function Onboarding() {
   };
 
   return (
-    <div className="gradient-hero flex min-h-full items-center justify-center p-4">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-bg p-4 pt-[calc(1rem+var(--safe-top))] pb-[calc(1rem+var(--safe-bottom))]">
       <div className="animate-pop card w-full max-w-xl overflow-hidden">
-        <div className="h-1.5 bg-surface-3">
-          <div className="h-full bg-gradient-to-r from-primary to-pink transition-all" style={{ width: `${((step + 1) / 4) * 100}%` }} />
+        <div className="h-1 bg-surface-3">
+          <div className="h-full bg-primary transition-all duration-500" style={{ width: `${((step + 1) / 4) * 100}%` }} />
         </div>
         <div className="p-6 sm:p-8">
           {step === 0 && (
@@ -48,7 +48,7 @@ export function Onboarding() {
               <div className="animate-float mx-auto w-fit">
                 <LogoMark size={84} />
               </div>
-              <h1 className="mt-5 text-3xl font-extrabold tracking-tight">
+              <h1 className="mt-5 text-[30px] font-bold tracking-tight">
                 Welcome to SQL <span className="gradient-text">Quest</span>
               </h1>
               <p className="mx-auto mt-3 max-w-md text-fg-2">
@@ -69,7 +69,7 @@ export function Onboarding() {
           {step === 1 && (
             <div>
               <div className="text-4xl">👋</div>
-              <h2 className="mt-3 text-2xl font-extrabold">What should we call you?</h2>
+              <h2 className="mt-3 text-[22px] font-bold tracking-tight">What should we call you?</h2>
               <p className="mt-1 text-sm text-muted">Your name appears on your dashboard and on your certificate.</p>
               <input
                 autoFocus
@@ -77,7 +77,7 @@ export function Onboarding() {
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && name.trim() && setStep(2)}
                 placeholder="Your first name"
-                className="mt-5 w-full rounded-xl border-2 border-line bg-surface px-4 py-3 text-lg font-semibold outline-none focus:border-primary"
+                className="mt-5 w-full rounded-xl bg-surface-2 px-4 py-3 text-lg font-medium outline-none focus:ring-2 focus:ring-primary/40"
               />
               <div className="mt-6 flex justify-between">
                 <button className="btn btn-ghost" onClick={() => setStep(0)}>
@@ -91,14 +91,14 @@ export function Onboarding() {
           )}
           {step === 2 && (
             <div>
-              <h2 className="text-2xl font-extrabold">How much time can you give each day, {name.trim()}?</h2>
+              <h2 className="text-[22px] font-bold tracking-tight">How much time can you give each day, {name.trim()}?</h2>
               <p className="mt-1 text-sm text-muted">Little and often beats long and rare. You can change this any time.</p>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 {GOALS.map((g, i) => (
                   <button
                     key={g.label}
                     onClick={() => setGoal(i)}
-                    className={`rounded-2xl border-2 p-4 text-left transition ${goal === i ? 'border-primary bg-primary-soft' : 'border-line hover:border-line-strong'}`}
+                    className={`rounded-2xl p-4 text-left transition ${goal === i ? 'bg-primary-soft ring-2 ring-primary' : 'bg-surface-2 hover:bg-surface-3'}`}
                   >
                     <div className="text-2xl">{g.emoji}</div>
                     <div className="mt-1 font-bold">{g.label}</div>
@@ -136,7 +136,7 @@ export function Onboarding() {
           )}
           {step === 3 && (
             <div>
-              <h2 className="text-2xl font-extrabold">Here's how you'll learn</h2>
+              <h2 className="text-[22px] font-bold tracking-tight">Here's how you'll learn</h2>
               <div className="mt-5 space-y-3">
                 {[
                   [Wand2, 'Learn by doing', 'Short lessons with hundreds of runnable examples and exercises that check your answer instantly.'],
@@ -146,7 +146,7 @@ export function Onboarding() {
                 ].map(([Icon, title, text]) => {
                   const I = Icon as typeof Wand2;
                   return (
-                    <div key={title as string} className="flex gap-3 rounded-xl border border-line p-3">
+                    <div key={title as string} className="flex gap-3 rounded-2xl bg-surface-2 p-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
                         <I size={20} />
                       </div>
@@ -158,8 +158,9 @@ export function Onboarding() {
                   );
                 })}
               </div>
-              <p className="mt-4 rounded-xl bg-surface-2 p-3 text-xs text-muted">
-                💾 Your progress saves automatically in this browser. To be extra safe (or to move to another device), download a backup from <b>Settings</b> now and then.
+              <p className="mt-4 rounded-2xl bg-surface-2 p-3 text-xs text-muted">
+                💾 Progress saves automatically in this browser. Download a backup from <b>Settings</b> now and then.
+                <br />📱 On iPhone: tap <b>Share → Add to Home Screen</b> to use SQL Quest like an app (works offline too).
               </p>
               <div className="mt-6 flex justify-between">
                 <button className="btn btn-ghost" onClick={() => setStep(2)}>

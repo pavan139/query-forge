@@ -19,7 +19,7 @@ export default function Certificate() {
       <Page>
         <div className="card mx-auto max-w-xl p-8 text-center">
           <div className="text-6xl">🎓</div>
-          <h1 className="mt-3 text-2xl font-extrabold">Your certificate is waiting</h1>
+          <h1 className="mt-3 text-2xl font-bold">Your certificate is waiting</h1>
           <p className="mt-2 text-sm text-muted">Finish every lesson to unlock your “Advanced SQL Developer” certificate.</p>
           <div className="mt-5 text-left">
             <div className="mb-1 text-xs text-muted">
@@ -50,16 +50,16 @@ export default function Certificate() {
         <div className="mt-6 text-lg text-slate-600">This certifies that</div>
         <div className="mt-2 font-serif text-5xl font-bold text-indigo-700">{s.profile.name || 'Learner'}</div>
         <div className="mt-6 text-lg text-slate-600">has completed the full SQL Quest curriculum and earned the title</div>
-        <div className="mt-2 text-3xl font-extrabold">🏆 Advanced SQL Developer</div>
+        <div className="mt-2 text-3xl font-bold">🏆 Advanced SQL Developer</div>
         <div className="mx-auto mt-8 grid max-w-lg grid-cols-3 gap-4 text-sm">
           <div>
-            <div className="text-2xl font-extrabold text-indigo-700">{courseIndex.modules.length}</div>modules
+            <div className="text-2xl font-bold text-indigo-700">{courseIndex.modules.length}</div>modules
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-indigo-700">{solved}</div>exercises
+            <div className="text-2xl font-bold text-indigo-700">{solved}</div>exercises
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-indigo-700">{challenges}</div>challenges
+            <div className="text-2xl font-bold text-indigo-700">{challenges}</div>challenges
           </div>
         </div>
         <div className="mt-8 text-sm text-slate-500">

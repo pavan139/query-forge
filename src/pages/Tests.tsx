@@ -61,7 +61,7 @@ export default function Tests() {
         <div className="flex items-center gap-2 text-sm font-bold text-muted">
           <Icon size={16} /> {isWeekly ? 'Every 7 days' : 'Every 4 weeks'}
         </div>
-        <h2 className="mt-1 text-xl font-extrabold">{isWeekly ? 'Weekly test' : 'Monthly test'}</h2>
+        <h2 className="mt-1 text-xl font-bold">{isWeekly ? 'Weekly test' : 'Monthly test'}</h2>
         <p className="mt-1 text-sm text-muted">
           {isWeekly
             ? `${SIZES.weekly} questions focused on this week's lessons, plus a few older topics you find tricky.`

@@ -45,7 +45,7 @@ export default function Datasets() {
           <div className="card mb-6 flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
             <div className="text-5xl">{info.icon}</div>
             <div className="flex-1">
-              <h2 className="text-2xl font-extrabold">{info.name}</h2>
+              <h2 className="text-2xl font-bold">{info.name}</h2>
               <div className="text-sm font-semibold text-primary">{info.tagline}</div>
               <p className="mt-1 text-sm text-fg-2">{info.description}</p>
             </div>

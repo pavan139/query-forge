@@ -4,6 +4,7 @@ import { db, TimeoutError } from '../db/client.ts';
 import type { CheckOutput, RunOutput } from '../db/engine.ts';
 import { useStore } from '../state/store.ts';
 import { playSound } from '../lib/sound.ts';
+import { useShortcutLabels } from '../lib/hooks.ts';
 import { Markdown } from './Markdown.tsx';
 import { ErrorBox, ResultsPanel } from './ResultsPanel.tsx';
 import { ResultTable } from './ResultTable.tsx';
@@ -78,6 +79,7 @@ export function Workbench(p: Props) {
   const lastErrored = useRef(false);
   const editor = useRef<SqlEditorHandle>(null);
   const schema = useSchema(p.dataset, { persistent: p.persistent, version: p.schemaVersion });
+  const keys = useShortcutLabels();
 
   useEffect(() => {
     if (p.autoRun) void doRun();
@@ -229,18 +231,20 @@ export function Workbench(p: Props) {
           />
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn btn-primary" onClick={doRun} disabled={busy} title="Run (Ctrl/Cmd + Enter)">
-              {status === 'running' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+              {status === 'running' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} className="fill-current" />}
               Run
+              {keys && <span className="ml-0.5 text-[11px] font-medium opacity-60">{keys.run}</span>}
             </button>
             {p.exercise && (
               <button
-                className={`btn ${passed && !isTest ? 'btn-success' : 'btn-outline'} border-success/50`}
+                className={`btn ${passed && !isTest ? 'btn-success' : 'btn-outline'}`}
                 onClick={doCheck}
                 disabled={busy || (isTest && submitted)}
                 title="Check answer (Ctrl/Cmd + Shift + Enter)"
               >
                 {status === 'checking' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} className={passed ? '' : 'text-success'} />}
-                {isTest ? (submitted ? 'Submitted' : 'Submit answer') : passed ? 'Solved! Check again' : 'Check answer'}
+                {isTest ? (submitted ? 'Submitted' : 'Submit answer') : passed ? 'Solved · Check again' : 'Check answer'}
+                {keys && !passed && !submitted && <span className="ml-0.5 hidden text-[11px] font-medium opacity-50 sm:inline">{keys.check}</span>}
               </button>
             )}
             <div className="ml-auto flex items-center gap-1">

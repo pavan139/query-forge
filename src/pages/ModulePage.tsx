@@ -33,19 +33,17 @@ export default function ModulePage() {
         <ArrowLeft size={15} /> All modules
       </Link>
       <div className="card overflow-hidden">
-        <div className="gradient-hero p-6 text-white sm:p-8">
+        <div className="hero-soft p-6 sm:p-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-white/15 text-5xl">{meta.icon}</div>
+            <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[20px] bg-surface text-[42px] shadow-card">{meta.icon}</div>
             <div className="flex-1">
-              <div className="text-xs font-bold tracking-widest uppercase opacity-80">Module {meta.order}</div>
-              <h1 className="text-3xl font-extrabold tracking-tight">{meta.title}</h1>
-              <p className="mt-1 opacity-90">{meta.subtitle}</p>
+              <div className="text-xs font-semibold text-muted">Module {meta.order}</div>
+              <h1 className="text-[28px] leading-tight font-bold tracking-tight">{meta.title}</h1>
+              <p className="mt-1 text-muted">{meta.subtitle}</p>
             </div>
-            <div className="rounded-full bg-white/15 p-1">
-              <ProgressRing value={pct} size={76} stroke={7} color="#fde68a">
-                <span className="text-white">{Math.round(pct * 100)}%</span>
-              </ProgressRing>
-            </div>
+            <ProgressRing value={pct} size={72} stroke={7} color={pct === 1 ? 'var(--c-success)' : 'var(--c-primary)'}>
+              <span>{Math.round(pct * 100)}%</span>
+            </ProgressRing>
           </div>
         </div>
         <div className="space-y-4 p-6">

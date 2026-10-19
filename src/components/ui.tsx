@@ -10,7 +10,7 @@ export function PageHeader({ title, subtitle, icon, actions }: { title: ReactNod
       <div className="flex items-start gap-3">
         {icon && <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-2xl">{icon}</div>}
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-muted sm:text-base">{subtitle}</p>}
         </div>
       </div>
@@ -48,7 +48,7 @@ export function ProgressRing({ value, size = 48, stroke = 5, children, color = '
 export function Bar({ value, className, color }: { value: number; className?: string; color?: string }) {
   return (
     <div className={`h-2 overflow-hidden rounded-full bg-surface-3 ${className ?? ''}`}>
-      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`, background: color ?? 'linear-gradient(90deg, var(--c-primary), var(--c-pink))' }} />
+      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`, background: color ?? 'var(--c-primary)' }} />
     </div>
   );
 }
@@ -60,7 +60,7 @@ export function Stat({ label, value, icon, hint }: { label: string; value: React
         {icon}
         {label}
       </div>
-      <div className="mt-1 text-2xl font-extrabold tabular-nums">{value}</div>
+      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
       {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
     </div>
   );

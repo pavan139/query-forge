@@ -25,7 +25,7 @@ export default function Projects() {
                   <div className="text-xs font-bold text-muted">
                     After module {m.order}: {m.title.split(/[:—]/)[0]}
                   </div>
-                  <div className="text-lg font-extrabold group-hover:text-primary">{p.title}</div>
+                  <div className="text-lg font-bold group-hover:text-primary">{p.title}</div>
                 </div>
                 {projects[p.id]?.completed && <CheckCircle2 className="text-success" />}
               </div>

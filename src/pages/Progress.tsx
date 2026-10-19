@@ -28,10 +28,10 @@ export default function Progress() {
     <Page wide>
       <PageHeader icon="📈" title="My progress" subtitle="See how far you've come." />
       <div className="card mb-6 flex flex-col gap-5 p-6 sm:flex-row sm:items-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-pink text-4xl text-white">{t.icon}</div>
+        <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-surface-2 text-4xl">{t.icon}</div>
         <div className="flex-1">
           <div className="text-sm font-semibold text-muted">Level {lv.level}</div>
-          <div className="text-2xl font-extrabold">{t.title}</div>
+          <div className="text-2xl font-bold">{t.title}</div>
           <Bar value={lv.progress} className="mt-2" />
           <div className="mt-1 text-xs text-muted">
             {lv.into} / {lv.needed} XP to level {lv.level + 1}

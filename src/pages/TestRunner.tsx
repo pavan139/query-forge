@@ -56,8 +56,8 @@ export default function TestRunner() {
   const dataset = found ? ((step && 'dataset' in step && step.dataset) || found.lesson?.dataset || found.module.dataset) : 'cafe';
 
   return (
-    <div className="min-h-full pb-20">
-      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+    <div className="min-h-full pb-[calc(5rem+var(--safe-bottom))]">
+      <div className="glass sticky top-0 z-20 border-b border-line pt-safe">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-2.5">
           <button
             className="btn btn-ghost btn-sm !px-2"
@@ -69,7 +69,7 @@ export default function TestRunner() {
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-bold">{active.title}</div>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-3">
-              <div className="h-full rounded-full bg-gradient-to-r from-pink to-primary transition-all" style={{ width: `${(answered / total) * 100}%` }} />
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(answered / total) * 100}%` }} />
             </div>
           </div>
           <span className="chip tabular-nums">

@@ -88,13 +88,23 @@ function PlanView({ result }: { result: StatementResult }) {
 
 function StatementSummary({ r }: { r: StatementResult }) {
   const verb = r.command.split(' ')[0];
+  if (verb === 'SELECT' && r.rowCount > 0) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2.5 text-sm text-fg-2">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-accent" />
+        <span>
+          This SELECT found {r.rowCount} row{r.rowCount === 1 ? '' : 's'} but has <b>no columns</b> to show. Write the column names (or <code className="font-mono">*</code>) right after <code className="font-mono">SELECT</code>.
+        </span>
+      </div>
+    );
+  }
   let text = `${r.command} completed`;
   if (verb === 'INSERT') text = `INSERT — ${r.affectedRows} row${r.affectedRows === 1 ? '' : 's'} added`;
   else if (verb === 'UPDATE') text = `UPDATE — ${r.affectedRows} row${r.affectedRows === 1 ? '' : 's'} changed`;
   else if (verb === 'DELETE') text = `DELETE — ${r.affectedRows} row${r.affectedRows === 1 ? '' : 's'} removed`;
   else if (verb === 'MERGE') text = `MERGE — ${r.affectedRows} row${r.affectedRows === 1 ? '' : 's'} affected`;
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg-2">
+    <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm text-fg-2">
       <CheckCircle2 size={16} className="text-success" />
       <span className="font-medium">{text}</span>
       <code className="ml-auto max-w-[50%] truncate font-mono text-xs text-muted">{r.sql.split('\n')[0]}</code>

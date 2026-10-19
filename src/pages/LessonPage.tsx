@@ -77,9 +77,9 @@ export default function LessonPage() {
   };
 
   return (
-    <div className="min-h-full pb-24">
+    <div className="min-h-full pb-[calc(6rem+var(--safe-bottom))]">
       {/* Sticky lesson bar */}
-      <div className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+      <div className="glass sticky top-0 z-20 border-b border-line pt-safe">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-2.5">
           <Link to={`/learn/${mod.id}`} className="btn btn-ghost btn-sm !px-2" title="Back to module">
             <X size={18} />
@@ -89,7 +89,7 @@ export default function LessonPage() {
               {mod.icon} {mod.title}
             </div>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-3">
-              <div className="h-full rounded-full bg-gradient-to-r from-primary to-pink transition-all duration-500" style={{ width: `${((completed ? total : revealedUpTo) / total) * 100}%` }} />
+              <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${((completed ? total : revealedUpTo) / total) * 100}%` }} />
             </div>
           </div>
           {sessionXp > 0 && <span className="chip bg-accent-soft font-bold text-accent">+{sessionXp} XP</span>}
@@ -117,7 +117,7 @@ export default function LessonPage() {
           <div className="text-xs font-bold tracking-widest text-primary uppercase">
             Lesson {loc.index + 1} of {mod.lessons.length}
           </div>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight">{lesson.title}</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">{lesson.title}</h1>
           <p className="mt-1 text-muted">{lesson.summary}</p>
           <div className="mt-2 flex gap-3 text-xs text-muted">
             <span className="flex items-center gap-1">
@@ -183,23 +183,23 @@ export default function LessonPage() {
 
         {completed && (
           <div ref={endRef} className="animate-pop card mt-8 scroll-mt-24 overflow-hidden">
-            <div className="gradient-hero p-6 text-center text-white">
+            <div className="hero-soft p-6 text-center">
               <div className="text-5xl">🎉</div>
-              <h2 className="mt-2 text-2xl font-extrabold">Lesson complete!</h2>
-              <p className="opacity-90">{lesson.title}</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight">Lesson complete</h2>
+              <p className="text-muted">{lesson.title}</p>
             </div>
             <div className="space-y-5 p-6">
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-xl bg-surface-2 p-3">
-                  <div className="text-2xl font-extrabold text-accent">+{sessionXp}</div>
+                  <div className="text-2xl font-bold text-accent">+{sessionXp}</div>
                   <div className="text-xs text-muted">XP this visit</div>
                 </div>
                 <div className="rounded-xl bg-surface-2 p-3">
-                  <div className="text-2xl font-extrabold">{doneCount}</div>
+                  <div className="text-2xl font-bold">{doneCount}</div>
                   <div className="text-xs text-muted">steps done</div>
                 </div>
                 <div className="rounded-xl bg-surface-2 p-3">
-                  <div className="text-2xl font-extrabold">{keys.filter((k, i) => lesson.steps[i].type === 'exercise' && steps[k]?.firstTry).length}</div>
+                  <div className="text-2xl font-bold">{keys.filter((k, i) => lesson.steps[i].type === 'exercise' && steps[k]?.firstTry).length}</div>
                   <div className="text-xs text-muted">first-try solves</div>
                 </div>
               </div>

@@ -83,7 +83,7 @@ export default function Review() {
           <div className="card p-6 md:col-span-2">
             {due.length > 0 ? (
               <>
-                <div className="text-5xl font-extrabold text-primary">{due.length}</div>
+                <div className="text-5xl font-bold text-primary">{due.length}</div>
                 <div className="font-bold">card{due.length === 1 ? '' : 's'} due today</div>
                 <p className="mt-1 text-sm text-muted">A session is up to {SESSION} cards (about {Math.min(SESSION, due.length) * 1.5} minutes).</p>
                 <button className="btn btn-primary btn-lg mt-4" onClick={() => start()}>

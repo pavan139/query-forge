@@ -22,8 +22,6 @@
     "@codemirror/state": "6.5.2",
     "@codemirror/view": "6.36.8",
     "@electric-sql/pglite": "0.5.8",
-    "@fontsource-variable/jetbrains-mono": "5.2.8",
-    "@fontsource-variable/plus-jakarta-sans": "5.2.8",
     "@lezer/highlight": "1.2.1",
     "canvas-confetti": "1.9.3",
     "dompurify": "3.2.6",

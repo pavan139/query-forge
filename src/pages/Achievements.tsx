@@ -18,7 +18,7 @@ export default function Achievements() {
     <Page wide>
       <PageHeader icon="🏆" title="Achievements" subtitle={`${count} of ${ACHIEVEMENTS.length} unlocked. Some are easy, some take months — they're all worth it.`} />
       <div className="mb-6 h-3 overflow-hidden rounded-full bg-surface-3">
-        <div className="h-full rounded-full bg-gradient-to-r from-amber-400 via-pink to-primary" style={{ width: `${(count / ACHIEVEMENTS.length) * 100}%` }} />
+        <div className="h-full rounded-full bg-accent" style={{ width: `${(count / ACHIEVEMENTS.length) * 100}%` }} />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {ACHIEVEMENTS.map((a) => {
@@ -26,7 +26,7 @@ export default function Achievements() {
           return (
             <div key={a.id} className={`card relative flex flex-col items-center p-4 text-center ${at ? `border bg-gradient-to-br ${TIER[a.tier]}` : 'opacity-60'}`}>
               <div className={`flex h-16 w-16 items-center justify-center rounded-2xl text-4xl ${at ? '' : 'grayscale'}`}>{at ? a.icon : <Lock size={26} className="text-muted" />}</div>
-              <div className="mt-2 text-sm font-extrabold">{a.title}</div>
+              <div className="mt-2 text-sm font-bold">{a.title}</div>
               <div className="mt-0.5 text-xs text-muted">{a.description}</div>
               <div className="mt-2 text-[10px] font-bold tracking-wider text-muted uppercase">{at ? `Unlocked ${friendlyDate(at)}` : a.tier}</div>
             </div>

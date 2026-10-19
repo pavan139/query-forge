@@ -46,7 +46,7 @@ export default function ChallengePage() {
               </span>
             )}
           </div>
-          <h1 className="mt-3 text-2xl font-extrabold">{c.title}</h1>
+          <h1 className="mt-3 text-2xl font-bold">{c.title}</h1>
           <div className="mt-3">
             <Markdown md={c.prompt} />
           </div>

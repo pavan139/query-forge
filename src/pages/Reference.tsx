@@ -58,7 +58,7 @@ export default function Reference() {
             .filter((c) => c.entries.length)
             .map(({ m, entries }) => (
               <section key={m.id}>
-                <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold">
+                <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
                   <span>{m.icon}</span> {m.title}
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -85,7 +85,7 @@ export default function Reference() {
         <div className="grid gap-3 md:grid-cols-2">
           {terms.map((g) => (
             <div key={g.term} className="card p-4">
-              <div className="font-extrabold text-primary">{g.term}</div>
+              <div className="font-bold text-primary">{g.term}</div>
               <Markdown md={g.definition} className="mt-1 text-sm" />
               {g.example && <CodeBlock sql={g.example} className="mt-2" />}
             </div>

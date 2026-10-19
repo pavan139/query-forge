@@ -13,7 +13,7 @@ export function useThemeSync() {
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && mq.matches);
       document.documentElement.classList.toggle('dark', dark);
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d0e1a' : '#5b4cf0');
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', dark ? '#000000' : '#f5f5f7'));
     };
     apply();
     mq.addEventListener('change', apply);
@@ -77,4 +77,13 @@ export function useMediaQuery(q: string): boolean {
     return () => mq.removeEventListener('change', f);
   }, [q]);
   return m;
+}
+
+/** Platform-aware shortcut labels: ⌘ on Apple devices, Ctrl elsewhere, none on touch screens. */
+export function useShortcutLabels() {
+  const coarse = useMediaQuery('(pointer: coarse)');
+  const noHover = useMediaQuery('(hover: none)');
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  if (coarse || noHover) return null;
+  return mac ? { run: '⌘↵', check: '⇧⌘↵' } : { run: 'Ctrl+Enter', check: 'Ctrl+Shift+Enter' };
 }
