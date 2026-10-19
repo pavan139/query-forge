@@ -186,7 +186,9 @@ export const SqlEditor = forwardRef<SqlEditorHandle, Props>(function SqlEditor(p
       const v = view.current;
       if (!v) return;
       const { from, to } = v.state.selection.main;
-      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
+      // Paired characters put the cursor between them, e.g. '|' or (|).
+      const inside = text === "''" || text === '()' ? 1 : text.length;
+      v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + inside } });
       v.focus();
     },
   }));

@@ -57,7 +57,6 @@ export default function Tests() {
     const Icon = isWeekly ? CalendarCheck : CalendarClock;
     return (
       <div className={`card relative overflow-hidden p-6 ${t.available && anyLesson ? 'ring-2 ring-pink/50' : ''}`}>
-        <div className="absolute -top-6 -right-6 text-8xl opacity-10">{isWeekly ? '📝' : '🗂️'}</div>
         <div className="flex items-center gap-2 text-sm font-bold text-muted">
           <Icon size={16} /> {isWeekly ? 'Every 7 days' : 'Every 4 weeks'}
         </div>

@@ -11,6 +11,7 @@ import { ResultTable } from './ResultTable.tsx';
 import { SchemaPanel, useSchema } from './SchemaPanel.tsx';
 import { SqlEditor, type SqlEditorHandle } from './SqlEditor.tsx';
 import { CodeBlock } from './CodeBlock.tsx';
+import { KeyBar } from './KeyBar.tsx';
 
 export interface ExerciseSpec {
   solution: string;
@@ -216,6 +217,7 @@ export function Workbench(p: Props) {
     <div className="space-y-3">
       <div className={`flex flex-col gap-3 lg:flex-row ${shake ? 'animate-shake' : ''}`}>
         <div className="min-w-0 flex-1 space-y-2">
+          {!(isTest && submitted) && mode !== 'example' && <KeyBar onInsert={(t) => editor.current?.insert(t)} />}
           <SqlEditor
             ref={editor}
             value={sql}

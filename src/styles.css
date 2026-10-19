@@ -184,6 +184,7 @@ button, a, [role='button'] {
   .cm-editor { font-size: max(16px, var(--editor-font, 14px)) !important; }
 }
 
+@layer components {
 .glass {
   background: var(--c-glass);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -297,6 +298,8 @@ button, a, [role='button'] {
     var(--c-surface);
 }
 
+}
+
 kbd {
   font-family: var(--font-mono);
   font-size: 0.72em;
@@ -390,6 +393,7 @@ kbd {
 }
 .prose-sq hr { border-color: var(--c-border); }
 
+@layer components {
 .callout {
   border-radius: 14px;
   padding: 0.85rem 1rem 0.9rem;
@@ -419,6 +423,8 @@ kbd {
 .callout-analogy .callout-title { color: var(--c-primary); }
 .callout-real-world { background: color-mix(in srgb, var(--c-pink) 10%, var(--c-surface)); border-color: color-mix(in srgb, var(--c-pink) 30%, transparent); }
 .callout-real-world .callout-title { color: var(--c-pink); }
+
+}
 
 /* SQL token colours — Xcode-style palette (used by static highlighter & CodeMirror) */
 .tok-kw { color: #ad3da4; font-weight: 600; }
