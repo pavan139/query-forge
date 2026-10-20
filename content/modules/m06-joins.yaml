@@ -1,0 +1,2139 @@
+id: m06
+order: 6
+title: JOINs — Combining Tables
+subtitle: Connect customers, orders and products into one clear answer
+icon: "🔗"
+level: intermediate
+description: |
+  Real databases split information across many small tables. **JOINs** are how you stitch those tables
+  back together so one query can answer questions like *"Which customer bought which product?"*
+
+  You will learn why data is split into tables, how keys connect them, and every major kind of join:
+  INNER, LEFT, RIGHT, FULL, self joins, CROSS joins and range joins. You will also learn the classic trap
+  where a join silently double-counts your totals — and how to avoid it.
+dataset: shop
+lessons:
+  - id: m06-l01
+    title: Why many tables?
+    summary: Why data is split into tables, and how primary keys and foreign keys connect them.
+    minutes: 15
+    steps:
+      - type: read
+        title: A question the orders table can't answer
+        md: |
+          Your manager at **ShopSmart** (our online store) sends you a message:
+
+          > "Who placed order number 17, and which city do they live in?"
+
+          You open the `orders` table and find a surprise. It has a `customer_id` (just a number) but **no
+          customer name**. Where did the customer's details go?
+
+          They live in a *different table*, called `customers`. This module is all about **JOINs**: the tool
+          that lets one query reach into several tables at once. First, let's see *why* data is split up.
+
+      - type: read
+        title: Why not one giant spreadsheet?
+        md: |
+          Imagine we kept everything in one huge table. Every order would repeat the customer's details:
+
+          | order_id | order_date | customer | email | city |
+          |---|---|---|---|---|
+          | 9 | 2023-01-15 | Jiwoo Watanabe | jiwoo.watanabe@example.org | Denver |
+          | 17 | 2023-02-04 | Jiwoo Watanabe | jiwoo.watanabe@example.org | Denver |
+          | 159 | 2023-08-27 | Jiwoo Watanabe | jiwoo.watanabe@example.org | Denver |
+
+          Jiwoo has placed **12 orders** in total, so those details would be copied 12 times. That causes
+          three problems:
+
+          1. **Waste.** The same facts are stored again and again.
+          2. **Painful updates.** If Jiwoo moves to Austin, you must fix 12 rows. Miss one and the data
+             contradicts itself.
+          3. **Typos.** One row says "Denver", another says "Denvr". Now they look like different cities.
+
+          The fix: store each fact **once**, in the table where it belongs, and point to it with an id.
+
+      - type: read
+        title: Keys, the glue between tables
+        md: |
+          Two kinds of **keys** connect the tables:
+
+          - A **primary key** (PK) is a column whose value is *different for every row*. It identifies the row,
+            like a passport number. `customers.customer_id` is a primary key.
+          - A **foreign key** (FK) is a column that stores *another table's primary key*. It points to a row
+            over there. `orders.customer_id` is a foreign key pointing to `customers`.
+
+          > [!ANALOGY]
+          > Think of a library. Your borrowing slip doesn't repeat your name and address. It just says
+          > **member #46**. If the librarian needs your details, they look #46 up in the member file.
+          > That member number is a key.
+
+          Here is the ShopSmart map for the tables you will use most:
+
+          | table | primary key | foreign keys |
+          |---|---|---|
+          | `customers` | `customer_id` | none |
+          | `orders` | `order_id` | `customer_id` → customers |
+          | `order_items` | `order_item_id` | `order_id` → orders, `product_id` → products |
+          | `products` | `product_id` | `category_id` → categories, `supplier_id` → suppliers |
+
+          > [!MISTAKE]
+          > A foreign key is **not** unique. Customer 46 appears in 12 different rows of `orders`. Only the
+          > primary key must be different on every row.
+
+      - type: example
+        title: Step 1, peek at the customers table
+        md: Each customer is stored **once**, with their own `customer_id`.
+        sql: |
+          SELECT customer_id, first_name, last_name, city
+          FROM customers
+          ORDER BY customer_id
+          LIMIT 5;
+        after: |
+          Five customers, each with a different `customer_id`. That column is the **primary key**:
+          no two customers share it.
+
+      - type: example
+        title: Step 2, find the order
+        md: Now look at order 17 in the `orders` table.
+        sql: |
+          SELECT order_id, customer_id, order_date, status
+          FROM orders
+          WHERE order_id = 17;
+        after: |
+          Order 17 was placed on 2023-02-04 by customer **46**. We only get a number, not a name.
+          That `customer_id` is the **foreign key**.
+
+      - type: example
+        title: Step 3, look the customer up
+        md: Use that number to search the `customers` table, just like the librarian would.
+        sql: |
+          SELECT customer_id, first_name, last_name, city
+          FROM customers
+          WHERE customer_id = 46;
+        after: |
+          Customer 46 is **Jiwoo Watanabe from Denver**. Mission accomplished, but it took two queries and
+          we had to copy the number across by hand.
+
+      - type: example
+        title: A taste of the real thing (preview)
+        md: |
+          A **JOIN** does those steps in one go. Don't worry about the new words, we will take it apart
+          piece by piece in the next lessons. Just press **Run**.
+        sql: |
+          SELECT orders.order_id,
+                 orders.order_date,
+                 customers.first_name,
+                 customers.last_name,
+                 customers.city
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE orders.order_id = 17;
+        after: |
+          One query, one row, with the order details *and* the customer's name and city side by side.
+          The database followed the foreign key for you.
+
+      - type: exercise
+        id: m06-l01-e1
+        title: Find an order
+        prompt: |
+          Show the `order_id`, `customer_id`, `order_date` and `status` of the order with `order_id` 250.
+        starter: |
+          SELECT order_id, ___
+          FROM orders
+          WHERE ___;
+        solution: |
+          SELECT order_id, customer_id, order_date, status
+          FROM orders
+          WHERE order_id = 250;
+        hints:
+          - This is the same shape as Step 2 above, only the order number changes.
+          - List the four columns after SELECT, separated by commas, and filter with WHERE order_id = ...
+          - "SELECT order_id, customer_id, order_date, ___ FROM orders WHERE order_id = 250;"
+        explanation: |
+          Order 250 belongs to customer **87**, and it was cancelled. Remember that number: the next
+          exercise uses it.
+        difficulty: 1
+
+      - type: exercise
+        id: m06-l01-e2
+        title: Follow the foreign key
+        prompt: |
+          Order 250 was placed by customer 87. Look that customer up: show their `first_name`, `last_name`
+          and `city`.
+        starter: |
+          SELECT first_name, last_name, city
+          FROM customers
+          WHERE ___;
+        solution: |
+          SELECT first_name, last_name, city
+          FROM customers
+          WHERE customer_id = 87;
+        hints:
+          - Which table stores the customers' names?
+          - Filter on the primary key of that table, customer_id.
+          - "SELECT first_name, last_name, city FROM customers WHERE customer_id = ___;"
+        explanation: |
+          Sofia Saleh from Atlanta. You just did a join **by hand**: read a foreign key in one table, then
+          looked up the matching primary key in another.
+        difficulty: 1
+
+      - type: quiz
+        id: m06-l01-q1
+        question: |
+          The column `customer_id` exists in both `customers` and `orders`. Which statement is true?
+        options:
+          - It is the primary key in both tables.
+          - It is the primary key in `customers` and a foreign key in `orders`.
+          - It is a foreign key in `customers` and the primary key in `orders`.
+          - It must contain different values in every row of both tables.
+        answer: 1
+        explanation: |
+          In `customers`, each `customer_id` is unique (primary key). In `orders`, it points back to a
+          customer (foreign key) and can repeat, because one customer can place many orders.
+
+      - type: read
+        title: Reading the map, one-to-many
+        md: |
+          Whenever one row in table A can be linked to *many* rows in table B, we call it a
+          **one-to-many relationship**. ShopSmart is full of them:
+
+          ```
+          customers  1 ───< ∞  orders
+          orders     1 ───< ∞  order_items
+          products   1 ───< ∞  order_items
+          categories 1 ───< ∞  products
+          orders     1 ───< ∞  payments
+          ```
+
+          Read `1 ───< ∞` as: **one** customer, **many** orders. The "many" side holds the foreign key:
+
+          ```
+          orders.customer_id     → customers.customer_id
+          order_items.order_id   → orders.order_id
+          order_items.product_id → products.product_id
+          products.category_id   → categories.category_id
+          payments.order_id      → orders.order_id
+          ```
+
+          An order can hold several products, and a product can be in many orders. The `order_items`
+          table sits in the middle and connects the two: one row per product per order.
+
+      - type: exercise
+        id: m06-l01-e3
+        title: One customer, many orders
+        prompt: |
+          List every order placed by customer 6: show `order_id`, `order_date` and `status`.
+          Put the newest order first; if two orders share a date, the higher `order_id` comes first.
+        starter: |
+          SELECT order_id, order_date, status
+          FROM orders
+          WHERE ___
+          ORDER BY ___;
+        solution: |
+          SELECT order_id, order_date, status
+          FROM orders
+          WHERE customer_id = 6
+          ORDER BY order_date DESC, order_id DESC;
+        ordered: true
+        hints:
+          - Filter on the foreign key column in orders.
+          - "WHERE customer_id = 6, then sort with ORDER BY order_date DESC and a tie-breaker."
+          - "ORDER BY order_date DESC, order_id DESC;"
+        explanation: |
+          You get **23 rows** for one customer. That is the "many" side of one-to-many: customer 6 appears
+          23 times in the foreign key column of `orders`, but only once in `customers`.
+        difficulty: 2
+
+      - type: predict
+        id: m06-l01-p1
+        question: |
+          Order 17 contains several products. How many rows will this query return?
+        sql: |
+          SELECT *
+          FROM order_items
+          WHERE order_id = 17;
+        options: ["1 row", "4 rows", "2,296 rows", "An error"]
+        answer: 1
+        explanation: |
+          Each product in an order gets its own row in `order_items`, and order 17 has 4 products. The
+          `order_id` column here is a foreign key, so the same order number appears on several rows.
+
+      - type: example
+        title: The database guards the keys (preview)
+        md: |
+          Foreign keys are not just labels: PostgreSQL **enforces** them. This `INSERT` (you will learn it in
+          module 12) tries to add an order for customer 99999, who doesn't exist. Run it and read the error.
+        sql: |
+          INSERT INTO orders (order_id, customer_id, order_date, status, ship_city)
+          VALUES (9999, 99999, '2024-12-31', 'processing', 'Denver');
+        expectError: true
+        after: |
+          The database refuses: *violates foreign key constraint*. An order must point at a real customer,
+          so a foreign key can never be left dangling. (Nothing was saved, and every Run starts fresh anyway.)
+
+      - type: quiz
+        id: m06-l01-q2
+        question: |
+          An order can contain many products, and one product can appear in many orders. Which table connects
+          `orders` and `products`?
+        options: [customers, order_items, payments, categories]
+        answer: 1
+        explanation: |
+          `order_items` has one row per product per order, with foreign keys to both `orders` and `products`.
+          A table like this, in the middle of two others, is called a **bridge table** (or junction table).
+
+      - type: fill
+        id: m06-l01-f1
+        prompt: Complete the query to look up the customer with `customer_id` 46.
+        template: |
+          SELECT first_name, last_name, city
+          FROM ___
+          WHERE ___ = 46;
+        answers:
+          - [customers]
+          - [customer_id]
+        explanation: |
+          The customer's details live in `customers`, and `customer_id` is the key we search by.
+
+      - type: exercise
+        id: m06-l01-e4
+        title: Primary key vs foreign key, by the numbers
+        prompt: |
+          In one row, show these three numbers for the `orders` table, using exactly these column names:
+
+          - `total_rows`: how many rows the table has
+          - `distinct_order_ids`: how many *different* `order_id` values
+          - `distinct_customer_ids`: how many *different* `customer_id` values
+        starter: |
+          SELECT COUNT(*) AS total_rows,
+                 ___
+          FROM orders;
+        solution: |
+          SELECT COUNT(*) AS total_rows,
+                 COUNT(DISTINCT order_id) AS distinct_order_ids,
+                 COUNT(DISTINCT customer_id) AS distinct_customer_ids
+          FROM orders;
+        columnNames: true
+        hints:
+          - Use COUNT(DISTINCT column) to count different values (you met it in module 5).
+          - "Three expressions in one SELECT, each with an AS alias."
+          - "COUNT(DISTINCT order_id) AS distinct_order_ids, COUNT(DISTINCT customer_id) AS ___"
+        explanation: |
+          The result is **900, 900, 140**. The primary key is unique (900 orders, 900 different ids). The
+          foreign key repeats: just 140 different customers placed all 900 orders. The other 10 customers
+          have never ordered, which will matter a lot in the lesson on LEFT JOIN.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Primary key vs foreign key
+        sql: |
+          -- customers.customer_id  is the PRIMARY KEY (unique)
+          -- orders.customer_id     is a FOREIGN KEY (can repeat)
+          SELECT * FROM orders WHERE customer_id = 46;
+        note: The foreign key stores another table's primary key. One customer, many orders.
+      - title: Doing a join by hand
+        sql: |
+          SELECT customer_id FROM orders WHERE order_id = 17;
+          SELECT * FROM customers WHERE customer_id = 46;
+        note: Copy the key from one table, search for it in the other. A JOIN automates exactly this.
+
+  - id: m06-l02
+    title: INNER JOIN
+    summary: Combine two tables by matching rows with ON, and see only the rows that match.
+    minutes: 20
+    steps:
+      - type: read
+        title: Names, not numbers
+        md: |
+          Marketing sends you a request:
+
+          > "Can I get a list of orders with the **customer's name** next to each one? A column of customer
+          > numbers doesn't help me."
+
+          You know where the data lives: order details in `orders`, names in `customers`. The tool that
+          connects them is the **INNER JOIN**.
+
+          An INNER JOIN lines up rows from two tables wherever a **matching rule** is true (usually
+          "the foreign key equals the primary key"). Rows with no partner are left out.
+
+          > [!ANALOGY]
+          > Picture every order as a sticky note with a customer number on it. You walk through the
+          > customer address book, and wherever a note's number matches an entry, you staple the two
+          > together. Notes or entries with no partner stay behind. What you hold at the end is the
+          > **inner join**.
+
+      - type: viz
+        viz: join
+        title: Watch the matching happen
+        md: |
+          Two tiny tables. Ben and Dee have no orders. Hover over a result row to see where it came from.
+          The coloured stripe shows which rows were matched on `id = customer_id`.
+        config:
+          left:
+            name: customers
+            columns: [id, name]
+            rows: [[1, Ana], [2, Ben], [3, Chen], [4, Dee]]
+          right:
+            name: orders
+            columns: [order_id, customer_id, total]
+            rows: [[101, 1, 25], [102, 1, 8], [103, 3, 40], [104, 3, 15]]
+          on: [id, customer_id]
+          types: [inner]
+
+      - type: read
+        title: The shape of a join
+        md: |
+          Here is the pattern. Read it top to bottom:
+
+          ```sql
+          SELECT columns you want
+          FROM first_table
+          INNER JOIN second_table
+              ON first_table.key = second_table.key;
+          ```
+
+          - `FROM` names the first table.
+          - `INNER JOIN` names the second table.
+          - `ON` is the **matching rule**: when it is true for a pair of rows, that pair goes in the result.
+
+          Writing just `JOIN` means exactly the same as `INNER JOIN`. Most people use the short form.
+
+          > [!TIP]
+          > Write columns as `table_name.column_name` (for example `orders.customer_id`). It makes clear
+          > which table each column comes from. In this lesson, pick columns that exist in only one of the
+          > two tables. The next lesson shows what happens when both tables have a column of the same name.
+
+      - type: example
+        title: Orders with customer names
+        md: Join `orders` to `customers` and show the first ten orders.
+        sql: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          INNER JOIN customers
+              ON orders.customer_id = customers.customer_id
+          ORDER BY order_id
+          LIMIT 10;
+        after: |
+          Each row mixes columns from **both** tables: `order_id` and `order_date` come from `orders`,
+          `first_name` and `last_name` from `customers`. Notice that Kenji Kobayashi appears twice
+          (orders 5 and 8): one customer, many orders.
+
+      - type: example
+        title: JOIN is short for INNER JOIN, and WHERE still works
+        md: |
+          You can add `WHERE` and `ORDER BY` after the join, just like with a single table. Here are the
+          delivered orders from customers who live in Denver, placed in December 2024.
+        sql: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE city = 'Denver'
+            AND status = 'delivered'
+            AND order_date >= '2024-12-01'
+          ORDER BY order_date, order_id;
+        after: |
+          Five orders. The filter on `city` (a `customers` column) and the filter on `status` (an `orders`
+          column) work together, because after the join each row holds both.
+
+      - type: example
+        title: Order lines with product names
+        md: |
+          The same idea works for any pair of tables linked by a key. `order_items` stores
+          `product_id` (a number); `products` stores the product's `name`.
+        sql: |
+          SELECT order_id, name, quantity, unit_price
+          FROM order_items
+          JOIN products
+              ON order_items.product_id = products.product_id
+          WHERE order_id = 17;
+        after: |
+          Earlier, order 17's lines were just product numbers. Now we can read what was bought:
+          a desk mat, a kettle, a pillow and a journal (quantity 2).
+
+      - type: stepper
+        title: Build a join one piece at a time
+        md: Click through the stages and press Run on each. Every stage adds one idea.
+        stages:
+          - label: One table
+            md: Start with just `orders`. It has 7 columns and 900 rows (we only show the first 3).
+            sql: |
+              SELECT *
+              FROM orders
+              ORDER BY order_id
+              LIMIT 3;
+          - label: Add the JOIN
+            md: |
+              `JOIN customers ON ...` glues each order to its customer. The result has the columns of
+              **both** tables side by side. Scroll right to see the customer columns.
+            sql: |
+              SELECT *
+              FROM orders
+              JOIN customers
+                  ON orders.customer_id = customers.customer_id
+              ORDER BY order_id
+              LIMIT 3;
+          - label: Pick columns
+            md: '`SELECT *` is too much. Choose only the columns you need.'
+            sql: |
+              SELECT order_id, order_date, first_name, last_name
+              FROM orders
+              JOIN customers
+                  ON orders.customer_id = customers.customer_id
+              ORDER BY order_id
+              LIMIT 3;
+          - label: Filter and sort
+            md: Add `WHERE` to filter the joined rows, and `ORDER BY` to sort them.
+            sql: |
+              SELECT order_id, order_date, first_name, last_name
+              FROM orders
+              JOIN customers
+                  ON orders.customer_id = customers.customer_id
+              WHERE status = 'delivered'
+              ORDER BY order_date DESC, order_id DESC
+              LIMIT 3;
+
+      - type: exercise
+        id: m06-l02-e1
+        title: Orders still processing
+        prompt: |
+          Show `order_id`, `order_date`, `first_name` and `last_name` for every order whose `status` is
+          `'processing'`. Sort by `order_id`.
+        starter: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          JOIN customers
+              ON ___
+          WHERE ___
+          ORDER BY order_id;
+        solution: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE status = 'processing'
+          ORDER BY order_id;
+        ordered: true
+        hints:
+          - This is the first example again, with a WHERE filter added after the join.
+          - "The ON rule links the foreign key to the primary key: orders.customer_id = customers.customer_id."
+          - "WHERE status = 'processing' goes after the JOIN ... ON ... lines and before ORDER BY."
+        explanation: |
+          Seven orders are still being processed, and now you can see **who** is waiting for them.
+          `status` lives in `orders`, but you could just as well have filtered on a `customers` column.
+        difficulty: 1
+
+      - type: exercise
+        id: m06-l02-e2
+        title: What is in order 100?
+        prompt: |
+          Show the product `name`, `quantity` and `unit_price` of every line in order 100 (join
+          `order_items` with `products`).
+        starter: |
+          SELECT name, quantity, unit_price
+          FROM order_items
+          JOIN products
+              ON ___
+          WHERE order_id = 100;
+        solution: |
+          SELECT name, quantity, unit_price
+          FROM order_items
+          JOIN products
+              ON order_items.product_id = products.product_id
+          WHERE order_id = 100;
+        hints:
+          - Which column do order_items and products share?
+          - "Both tables have product_id. Match them in the ON rule."
+          - "ON order_items.product_id = products.product_id"
+        explanation: |
+          Four lines: a blender, a water bottle, a sleeping bag and a cookbook. Each `order_items` row found
+          its product through `product_id`.
+        difficulty: 1
+
+      - type: read
+        title: When the ON rule is wrong
+        md: |
+          The database never checks whether your `ON` rule *makes sense*. It just matches whatever you tell it
+          to match. A wrong rule gives a result that **looks fine but is wrong**.
+
+          > [!MISTAKE]
+          > Joining on the wrong columns, for example `orders.order_id = customers.customer_id`. Order 1 gets
+          > matched with customer 1 (Felix White) just because both numbers are 1. The query runs without any
+          > error, but the names are nonsense. Always join a **foreign key** to the **primary key it points to**.
+
+      - type: exercise
+        id: m06-l02-e3
+        title: Fix the wrong match
+        prompt: |
+          This query should show the first customer name for orders 1 to 4, but the names are wrong because
+          the `ON` rule joins the wrong columns. Fix it. Keep the same columns, and sort by `order_id`.
+        starter: |
+          SELECT orders.order_id, first_name
+          FROM orders
+          JOIN customers
+              ON orders.order_id = customers.customer_id
+          WHERE orders.order_id <= 4
+          ORDER BY orders.order_id;
+        solution: |
+          SELECT orders.order_id, first_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE orders.order_id <= 4
+          ORDER BY orders.order_id;
+        ordered: true
+        hints:
+          - Compare the ON line with the one in the first example.
+          - The foreign key in orders is customer_id, not order_id.
+          - "ON orders.customer_id = customers.customer_id"
+        explanation: |
+          Orders 1 to 4 belong to Anya, Ingrid, Seun and Freya. The broken version matched order numbers
+          with customer numbers and handed out the wrong names. Same row count, wrong answer: the sneakiest
+          kind of bug!
+        difficulty: 2
+
+      - type: predict
+        id: m06-l02-p1
+        question: |
+          The 900 orders in the shop belong to 140 different customers (the other 10 customers never ordered).
+          How many rows does this query return?
+        sql: |
+          SELECT COUNT(*)
+          FROM customers
+          INNER JOIN orders
+              ON customers.customer_id = orders.customer_id;
+        options: ["150", "140", "900", "910"]
+        answer: 2
+        explanation: |
+          An INNER JOIN returns **one row per matching pair**. Every one of the 900 orders matches exactly one
+          customer, so 900 pairs. The 10 customers without orders have no partner and disappear.
+          Customers with many orders simply appear many times.
+
+      - type: exercise
+        id: m06-l02-e4
+        title: Returned orders in Texas
+        prompt: |
+          Show `order_id`, `order_date`, `first_name` and `last_name` for orders with status `'returned'`
+          that were placed in 2024 (on or after `'2024-01-01'`) by customers whose `state` is `'TX'`.
+          Sort by `order_date`, then `order_id`.
+        starter: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE ___
+          ORDER BY order_date, order_id;
+        solution: |
+          SELECT order_id, order_date, first_name, last_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE status = 'returned'
+            AND order_date >= '2024-01-01'
+            AND state = 'TX'
+          ORDER BY order_date, order_id;
+        ordered: true
+        hints:
+          - You need three conditions combined with AND. One of them is about a customers column.
+          - "state is a column of customers; status and order_date are columns of orders."
+          - "WHERE status = 'returned' AND order_date >= '2024-01-01' AND state = ___"
+        explanation: |
+          Eleven returned orders. A single `WHERE` can mix conditions on columns from both tables, because
+          the join has already put them in the same row.
+        difficulty: 2
+
+      - type: exercise
+        id: m06-l02-e5
+        title: Price of each line
+        prompt: |
+          For order 100, show each product `name` and its `line_total`, which is
+          `quantity * unit_price * (1 - discount)` rounded to 2 decimals. Use exactly the column names
+          `name` and `line_total`.
+        starter: |
+          SELECT name,
+                 ROUND(___, 2) AS line_total
+          FROM order_items
+          JOIN products
+              ON ___
+          WHERE order_id = 100;
+        solution: |
+          SELECT name,
+                 ROUND(quantity * unit_price * (1 - discount), 2) AS line_total
+          FROM order_items
+          JOIN products
+              ON order_items.product_id = products.product_id
+          WHERE order_id = 100;
+        columnNames: true
+        hints:
+          - You can do arithmetic in SELECT on columns from the joined rows, exactly as in module 1.
+          - "ROUND(quantity * unit_price * (1 - discount), 2) AS line_total"
+          - "Don't forget the ON rule: order_items.product_id = products.product_id"
+        explanation: |
+          Prices (`unit_price`, `discount`, `quantity`) come from `order_items`, the name from `products`.
+          Once joined, they are just columns in one row, so you can calculate with them freely.
+        difficulty: 2
+
+      - type: example
+        title: Forgetting the ON rule
+        md: What happens if you write `INNER JOIN` but forget `ON`? Run it and read the message.
+        sql: |
+          SELECT order_id, first_name
+          FROM orders
+          INNER JOIN customers;
+        expectError: true
+        after: |
+          A **syntax error**: after `INNER JOIN customers` the database was still waiting for `ON ...`.
+          Every `INNER JOIN` needs its matching rule. (An `ON` with the wrong columns is far worse than a
+          missing one, because that gives no error at all.)
+
+      - type: quiz
+        id: m06-l02-q1
+        question: |
+          Customer 145 has never placed an order. Will they appear in the result of `customers INNER JOIN orders`
+          (matching on `customer_id`)?
+        options:
+          - "Yes, once, with empty order columns"
+          - "Yes, 145 times"
+          - "No, they have no matching row in orders"
+          - "No, because INNER JOIN only keeps customers from Texas"
+        answer: 2
+        explanation: |
+          An INNER JOIN keeps **only** pairs that match. Customer 145 has no orders to pair with, so they
+          vanish from the result. The next-but-one lesson (LEFT JOIN) shows how to keep them.
+
+      - type: fill
+        id: m06-l02-f1
+        prompt: Complete the join so it shows each order with its customer's first name.
+        template: |
+          SELECT order_id, first_name
+          FROM orders
+          ___ customers
+              ___ orders.customer_id = customers.customer_id;
+        answers:
+          - [INNER JOIN, JOIN]
+          - [ON]
+        explanation: |
+          `JOIN` (or `INNER JOIN`) names the second table and `ON` introduces the matching rule.
+
+      - type: exercise
+        id: m06-l02-e6
+        title: Orders per customer segment
+        prompt: |
+          How many orders were placed by each customer `segment`? Show `segment` and the number of orders,
+          named `order_count`. Put the segment with the most orders first.
+        starter: |
+          SELECT segment, COUNT(*) AS order_count
+          FROM orders
+          JOIN customers
+              ON ___
+          GROUP BY ___
+          ORDER BY ___;
+        solution: |
+          SELECT segment, COUNT(*) AS order_count
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          GROUP BY segment
+          ORDER BY order_count DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - Join first, then group. After the join, each row is one order with its customer's segment.
+          - "GROUP BY segment, with COUNT(*) counting the joined rows in each group."
+          - "ORDER BY order_count DESC puts the biggest segment first."
+        explanation: |
+          Consumers placed 552 orders, Home Office 188 and Corporate 160. This is the pattern you will use
+          constantly: **join to bring the columns together, then GROUP BY to summarise them.**
+        difficulty: 3
+
+    cheatsheet:
+      - title: INNER JOIN
+        sql: |
+          SELECT orders.order_id, customers.first_name
+          FROM orders
+          INNER JOIN customers
+              ON orders.customer_id = customers.customer_id;
+        note: Keeps only rows that have a match in both tables. JOIN alone means INNER JOIN.
+      - title: Filter and sort a join
+        sql: |
+          SELECT order_id, first_name
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          WHERE status = 'delivered'
+          ORDER BY order_id;
+        note: WHERE, ORDER BY and LIMIT work after the join, on columns from either table.
+      - title: Join, then summarise
+        sql: |
+          SELECT segment, COUNT(*) AS order_count
+          FROM orders
+          JOIN customers
+              ON orders.customer_id = customers.customer_id
+          GROUP BY segment;
+        note: Join first to bring columns together, then GROUP BY to count or add things up.
+
+  - id: m06-l03
+    title: Table aliases
+    summary: Give tables short nicknames, fix the "ambiguous column" error, and meet the USING shortcut.
+    minutes: 18
+    steps:
+      - type: read
+        title: Typing less, saying more
+        md: |
+          Look at the joins you have written so far. `orders.customer_id = customers.customer_id` is a lot
+          to type, and it gets worse with three or four tables.
+
+          The cure is a **table alias**: a short nickname you give a table inside one query. Instead of
+          `customers` you can write `c`, and instead of `orders` you can write `o`.
+
+          > [!ANALOGY]
+          > Your friend Alexandra might be "Alex" to everyone in the group chat. The nickname only works
+          > inside that chat, and it points at the same person. A table alias works only inside one query,
+          > and it points at the same table.
+
+      - type: example
+        title: Your first aliases
+        md: |
+          The alias goes right after the table name in `FROM` / `JOIN`, with `AS` in between.
+          From then on, use the alias everywhere in the query.
+        sql: |
+          SELECT o.order_id, o.order_date, c.first_name, c.city
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          ORDER BY o.order_id
+          LIMIT 5;
+        after: |
+          The same result as before, but the query is shorter and every column says where it came from:
+          `o.` for orders, `c.` for customers. The word `AS` is optional for table aliases, so
+          `FROM orders o` works too. Most people use that shorter form.
+
+      - type: read
+        title: Alias habits that pay off
+        md: |
+          - Pick short but meaningful names: `o` for orders, `c` for customers, `oi` for order_items,
+            `p` for products. Don't use `a`, `b`, `c` for everything; you'll forget which is which.
+          - **Always put the alias in front of every column** when you join (`o.order_id`), even when the
+            name is unique. Your future self will thank you.
+          - An alias lives only for that query. Nothing is renamed in the database.
+
+      - type: example
+        title: The "ambiguous column" error
+        md: |
+          Both `orders` and `customers` have a column called `customer_id`. What if we just ask for
+          `customer_id` without saying which table?
+        sql: |
+          SELECT customer_id, first_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id;
+        expectError: true
+        after: |
+          *column reference "customer_id" is ambiguous*. The database sees two columns with that name and
+          refuses to guess which one you mean. Fix it by naming the table: `o.customer_id` or
+          `c.customer_id`.
+
+      - type: example
+        title: Fixing it with a prefix
+        md: |
+          Let's show **both** versions of `customer_id` side by side. We rename them with `AS` so we can
+          tell them apart.
+        sql: |
+          SELECT o.order_id,
+                 o.customer_id AS in_orders,
+                 c.customer_id AS in_customers,
+                 c.first_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          ORDER BY o.order_id
+          LIMIT 3;
+        after: |
+          The two numbers are always equal, because that is exactly what the `ON` rule demanded. So it
+          doesn't matter which one you pick, but you **must** pick one.
+
+      - type: example
+        title: Once aliased, use the alias
+        md: |
+          Here is a classic slip. We gave `orders` the alias `o`, then used the long name `orders` anyway.
+        sql: |
+          SELECT orders.order_id, c.first_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id;
+        expectError: true
+        after: |
+          *invalid reference to FROM-clause entry for table "orders"*, and PostgreSQL even adds a hint:
+          *Perhaps you meant to reference the table alias "o"*. After you rename a table in `FROM`, the old
+          name no longer works in that query.
+
+      - type: exercise
+        id: m06-l03-e1
+        title: Aliases in action
+        prompt: |
+          Using the aliases `o` for orders and `c` for customers, show `order_id`, `order_date`,
+          `first_name` and `city` of the **cancelled** orders (`status = 'cancelled'`). Sort by `order_id`
+          and keep only the first 6 rows.
+        starter: |
+          SELECT o.order_id, o.order_date, c.first_name, c.city
+          FROM orders AS o
+          JOIN customers AS c
+              ON ___
+          WHERE ___
+          ORDER BY o.order_id
+          LIMIT 6;
+        solution: |
+          SELECT o.order_id, o.order_date, c.first_name, c.city
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          WHERE o.status = 'cancelled'
+          ORDER BY o.order_id
+          LIMIT 6;
+        ordered: true
+        hints:
+          - Start from the first alias example and add a WHERE filter.
+          - "The ON rule is o.customer_id = c.customer_id. The filter is about o.status."
+          - "WHERE o.status = 'cancelled' goes before ORDER BY."
+        explanation: |
+          Orders 12, 15, 18, 19, 26 and 30 are the first six cancelled ones. Because `order_id` is unique,
+          sorting by it gives a stable "first 6".
+        difficulty: 1
+
+      - type: exercise
+        id: m06-l03-e2
+        title: Fix the ambiguous column
+        prompt: |
+          This query is supposed to list `order_id`, `customer_id` and `last_name` for orders 1 to 5, but it
+          fails with an "ambiguous" error. Fix it (take `customer_id` from the `orders` table).
+        starter: |
+          SELECT o.order_id, customer_id, c.last_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          WHERE o.order_id <= 5
+          ORDER BY o.order_id;
+        solution: |
+          SELECT o.order_id, o.customer_id, c.last_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          WHERE o.order_id <= 5
+          ORDER BY o.order_id;
+        ordered: true
+        hints:
+          - "Read the error: which column name is ambiguous?"
+          - Both tables have customer_id. Put an alias in front of it.
+          - "Change customer_id to o.customer_id in the SELECT list."
+        explanation: |
+          Any column that exists in **both** tables needs a prefix. A good habit is to prefix *every* column
+          in a join, then you never see this error.
+        difficulty: 1
+
+      - type: predict
+        id: m06-l03-p1
+        question: |
+          Both `products` and `categories` have a column called `name`. What happens when you run this?
+        sql: |
+          SELECT name
+          FROM products AS p
+          JOIN categories AS c
+              ON p.category_id = c.category_id;
+        options:
+          - A list of product names
+          - A list of category names
+          - Both names, side by side
+          - 'An error: column reference "name" is ambiguous'
+        answer: 3
+        expectError: true
+        explanation: |
+          Same trap as with `customer_id`, only this time the column is `name`. You must say `p.name` or
+          `c.name`. And if you want both in one result, give them different labels with `AS`.
+
+      - type: read
+        title: USING, a shortcut for same-named keys
+        md: |
+          When the key columns have the **same name in both tables** (like `customer_id`), there is a
+          shortcut:
+
+          ```sql
+          FROM orders o
+          JOIN customers c USING (customer_id)
+          ```
+
+          This means "match rows where `customer_id` is equal on both sides". Two nice side effects:
+          the result has **one** `customer_id` column (not two), and you can write `customer_id` without a
+          prefix, because it is no longer ambiguous.
+
+          `USING` only works when the names are identical and the rule is plain equality. For anything else
+          you still need `ON`.
+
+          > [!WARNING]
+          > You may meet a third form, `NATURAL JOIN`. It silently joins on **every** column the two tables
+          > share by name. If someone later adds a same-named column to one of the tables, the join changes
+          > meaning without any warning. Prefer `ON` or `USING`, where you state the rule yourself.
+
+      - type: example
+        title: USING in action
+        md: |
+          With `USING`, the join column appears once and needs no prefix.
+        sql: |
+          SELECT customer_id, first_name, order_id, order_date
+          FROM orders
+          JOIN customers USING (customer_id)
+          WHERE customer_id = 6
+          ORDER BY order_date, order_id
+          LIMIT 5;
+        after: |
+          Noor's first five orders. Note that `customer_id` is used in `SELECT` and in `WHERE` without any
+          prefix, and no error appears. `SELECT *` would also show `customer_id` just once (16 columns
+          instead of 17).
+
+      - type: exercise
+        id: m06-l03-e3
+        title: Join with USING
+        prompt: |
+          Use `JOIN ... USING (customer_id)` to show `customer_id`, `first_name`, `order_id` and
+          `order_date` for the orders of customer **14**, sorted by `order_date` then `order_id`, keeping
+          only the first 4 rows.
+        starter: |
+          SELECT customer_id, first_name, order_id, order_date
+          FROM orders
+          JOIN customers USING (___)
+          WHERE ___
+          ORDER BY order_date, order_id
+          LIMIT 4;
+        solution: |
+          SELECT customer_id, first_name, order_id, order_date
+          FROM orders
+          JOIN customers USING (customer_id)
+          WHERE customer_id = 14
+          ORDER BY order_date, order_id
+          LIMIT 4;
+        ordered: true
+        hints:
+          - USING takes the shared column name in parentheses.
+          - "USING (customer_id), and then customer_id needs no prefix anywhere."
+          - "WHERE customer_id = 14"
+        explanation: |
+          Jia's first four orders. Compare the two spellings: `ON o.customer_id = c.customer_id` versus
+          `USING (customer_id)`. Same rows. Use whichever is clearer; `ON` is the one that always works.
+        difficulty: 2
+
+      - type: exercise
+        id: m06-l03-e4
+        title: Two columns called "name"
+        prompt: |
+          Show every product priced **above 500**: its name as `product`, its category's name as `category`
+          and its `price`. Use exactly those column names. Sort by `price` (highest first), then by product
+          name. Use the aliases `p` and `c`.
+        starter: |
+          SELECT p.name AS product,
+                 c.name AS ___,
+                 p.price
+          FROM products AS p
+          JOIN categories AS c
+              ON ___
+          WHERE ___
+          ORDER BY ___;
+        solution: |
+          SELECT p.name AS product,
+                 c.name AS category,
+                 p.price
+          FROM products AS p
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          WHERE p.price > 500
+          ORDER BY p.price DESC, p.name;
+        columnNames: true
+        ordered: true
+        hints:
+          - Products point to their category with category_id.
+          - "Both tables have name, so label them with AS: p.name AS product, c.name AS category."
+          - "ORDER BY p.price DESC, p.name; the WHERE is p.price > 500."
+        explanation: |
+          Eight products cost more than $500: laptops, phones and a mini PC. Two `AS` labels turned two
+          identical column names into two clear ones.
+        difficulty: 2
+
+      - type: exercise
+        id: m06-l03-e5
+        title: Products per supplier country
+        prompt: |
+          How many products does each supplier country provide? Join `products` (alias `p`) to `suppliers`
+          (alias `s`) and show `country` and the number of products as `products`. Sort by the number of
+          products (most first), then by `country`.
+        starter: |
+          SELECT s.country, COUNT(*) AS products
+          FROM products AS p
+          JOIN suppliers AS s
+              ON ___
+          GROUP BY ___
+          ORDER BY ___;
+        solution: |
+          SELECT s.country, COUNT(*) AS products
+          FROM products AS p
+          JOIN suppliers AS s
+              ON p.supplier_id = s.supplier_id
+          GROUP BY s.country
+          ORDER BY products DESC, s.country;
+        columnNames: true
+        ordered: true
+        hints:
+          - The foreign key is products.supplier_id, the primary key is suppliers.supplier_id.
+          - Join, then GROUP BY s.country and COUNT(*).
+          - "ORDER BY products DESC, s.country"
+        explanation: |
+          China supplies 17 products, Germany 9 and so on. The counts add up to **57**, not 60: three products
+          have no supplier (`supplier_id` is NULL), and an INNER JOIN drops rows that find no partner.
+          Keep that in mind for the LEFT JOIN lesson.
+        difficulty: 2
+
+      - type: quiz
+        id: m06-l03-q1
+        question: |
+          You wrote `FROM orders AS o JOIN customers AS c ON ...`. Which expression correctly refers to the
+          order date inside that query?
+        options: [orders.order_date, o.order_date, "order.o_date", "o->order_date"]
+        answer: 1
+        explanation: |
+          Once a table has an alias, use the alias: `o.order_date`. The original name `orders` no longer
+          works in this query, as you saw in the error earlier.
+
+      - type: fill
+        id: m06-l03-f1
+        prompt: Give the tables the aliases `o` and `c`, then complete the query.
+        template: |
+          SELECT o.order_id, c.first_name
+          FROM orders AS ___
+          JOIN customers AS c
+              ON o.customer_id = ___.customer_id;
+        answers:
+          - [o]
+          - [c]
+        explanation: |
+          The alias after `AS` is the name you then use in front of every column.
+
+      - type: parsons
+        id: m06-l03-o1
+        prompt: |
+          Put the lines in order to list the first 5 orders from customers living in California
+          (`state = 'CA'`), sorted by `order_id`.
+        lines:
+          - SELECT o.order_id, c.first_name
+          - FROM orders AS o
+          - JOIN customers AS c
+          - "    ON o.customer_id = c.customer_id"
+          - WHERE c.state = 'CA'
+          - ORDER BY o.order_id
+          - LIMIT 5;
+        distractors:
+          - "    ON o.order_id = c.customer_id"
+        explanation: |
+          The order is always SELECT, FROM, JOIN ... ON, WHERE, ORDER BY, LIMIT. The distractor joins the
+          wrong columns: it would run, but it would hand out the wrong customers.
+
+      - type: exercise
+        id: m06-l03-e6
+        title: Prices that changed
+        prompt: |
+          Some products had a different price when they were ordered. For order lines of orders **1 to 40**
+          (`order_id <= 40`), show the lines where the price paid is different from the product's current
+          price. Show `order_id`, the product name as `product`, the price paid (`unit_price`) as `paid`
+          and the current `price` as `current_price`. Sort by `order_id`, then by `product`. Use `oi` and
+          `p` as aliases.
+        starter: |
+          SELECT oi.order_id,
+                 p.name AS product,
+                 oi.unit_price AS paid,
+                 ___ AS current_price
+          FROM order_items AS oi
+          JOIN products AS p
+              ON ___
+          WHERE oi.order_id <= 40
+            AND ___
+          ORDER BY oi.order_id, product;
+        solution: |
+          SELECT oi.order_id,
+                 p.name AS product,
+                 oi.unit_price AS paid,
+                 p.price AS current_price
+          FROM order_items AS oi
+          JOIN products AS p
+              ON oi.product_id = p.product_id
+          WHERE oi.order_id <= 40
+            AND oi.unit_price <> p.price
+          ORDER BY oi.order_id, product;
+        columnNames: true
+        ordered: true
+        hints:
+          - The join is order_items to products on product_id. The extra condition compares two columns.
+          - "Different from is <> (you met it in module 2). Compare oi.unit_price with p.price."
+          - "WHERE oi.order_id <= 40 AND oi.unit_price <> p.price"
+        explanation: |
+          Twelve lines were sold at an older price. `order_items.unit_price` remembers the price **at the time
+          of the order**, while `products.price` is today's price. This is why revenue should always be
+          calculated from `unit_price` in `order_items`, not from `products.price`.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Table aliases
+        sql: |
+          SELECT o.order_id, c.first_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id;
+        note: Give each table a short nickname and put it in front of every column. AS is optional.
+      - title: Fix an ambiguous column
+        sql: |
+          SELECT p.name AS product, c.name AS category
+          FROM products p
+          JOIN categories c ON p.category_id = c.category_id;
+        note: A column that exists in both tables needs a prefix. Use AS to give same-named columns different labels.
+      - title: USING
+        sql: |
+          SELECT customer_id, first_name, order_id
+          FROM orders
+          JOIN customers USING (customer_id);
+        note: Shortcut for same-named key columns. The key appears once and needs no prefix.
+
+  - id: m06-l04
+    title: LEFT JOIN
+    summary: Keep every row from the left table, fill gaps with NULL, and find rows that have no match.
+    minutes: 25
+    steps:
+      - type: read
+        title: The "we miss you" email
+        md: |
+          The marketing team has a new idea:
+
+          > "Send a *we miss you* discount code to every customer who has **never** placed an order."
+
+          You try an INNER JOIN between `customers` and `orders`... and the people you are looking for
+          are exactly the ones that **disappear**, because they have no orders to match.
+
+          You need a join that says: *"Keep every customer, whether or not they have orders."* That is the
+          **LEFT JOIN**.
+
+          > [!ANALOGY]
+          > Think of a class roll call. The teacher's list (the **left** table) has every student. Next to each
+          > name you write down the homework they handed in. Students who handed nothing still stay on the
+          > list, with an empty box. A LEFT JOIN is that list with empty boxes.
+
+      - type: viz
+        viz: join
+        title: LEFT JOIN vs INNER JOIN
+        md: |
+          Click **LEFT JOIN**, then **INNER JOIN**, and watch Ben and Dee. In the LEFT JOIN they stay, with
+          `NULL` in the order columns. The left table is the one written **before** the word JOIN.
+        config:
+          left:
+            name: customers
+            columns: [id, name]
+            rows: [[1, Ana], [2, Ben], [3, Chen], [4, Dee]]
+          right:
+            name: orders
+            columns: [order_id, customer_id, total]
+            rows: [[101, 1, 25], [102, 1, 8], [103, 3, 40], [104, 3, 15]]
+          on: [id, customer_id]
+          types: [left, inner]
+
+      - type: read
+        title: Left, right, and what NULL means here
+        md: |
+          ```sql
+          SELECT ...
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id;
+          ```
+
+          - The **left table** is the one in `FROM` (here `customers`). *Every* one of its rows is kept.
+          - The **right table** is the one after `LEFT JOIN` (here `orders`).
+          - If a left row has matches, you get one result row per match, like an INNER JOIN.
+          - If it has **no match**, you still get one row, and all the right-table columns are **NULL**.
+
+          So in a LEFT JOIN, a NULL in a right-table column often means: *"there was nothing to match."*
+
+      - type: example
+        title: See the NULLs
+        md: |
+          Customers 139 to 143. Some have orders and some don't. Run it and look at the `order_id` column.
+        sql: |
+          SELECT c.customer_id, c.first_name, o.order_id, o.status
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE c.customer_id BETWEEN 139 AND 143
+          ORDER BY c.customer_id, o.order_id;
+        after: |
+          Pierre (139) has five orders, so he appears five times. Ximena (140) has two. Liam, Ingrid and Emily
+          (141 to 143) have **none**, so each gets a single row with NULL in `order_id` and `status`.
+          An INNER JOIN would have dropped those three.
+
+      - type: example
+        title: Counting the extra rows
+        md: |
+          How many rows does the LEFT JOIN of all customers and all orders have? We count the total rows, the
+          rows that found an order, and the rows that did not.
+        sql: |
+          SELECT COUNT(*) AS total_rows,
+                 COUNT(o.order_id) AS rows_with_order,
+                 COUNT(*) - COUNT(o.order_id) AS rows_without_order
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id;
+        after: |
+          **910 rows** = 900 matched pairs (what INNER JOIN gives) + 10 extra rows for the customers who never
+          ordered. Remember from module 5: `COUNT(column)` skips NULLs, so `COUNT(o.order_id)` counts only real
+          orders.
+
+      - type: exercise
+        id: m06-l04-e1
+        title: See who has orders
+        prompt: |
+          Use a LEFT JOIN from `customers` (alias `c`) to `orders` (alias `o`) to show `customer_id`,
+          `first_name` and `order_id` for customers **140 to 142** (`BETWEEN 140 AND 142`). Sort by
+          `customer_id`, then `order_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name, o.order_id
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON ___
+          WHERE ___
+          ORDER BY c.customer_id, o.order_id;
+        solution: |
+          SELECT c.customer_id, c.first_name, o.order_id
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE c.customer_id BETWEEN 140 AND 142
+          ORDER BY c.customer_id, o.order_id;
+        ordered: true
+        hints:
+          - It is the same shape as the example above. Only the range of customer ids changes.
+          - "The ON rule is o.customer_id = c.customer_id and the filter is on c.customer_id."
+          - "WHERE c.customer_id BETWEEN 140 AND 142"
+        explanation: |
+          Ximena (140) has orders 740 and 881; Liam (141) and Ingrid (142) have none, so they show one row each
+          with a NULL `order_id`. Four rows in total.
+        difficulty: 1
+
+      - type: read
+        title: The anti-join, finding what is missing
+        md: |
+          Now the marketing request. After a LEFT JOIN, customers without orders are exactly the rows
+          where the right table's columns are NULL. So keep only those:
+
+          ```sql
+          WHERE o.order_id IS NULL
+          ```
+
+          This pattern is called an **anti-join**: "give me the left rows that have *no* partner on the right".
+          Use the right table's **primary key** for the NULL test. It can never be NULL in a real match, so a
+          NULL there can only mean "no match".
+
+          > [!MISTAKE]
+          > Writing `WHERE o.order_id = NULL`. As you learned in module 2, nothing is ever `= NULL`, so this
+          > returns zero rows. Always use `IS NULL`.
+
+      - type: example
+        title: Customers who never ordered
+        md: The "we miss you" list.
+        sql: |
+          SELECT c.customer_id, c.first_name, c.last_name, c.signup_date
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE o.order_id IS NULL
+          ORDER BY c.customer_id;
+        after: |
+          Ten customers (141 to 150), all of whom signed up in October 2024. Marketing can now send their
+          email. The trick: LEFT JOIN, then `WHERE <right primary key> IS NULL`.
+
+      - type: exercise
+        id: m06-l04-e2
+        title: Products nobody bought
+        prompt: |
+          Which products have never appeared in any order? Show the product `name` and `price` of every
+          product with no row in `order_items`. Sort by `name`.
+        starter: |
+          SELECT p.name, p.price
+          FROM products AS p
+          LEFT JOIN order_items AS oi
+              ON ___
+          WHERE ___
+          ORDER BY p.name;
+        solution: |
+          SELECT p.name, p.price
+          FROM products AS p
+          LEFT JOIN order_items AS oi
+              ON oi.product_id = p.product_id
+          WHERE oi.order_item_id IS NULL
+          ORDER BY p.name;
+        ordered: true
+        hints:
+          - This is the same anti-join pattern, with products on the left.
+          - "LEFT JOIN order_items, then keep rows where order_items' primary key is NULL."
+          - "WHERE oi.order_item_id IS NULL"
+        explanation: |
+          Five products have never been ordered, including the pricey Zephyr Gaming Laptop X. Anti-joins are
+          the classic way to find "things without any activity".
+        difficulty: 2
+
+      - type: quiz
+        id: m06-l04-q1
+        question: |
+          You wrote `FROM customers c LEFT JOIN orders o ON o.customer_id = c.customer_id`. Which `WHERE`
+          keeps only the customers who have **no** orders?
+        options:
+          - WHERE o.order_id = NULL
+          - WHERE o.order_id IS NULL
+          - WHERE c.customer_id IS NULL
+          - WHERE o.order_id IS NOT NULL
+        answer: 1
+        explanation: |
+          `o.order_id IS NULL` finds the NULL-filled rows from customers with no match. `= NULL` never
+          matches anything; `c.customer_id IS NULL` would only be true for customers without an id (none);
+          `IS NOT NULL` keeps exactly the customers that **do** have orders.
+
+      - type: exercise
+        id: m06-l04-e3
+        title: Customers who never ordered
+        prompt: |
+          Show `customer_id`, `first_name`, `last_name` and `city` of customers who have never placed an
+          order. Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name, c.last_name, c.city
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON ___
+          WHERE ___
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name, c.last_name, c.city
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE o.order_id IS NULL
+          ORDER BY c.customer_id;
+        ordered: true
+        hints:
+          - Keep all customers with a LEFT JOIN, then filter for the missing orders.
+          - "The test is on the orders primary key: o.order_id IS NULL."
+          - "WHERE o.order_id IS NULL"
+        explanation: |
+          The same 10 customers, now with their cities. Try changing it to `IS NOT NULL` and see how many
+          rows come back (900, one per order).
+        difficulty: 2
+
+      - type: read
+        title: A trap, COUNT(*) after a LEFT JOIN
+        md: |
+          Suppose you want the **number of orders per customer**, including zero. You might write
+          `COUNT(*)`. But a customer with no orders still produces **one** row (the NULL-filled one), so
+          `COUNT(*)` says 1 instead of 0.
+
+          The fix is to count a column from the *right* table: `COUNT(o.order_id)` skips NULLs, so it gives
+          0 for customers with no orders.
+
+          > [!MISTAKE]
+          > `COUNT(*)` after a LEFT JOIN counts the "empty" row too. Count a right-table column instead.
+
+      - type: exercise
+        id: m06-l04-e4
+        title: Customers with fewer than 2 orders
+        prompt: |
+          Show `customer_id`, `first_name` and the number of orders as `order_count` for every customer who
+          has **fewer than 2 orders** (zero or one). Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(___) AS order_count
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          GROUP BY c.customer_id, c.first_name
+          HAVING ___
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(o.order_id) AS order_count
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          GROUP BY c.customer_id, c.first_name
+          HAVING COUNT(o.order_id) < 2
+          ORDER BY c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - LEFT JOIN, GROUP BY the customer, and filter the groups with HAVING.
+          - "Count a column from the right table: COUNT(o.order_id). COUNT(*) would count the empty row."
+          - "HAVING COUNT(o.order_id) < 2"
+        explanation: |
+          Twelve customers: two with a single order (106 and 127) and the ten who never ordered, correctly
+          shown as 0. With `COUNT(*)` every one of them would have shown 1.
+        difficulty: 3
+
+      - type: read
+        title: ON versus WHERE, the classic LEFT JOIN trap
+        md: |
+          With a LEFT JOIN, **where** you put a condition changes the answer:
+
+          - A condition in **ON** is part of the *matching rule*. Left rows that fail it are still kept, with NULLs.
+          - A condition in **WHERE** is applied *after* the join and removes whole rows, including the
+            NULL-filled ones.
+
+          Let's count cancelled orders both ways.
+
+      - type: example
+        title: Filter in ON, every customer stays
+        sql: |
+          SELECT COUNT(*) AS result_rows,
+                 COUNT(DISTINCT c.customer_id) AS customers_shown
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.status = 'cancelled';
+        after: |
+          **202 rows, all 150 customers.** The rule says "match a customer to their *cancelled* orders". Customers
+          with no cancelled orders still get one row with NULLs: 127 cancelled orders + 75 customers without any.
+
+      - type: example
+        title: Filter in WHERE, the LEFT JOIN is undone
+        sql: |
+          SELECT COUNT(*) AS result_rows,
+                 COUNT(DISTINCT c.customer_id) AS customers_shown
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE o.status = 'cancelled';
+        after: |
+          **127 rows, only 75 customers.** After the join, `WHERE o.status = 'cancelled'` throws away every
+          row where `status` is NULL, which is every unmatched customer. The LEFT JOIN has quietly turned into
+          an INNER JOIN.
+
+      - type: predict
+        id: m06-l04-p1
+        question: |
+          650 of the 900 orders are `delivered`. How many rows does this query return?
+        sql: |
+          SELECT c.customer_id, o.order_id, o.status
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE o.status = 'delivered';
+        options: ["150", "650", "660", "910"]
+        answer: 1
+        explanation: |
+          The `WHERE` on a right-table column removes all NULL-filled rows, so the 10 customers without orders
+          are gone, and only the 650 delivered orders remain. Despite the word LEFT, this behaves like an
+          INNER JOIN.
+
+      - type: read
+        title: Rule of thumb
+        md: |
+          > [!TIP]
+          > - Conditions about the **left** table (the rows you want to keep) go in `WHERE`.
+          > - Conditions about the **right** table that decide *what counts as a match* go in `ON`.
+          > - The only `WHERE` test on the right table that makes sense is `IS NULL` (the anti-join).
+
+      - type: exercise
+        id: m06-l04-e5
+        title: Fix the vanishing customer
+        prompt: |
+          Every customer who lives in Denver should appear together with the number of their **delivered**
+          orders (`delivered_orders`), showing 0 if they have none. The query below loses a customer. Fix it
+          so all 12 Denver customers appear. Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(o.order_id) AS delivered_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE c.city = 'Denver'
+            AND o.status = 'delivered'
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(o.order_id) AS delivered_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.status = 'delivered'
+          WHERE c.city = 'Denver'
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Which Denver customer is missing, and why does the WHERE remove them?
+          - "The status condition is about the right table, so it belongs in ON, not WHERE."
+          - "Move AND o.status = 'delivered' up into the ON rule. Keep c.city = 'Denver' in WHERE."
+        explanation: |
+          Felix (customer 146) has no orders at all, so the buggy `WHERE o.status = 'delivered'` erased him.
+          In `ON`, the status filter only decides what counts as a match, and Felix correctly shows 0.
+        difficulty: 3
+
+      - type: exercise
+        id: m06-l04-e6
+        title: Cancelled orders per customer
+        prompt: |
+          For customers **1 to 12** (`customer_id <= 12`), show `customer_id`, `first_name` and the number of
+          their cancelled orders as `cancelled_orders` (0 if none). All 12 customers must appear. Sort by
+          `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(___) AS cancelled_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON ___
+          WHERE c.customer_id <= 12
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name,
+                 COUNT(o.order_id) AS cancelled_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.status = 'cancelled'
+          WHERE c.customer_id <= 12
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Customers with zero cancelled orders must still appear, so this is a LEFT JOIN.
+          - "Put the status test inside ON (joined with AND) and count COUNT(o.order_id)."
+          - "ON o.customer_id = c.customer_id AND o.status = 'cancelled'"
+        explanation: |
+          Customers 3, 5, 11 and 12 show 0 instead of vanishing, and Seun (10) has four cancelled orders.
+          The pattern "count with a condition, keep zeros" is LEFT JOIN + condition in ON + COUNT(right column).
+        difficulty: 3
+
+      - type: fill
+        id: m06-l04-f1
+        prompt: Complete the anti-join that lists orders that have **no payment** row.
+        template: |
+          SELECT o.order_id, o.status
+          FROM orders AS o
+          ___ JOIN payments AS p
+              ON p.order_id = o.order_id
+          WHERE p.payment_id IS ___;
+        answers:
+          - [LEFT]
+          - ["NULL"]
+        explanation: |
+          Keep every order with LEFT JOIN, then keep the ones where the payment's primary key is NULL.
+          That includes the 127 cancelled orders (they are never paid).
+
+      - type: exercise
+        id: m06-l04-e7
+        title: Orders waiting for a payment
+        prompt: |
+          Finance wants to chase unpaid orders. Show `order_id`, `order_date` and `status` of every order that
+          has **no row in `payments`** and whose status is **not** `'cancelled'` (cancelled orders are never
+          paid). Sort by `order_id`.
+        starter: |
+          SELECT o.order_id, o.order_date, o.status
+          FROM orders AS o
+          LEFT JOIN payments AS p
+              ON ___
+          WHERE ___
+          ORDER BY o.order_id;
+        solution: |
+          SELECT o.order_id, o.order_date, o.status
+          FROM orders AS o
+          LEFT JOIN payments AS p
+              ON p.order_id = o.order_id
+          WHERE p.payment_id IS NULL
+            AND o.status <> 'cancelled'
+          ORDER BY o.order_id;
+        ordered: true
+        hints:
+          - This is an anti-join from orders to payments, plus one more filter.
+          - "p.payment_id IS NULL finds orders without payments; add AND o.status <> 'cancelled'."
+          - "WHERE p.payment_id IS NULL AND o.status <> 'cancelled'"
+        explanation: |
+          Fifteen orders are unpaid: 6 delivered ones (finance has some chasing to do!), 6 still processing and
+          3 shipped. A real analyst would send this list straight to the finance team.
+        difficulty: 3
+
+    cheatsheet:
+      - title: LEFT JOIN
+        sql: |
+          SELECT c.first_name, o.order_id
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id;
+        note: Keeps every row of the left table. When there is no match, right-table columns are NULL.
+      - title: Anti-join (rows with no match)
+        sql: |
+          SELECT c.customer_id, c.first_name
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          WHERE o.order_id IS NULL;
+        note: Test the right table's primary key with IS NULL to find left rows that have no partner.
+      - title: Count with zeros
+        sql: |
+          SELECT c.customer_id, COUNT(o.order_id) AS orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.status = 'cancelled'
+          GROUP BY c.customer_id;
+        note: Count a right-table column (not COUNT(*)), and put conditions on the right table in ON, not WHERE.
+
+  - id: m06-l05
+    title: RIGHT & FULL OUTER JOIN
+    summary: Keep the unmatched rows of the right table, or of both tables, and compare two lists.
+    minutes: 22
+    dataset: company
+    steps:
+      - type: read
+        title: A data audit at Acme Corp
+        md: |
+          For this lesson we switch to a different database: **Acme Corp**, a company with `departments` and
+          `employees`. Each employee has a `dept_id` that points to a department, just like `orders` points
+          to `customers`.
+
+          HR asks you to audit the data:
+
+          > "Are there employees who belong to **no** department? And are there departments with **no**
+          > employees?"
+
+          Those are two questions about *unmatched rows*, one on each side. LEFT JOIN handles one side.
+          Today you will meet its two siblings: **RIGHT JOIN** and **FULL OUTER JOIN**.
+
+      - type: example
+        title: Employees without a department
+        md: First, a quick look at the problem. The `dept_id` of some employees is NULL.
+        sql: |
+          SELECT emp_id, first_name, last_name, job_title, dept_id
+          FROM employees
+          WHERE dept_id IS NULL;
+        after: |
+          Two contractors, Kwame and Jia, have not been assigned to a department. An INNER JOIN between
+          `employees` and `departments` would silently drop them.
+
+      - type: read
+        title: RIGHT JOIN, LEFT JOIN's mirror image
+        md: |
+          A **RIGHT JOIN** keeps every row of the **right** table (the one written after `JOIN`), plus any
+          matching rows from the left. Where there is no match, the *left* columns become NULL.
+
+          ```sql
+          FROM employees AS e
+          RIGHT JOIN departments AS d
+              ON e.dept_id = d.dept_id
+          ```
+
+          Here every **department** is kept, even one without employees.
+
+          Here is the useful fact: `A RIGHT JOIN B` gives the same rows as `B LEFT JOIN A`. Swap the tables
+          and swap the word, nothing else changes.
+
+      - type: viz
+        viz: join
+        title: RIGHT JOIN, step by step
+        md: |
+          Employee Di has no department, and the Legal department has no employees. Click **RIGHT JOIN**
+          (all employees' side is the *right* table here, so Di stays), then **LEFT JOIN** to compare.
+        config:
+          left:
+            name: departments
+            columns: [dept_id, dept]
+            rows: [[1, Sales], [2, Tech], [3, Legal]]
+          right:
+            name: employees
+            columns: [emp_id, name, dept_id]
+            rows: [[10, Ava, 1], [11, Bo, 2], [12, Cy, 2], [13, Di, null]]
+          on: [dept_id, dept_id]
+          types: [right, left]
+
+      - type: example
+        title: Head count per department with RIGHT JOIN
+        md: |
+          Every department must appear, even if nobody works there. So departments is the table we keep: the
+          right one.
+        sql: |
+          SELECT d.name, COUNT(e.emp_id) AS headcount
+          FROM employees AS e
+          RIGHT JOIN departments AS d
+              ON e.dept_id = d.dept_id
+          GROUP BY d.dept_id, d.name
+          ORDER BY d.dept_id;
+        after: |
+          Seven departments, including **Research with 0** employees. As with LEFT JOIN, we count a column
+          from the table that may be missing (`e.emp_id`), not `COUNT(*)`.
+
+      - type: example
+        title: The same thing as a LEFT JOIN
+        md: Swap the table order and replace RIGHT with LEFT.
+        sql: |
+          SELECT d.name, COUNT(e.emp_id) AS headcount
+          FROM departments AS d
+          LEFT JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY d.dept_id, d.name
+          ORDER BY d.dept_id;
+        after: |
+          Identical result. In practice most SQL developers write **LEFT JOIN almost always**, because "the
+          main table first, optional details after" reads naturally from top to bottom. RIGHT JOIN is simply
+          available when it fits better.
+
+      - type: predict
+        id: m06-l05-p1
+        question: |
+          Acme has 55 employees and 7 departments. 53 employees belong to a department, 2 do not, and the
+          Research department has no employees. How many rows does this return?
+        sql: |
+          SELECT *
+          FROM departments AS d
+          RIGHT JOIN employees AS e
+              ON e.dept_id = d.dept_id;
+        options: ["53", "54", "55", "56"]
+        answer: 2
+        explanation: |
+          The **right** table here is `employees`, so all 55 employees stay: 53 matched ones plus the 2 with no
+          department. Research has no partner on the right, so it is dropped. (The 56 would come from a FULL
+          JOIN, which keeps Research too.)
+
+      - type: exercise
+        id: m06-l05-e1
+        title: HR and Research
+        prompt: |
+          Use `employees AS e RIGHT JOIN departments AS d` to show the department `name`, the employee's
+          `emp_id` and `last_name` for the departments with `dept_id` 6 (HR) and 7 (Research). Sort by the
+          department's `dept_id`, then `emp_id`.
+        starter: |
+          SELECT d.name, e.emp_id, e.last_name
+          FROM employees AS e
+          RIGHT JOIN departments AS d
+              ON ___
+          WHERE d.dept_id IN (6, 7)
+          ORDER BY d.dept_id, e.emp_id;
+        solution: |
+          SELECT d.name, e.emp_id, e.last_name
+          FROM employees AS e
+          RIGHT JOIN departments AS d
+              ON e.dept_id = d.dept_id
+          WHERE d.dept_id IN (6, 7)
+          ORDER BY d.dept_id, e.emp_id;
+        ordered: true
+        hints:
+          - The ON rule connects the two dept_id columns, just like in the example.
+          - "ON e.dept_id = d.dept_id"
+          - "Filter on d.dept_id (the table we keep), not e.dept_id."
+        explanation: |
+          HR has five employees and Research has none, so it shows up as a single row with NULLs. If you filtered on
+          `e.dept_id` instead, that Research row would disappear: remember the ON versus WHERE lesson.
+        difficulty: 1
+
+      - type: read
+        title: FULL OUTER JOIN, keep everything
+        md: |
+          A **FULL OUTER JOIN** (usually written `FULL JOIN`) keeps **all rows from both sides**:
+
+          - rows that match are joined,
+          - left rows without a partner get NULLs on the right,
+          - right rows without a partner get NULLs on the left.
+
+          It is the tool for **comparing two lists**: "what is in A but not in B, what is in B but not in A,
+          and what is in both?" That is exactly the HR audit.
+
+          > [!REAL-WORLD]
+          > Accountants use FULL JOINs to **reconcile**: they compare the bank's statement against the
+          > company's own ledger. Entries missing on either side show up as rows with NULLs.
+
+      - type: viz
+        viz: join
+        title: All four joins side by side
+        md: |
+          Click through the buttons and compare. FULL JOIN is the only one that keeps both **Legal**
+          (no employees) and **Di** (no department).
+        config:
+          left:
+            name: departments
+            columns: [dept_id, dept]
+            rows: [[1, Sales], [2, Tech], [3, Legal]]
+          right:
+            name: employees
+            columns: [emp_id, name, dept_id]
+            rows: [[10, Ava, 1], [11, Bo, 2], [12, Cy, 2], [13, Di, null]]
+          on: [dept_id, dept_id]
+          types: [full, inner, left, right]
+
+      - type: example
+        title: The audit in one query
+        md: |
+          Keep everything with FULL JOIN, then filter down to the rows where **either** side is missing.
+        sql: |
+          SELECT d.name AS department,
+                 e.emp_id, e.first_name, e.last_name
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          WHERE d.dept_id IS NULL
+             OR e.emp_id IS NULL
+          ORDER BY e.emp_id;
+        after: |
+          Three rows tell the whole story: Kwame and Jia have **no department** (NULL on the left), and the
+          **Research** department has **no employees** (NULL on the right). One query found both kinds of problem.
+
+      - type: example
+        title: Labelling and counting every kind of row
+        md: |
+          Use `CASE` (module 4) to name each kind of row, then count them with `GROUP BY`.
+        sql: |
+          SELECT CASE
+                     WHEN e.emp_id IS NULL THEN 'department without employees'
+                     WHEN d.dept_id IS NULL THEN 'employee without department'
+                     ELSE 'matched'
+                 END AS row_type,
+                 COUNT(*) AS row_count
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY row_type
+          ORDER BY row_count DESC;
+        after: |
+          **53 matched**, 2 employees without a department and 1 department without employees. These add up
+          to 56 rows, the size of the full join.
+
+      - type: read
+        title: Watch out
+        md: |
+          > [!MISTAKE]
+          > Putting a filter on one side in `WHERE` can cancel the "outer" part. For example, `WHERE
+          > e.salary > 100000` removes every row where `e.salary` is NULL, so unmatched departments vanish and
+          > your FULL JOIN turns into something smaller. Use `IS NULL` tests, or move the condition into `ON`.
+
+          > [!TIP]
+          > Which one should I use? **LEFT JOIN** for 95% of cases. **RIGHT JOIN** only when it reads better
+          > (it can always be rewritten as a LEFT JOIN). **FULL JOIN** when you need unmatched rows from both
+          > sides, which is usually a data comparison or an audit.
+
+      - type: quiz
+        id: m06-l05-q1
+        question: |
+          You have a list of newsletter subscribers and a list of customers. You want every person who appears in
+          **either** list, with NULLs where a person is missing from one of them. Which join?
+        options: [INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN]
+        answer: 3
+        explanation: |
+          Only a FULL OUTER JOIN keeps unmatched rows from **both** sides. INNER keeps only people in both lists;
+          LEFT and RIGHT each keep one list completely.
+
+      - type: exercise
+        id: m06-l05-e2
+        title: Departments without projects
+        prompt: |
+          Which departments do not own a single project? Show the `name` and `location` of every department
+          that has no row in `projects` (`projects.dept_id` is the owner). You may use LEFT or RIGHT JOIN.
+        starter: |
+          SELECT d.name, d.location
+          FROM projects AS p
+          RIGHT JOIN departments AS d
+              ON ___
+          WHERE ___;
+        solution: |
+          SELECT d.name, d.location
+          FROM projects AS p
+          RIGHT JOIN departments AS d
+              ON p.dept_id = d.dept_id
+          WHERE p.project_id IS NULL;
+        hints:
+          - This is an anti-join, like "customers who never ordered", but with departments as the kept table.
+          - "Join projects to departments on dept_id and look for a NULL project primary key."
+          - "WHERE p.project_id IS NULL"
+        explanation: |
+          Only the Executive department owns no projects. A LEFT JOIN written as
+          `departments d LEFT JOIN projects p ...` gives the very same answer.
+        difficulty: 2
+        allowEmpty: false
+
+      - type: exercise
+        id: m06-l05-e3
+        title: The full audit list
+        prompt: |
+          Reproduce the audit with a FULL JOIN between `departments` (alias `d`) and `employees` (alias `e`).
+          Show the department `name`, the employee's `first_name` and `last_name` for only the rows where
+          the department is missing **or** the employee is missing. Sort by `e.emp_id`.
+        starter: |
+          SELECT d.name, e.first_name, e.last_name
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON ___
+          WHERE ___
+          ORDER BY e.emp_id;
+        solution: |
+          SELECT d.name, e.first_name, e.last_name
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          WHERE d.dept_id IS NULL
+             OR e.emp_id IS NULL
+          ORDER BY e.emp_id;
+        ordered: true
+        hints:
+          - You need two IS NULL tests combined with OR, one for each side.
+          - "d.dept_id IS NULL means the employee has no department; e.emp_id IS NULL means the department is empty."
+          - "WHERE d.dept_id IS NULL OR e.emp_id IS NULL"
+        explanation: |
+          NULLs sort last in ascending order, so the Research row (no employee) comes after Kwame (53) and
+          Jia (54). If you wrote `AND` instead of `OR`, you would get no rows, because no row is missing
+          both sides at once.
+        difficulty: 2
+
+      - type: parsons
+        id: m06-l05-o1
+        prompt: |
+          Put the lines in order to list rows that exist on only one side of the department/employee match.
+        lines:
+          - SELECT d.name, e.first_name
+          - FROM departments AS d
+          - FULL JOIN employees AS e
+          - "    ON e.dept_id = d.dept_id"
+          - WHERE d.dept_id IS NULL
+          - "   OR e.emp_id IS NULL;"
+        distractors:
+          - "   AND e.emp_id IS NULL;"
+        explanation: |
+          The `OR` line finishes the `WHERE` condition. The `AND` distractor would ask for rows missing on both
+          sides at once, which never happens.
+
+      - type: exercise
+        id: m06-l05-e4
+        title: Counting the row types
+        prompt: |
+          Reproduce the labelled count. Using a FULL JOIN of `departments` (`d`) and `employees` (`e`), show
+          `row_type` and `row_count`, where `row_type` is one of exactly these three texts:
+          `'matched'`, `'employee without department'`, `'department without employees'`.
+          Sort by `row_count`, largest first.
+        starter: |
+          SELECT CASE
+                     WHEN ___ THEN 'department without employees'
+                     WHEN ___ THEN 'employee without department'
+                     ELSE 'matched'
+                 END AS row_type,
+                 COUNT(*) AS row_count
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY row_type
+          ORDER BY row_count DESC;
+        solution: |
+          SELECT CASE
+                     WHEN e.emp_id IS NULL THEN 'department without employees'
+                     WHEN d.dept_id IS NULL THEN 'employee without department'
+                     ELSE 'matched'
+                 END AS row_type,
+                 COUNT(*) AS row_count
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY row_type
+          ORDER BY row_count DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - Use CASE WHEN to give each kind of row a label, then GROUP BY that label.
+          - "A department with no employees has e.emp_id IS NULL; an employee with no department has d.dept_id IS NULL."
+          - "WHEN e.emp_id IS NULL THEN ... WHEN d.dept_id IS NULL THEN ..."
+        explanation: |
+          You combined FULL JOIN, CASE and GROUP BY in a single query. A report like this is a very common
+          first step in checking the quality of any dataset.
+        difficulty: 3
+
+      - type: fill
+        id: m06-l05-f1
+        prompt: Complete the query so every department is kept, even when it has no employees.
+        template: |
+          SELECT d.name, e.first_name
+          FROM employees AS e
+          ___ JOIN departments AS d
+              ON e.dept_id = d.dept_id;
+        answers:
+          - [RIGHT]
+        explanation: |
+          Departments is the table written after `JOIN`, so to keep all of its rows you need a RIGHT JOIN.
+          (`FULL` would also keep every department, plus the employees without one.)
+
+      - type: exercise
+        id: m06-l05-e5
+        title: Department report with a catch-all row
+        prompt: |
+          Build a head-count report that lists **every department and also the employees without one**. Show
+          `department` (the department `name`, or the text `'(no department)'` when there is none),
+          `headcount` (number of employees) and `avg_salary` (average `salary`, rounded to 0 decimals; it is
+          NULL for a department with no employees). Group by `d.dept_id, d.name`. Sort by `headcount`
+          (largest first), then `department`.
+        starter: |
+          SELECT COALESCE(d.name, '(no department)') AS department,
+                 COUNT(___) AS headcount,
+                 ROUND(AVG(e.salary), 0) AS avg_salary
+          FROM departments AS d
+          ___ JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY d.dept_id, d.name
+          ORDER BY headcount DESC, department;
+        solution: |
+          SELECT COALESCE(d.name, '(no department)') AS department,
+                 COUNT(e.emp_id) AS headcount,
+                 ROUND(AVG(e.salary), 0) AS avg_salary
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          GROUP BY d.dept_id, d.name
+          ORDER BY headcount DESC, department;
+        columnNames: true
+        ordered: true
+        hints:
+          - You need both unmatched sides, so which join type keeps both?
+          - "COALESCE(d.name, '(no department)') replaces the NULL name. Count e.emp_id so empty departments get 0."
+          - "FULL JOIN employees, then GROUP BY d.dept_id, d.name"
+        explanation: |
+          Eight rows: seven departments plus the catch-all group of the 2 employees without one. Research shows
+          0 people and a NULL average, because there are no salaries to average. This is the kind of report
+          where an INNER JOIN would silently hide both problems.
+        difficulty: 3
+
+    cheatsheet:
+      - title: RIGHT JOIN
+        sql: |
+          SELECT d.name, e.first_name
+          FROM employees AS e
+          RIGHT JOIN departments AS d
+              ON e.dept_id = d.dept_id;
+        note: Keeps every row of the right table. Same as swapping the tables and using LEFT JOIN.
+      - title: FULL OUTER JOIN
+        sql: |
+          SELECT d.name, e.first_name
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id;
+        note: Keeps all rows from both tables. Unmatched rows get NULLs on the other side.
+      - title: Find mismatches between two tables
+        sql: |
+          SELECT d.name, e.first_name
+          FROM departments AS d
+          FULL JOIN employees AS e
+              ON e.dept_id = d.dept_id
+          WHERE d.dept_id IS NULL OR e.emp_id IS NULL;
+        note: After a FULL JOIN, a NULL key on one side shows a row that has no partner on the other side.
+
+testPool:
+  - type: quiz
+    id: m06-t01
+    lesson: m06-l01
+    difficulty: 1
+    question: Placeholder
+    options: [a, b]
+    answer: 0
+    explanation: placeholder
+

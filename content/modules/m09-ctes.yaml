@@ -1,0 +1,1071 @@
+id: m09
+order: 9
+title: "CTEs: Readable & Recursive Queries"
+subtitle: Give your subqueries names, then teach them to loop
+icon: "🧩"
+level: advanced
+description: |
+  Long queries get messy fast. In this module you learn the **CTE** (Common Table Expression): a way to
+  give a subquery a name and build your answer in tidy, top-to-bottom steps.
+
+  Then comes the magic trick. A **recursive CTE** can repeat itself, which lets SQL count, walk down an
+  org chart, climb a family tree, and even find routes through a network, all in one query.
+dataset: shop
+lessons:
+  - id: m09-l01
+    title: "WITH basics: naming a subquery"
+    summary: Give a subquery a name with WITH so your query reads top to bottom.
+    minutes: 22
+    steps:
+      - type: read
+        title: Your manager has a question
+        md: |
+          Your manager stops by your desk: *"How many orders does the average customer place?"*
+
+          You can already answer this. Count the orders per customer in a **subquery**, then average those counts. It works, but a subquery stuck in the middle of a query is read *inside-out*, like opening a set of Russian dolls.
+
+          Today you learn a tidier way. A **CTE** (Common Table Expression) is a subquery that you give a **name** and write *first*, so the whole query reads from top to bottom.
+
+          > [!ANALOGY]
+          > Think of a cooking show. Before cooking, the chef chops the onions and puts them in a bowl labelled "onions". The main recipe then simply says "add the onions". A CTE is that labelled bowl: you prepare a result once, give it a name, and use the name in the main query.
+
+      - type: example
+        title: "Before: a subquery in FROM"
+        md: Here is the answer the way you already know it. Press **Run**.
+        sql: |
+          SELECT ROUND(AVG(order_count), 2) AS avg_orders
+          FROM (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          ) AS per_customer;
+        after: |
+          One row: about **6.43** orders per customer (counting only customers who ordered at least once).
+
+          The counting query is buried inside the parentheses, so you have to read from the inside out.
+
+      - type: example
+        title: "After: the same answer with WITH"
+        md: Now the very same counting query, moved to the top and given the name `per_customer`.
+        sql: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT ROUND(AVG(order_count), 2) AS avg_orders
+          FROM per_customer;
+        after: |
+          The same **6.43**, but it now reads like a story: first make `per_customer`, then average it.
+
+          Compare the two versions. The counting query is identical; we only moved it up and gave it a name.
+
+      - type: read
+        title: The recipe for a CTE
+        md: |
+          Every CTE query has the same three parts:
+
+          ```sql
+          WITH nickname AS (
+              SELECT ...        -- any SELECT query
+          )
+          SELECT ...            -- the main query
+          FROM nickname;
+          ```
+
+          1. `WITH` announces: "I am about to name something."
+          2. `nickname AS ( ... )` is the name, followed by its query in parentheses.
+          3. The **main query** comes last and uses the nickname exactly like a table.
+
+          > [!TIP]
+          > Choose names that say what is inside: `per_customer`, `order_totals`, `delivered_orders`. Names like `x` or `temp1` force you to re-read the code to remember what they hold.
+
+      - type: stepper
+        title: Build a report in three moves
+        md: |
+          Let's find what share of all orders sits in each status. Click through the stages and run each one.
+        stages:
+          - label: "1. Prep bowl"
+            md: First run the counting query on its own. This is the result we are about to name.
+            sql: |
+              SELECT status, COUNT(*) AS n
+              FROM orders
+              GROUP BY status;
+          - label: "2. Name it"
+            md: Wrap it in `WITH status_counts AS ( ... )` and select from the name. Same five rows, but now they have a name.
+            sql: |
+              WITH status_counts AS (
+                  SELECT status, COUNT(*) AS n
+                  FROM orders
+                  GROUP BY status
+              )
+              SELECT *
+              FROM status_counts;
+          - label: "3. Use it"
+            md: |
+              Add a percentage. The CTE is used **twice**: once in `FROM`, and once inside the parentheses to get the grand total. You can use a CTE as often as you like within one query.
+            sql: |
+              WITH status_counts AS (
+                  SELECT status, COUNT(*) AS n
+                  FROM orders
+                  GROUP BY status
+              )
+              SELECT
+                  status,
+                  n,
+                  ROUND(100.0 * n / (SELECT SUM(n) FROM status_counts), 1) AS pct
+              FROM status_counts
+              ORDER BY n DESC;
+
+      - type: example
+        title: Join a CTE to a real table
+        md: A CTE behaves like a table, so you can join it. Who are our most loyal customers (15 orders or more)?
+        sql: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT c.first_name, c.last_name, p.order_count
+          FROM per_customer AS p
+          JOIN customers AS c ON c.customer_id = p.customer_id
+          WHERE p.order_count >= 15
+          ORDER BY p.order_count DESC, c.customer_id;
+        after: |
+          11 customers, with five of them tied at 23 orders. The CTE did the counting; the main query only joined and filtered.
+
+      - type: quiz
+        id: m09-l01-q1
+        question: Which statement about a CTE is true?
+        options:
+          - It is saved in the database, so you can use it again tomorrow
+          - It exists only while the one statement that defines it is running
+          - You must create it with CREATE TABLE first
+          - You can only use it once inside a query
+        answer: 1
+        explanation: |
+          A CTE is a *temporary name* for one statement. Once the statement finishes, the name is gone. And within that statement you may use it as many times as you like.
+
+      - type: example
+        title: Naming the columns in the header
+        md: |
+          You can list column names right after the CTE name. This is handy when the inner query calculates a column and you want to give it a tidy name in one place.
+        sql: |
+          WITH order_totals (order_id, total) AS (
+              SELECT order_id, SUM(quantity * unit_price * (1 - discount))
+              FROM order_items
+              GROUP BY order_id
+          )
+          SELECT o.order_id, o.order_date, ROUND(t.total, 2) AS total
+          FROM orders AS o
+          JOIN order_totals AS t ON t.order_id = o.order_id
+          WHERE t.total > 1500
+          ORDER BY t.total DESC;
+        after: |
+          The 20 orders worth more than $1,500, biggest first. There is no "total" column in the `orders` table, so the CTE builds one for us: quantity times unit price, minus the discount, added up per order.
+
+          The names in `(order_id, total)` are matched to the inner query's columns **by position**.
+
+      - type: read
+        title: A CTE lives for one statement only
+        md: |
+          > [!MISTAKE]
+          > A CTE is **not saved** anywhere. It exists only while its own statement runs. If you use the name in a *second* statement, PostgreSQL says `relation "..." does not exist`. If you need it again, repeat the `WITH` at the top of the new query.
+
+          Next you will see exactly that error, so you recognise it when it happens to you.
+
+      - type: example
+        title: "The name has vanished (expected error)"
+        md: The first statement works. The second one tries to reuse the name. Run it and read the message.
+        expectError: true
+        sql: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT COUNT(*) FROM per_customer;
+
+          SELECT * FROM per_customer;
+        after: |
+          The first query counted 140 customers. The second one failed with `relation "per_customer" does not exist`, because the name only lived inside the first statement.
+
+          The fix is simple: put the `WITH` clause at the top of the second query too.
+
+      - type: exercise
+        id: m09-l01-e1
+        title: How many busy customers?
+        prompt: |
+          The starter already has the CTE `per_customer`, which counts the orders of every customer.
+
+          Finish the main query so it shows **how many customers have placed at least 10 orders** (one number).
+        starter: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT COUNT(*)
+          FROM per_customer;
+        solution: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT COUNT(*)
+          FROM per_customer
+          WHERE order_count >= 10;
+        hints:
+          - The CTE already does the hard part. You only need to change the main query at the bottom.
+          - Keep only the customers whose `order_count` is at least 10 by adding a WHERE clause to the main query.
+          - "SELECT COUNT(*) FROM per_customer WHERE order_count ___ 10;"
+        explanation: |
+          27 customers have ordered 10 times or more. `WHERE` filters the CTE's rows exactly as it would filter a real table.
+
+          Pitfall: "at least 10" means `>= 10`, not `> 10`.
+        difficulty: 1
+
+      - type: predict
+        id: m09-l01-p1
+        question: |
+          How many rows does this query return? (Remember: the shop has 150 customers and 900 orders.)
+        sql: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT COUNT(*)
+          FROM per_customer;
+        options:
+          - "1 row, with the value 900"
+          - "1 row, with the value 150"
+          - "1 row, with the value 140"
+          - "140 rows"
+        answer: 2
+        explanation: |
+          The CTE has **one row per customer who has at least one order**. Ten customers have never ordered, so 150 - 10 = **140** rows. The main query then counts those rows and returns a single row holding 140.
+
+      - type: exercise
+        id: m09-l01-e2
+        title: Big categories
+        prompt: |
+          The starter has a CTE `category_counts` that counts products per category.
+
+          Write the main query that joins it to `categories` and shows each category's `name` and `product_count`, only for categories with **5 or more** products. Show the biggest categories first; break ties alphabetically by `name`.
+        starter: |
+          WITH category_counts AS (
+              SELECT category_id, COUNT(*) AS product_count
+              FROM products
+              GROUP BY category_id
+          )
+          SELECT
+        solution: |
+          WITH category_counts AS (
+              SELECT category_id, COUNT(*) AS product_count
+              FROM products
+              GROUP BY category_id
+          )
+          SELECT c.name, cc.product_count
+          FROM category_counts AS cc
+          JOIN categories AS c ON c.category_id = cc.category_id
+          WHERE cc.product_count >= 5
+          ORDER BY cc.product_count DESC, c.name;
+        ordered: true
+        hints:
+          - The CTE has only ids and counts. Where do the category names live?
+          - JOIN `categories` to `category_counts` on category_id, then filter with WHERE and sort with ORDER BY.
+          - "SELECT c.name, cc.product_count FROM category_counts AS cc JOIN categories AS c ON ___ WHERE ___ ORDER BY ___ DESC, c.name;"
+        explanation: |
+          Seven categories qualify: Kitchen, Peripherals and Phones (8 products each), then Books, Toys, Furniture and Laptops.
+
+          A CTE joins like any table: give it an alias (`cc`) if you want shorter column references.
+        difficulty: 1
+
+      - type: fill
+        id: m09-l01-f1
+        prompt: Fill in the blanks to turn this query into a CTE and use it.
+        template: |
+          ___ status_counts ___ (
+              SELECT status, COUNT(*) AS n
+              FROM orders
+              GROUP BY status
+          )
+          SELECT status, n
+          FROM ___
+          ORDER BY n DESC;
+        answers:
+          - ["WITH"]
+          - ["AS"]
+          - ["status_counts"]
+        explanation: |
+          `WITH name AS ( ... )` defines the CTE, and the main query selects `FROM` that same name.
+
+      - type: exercise
+        id: m09-l01-e3
+        title: Average delivered order
+        prompt: |
+          There is no "order total" column, so build one. The total of an order is the sum of `quantity * unit_price * (1 - discount)` over its rows in `order_items`.
+
+          Write a CTE `order_totals` (one row per order: `order_id`, `total`) and use it to find the **average total of delivered orders**, rounded to 2 decimals. Return one column called `avg_total`.
+        starter: |
+          WITH order_totals AS (
+              -- your inner query here
+          )
+          SELECT
+        solution: |
+          WITH order_totals AS (
+              SELECT order_id,
+                     SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          )
+          SELECT ROUND(AVG(t.total), 2) AS avg_total
+          FROM order_totals AS t
+          JOIN orders AS o ON o.order_id = t.order_id
+          WHERE o.status = 'delivered';
+        hints:
+          - You need two things per order, a total (from order_items) and a status (from orders).
+          - Put the SUM in the CTE with GROUP BY order_id. In the main query, JOIN orders, filter on status, and take AVG(total).
+          - "WITH order_totals AS (SELECT order_id, SUM(___) AS total FROM order_items GROUP BY order_id) SELECT ROUND(AVG(t.total), 2) AS avg_total FROM order_totals AS t JOIN orders AS o ON ___ WHERE ___;"
+        explanation: |
+          The average delivered order is worth **$352.99**.
+
+          Pitfall: filter by status in the *main* query (or inside the CTE with a join); `order_items` itself has no status column.
+        difficulty: 2
+
+      - type: exercise
+        id: m09-l01-e4
+        title: Fix the bug
+        prompt: |
+          This query should count the orders whose total is more than $500 *before* discounts (`quantity * unit_price`), but it crashes with a syntax error.
+
+          Fix it so it returns one number.
+        starter: |
+          WITH order_totals AS
+              SELECT order_id, SUM(quantity * unit_price) AS total
+              FROM order_items
+              GROUP BY order_id
+          SELECT COUNT(*)
+          FROM order_totals
+          WHERE total > 500;
+        solution: |
+          WITH order_totals AS (
+              SELECT order_id, SUM(quantity * unit_price) AS total
+              FROM order_items
+              GROUP BY order_id
+          )
+          SELECT COUNT(*)
+          FROM order_totals
+          WHERE total > 500;
+        hints:
+          - 'The error says "syntax error at or near SELECT". Look at what comes right after `AS`.'
+          - The query inside a CTE must be wrapped in parentheses.
+          - "Add ( after AS and ) after GROUP BY order_id."
+        explanation: |
+          203 orders are above $500 before discounts. The parentheses tell PostgreSQL where the CTE's query starts and ends. Forgetting them is the most common CTE typo.
+        difficulty: 2
+
+      - type: parsons
+        id: m09-l01-o1
+        prompt: Put the lines in order to count how many delivered orders there are, using a CTE.
+        lines:
+          - WITH delivered_orders AS (
+          - "    SELECT order_id, customer_id"
+          - "    FROM orders"
+          - "    WHERE status = 'delivered'"
+          - )
+          - SELECT COUNT(*)
+          - FROM delivered_orders;
+        distractors:
+          - CREATE delivered_orders AS (
+        explanation: |
+          The CTE comes first (`WITH ... AS ( ... )`), then the main query. The answer is 650 delivered orders.
+
+      - type: exercise
+        id: m09-l01-e5
+        title: Above-average customers
+        prompt: |
+          How many customers have placed **more** orders than the average customer?
+
+          Count the orders per customer in a CTE named `per_customer`, then compare each count with the average of that same CTE. Return one number.
+        solution: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT COUNT(*)
+          FROM per_customer
+          WHERE order_count > (SELECT AVG(order_count) FROM per_customer);
+        hints:
+          - You need the average order count first, then compare each customer against it.
+          - A CTE can be used twice, once in FROM and once inside a scalar subquery in WHERE.
+          - "SELECT COUNT(*) FROM per_customer WHERE order_count > (SELECT ___ FROM per_customer);"
+        explanation: |
+          48 of the 140 customers are above the average of 6.43. Using the CTE twice means the counting logic is written only once.
+
+          Without a CTE you would have to repeat the whole GROUP BY query inside the WHERE clause.
+        difficulty: 2
+
+      - type: quiz
+        id: m09-l01-q2
+        question: Which TWO are real benefits of using a CTE instead of a nested subquery?
+        options:
+          - The query reads from top to bottom, with a meaningful name for each step
+          - It always runs ten times faster
+          - You can refer to the same named result more than once in the query
+          - The result is saved permanently in the database
+        answer: [0, 2]
+        explanation: |
+          CTEs make queries **readable** and let you **reuse** a named result inside one statement. They do not automatically make a query faster, and they never save anything permanently.
+
+      - type: exercise
+        id: m09-l01-e6
+        title: Orders per customer, by segment
+        prompt: |
+          Customers belong to a `segment` (Consumer, Corporate or Home Office).
+
+          Using a CTE `per_customer` (orders per customer), show for each segment the **average number of orders per customer**, rounded to 2 decimals. Only customers with at least one order are in the CTE. Show `segment` and `avg_orders`, sorted by `segment`.
+        solution: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT c.segment,
+                 ROUND(AVG(p.order_count), 2) AS avg_orders
+          FROM per_customer AS p
+          JOIN customers AS c ON c.customer_id = p.customer_id
+          GROUP BY c.segment
+          ORDER BY c.segment;
+        ordered: true
+        hints:
+          - 'This is an "average of counts": first count per customer (the CTE), then average per segment.'
+          - Join `per_customer` to `customers` to get the segment, then GROUP BY segment.
+          - "SELECT c.segment, ROUND(AVG(p.order_count), 2) AS avg_orders FROM per_customer AS p JOIN customers AS c ON ___ GROUP BY ___ ORDER BY c.segment;"
+        explanation: |
+          Home Office customers order most often (7.52 on average), Corporate customers least (5.00).
+
+          This is the classic "aggregate of an aggregate" pattern: one GROUP BY inside the CTE, a second GROUP BY outside.
+        difficulty: 3
+    cheatsheet:
+      - title: CTE skeleton
+        sql: |
+          WITH name AS (
+              SELECT ...
+          )
+          SELECT ...
+          FROM name;
+        note: The name works like a table, but only inside this one statement.
+      - title: Name the columns in the header
+        sql: |
+          WITH order_totals (order_id, total) AS (
+              SELECT order_id, SUM(quantity * unit_price)
+              FROM order_items
+              GROUP BY order_id
+          )
+          SELECT * FROM order_totals;
+        note: The names in parentheses are matched to the inner query's columns by position.
+      - title: Use a CTE twice
+        sql: |
+          WITH c AS (SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id)
+          SELECT * FROM c
+          WHERE n > (SELECT AVG(n) FROM c);
+        note: Write the logic once, refer to it as often as you like.
+  - id: m09-l02
+    title: "Chaining CTEs: build a pipeline"
+    summary: Write several CTEs in a row, each one building on the one above.
+    minutes: 25
+    steps:
+      - type: read
+        title: One big question, many small steps
+        md: |
+          The finance team asks: *"Who are our best customers? Please sort them into Gold, Silver and Bronze."*
+
+          That is too big to answer in one go. So split it up, just like you would on paper:
+
+          1. Work out the **total of every order**.
+          2. Add those totals up **per customer**.
+          3. Put each customer into a **tier**.
+
+          In SQL you can write each step as its own CTE. Each CTE may use the CTEs written *above* it.
+
+          > [!ANALOGY]
+          > Picture a factory assembly line. Station 1 makes order totals and puts them on the conveyor belt. Station 2 picks them up and adds them per customer. Station 3 stamps a tier on each customer. Every station only cares about the belt in front of it.
+
+          ```sql
+          WITH station_one AS (
+              SELECT ...
+          ),
+          station_two AS (
+              SELECT ... FROM station_one
+          )
+          SELECT ... FROM station_two;
+          ```
+
+      - type: stepper
+        title: Customer tiers, one station at a time
+        md: |
+          Click through the stages. Each stage adds one more CTE to the pipeline, and shows what the belt carries at that point.
+        stages:
+          - label: "Station 1: order totals"
+            md: |
+              The first CTE adds up each order's lines. We peek at five rows to check it works.
+            sql: |
+              WITH order_totals AS (
+                  SELECT
+                      order_id,
+                      SUM(quantity * unit_price * (1 - discount)) AS total
+                  FROM order_items
+                  GROUP BY order_id
+              )
+              SELECT *
+              FROM order_totals
+              ORDER BY order_id
+              LIMIT 5;
+          - label: "Station 2: spend per customer"
+            md: |
+              Add a **comma** and a second CTE. It uses `order_totals` from above, joins `orders` to get the customer, and keeps delivered orders only.
+            sql: |
+              WITH order_totals AS (
+                  SELECT
+                      order_id,
+                      SUM(quantity * unit_price * (1 - discount)) AS total
+                  FROM order_items
+                  GROUP BY order_id
+              ),
+              customer_spend AS (
+                  SELECT o.customer_id, COUNT(*) AS orders, SUM(t.total) AS spent
+                  FROM orders AS o
+                  JOIN order_totals AS t ON t.order_id = o.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY o.customer_id
+              )
+              SELECT customer_id, orders, ROUND(spent, 2) AS spent
+              FROM customer_spend
+              ORDER BY spent DESC
+              LIMIT 5;
+          - label: "Station 3: tiers"
+            md: |
+              A third CTE stamps a tier with `CASE`. The main query then counts customers per tier: 10 Gold, 29 Silver and 98 Bronze.
+            sql: |
+              WITH order_totals AS (
+                  SELECT
+                      order_id,
+                      SUM(quantity * unit_price * (1 - discount)) AS total
+                  FROM order_items
+                  GROUP BY order_id
+              ),
+              customer_spend AS (
+                  SELECT o.customer_id, COUNT(*) AS orders, SUM(t.total) AS spent
+                  FROM orders AS o
+                  JOIN order_totals AS t ON t.order_id = o.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY o.customer_id
+              ),
+              tiers AS (
+                  SELECT
+                      customer_id,
+                      spent,
+                      CASE
+                          WHEN spent >= 5000 THEN 'Gold'
+                          WHEN spent >= 2000 THEN 'Silver'
+                          ELSE 'Bronze'
+                      END AS tier
+                  FROM customer_spend
+              )
+              SELECT tier, COUNT(*) AS customers, ROUND(AVG(spent), 2) AS avg_spent
+              FROM tiers
+              GROUP BY tier
+              ORDER BY avg_spent DESC;
+
+      - type: read
+        title: Three rules for chaining
+        md: |
+          1. Write **one** `WITH` at the very top. Separate the CTEs with a **comma**.
+          2. Put **no comma** after the last CTE. The main query follows its closing parenthesis directly.
+          3. A CTE can use any CTE written **above** it, but never one written below it.
+
+          > [!MISTAKE]
+          > Two classic typos: writing `WITH` a second time before the next CTE, and leaving a comma after the last CTE (`), SELECT ...`). Both give `syntax error at or near ...`.
+
+          > [!TIP]
+          > To debug a long pipeline, temporarily change the main query to `SELECT * FROM some_step LIMIT 5;`. You can look at what any station is carrying, just like the stepper above.
+
+      - type: example
+        title: Two CTEs side by side
+        md: |
+          CTEs don't have to be in a straight line. Here two independent CTEs each summarise a different date column, and the main query lines them up: how many orders were *placed* and how many were *shipped* in each month of 2024?
+        sql: |
+          WITH placed AS (
+              SELECT DATE_TRUNC('month', order_date)::date AS month,
+                     COUNT(*) AS placed
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+              GROUP BY month
+          ),
+          shipped AS (
+              SELECT DATE_TRUNC('month', shipped_date)::date AS month,
+                     COUNT(*) AS shipped
+              FROM orders
+              WHERE shipped_date >= '2024-01-01'
+              GROUP BY month
+          )
+          SELECT p.month, p.placed, s.shipped
+          FROM placed AS p
+          JOIN shipped AS s ON s.month = p.month
+          ORDER BY p.month;
+        after: |
+          Twelve rows, one per month. The two columns usually differ: cancelled orders are never shipped, and an order placed on the 31st may ship next month. In November, for example, 91 orders were placed but 60 shipped.
+
+          Neither CTE uses the other; both are used by the main query.
+
+      - type: example
+        title: "Order matters (expected error)"
+        md: |
+          Here `second` tries to use `first`, but `first` is written *below* it. Run it and read the hint.
+        expectError: true
+        sql: |
+          WITH second AS (
+              SELECT n + 1 AS n FROM first
+          ),
+          first AS (
+              SELECT 1 AS n
+          )
+          SELECT * FROM second;
+        after: |
+          PostgreSQL reads the CTEs from top to bottom, so at the moment it reads `second`, it has never heard of `first`. The error is `relation "first" does not exist`.
+
+          The hint mentions `WITH RECURSIVE`. Ignore that for now (you meet it later in this module). The simple fix is to **swap the order**: `first` goes on top.
+
+      - type: quiz
+        id: m09-l02-q1
+        question: |
+          Look at this skeleton:
+
+          ```sql
+          WITH a AS ( ... ),
+          b AS ( ... FROM a ... ),
+          c AS ( ... FROM b ... )
+          SELECT ... FROM c;
+          ```
+
+          Which CTEs is `b` allowed to use?
+        options:
+          - Only a
+          - a and c
+          - Only c
+          - None of them
+        answer: 0
+        explanation: |
+          A CTE can look **upwards** only. `b` can see `a` (above it) but not `c` (below it). The main query at the bottom can see all of them.
+
+      - type: exercise
+        id: m09-l02-e1
+        title: The five biggest spenders
+        prompt: |
+          The starter already has `order_totals`.
+
+          Add a second CTE `customer_spend` with one row per customer: `customer_id` and `spent`, the sum of the totals of that customer's **delivered** orders, rounded to 2 decimals.
+
+          Then show the **5 customers who spent the most** (columns `customer_id`, `spent`), biggest first.
+        starter: |
+          WITH order_totals AS (
+              SELECT
+                  order_id,
+                  SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          )
+          SELECT *
+          FROM order_totals;
+        solution: |
+          WITH order_totals AS (
+              SELECT
+                  order_id,
+                  SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          ),
+          customer_spend AS (
+              SELECT o.customer_id, ROUND(SUM(t.total), 2) AS spent
+              FROM orders AS o
+              JOIN order_totals AS t ON t.order_id = o.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY o.customer_id
+          )
+          SELECT customer_id, spent
+          FROM customer_spend
+          ORDER BY spent DESC
+          LIMIT 5;
+        ordered: true
+        hints:
+          - After the closing parenthesis of `order_totals`, type a comma and start the next CTE.
+          - "`customer_spend` joins `orders` to `order_totals` on order_id, keeps status = 'delivered', and groups by customer_id."
+          - "..., customer_spend AS (SELECT o.customer_id, ROUND(SUM(t.total), 2) AS spent FROM orders AS o JOIN order_totals AS t ON ___ WHERE ___ GROUP BY ___) SELECT customer_id, spent FROM customer_spend ORDER BY spent DESC LIMIT 5;"
+        explanation: |
+          Customer 6 leads with $8,458.40, followed by customers 10, 39, 91 and 44. The pipeline reads naturally: totals, then spend, then top 5.
+
+          The 6th customer spends $6,029.44, so there is no tie at the cut-off.
+        difficulty: 1
+
+      - type: predict
+        id: m09-l02-p1
+        question: |
+          Follow the belt! What single value does this query return?
+        sql: |
+          WITH nums AS (
+              SELECT 1 AS n
+              UNION ALL SELECT 2
+              UNION ALL SELECT 3
+          ),
+          doubled AS (
+              SELECT n * 2 AS n FROM nums
+          ),
+          plus_ten AS (
+              SELECT n + 10 AS n FROM doubled
+          )
+          SELECT SUM(n) FROM plus_ten;
+        options: ["6", "12", "30", "42"]
+        answer: 3
+        explanation: |
+          `nums` holds 1, 2, 3. `doubled` turns them into 2, 4, 6. `plus_ten` turns those into 12, 14, 16. The sum is 12 + 14 + 16 = **42**.
+
+          Tracing a pipeline station by station is the best way to understand any long query.
+
+      - type: exercise
+        id: m09-l02-e2
+        title: Orders and money by month
+        prompt: |
+          For each month of **2024**, show how many orders were placed and how much money was received in payments.
+
+          Use two CTEs: `orders_per_month` (from `orders`, by `order_date`) and `payments_per_month` (from `payments`, by `paid_at`). Then join them in the main query.
+
+          Show three columns: `month` (the first day of the month as a date), `orders` (number of orders) and `collected` (sum of `amount`, rounded to 2 decimals). Sort by `month`.
+        solution: |
+          WITH orders_per_month AS (
+              SELECT DATE_TRUNC('month', order_date)::date AS month,
+                     COUNT(*) AS orders
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+              GROUP BY month
+          ),
+          payments_per_month AS (
+              SELECT DATE_TRUNC('month', paid_at)::date AS month,
+                     ROUND(SUM(amount), 2) AS collected
+              FROM payments
+              WHERE paid_at >= '2024-01-01'
+              GROUP BY month
+          )
+          SELECT o.month, o.orders, p.collected
+          FROM orders_per_month AS o
+          JOIN payments_per_month AS p ON p.month = o.month
+          ORDER BY o.month;
+        ordered: true
+        hints:
+          - It is the same shape as the "placed vs shipped" example, but the second CTE reads from a different table.
+          - "Each CTE: DATE_TRUNC('month', ...)::date AS month, an aggregate, WHERE the date is in 2024, GROUP BY month. Join the two on month."
+          - "WITH orders_per_month AS (SELECT DATE_TRUNC('month', order_date)::date AS month, COUNT(*) AS orders FROM orders WHERE ___ GROUP BY month), payments_per_month AS (___) SELECT o.month, o.orders, p.collected FROM orders_per_month AS o JOIN payments_per_month AS p ON ___ ORDER BY o.month;"
+        explanation: |
+          The 2024 data runs from January to December, so you get 12 rows. December 2024 was the best month for money received: $27,587.81 from 86 orders.
+
+          Both CTEs end at the same grain (one row per month), which is why a simple join on `month` works.
+        difficulty: 2
+
+      - type: fill
+        id: m09-l02-f1
+        prompt: Complete the pipeline. Remember the comma rule and let the second CTE use the first.
+        template: |
+          WITH order_totals AS (
+              SELECT order_id, SUM(quantity * unit_price) AS total
+              FROM order_items
+              GROUP BY order_id
+          )___
+          big_orders AS (
+              SELECT order_id, total
+              FROM ___
+              WHERE total > 1000
+          )
+          SELECT COUNT(*)
+          FROM big_orders;
+        answers:
+          - [","]
+          - ["order_totals"]
+        explanation: |
+          A comma goes between CTEs (right after the closing parenthesis of the first one), and `big_orders` reads `FROM order_totals`, the CTE above it.
+
+      - type: example
+        title: Two CTEs feeding one main query
+        md: |
+          Which products have been sold but **never reviewed**? One CTE lists sold products, another lists reviewed products, and the main query keeps the sold ones that are missing from the reviewed list (an anti-join with `LEFT JOIN ... IS NULL`).
+        sql: |
+          WITH sold AS (
+              SELECT DISTINCT product_id
+              FROM order_items
+          ),
+          reviewed AS (
+              SELECT DISTINCT product_id
+              FROM reviews
+          )
+          SELECT p.product_id, p.name
+          FROM sold AS s
+          JOIN products AS p ON p.product_id = s.product_id
+          LEFT JOIN reviewed AS r ON r.product_id = s.product_id
+          WHERE r.product_id IS NULL
+          ORDER BY p.product_id;
+        after: |
+          Three products were sold but never reviewed: a laptop stand, an atlas and a face serum. A marketing team could use this list to ask buyers for reviews.
+
+          Notice the shape: two CTEs side by side, both used by the main query.
+
+      - type: exercise
+        id: m09-l02-e3
+        title: The three best categories
+        prompt: |
+          Which **3 categories** earned the most revenue from **delivered** orders?
+
+          Build it in stages: a CTE `product_revenue` (revenue per product: sum of `quantity * unit_price * (1 - discount)` over delivered order lines), then a CTE `category_revenue` (revenue per category, using `products.category_id`), then join `categories` for the names.
+
+          Show `name` and `revenue` (rounded to 2 decimals), biggest first.
+        solution: |
+          WITH product_revenue AS (
+              SELECT
+                  i.product_id,
+                  SUM(i.quantity * i.unit_price * (1 - i.discount)) AS revenue
+              FROM order_items AS i
+              JOIN orders AS o ON o.order_id = i.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY i.product_id
+          ),
+          category_revenue AS (
+              SELECT p.category_id, SUM(pr.revenue) AS revenue
+              FROM product_revenue AS pr
+              JOIN products AS p ON p.product_id = pr.product_id
+              GROUP BY p.category_id
+          )
+          SELECT c.name, ROUND(cr.revenue, 2) AS revenue
+          FROM category_revenue AS cr
+          JOIN categories AS c ON c.category_id = cr.category_id
+          ORDER BY cr.revenue DESC
+          LIMIT 3;
+        ordered: true
+        hints:
+          - 'Think of two stations: "revenue per product", then "revenue per category".'
+          - "order_items has the money, orders has the status, products has the category_id, categories has the name."
+          - "WITH product_revenue AS (... GROUP BY i.product_id), category_revenue AS (SELECT p.category_id, SUM(pr.revenue) AS revenue FROM product_revenue AS pr JOIN products AS p ON ___ GROUP BY ___) SELECT c.name, ROUND(cr.revenue, 2) AS revenue FROM category_revenue AS cr JOIN categories AS c ON ___ ORDER BY cr.revenue DESC LIMIT 3;"
+        explanation: |
+          Phones ($60,548.25), Laptops ($46,914.56) and Kitchen ($30,832.58) lead the way. Peripherals is 4th with $21,787.82, so there is no tie at the cut-off.
+
+          Pitfall: use `order_items.unit_price`, not `products.price`. Prices change over time, and the order line remembers what the customer actually paid.
+        difficulty: 2
+
+      - type: exercise
+        id: m09-l02-e4
+        title: Fix the bug
+        prompt: |
+          This query should count how many customers have at least one **delivered** order. It fails with a syntax error.
+
+          Fix it so it returns one number.
+        starter: |
+          WITH delivered AS (
+              SELECT order_id, customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          )
+          WITH delivered_customers AS (
+              SELECT DISTINCT customer_id
+              FROM delivered
+          )
+          SELECT COUNT(*)
+          FROM delivered_customers;
+        solution: |
+          WITH delivered AS (
+              SELECT order_id, customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          ),
+          delivered_customers AS (
+              SELECT DISTINCT customer_id
+              FROM delivered
+          )
+          SELECT COUNT(*)
+          FROM delivered_customers;
+        hints:
+          - 'The error is "syntax error at or near WITH". How many WITH keywords does a chained query need?'
+          - Only one. Replace the second WITH with a comma placed after the first CTE's closing parenthesis.
+          - "WITH delivered AS ( ... ), delivered_customers AS ( ... ) SELECT COUNT(*) FROM delivered_customers;"
+        explanation: |
+          137 customers have at least one delivered order (13 of the 150 have none). One `WITH` starts the whole list, and commas separate the CTEs.
+        difficulty: 2
+
+      - type: parsons
+        id: m09-l02-o1
+        prompt: Arrange the lines into a two-step pipeline that counts the orders worth more than $1,000.
+        lines:
+          - WITH order_totals AS (
+          - "    SELECT order_id, SUM(quantity * unit_price) AS total"
+          - "    FROM order_items GROUP BY order_id"
+          - "),"
+          - big_orders AS (
+          - "    SELECT order_id FROM order_totals WHERE total > 1000"
+          - )
+          - SELECT COUNT(*)
+          - FROM big_orders;
+        distractors:
+          - WITH big_orders AS (
+        explanation: |
+          Station 1 (`order_totals`) comes first and ends with `),`. Station 2 (`big_orders`) uses it and ends with `)` and no comma, because the main query follows.
+
+      - type: exercise
+        id: m09-l02-e5
+        title: Who brings in the money?
+        prompt: |
+          Sort customers into tiers by what they spent on **delivered** orders: **Gold** if they spent 5000 or more, **Silver** if 2000 or more (but under 5000), **Bronze** otherwise.
+
+          Show for each tier the total `revenue` (rounded to 2 decimals) and `pct`, that tier's share of all delivered revenue in percent (rounded to 1 decimal). Columns: `tier`, `revenue`, `pct`. Biggest revenue first.
+
+          Build it as a pipeline of CTEs: order totals, spend per customer, tiers, revenue per tier.
+        solution: |
+          WITH order_totals AS (
+              SELECT
+                  order_id,
+                  SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          ),
+          customer_spend AS (
+              SELECT o.customer_id, SUM(t.total) AS spent
+              FROM orders AS o
+              JOIN order_totals AS t ON t.order_id = o.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY o.customer_id
+          ),
+          tiers AS (
+              SELECT
+                  customer_id,
+                  spent,
+                  CASE
+                      WHEN spent >= 5000 THEN 'Gold'
+                      WHEN spent >= 2000 THEN 'Silver'
+                      ELSE 'Bronze'
+                  END AS tier
+              FROM customer_spend
+          ),
+          tier_revenue AS (
+              SELECT tier, SUM(spent) AS revenue
+              FROM tiers
+              GROUP BY tier
+          )
+          SELECT
+              tier,
+              ROUND(revenue, 2) AS revenue,
+              ROUND(100.0 * revenue /
+                  (SELECT SUM(revenue) FROM tier_revenue), 1) AS pct
+          FROM tier_revenue
+          ORDER BY revenue DESC;
+        ordered: true
+        hints:
+          - You already built the first three stations in the stepper. You only need a fourth CTE and a new main query.
+          - "tier_revenue groups the tiers CTE by tier and sums spent. For the percentage, divide each revenue by (SELECT SUM(revenue) FROM tier_revenue)."
+          - "..., tier_revenue AS (SELECT tier, SUM(spent) AS revenue FROM tiers GROUP BY tier) SELECT tier, ROUND(revenue, 2) AS revenue, ROUND(100.0 * revenue / (SELECT ___ FROM tier_revenue), 1) AS pct FROM tier_revenue ORDER BY revenue DESC;"
+        explanation: |
+          Surprise: Gold customers (only 10 people) bring in 27.1% of the revenue, while the 29 Silver customers bring in 38.8% and the 98 Bronze customers 34.1%. The middle tier matters most!
+
+          Four CTEs, four clear steps, and each one can be tested on its own.
+        difficulty: 3
+
+      - type: quiz
+        id: m09-l02-q2
+        question: |
+          You write three CTEs in this order: `sales`, `costs`, `profit`, followed by a main query. Where do the commas go?
+        options:
+          - After every closing parenthesis, including the one after profit
+          - Between the CTEs only, none after the last one
+          - Only after the first CTE
+          - Commas are not needed because each CTE has AS
+        answer: 1
+        explanation: |
+          Commas **separate** CTEs: one after `sales )` and one after `costs )`. The last CTE (`profit`) is followed directly by the main `SELECT`, with no comma.
+
+      - type: exercise
+        id: m09-l02-e6
+        title: Review outreach list
+        prompt: |
+          Marketing wants to ask valuable customers for a review. Find customers who spent **at least 1000** on delivered orders but have **never written a review**.
+
+          Show `customer_id`, `first_name`, `last_name` and `spent` (rounded to 2 decimals), biggest spender first.
+
+          Hint on the shape: one CTE for spend per customer, one CTE for the customers who did review, and a main query that combines them.
+        solution: |
+          WITH order_totals AS (
+              SELECT
+                  order_id,
+                  SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          ),
+          customer_spend AS (
+              SELECT o.customer_id, SUM(t.total) AS spent
+              FROM orders AS o
+              JOIN order_totals AS t ON t.order_id = o.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY o.customer_id
+          ),
+          reviewers AS (
+              SELECT DISTINCT customer_id
+              FROM reviews
+          )
+          SELECT
+              c.customer_id,
+              c.first_name,
+              c.last_name,
+              ROUND(s.spent, 2) AS spent
+          FROM customer_spend AS s
+          JOIN customers AS c ON c.customer_id = s.customer_id
+          LEFT JOIN reviewers AS r ON r.customer_id = s.customer_id
+          WHERE s.spent >= 1000
+            AND r.customer_id IS NULL
+          ORDER BY s.spent DESC;
+        ordered: true
+        hints:
+          - You need three ingredients, spend per customer, the set of reviewers, and customer names.
+          - Use the anti-join pattern from the products example, LEFT JOIN the reviewers CTE and keep rows where it is NULL.
+          - "..., reviewers AS (SELECT DISTINCT customer_id FROM reviews) SELECT c.customer_id, c.first_name, c.last_name, ROUND(s.spent, 2) AS spent FROM customer_spend AS s JOIN customers AS c ON ___ LEFT JOIN reviewers AS r ON ___ WHERE s.spent >= 1000 AND ___ IS NULL ORDER BY s.spent DESC;"
+        explanation: |
+          Four customers qualify (52, 125, 16 and 98). Anti-joins (`LEFT JOIN ... WHERE x IS NULL`) are the standard way to say "but never...".
+
+          Real analysts build exactly this kind of list every week: "valuable customers who haven't done X yet".
+        difficulty: 3
+    cheatsheet:
+      - title: Chain several CTEs
+        sql: |
+          WITH step_one AS (
+              SELECT ...
+          ),
+          step_two AS (
+              SELECT ... FROM step_one
+          )
+          SELECT ... FROM step_two;
+        note: One WITH, a comma between CTEs, no comma after the last one.
+      - title: Peek at any step
+        sql: |
+          WITH a AS (...), b AS (...)
+          SELECT * FROM a LIMIT 5;
+        note: Temporarily select from an earlier CTE to debug a long pipeline.
+      - title: Order matters
+        sql: |
+          -- b can use a, but a cannot use b
+          WITH a AS (...), b AS (SELECT * FROM a)
+          SELECT * FROM b;
+        note: A CTE can only see CTEs written above it.
+testPool:
+  - type: quiz
+    id: m09-t01
+    lesson: m09-l01
+    difficulty: 1
+    question: Placeholder?
+    options: ["a", "b"]
+    answer: 0
+    explanation: placeholder

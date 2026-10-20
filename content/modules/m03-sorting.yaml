@@ -1,0 +1,1899 @@
+id: m03
+order: 3
+title: Sorting & Paging
+subtitle: Put your results in order and take just the slice you need
+icon: "🏆"
+level: beginner
+description: |
+  Until now your results came back in whatever order the database felt like. In this module you take charge:
+  you will **sort** rows (A to Z, cheapest first, newest first), break ties like a pro, handle missing values
+  (NULL) in a sort, grab a **top 5**, and split long lists into **pages** like a real website does.
+
+  You will also take your first look at the bigger **ShopSmart** online-store database, and see the secret
+  order in which SQL really runs your query.
+dataset: cafe
+lessons:
+  - id: m03-l01
+    title: ORDER BY
+    summary: Sort results from smallest to biggest, A to Z, or oldest to newest, and flip them with DESC.
+    minutes: 18
+    steps:
+      - type: read
+        title: Maria wants a tidy menu board
+        md: |
+          Maria, the café manager, is printing a new menu board. She says: *"Please list the cheapest items
+          first, so customers see our bargains straight away!"*
+
+          So far your results came back in whatever order the database found convenient. That order is **not
+          guaranteed** and can change. To get a reliable order, you add one more clause to your query:
+          **`ORDER BY`**.
+
+          > [!ANALOGY]
+          > Think of the **Sort** button in a spreadsheet. You pick a column, press *A → Z* (or *Z → A*), and
+          > all the rows rearrange themselves. `ORDER BY` is that button, written in SQL.
+
+          The recipe is: `ORDER BY` + the column you want to sort by. It always goes **at the end** of the query.
+
+      - type: example
+        title: Cheapest first
+        md: Press **Run**. The items are sorted by `price`, smallest number first.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price;
+        after: |
+          All 32 menu items, starting with Drip Coffee at 1.50 and ending with Smoked Salmon Bagel at 12.50.
+
+          Sorting from small to big is called **ascending** order, and it is the default. Some items share the
+          same price (the three teas at 2.75, for example). Which of them comes first is not promised. You will
+          fix that with *tie-breakers* in the next lesson.
+
+      - type: example
+        title: Most expensive first
+        md: Add the word **`DESC`** (short for *descending*) after the column to flip the order.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC;
+        after: |
+          Now Smoked Salmon Bagel (12.50) is at the top. `DESC` means big to small. You can also write `ASC`
+          for the default small-to-big, but most people leave it out.
+
+      - type: quiz
+        id: m03-l01-q1
+        question: |
+          You write `ORDER BY price` and nothing else after it. In which direction are the rows sorted?
+        options:
+          - Smallest price first (ascending)
+          - Biggest price first (descending)
+          - Random order every time
+          - The order they were added to the table
+        answer: 0
+        explanation: |
+          **Ascending** (small to big) is the default. You only need to type `DESC` when you want the opposite.
+
+      - type: exercise
+        id: m03-l01-e1
+        title: Pastries, cheapest first
+        prompt: |
+          Show the `name` and `price` of every item in the **Pastry** category, with the **cheapest first**.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Pastry';
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Pastry'
+          ORDER BY price;
+        ordered: true
+        hints:
+          - The query already finds the pastries. You only need to add the sorting clause.
+          - Use `ORDER BY` followed by the column to sort by. It goes after the WHERE line.
+          - "ORDER BY ___;  (cheapest first is the default direction, so no DESC)"
+        explanation: |
+          `WHERE` picks the rows, then `ORDER BY` sorts the ones that are left. In the query they always appear
+          in that order: WHERE first, ORDER BY after it.
+        difficulty: 1
+
+      - type: read
+        title: Sorting text and dates
+        md: |
+          Numbers are not the only thing you can sort:
+
+          | Column type | Ascending (default) | Descending (`DESC`) |
+          |---|---|---|
+          | Numbers | 1, 2, 3 | 3, 2, 1 |
+          | Text | A to Z | Z to A |
+          | Dates | oldest first | newest first |
+          | Yes/No (boolean) | `false` then `true` | `true` then `false` |
+
+          The same two words, `ASC` and `DESC`, work for every type.
+
+      - type: example
+        title: Alphabetical order
+        md: Sort the whole menu A to Z by `name`.
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          ORDER BY name;
+        after: |
+          Almond Danish comes first and Veggie Hummus Wrap last. Every `name` is different, so this order is
+          always exactly the same.
+
+      - type: exercise
+        id: m03-l01-e2
+        title: Juices, Z to A
+        prompt: |
+          Show only the `name` of every item in the **Juice** category, in **reverse alphabetical order** (Z to A).
+        starter: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'Juice';
+        solution: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'Juice'
+          ORDER BY name DESC;
+        ordered: true
+        hints:
+          - Z to A is the *opposite* of the default direction.
+          - Sort by `name` and add the word that flips the direction.
+          - "ORDER BY name ___;"
+        explanation: |
+          `DESC` reverses any sort, including text. You should see Green Detox Juice first and Berry Smoothie last.
+        difficulty: 1
+
+      - type: example
+        title: Newest members first
+        md: Dates sort just like numbers. With `DESC`, the most recent date comes first.
+        sql: |
+          SELECT first_name, last_name, joined_on
+          FROM customers
+          ORDER BY joined_on DESC;
+        after: |
+          Seun Mwangi, who joined on 2024-11-13, is the newest member and sits at the top. Every customer has
+          a different `joined_on` date here, so there are no ties to worry about.
+
+      - type: exercise
+        id: m03-l01-e3
+        title: Portland members, newest first
+        prompt: |
+          Show the `first_name`, `last_name` and `joined_on` of every customer who lives in **Portland**,
+          with the **newest member first**.
+        starter: |
+          SELECT first_name, last_name, joined_on
+          FROM customers
+          WHERE city = 'Portland';
+        solution: |
+          SELECT first_name, last_name, joined_on
+          FROM customers
+          WHERE city = 'Portland'
+          ORDER BY joined_on DESC;
+        ordered: true
+        hints:
+          - You want the most recent date at the top.
+          - Sort by `joined_on` and use `DESC`.
+          - "ORDER BY ___ DESC;"
+        explanation: |
+          "Newest first" means the biggest date first, which is `DESC`. Seun Mwangi (2024-11-13) should be on top.
+        difficulty: 1
+
+      - type: read
+        title: "Peek: how does SQL sort capital letters?"
+        md: |
+          Here is a surprise worth knowing. In SQL Quest's database, text is compared **letter by letter using
+          character codes**. All capital letters come *before* all lowercase letters.
+
+          So `'Zebra'` sorts before `'apple'`! The café menu is safe, because every name starts with a capital letter.
+          But if your data mixes capitals and lowercase, the order can look odd.
+
+          > [!NOTE]
+          > Many other databases are set up to sort in a more dictionary-like way that mostly ignores capitals, so
+          > the same query can give a slightly different order there. When you move to a new database, test it with a few words.
+
+      - type: example
+        title: "Preview: capitals first"
+        md: |
+          This **preview** uses `VALUES`, a way to type a tiny table by hand. It is just here to show the sort
+          order, and you will meet `VALUES` properly later. Press **Run**.
+        sql: |
+          VALUES ('banana'), ('Apple'), ('cherry'), ('apple')
+          ORDER BY column1;
+        after: |
+          The result is `Apple`, `apple`, `banana`, `cherry`. Here `Apple` happens to come first because the
+          capital A has a smaller character code than the lowercase a. Try adding `('Zebra')` to the list and run
+          again: `Zebra` lands before `apple`, because every capital letter comes before every lowercase one.
+
+      - type: predict
+        id: m03-l01-p1
+        question: |
+          This query lists the Juice items from the **oldest** to the **newest** one. Which item is **last** in the result?
+        sql: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE category = 'Juice'
+          ORDER BY added_on;
+        options:
+          - Fresh Orange Juice
+          - Green Detox Juice
+          - Carrot Ginger Juice
+          - Berry Smoothie
+        answer: 3
+        explanation: |
+          Ascending dates go from oldest to newest, so the newest item is last. Berry Smoothie was added on
+          2024-11-30, the latest date of the four. Fresh Orange Juice (2022-03-01) comes first.
+
+      - type: read
+        title: A classic mistake
+        md: |
+          > [!MISTAKE]
+          > **Clause order matters.** `ORDER BY` must come *after* `WHERE`, never before it.
+          > If you swap them, PostgreSQL does not understand your sentence and shows a **syntax error**.
+
+          A good habit: read your query from the top, and remember that the sorting always comes last.
+          Let's see the error once, so you recognise it when it appears.
+
+      - type: example
+        title: "Oops: ORDER BY before WHERE"
+        md: This query is in the wrong order on purpose. Run it and read the message.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          WHERE category = 'Dessert';
+        expectError: true
+        after: |
+          The message says **syntax error at or near "WHERE"**. That is the database telling you exactly where it got
+          confused: it did not expect a `WHERE` after `ORDER BY`. Move `ORDER BY` to the end and it works.
+
+      - type: exercise
+        id: m03-l01-e4
+        title: Fix the order of the clauses
+        prompt: |
+          This query is supposed to show the `name` and `price` of every **Dessert**, most expensive first,
+          but it gives an error. Fix it.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          WHERE category = 'Dessert';
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Dessert'
+          ORDER BY price DESC;
+        ordered: true
+        hints:
+          - The words are right, but two lines are in the wrong order.
+          - Move the `WHERE` line above the `ORDER BY` line.
+          - "FROM ... WHERE ... ORDER BY ...;"
+        explanation: |
+          The order of clauses is fixed: `SELECT`, `FROM`, `WHERE`, then `ORDER BY`. You should now see Tiramisu Cup
+          (6.95) first and Chocolate Brownie (4.25) last.
+        difficulty: 2
+
+      - type: fill
+        id: m03-l01-f1
+        prompt: |
+          Complete the query so the customers with the **most loyalty points** come first.
+        template: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          ORDER BY ___ ___;
+        answers:
+          - ["loyalty_points"]
+          - ["DESC"]
+        explanation: |
+          Sort by the `loyalty_points` column, and use `DESC` so the biggest number comes first.
+
+      - type: parsons
+        id: m03-l01-o1
+        prompt: |
+          Put the lines in the right order to list the **Tea** items, **most expensive first**.
+        lines:
+          - SELECT name, price
+          - FROM menu_items
+          - WHERE category = 'Tea'
+          - ORDER BY price DESC;
+        distractors:
+          - SORT BY price DESC;
+        explanation: |
+          The order is always SELECT, FROM, WHERE, ORDER BY. SQL has no `SORT BY` command. The sorting clause is
+          called `ORDER BY`.
+
+      - type: exercise
+        id: m03-l01-e5
+        title: Recent card orders
+        prompt: |
+          Show the `order_id`, `order_time` and `tip` of every order that was paid by **card** and placed on
+          or after **2024-12-20**, with the **latest order first**.
+        starter: |
+          SELECT order_id, order_time, tip
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, order_time, tip
+          FROM orders
+          WHERE payment_method = 'card'
+            AND order_time >= '2024-12-20'
+          ORDER BY order_time DESC;
+        ordered: true
+        hints:
+          - You need two conditions joined with AND, and then a sort.
+          - "Conditions: payment_method = 'card' and order_time >= '2024-12-20'. Sort by order_time, newest first."
+          - "WHERE payment_method = ___ AND order_time >= ___ ORDER BY order_time ___;"
+        explanation: |
+          Every `order_time` is different, so "latest first" is a clear order. Eleven orders match, and the tips
+          shown as NULL mean no tip was recorded.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l01-e6
+        title: Bulk orders, latest first
+        prompt: |
+          Show the `order_id`, `order_time`, `quantity` and `payment_method` of orders with a `quantity` of
+          **2 or more** that were paid in **cash or by app** and placed on or after **2024-12-01**. Put the
+          **latest order first**.
+        solution: |
+          SELECT order_id, order_time, quantity, payment_method
+          FROM orders
+          WHERE quantity >= 2
+            AND payment_method IN ('cash', 'app')
+            AND order_time >= '2024-12-01'
+          ORDER BY order_time DESC;
+        ordered: true
+        hints:
+          - Three conditions, all of which must be true, plus a sort.
+          - "IN ('cash', 'app') is a tidy way to say cash OR app."
+          - "WHERE quantity >= ___ AND payment_method IN (___, ___) AND order_time >= ___ ORDER BY order_time DESC;"
+        explanation: |
+          This combines everything so far: filtering with AND and IN, then sorting. The result has 12 rows and the
+          latest order (176, from 2024-12-29) is first. If you wrote `payment_method = 'cash' OR payment_method = 'app'`
+          you would need brackets around it.
+        difficulty: 3
+    cheatsheet:
+      - title: Sort smallest first
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price;
+        note: ASC (small to big, A to Z, oldest to newest) is the default.
+      - title: Sort biggest first
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC;
+        note: DESC flips the direction (big to small, Z to A, newest first).
+      - title: Where ORDER BY goes
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Coffee'
+          ORDER BY price;
+        note: "Clause order: SELECT, FROM, WHERE, ORDER BY."
+  - id: m03-l02
+    title: Sorting by several columns
+    summary: Break ties with a second (and third) sort column, and mix ASC and DESC.
+    minutes: 18
+    steps:
+      - type: read
+        title: What happens when two rows tie?
+        md: |
+          Maria loves your sorted menu board, but she spots a problem. The three teas all cost 2.75, and
+          nothing promises which one is printed first. *"Can we make it always the same?"*
+
+          Yes! When two rows have the same value in the sort column, that is called a **tie**. You settle the tie
+          by adding a **second sort column**, separated by a comma. It only gets used when the first column is equal.
+
+          > [!ANALOGY]
+          > Think of a school register: sort by **last name**, and if two children share a last name, sort by
+          > **first name**. The first rule is the boss; the second rule only steps in to break a tie.
+
+      - type: example
+        title: A tie-breaker
+        md: Sort by `price`, and when prices are equal, by `name` (A to Z).
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price, name;
+        after: |
+          Look at the 2.75 group: Earl Grey Tea, Green Tea, Peppermint Tea. They are now in alphabetical order every
+          single time. Chocolate Chip Cookie and Espresso (both 2.50) are also settled by name.
+
+          A great habit: finish your sort with a column whose values are all different, like `name` here or an `id`.
+          Then the order can never be ambiguous.
+
+      - type: exercise
+        id: m03-l02-e1
+        title: Loyalty leaderboard
+        prompt: |
+          Show the `first_name`, `last_name` and `loyalty_points` of every customer. Put the customer with the
+          **most points first**. If two customers have the same points, put the one whose `last_name` comes
+          **first alphabetically** on top.
+        starter: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+        solution: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+          ORDER BY loyalty_points DESC, last_name;
+        ordered: true
+        hints:
+          - You need two sort columns, separated by a comma.
+          - The first is `loyalty_points` (biggest first). The second is `last_name`.
+          - "ORDER BY loyalty_points ___, last_name;"
+        explanation: |
+          Mateo Hernandez and Stefan Larsen both have 540 points, so the tie-breaker puts Hernandez first.
+          Notice that `DESC` belongs to `loyalty_points` only. `last_name` stays in the default A to Z order.
+        difficulty: 1
+
+      - type: read
+        title: Mixing directions
+        md: |
+          Each sort column has its **own** direction. A real menu board might say: *"Group the items by category
+          (A to Z), and inside each category show the priciest first."*
+
+          That is `ORDER BY category, price DESC`. Read it left to right: first by `category`, then by `price`
+          (biggest first).
+
+          > [!MISTAKE]
+          > `DESC` only affects the column **right before it**. In `ORDER BY category, price DESC`, the category is
+          > still A to Z. If you want both columns reversed, write `DESC` after each one:
+          > `ORDER BY category DESC, price DESC`.
+
+      - type: example
+        title: Category, then priciest first
+        md: Run it and look at how each category forms a block.
+        sql: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category, price DESC, name;
+        after: |
+          The rows form blocks: Coffee first, then Dessert, Juice, Pastry, Sandwich and Tea. Inside each block
+          the highest price comes first. The third column, `name`, quietly settles any remaining ties.
+
+      - type: quiz
+        id: m03-l02-q1
+        question: |
+          What does `ORDER BY category DESC, price` do?
+        options:
+          - Sorts both columns from big to small
+          - Sorts `category` Z to A, and `price` from small to big
+          - Sorts `category` A to Z, and `price` from big to small
+          - Gives an error, because DESC must come last
+        answer: 1
+        explanation: |
+          Each column has its own direction. `DESC` follows `category`, so only the category is reversed. `price`
+          has no word after it, so it uses the default (small to big).
+
+      - type: predict
+        id: m03-l02-p1
+        question: |
+          Which item is the **first row** of this result?
+        sql: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category, price DESC
+          LIMIT 1;
+        options:
+          - Drip Coffee (the cheapest coffee)
+          - Mocha (the priciest coffee)
+          - Smoked Salmon Bagel (the priciest item overall)
+          - Almond Danish (the first name alphabetically)
+        answer: 1
+        explanation: |
+          First the rows are sorted by `category`, and Coffee comes first alphabetically. Inside Coffee, `price DESC`
+          puts the most expensive first, which is Mocha at 5.25.
+
+      - type: stepper
+        title: Build the menu board one sort at a time
+        md: Click through the stages. Each one adds a sort column. Watch how the rows rearrange.
+        stages:
+          - label: Sort by category
+            md: |
+              The rows are grouped by category. Inside each group the order is not promised.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              ORDER BY category;
+          - label: Add price DESC
+            md: |
+              Inside each category the priciest item now comes first.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              ORDER BY category, price DESC;
+          - label: Add name
+            md: |
+              Items with the same price inside a category are now sorted by name, so the order is final.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              ORDER BY category, price DESC, name;
+
+      - type: exercise
+        id: m03-l02-e2
+        title: Staff by role and pay
+        prompt: |
+          Show the `name`, `role` and `hourly_rate` of every staff member. Sort by `role` (A to Z), and inside each
+          role put the **highest hourly rate first**.
+        starter: |
+          SELECT name, role, hourly_rate
+          FROM staff
+        solution: |
+          SELECT name, role, hourly_rate
+          FROM staff
+          ORDER BY role, hourly_rate DESC;
+        ordered: true
+        hints:
+          - Two sort columns this time, each with its own direction.
+          - "First `role` (default direction), then `hourly_rate` with DESC."
+          - "ORDER BY role, ___ DESC;"
+        explanation: |
+          The Bakers come first (Aiko Tanaka at 21.50, then Hannah Weiss), then the Baristas, Cashiers and finally the
+          Manager. Inside each role the pay goes from high to low.
+        difficulty: 1
+
+      - type: example
+        title: Three levels
+        md: |
+          You can use as many sort columns as you like. Here we sort customers by `city`, then `last_name`,
+          then `first_name`.
+        sql: |
+          SELECT city, last_name, first_name
+          FROM customers
+          ORDER BY city, last_name, first_name;
+        after: |
+          Austin comes first and Seattle last. Inside Seattle you can see the two Omondis (Paola and Tendai): they
+          share a city and a last name, so the third column `first_name` puts Paola before Tendai.
+
+      - type: exercise
+        id: m03-l02-e3
+        title: Orders grouped by payment
+        prompt: |
+          Show the `order_id`, `payment_method` and `order_time` of every order placed on or after **2024-12-27**.
+          Sort by `payment_method` (A to Z), and inside each method put the **latest order first**.
+        starter: |
+          SELECT order_id, payment_method, order_time
+          FROM orders
+          WHERE order_time >= '2024-12-27'
+        solution: |
+          SELECT order_id, payment_method, order_time
+          FROM orders
+          WHERE order_time >= '2024-12-27'
+          ORDER BY payment_method, order_time DESC;
+        ordered: true
+        hints:
+          - Sort by payment method first, then by time.
+          - "Only the time should be reversed, so DESC goes after `order_time` only."
+          - "ORDER BY payment_method, ___ DESC;"
+        explanation: |
+          There are 14 orders. First all the `app` orders (newest first), then `card`, then `cash`. Every
+          `order_time` is different, so no extra tie-breaker is needed here.
+        difficulty: 2
+
+      - type: read
+        title: Another common slip
+        md: |
+          > [!MISTAKE]
+          > **Forgetting the comma** between sort columns. `ORDER BY category price` looks reasonable to a human,
+          > but the database sees two words with nothing between them and gets confused.
+
+          Let's look at that error.
+
+      - type: example
+        title: "Oops: a missing comma"
+        md: Run this broken query and read the error message.
+        sql: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category price DESC;
+        expectError: true
+        after: |
+          **syntax error at or near "price"**. The database got stuck right after `category`, which is exactly where
+          the comma belongs. When an error points at a word, check the spot just *before* it.
+
+      - type: exercise
+        id: m03-l02-e4
+        title: Fix the directions
+        prompt: |
+          The owner wants the menu board with the categories in **reverse alphabetical order** (Z to A),
+          and inside each category the **cheapest item first**, then `name` A to Z for equal prices.
+          This query gets the directions the wrong way round. Fix it so it shows `name`, `category` and `price`.
+        starter: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category, price DESC, name;
+        solution: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category DESC, price, name;
+        ordered: true
+        hints:
+          - Check each sort column on its own. Which ones are going the wrong way?
+          - "`category` needs DESC. `price` should lose its DESC."
+          - "ORDER BY category ___, price, name;"
+        explanation: |
+          Tea comes first now (with the three 2.75 teas in alphabetical order), and Coffee comes last. Each sort column
+          has its own direction, and you have to set each one separately.
+        difficulty: 2
+
+      - type: fill
+        id: m03-l02-f1
+        prompt: |
+          Complete the query: sort staff by `role`, and inside each role show the **highest** `hourly_rate` first.
+        template: |
+          SELECT name, role, hourly_rate
+          FROM staff
+          ORDER BY role, ___ ___;
+        answers:
+          - ["hourly_rate"]
+          - ["DESC"]
+        explanation: |
+          The second sort column is `hourly_rate`, and `DESC` makes the biggest rate come first inside each role.
+
+      - type: parsons
+        id: m03-l02-o1
+        prompt: |
+          Arrange the lines so customers are sorted by `city`, then `last_name`, then `first_name`.
+        lines:
+          - SELECT first_name, last_name, city
+          - FROM customers
+          - ORDER BY city,
+          - last_name,
+          - first_name;
+        explanation: |
+          The most important sort column comes first. The next one only steps in when the one before it is tied.
+          Commas separate the columns, and the last one ends with a semicolon.
+
+      - type: exercise
+        id: m03-l02-e5
+        title: Contact list for three cities
+        prompt: |
+          The café wants to email its loyal customers in **Austin, Boston and Seattle**. Show the `city`,
+          `first_name`, `last_name` and `loyalty_points` of customers who live in one of those cities **and have an
+          email address** (the `email` column is not NULL).
+
+          Sort by `city` (A to Z), then **most points first**, then `last_name` (A to Z).
+        solution: |
+          SELECT city, first_name, last_name, loyalty_points
+          FROM customers
+          WHERE city IN ('Austin', 'Boston', 'Seattle')
+            AND email IS NOT NULL
+          ORDER BY city, loyalty_points DESC, last_name;
+        ordered: true
+        hints:
+          - Two filters joined with AND, then three sort columns.
+          - "Use `city IN (...)` and `email IS NOT NULL`. Only the points column gets DESC."
+          - "WHERE city IN (___) AND email ___ ORDER BY city, loyalty_points ___, last_name;"
+        explanation: |
+          This combines filtering (`IN`, `IS NOT NULL`) with a three-level sort. You get 13 rows: 4 in Austin, 5 in Boston
+          and 4 in Seattle, with the highest points first inside each city.
+        difficulty: 3
+    cheatsheet:
+      - title: Tie-breaker
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price, name;
+        note: The second column is only used when the first one is equal.
+      - title: Mixed directions
+        sql: |
+          SELECT name, category, price
+          FROM menu_items
+          ORDER BY category, price DESC;
+        note: Each sort column has its own ASC or DESC. DESC only applies to the column before it.
+  - id: m03-l03
+    title: Sorting tricks
+    summary: Control where NULLs go, sort by a calculation or an alias, and learn why column numbers are risky.
+    minutes: 20
+    steps:
+      - type: read
+        title: The nutrition board has gaps
+        md: |
+          Maria wants a "highest calories first" board for the café's nutrition poster. Easy: `ORDER BY calories DESC`.
+          But four menu items have **no calories recorded** (the value is `NULL`, meaning *unknown*).
+
+          Where should unknown values go in a sorted list? PostgreSQL treats `NULL` as if it were **bigger than every
+          number**. That has a surprising effect, as you are about to see.
+
+      - type: example
+        title: "Surprise: NULLs on top"
+        md: Run it and look at the very first rows.
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          ORDER BY calories DESC;
+        after: |
+          The four unknowns (Smoked Salmon Bagel, Berry Smoothie, Tiramisu Cup, Green Detox Juice) sit at the **top**,
+          before Turkey Club with 620 calories. That is not what the poster needs!
+
+          With `ASC` it is the other way round: PostgreSQL puts NULLs at the **end**.
+
+          > [!NOTE]
+          > Other databases behave differently. For example MySQL and SQL Server treat NULL as the *smallest* value,
+          > so there NULLs come first in an ascending sort. This is why it is worth stating your wish explicitly.
+
+      - type: example
+        title: NULLS LAST to the rescue
+        md: Add `NULLS LAST` (or `NULLS FIRST`) at the end of a sort column to choose where the NULLs go.
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          ORDER BY calories DESC NULLS LAST, name;
+        after: |
+          Now Turkey Club (620) is on top, and the four unknowns are at the bottom, sorted by name.
+
+          The pattern is `column [ASC|DESC] [NULLS FIRST|NULLS LAST]`. It works on each sort column separately.
+
+      - type: predict
+        id: m03-l03-p1
+        question: |
+          What does the **first row** of this result show in the `calories` column?
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          ORDER BY calories DESC
+          LIMIT 1;
+        options:
+          - "620"
+          - "0"
+          - "NULL"
+          - An error, because NULL cannot be sorted
+        answer: 2
+        explanation: |
+          In PostgreSQL a descending sort puts NULLs **first**. The first row is one of the items with unknown calories,
+          so `calories` shows NULL. Adding `NULLS LAST` would have moved them to the bottom.
+
+      - type: exercise
+        id: m03-l03-e1
+        title: Desserts and juices, unknowns last
+        prompt: |
+          Show the `name` and `calories` of every item in the **Dessert** or **Juice** categories. Put the
+          **highest calories first**, with the items whose calories are unknown (NULL) **at the end**.
+          Sort items with equal calories by `name`.
+        starter: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE category IN ('Dessert', 'Juice')
+          ORDER BY calories DESC, name;
+        solution: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE category IN ('Dessert', 'Juice')
+          ORDER BY calories DESC NULLS LAST, name;
+        ordered: true
+        hints:
+          - The starter is nearly right, but the unknown calories jump to the top.
+          - Put `NULLS LAST` straight after `DESC`.
+          - "ORDER BY calories DESC ___ ___, name;"
+        explanation: |
+          You get 8 rows: Cheesecake Slice (450) first, and Berry Smoothie, Green Detox Juice and Tiramisu Cup
+          (all NULL) at the bottom, sorted by name.
+        difficulty: 1
+
+      - type: exercise
+        id: m03-l03-e2
+        title: Missing emails first
+        prompt: |
+          Maria wants to chase up customers who never gave an email. Show the `first_name`, `last_name` and `email`
+          of **every** customer, with the customers whose email is **NULL first**. Sort the people with no email
+          by `last_name`, and sort everybody else by `email` (A to Z).
+        solution: |
+          SELECT first_name, last_name, email
+          FROM customers
+          ORDER BY email NULLS FIRST, last_name;
+        ordered: true
+        hints:
+          - In an ascending sort, NULLs normally go last. You want the opposite.
+          - Sort by `email` and add `NULLS FIRST`. Then add a second sort column.
+          - "ORDER BY email ___ ___, last_name;"
+        explanation: |
+          The five customers without an email (Brown, Hernandez, Jones, Omondi, Popov) come first, ordered by last
+          name. Everyone else follows in email order. Emails are all different, so the second column only matters
+          for the NULL group.
+        difficulty: 1
+
+      - type: read
+        title: Sorting by a calculation
+        md: |
+          `ORDER BY` is not limited to plain columns. You can sort by a **calculation** too, using the same
+          `+ - * /` you learned in the SELECT module.
+
+          Which items give the most calories for each dollar? That is `calories / price`.
+
+      - type: example
+        title: Calories per dollar
+        md: |
+          We sort by `calories / price`, even though that calculation is not shown in the results.
+          Only items with known calories are included.
+        sql: |
+          SELECT name, price, calories
+          FROM menu_items
+          WHERE category IN ('Pastry', 'Dessert')
+            AND calories IS NOT NULL
+          ORDER BY calories / price DESC, name;
+        after: |
+          Blueberry Muffin is the best deal (380 calories for 3.50), while Lemon Tart is the weakest of this group.
+          The sorting uses a number that is **not in the output**, and that is perfectly fine.
+
+      - type: exercise
+        id: m03-l03-e3
+        title: Best calories-per-dollar sandwiches and juices
+        prompt: |
+          Show the `name`, `price` and `calories` of every item in the **Sandwich** or **Juice** category whose
+          `calories` is **not NULL**. Sort by calories per dollar (`calories / price`) with the **highest first**,
+          then by `name`.
+        solution: |
+          SELECT name, price, calories
+          FROM menu_items
+          WHERE category IN ('Sandwich', 'Juice')
+            AND calories IS NOT NULL
+          ORDER BY calories / price DESC, name;
+        ordered: true
+        hints:
+          - You do not need to show the ratio. Just sort by it.
+          - "ORDER BY calories / price with DESC, and `name` as a tie-breaker."
+          - "WHERE category IN (___, ___) AND calories IS NOT NULL ORDER BY calories / price ___, name;"
+        explanation: |
+          Six items qualify. Turkey Club leads (about 59 calories per dollar), and Carrot Ginger Juice is last (about 17).
+          The `IS NOT NULL` filter matters: a NULL calorie value would make the ratio NULL as well.
+        difficulty: 2
+
+      - type: read
+        title: Sorting by an alias
+        md: |
+          Remember aliases (`AS`)? Because `ORDER BY` runs **after** the SELECT list is built, it can use the alias you
+          created. This keeps long calculations tidy.
+
+          The café gives a free coffee at **500 loyalty points**. How many points does each customer still need?
+          That is `500 - loyalty_points`.
+
+      - type: example
+        title: Who is closest to a free coffee?
+        md: We give the calculation a name, `points_to_go`, and sort by that name.
+        sql: |
+          SELECT first_name, last_name, loyalty_points,
+                 500 - loyalty_points AS points_to_go
+          FROM customers
+          WHERE loyalty_points < 500
+          ORDER BY points_to_go, last_name;
+        after: |
+          Dmitri Fischer needs only 5 more points, so he is on top. Two customers (Nathan Davis and Tendai Omondi) both
+          need 80, so `last_name` settles that tie.
+
+      - type: example
+        title: "Oops: an alias in WHERE"
+        md: |
+          `ORDER BY` can use an alias, but `WHERE` cannot. Run this to see why people trip over it.
+        sql: |
+          SELECT name, price * 2 AS double_price
+          FROM menu_items
+          WHERE double_price > 10
+          ORDER BY double_price;
+        expectError: true
+        after: |
+          **column "double_price" does not exist**. `WHERE` runs *before* the SELECT list is built, so the alias is not
+          born yet. Repeat the calculation in `WHERE` instead: `WHERE price * 2 > 10`. Lesson 5 shows the full order
+          in which SQL runs your query.
+
+      - type: exercise
+        id: m03-l03-e4
+        title: Customers close to the reward
+        columnNames: true
+        prompt: |
+          Show each customer's `first_name`, `loyalty_points`, and a calculated column named `points_to_go`
+          (`500 - loyalty_points`). Include only customers with **fewer than 500** points, show the ones
+          **closest to 500 first**, and break ties with `last_name` (A to Z).
+
+          Use exactly the alias `points_to_go`.
+        solution: |
+          SELECT first_name, loyalty_points,
+                 500 - loyalty_points AS points_to_go
+          FROM customers
+          WHERE loyalty_points < 500
+          ORDER BY points_to_go, last_name;
+        ordered: true
+        hints:
+          - You need a calculated column with an alias, and a sort on that alias.
+          - "`500 - loyalty_points AS points_to_go` goes in the SELECT list. Then ORDER BY points_to_go."
+          - "SELECT first_name, loyalty_points, 500 - loyalty_points AS ___ FROM customers WHERE ___ ORDER BY ___, last_name;"
+        explanation: |
+          16 customers are under 500 points. Smaller `points_to_go` means closer to the reward, so a plain ascending sort is
+          what you want. The tie-breaker `last_name` does not need to appear in the SELECT list.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l03-e5
+        title: Fix the alias bug
+        prompt: |
+          This query should list items whose price **doubled** is above 10, cheapest double first (ties by `name`),
+          but it gives an error. Fix it so it shows `name` and `double_price`.
+        starter: |
+          SELECT name, price * 2 AS double_price
+          FROM menu_items
+          WHERE double_price > 10
+          ORDER BY double_price, name;
+        solution: |
+          SELECT name, price * 2 AS double_price
+          FROM menu_items
+          WHERE price * 2 > 10
+          ORDER BY double_price, name;
+        ordered: true
+        hints:
+          - The alias is not available in the WHERE clause.
+          - Repeat the calculation in WHERE instead of using the alias.
+          - "WHERE price * ___ > 10"
+        explanation: |
+          `WHERE` cannot see aliases, but `ORDER BY` can. So the calculation is written out in `WHERE` and the alias
+          is used in `ORDER BY`. The result has 13 rows, starting with Matcha Latte and Mocha (both 10.50).
+        difficulty: 2
+
+      - type: read
+        title: Sorting by column number (and why to avoid it)
+        md: |
+          SQL lets you sort by the **position** of a column in the SELECT list: `ORDER BY 2` means *"the second column
+          I selected"*. It is a shortcut you will see in other people's queries.
+
+          > [!MISTAKE]
+          > Column numbers are fragile. If someone adds or reorders a column in the SELECT list, `ORDER BY 2` quietly
+          > sorts by a **different** column and nobody gets an error. Prefer the column name or alias, which says what you mean.
+
+      - type: example
+        title: ORDER BY 2 DESC, 1
+        md: Here `2` means `price` and `1` means `name`.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY 2 DESC, 1;
+        after: |
+          This is the same as `ORDER BY price DESC, name`. It works, but only as long as the SELECT list never changes.
+          Using a position that does not exist, like `ORDER BY 5` here, gives the error
+          *ORDER BY position 5 is not in select list*.
+
+      - type: predict
+        id: m03-l03-p2
+        question: |
+          A colleague swapped the columns in the SELECT list but left `ORDER BY 2`. What is the **first row**?
+        sql: |
+          SELECT price, name
+          FROM menu_items
+          ORDER BY 2
+          LIMIT 1;
+        options:
+          - "1.50 | Drip Coffee"
+          - "3.95 | Almond Danish"
+          - "12.50 | Smoked Salmon Bagel"
+          - An error, because position 2 is a text column
+        answer: 1
+        explanation: |
+          `2` now means the second column, which is `name`. The rows are sorted alphabetically by name, and Almond Danish
+          comes first. Nothing complained, which is exactly why column numbers are risky.
+
+      - type: read
+        title: Sorting by something you do not show
+        md: |
+          You can sort by a column that is not in your SELECT list. For example, show only `name` but sort by `price`.
+          This works in normal queries, but **not** when you use `SELECT DISTINCT`. Then PostgreSQL says
+          *for SELECT DISTINCT, ORDER BY expressions must appear in select list*.
+
+          > [!TIP]
+          > Boolean columns sort too: `false` comes before `true`. `ORDER BY is_vegan DESC` puts the vegan items first.
+
+      - type: example
+        title: Sort by a hidden column
+        md: We show only `name`, but the order comes from `price`.
+        sql: |
+          SELECT name
+          FROM menu_items
+          ORDER BY price DESC, name
+          LIMIT 5;
+        after: |
+          The five most expensive items, by name only: Smoked Salmon Bagel, Turkey Club, Caprese Panini,
+          Veggie Hummus Wrap and Avocado Toast. The price drove the order, even though you cannot see it.
+
+      - type: fill
+        id: m03-l03-f1
+        prompt: |
+          Complete the query so customers with the **highest** `loyalty_points` come first and any NULL values go
+          **to the end**.
+        template: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          ORDER BY loyalty_points ___ ___ ___;
+        answers:
+          - ["DESC"]
+          - ["NULLS"]
+          - ["LAST"]
+        explanation: |
+          `DESC` puts the biggest numbers first, and `NULLS LAST` moves any unknown values to the bottom. (Here
+          `loyalty_points` has no NULLs, but it is a good habit when a column can be empty.)
+
+      - type: parsons
+        id: m03-l03-o1
+        prompt: |
+          Put the lines in order: list the **Dessert** items with the most calories first, and unknown calories last.
+        lines:
+          - SELECT name, calories
+          - FROM menu_items
+          - WHERE category = 'Dessert'
+          - ORDER BY calories DESC NULLS LAST;
+        distractors:
+          - ORDER BY calories DESC NULLS BOTTOM;
+        explanation: |
+          The keywords are `NULLS FIRST` and `NULLS LAST`. There is no `NULLS BOTTOM`.
+
+      - type: exercise
+        id: m03-l03-e6
+        title: Tips leaderboard
+        prompt: |
+          Show the `order_id`, `tip` and `order_time` of every order paid by **card** and placed on or after
+          **2024-12-20**. Put the **biggest tips first**, with orders that have no recorded tip (NULL) **last**.
+          If tips are equal, show the **latest order first**.
+        solution: |
+          SELECT order_id, tip, order_time
+          FROM orders
+          WHERE payment_method = 'card'
+            AND order_time >= '2024-12-20'
+          ORDER BY tip DESC NULLS LAST, order_time DESC;
+        ordered: true
+        hints:
+          - Filter first with WHERE, then sort by two columns.
+          - "The first sort column is `tip` (DESC, with NULLS LAST). The second is `order_time` (DESC)."
+          - "ORDER BY tip DESC ___ ___, order_time ___;"
+        explanation: |
+          11 orders match. The 4.00 tip (order 156) is first, and the three orders with no recorded tip (180, 175, 155) come
+          last, newest first. Without `NULLS LAST` they would have been at the top.
+        difficulty: 3
+    cheatsheet:
+      - title: Control where NULLs go
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          ORDER BY calories DESC NULLS LAST;
+        note: "PostgreSQL: NULLs come last with ASC and first with DESC, unless you say NULLS FIRST or NULLS LAST."
+      - title: Sort by a calculation or alias
+        sql: |
+          SELECT name, calories / price AS cal_per_dollar
+          FROM menu_items
+          WHERE calories IS NOT NULL
+          ORDER BY cal_per_dollar DESC;
+        note: ORDER BY can use aliases. WHERE cannot.
+      - title: Avoid column numbers
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC, name;
+        note: "ORDER BY 2 works, but silently changes meaning if the SELECT list changes."
+  - id: m03-l04
+    title: Top-N and pagination
+    summary: Grab the top 5, split long lists into pages with LIMIT and OFFSET, and deal with ties at the cut-off.
+    minutes: 20
+    steps:
+      - type: read
+        title: Top 5 and page 2
+        md: |
+          Maria's next wish: *"Show our five most expensive items on a poster."* And later: *"The full menu is long.
+          Can we show ten items at a time, like a website with page numbers?"*
+
+          Both wishes need the same two ingredients:
+
+          1. **`ORDER BY`** to put the rows in the right order, and
+          2. **`LIMIT`** to keep only the first few rows.
+
+          This is called a **Top-N query**: sort first, then cut. You met `LIMIT` in the SELECT module for peeking at
+          data. Now it gets its real job.
+
+          > [!MISTAKE]
+          > **`LIMIT` without `ORDER BY`** gives you *some* rows, not the *top* rows. Without a sort, the database may return
+          > any rows it likes. A "top 5" always needs an `ORDER BY` in front of the `LIMIT`.
+
+      - type: example
+        title: The five priciest items
+        md: Sort by `price` biggest first, then keep 5 rows.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          LIMIT 5;
+        after: |
+          Smoked Salmon Bagel (12.50) down to Avocado Toast (8.50). The 6th most expensive item, Tiramisu Cup at 6.95,
+          is clearly cheaper, so there is no tie at the cut-off.
+
+          *Sort first, then cut.* Think of it as: make the ranked list, then draw a line under row 5.
+
+      - type: exercise
+        id: m03-l04-e1
+        title: The three latest orders
+        prompt: |
+          Show the `order_id` and `order_time` of the **3 most recent orders**, newest first.
+        starter: |
+          SELECT order_id, order_time
+          FROM orders
+        solution: |
+          SELECT order_id, order_time
+          FROM orders
+          ORDER BY order_time DESC
+          LIMIT 3;
+        ordered: true
+        hints:
+          - Newest first means sorting `order_time` from big to small.
+          - Add `ORDER BY order_time DESC` and then `LIMIT`.
+          - "ORDER BY ___ DESC LIMIT ___;"
+        explanation: |
+          Orders 180, 179 and 178 are the latest. Always put `LIMIT` last: it works on the *already sorted* rows.
+        difficulty: 1
+
+      - type: read
+        title: Pages with OFFSET
+        md: |
+          To show a list in **pages**, you also need to *skip* the rows of earlier pages. That is what **`OFFSET`** does:
+          `OFFSET 10` skips the first 10 rows.
+
+          > [!ANALOGY]
+          > A book with 10 recipes per page. For page 1 you read recipes 1 to 10. For page 2 you *skip* the first 10 and
+          > read the next 10. `LIMIT 10` is the page size; `OFFSET` is how many you skip.
+
+          The formula for page number *p*, with page size *n*, is:
+          `LIMIT n OFFSET (p - 1) * n`. For page 3 with 10 items per page: `LIMIT 10 OFFSET 20`.
+
+      - type: example
+        title: Page 2 of the menu
+        md: Alphabetical order, 10 items per page, and we skip the first page.
+        sql: |
+          SELECT name
+          FROM menu_items
+          ORDER BY name
+          LIMIT 10 OFFSET 10;
+        after: |
+          Items 11 to 20 of the alphabetical list: Chai Latte through Green Detox Juice. Because `name` is unique,
+          every page is stable and nothing repeats between pages.
+
+      - type: stepper
+        title: Walk through the menu page by page
+        md: |
+          The menu has 32 items, so 10 per page gives 4 pages. Click through the pages and watch the `OFFSET` grow by 10.
+        stages:
+          - label: Page 1
+            md: Skip nothing (`OFFSET 0`) and take 10. Items 1 to 10.
+            sql: |
+              SELECT name
+              FROM menu_items
+              ORDER BY name
+              LIMIT 10 OFFSET 0;
+          - label: Page 2
+            md: Skip 10, take 10. Items 11 to 20.
+            sql: |
+              SELECT name
+              FROM menu_items
+              ORDER BY name
+              LIMIT 10 OFFSET 10;
+          - label: Page 3
+            md: Skip 20, take 10. Items 21 to 30.
+            sql: |
+              SELECT name
+              FROM menu_items
+              ORDER BY name
+              LIMIT 10 OFFSET 20;
+          - label: Page 4
+            md: Skip 30, take 10, but only 2 items are left. The last page is allowed to be short.
+            sql: |
+              SELECT name
+              FROM menu_items
+              ORDER BY name
+              LIMIT 10 OFFSET 30;
+
+      - type: quiz
+        id: m03-l04-q1
+        question: |
+          Your website shows **10 products per page**, sorted by name. Which clause shows **page 3**?
+        options:
+          - LIMIT 10 OFFSET 3
+          - LIMIT 10 OFFSET 20
+          - LIMIT 10 OFFSET 30
+          - LIMIT 30 OFFSET 10
+        answer: 1
+        explanation: |
+          Page 3 means skipping the first two pages: 2 x 10 = 20 rows. So it is `LIMIT 10 OFFSET 20`.
+          The offset is always (page number - 1) x page size.
+
+      - type: exercise
+        id: m03-l04-e2
+        title: Page 3 of the menu
+        prompt: |
+          The menu is shown **10 items per page**, sorted by `name` (A to Z). Show the `name` and `category` of the
+          items on **page 3**.
+        starter: |
+          SELECT name, category
+          FROM menu_items
+          ORDER BY name
+        solution: |
+          SELECT name, category
+          FROM menu_items
+          ORDER BY name
+          LIMIT 10 OFFSET 20;
+        ordered: true
+        hints:
+          - You skip the first two pages, so 20 rows.
+          - Use both `LIMIT` and `OFFSET`.
+          - "LIMIT 10 OFFSET ___;"
+        explanation: |
+          Page 3 holds items 21 to 30: Green Tea up to Vanilla Latte. The last page (page 4) would hold only
+          Vegan Banana Bread and Veggie Hummus Wrap.
+        difficulty: 2
+
+      - type: read
+        title: A second spelling - FETCH FIRST
+        md: |
+          `LIMIT` is popular, but the official **SQL standard** spells it differently. PostgreSQL understands both:
+
+          | You want | `LIMIT` style | Standard style |
+          |---|---|---|
+          | First 5 rows | `LIMIT 5` | `FETCH FIRST 5 ROWS ONLY` |
+          | Skip 10, take 10 | `LIMIT 10 OFFSET 10` | `OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY` |
+
+          `ROW` and `ROWS`, and `FIRST` and `NEXT`, are interchangeable. Use whichever reads best to you.
+
+          > [!NOTE]
+          > In other databases: MySQL and SQLite use `LIMIT` like PostgreSQL, while Microsoft SQL Server uses
+          > `SELECT TOP 5 ...` (and also supports `OFFSET ... FETCH`). Module 20 compares dialects in detail.
+
+      - type: example
+        title: The standard way
+        md: The same "top 3" as before, spelled with `FETCH FIRST`.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          FETCH FIRST 3 ROWS ONLY;
+        after: |
+          Exactly the same result as `LIMIT 3`: Smoked Salmon Bagel, Turkey Club, Caprese Panini.
+
+      - type: exercise
+        id: m03-l04-e3
+        title: Top 3 loyal customers
+        prompt: |
+          Use `FETCH FIRST ... ROWS ONLY` to show the `first_name`, `last_name` and `loyalty_points` of the
+          **3 customers with the most loyalty points**, most points first.
+        starter: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+        solution: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+          ORDER BY loyalty_points DESC
+          FETCH FIRST 3 ROWS ONLY;
+        ordered: true
+        hints:
+          - Sort by points, biggest first, then keep three rows.
+          - "FETCH FIRST goes at the very end, after ORDER BY."
+          - "ORDER BY loyalty_points ___ FETCH FIRST ___ ROWS ONLY;"
+        explanation: |
+          Dmitri Schmidt (850), Nora Morgan (715) and Kavya Gupta (695). The 4th customer has 645, so there is no tie at the cut-off.
+          A `LIMIT 3` would give the same answer.
+        difficulty: 1
+
+      - type: predict
+        id: m03-l04-p1
+        question: |
+          Which row does this query return?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          LIMIT 1 OFFSET 5;
+        options:
+          - Smoked Salmon Bagel
+          - Avocado Toast
+          - Tiramisu Cup
+          - Cheesecake Slice
+        answer: 2
+        explanation: |
+          The prices sorted from high to low are: Smoked Salmon Bagel, Turkey Club, Caprese Panini, Veggie Hummus Wrap,
+          Avocado Toast, **Tiramisu Cup**. `OFFSET 5` skips the first five, and `LIMIT 1` keeps the sixth: Tiramisu Cup (6.95).
+
+      - type: exercise
+        id: m03-l04-e4
+        title: Fix the Top-3
+        prompt: |
+          This query should show the `name` and `price` of the **3 most expensive items**, but it gives an error.
+          Fix it.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          LIMIT 3
+          ORDER BY price DESC;
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          LIMIT 3;
+        ordered: true
+        hints:
+          - The words are right but two lines are swapped.
+          - "`LIMIT` is always the last clause. `ORDER BY` comes before it."
+          - "FROM ... ORDER BY ... LIMIT ...;"
+        explanation: |
+          The database sorts first and cuts afterwards, so you must write them in that order too: `ORDER BY` then `LIMIT`.
+          Swapping them gives *syntax error at or near "ORDER"*.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l04-e5
+        title: Best vegan treats
+        prompt: |
+          Show the `name` and `price` of the **3 most expensive items** that are **vegan** (`is_vegan` is true) and
+          currently **available** (`is_available` is true). Put the priciest first.
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE is_vegan
+            AND is_available
+          ORDER BY price DESC
+          LIMIT 3;
+        ordered: true
+        hints:
+          - Filter first with WHERE, then sort, then limit.
+          - "A yes/no column can be used directly: WHERE is_vegan AND is_available"
+          - "WHERE ___ AND ___ ORDER BY price ___ LIMIT 3;"
+        explanation: |
+          WHERE runs first, so only vegan, available items are ranked. You get Veggie Hummus Wrap (8.95), Avocado Toast (8.50)
+          and Green Detox Juice (6.50). The next one, Berry Smoothie, costs 6.25, so there is no tie.
+        difficulty: 2
+
+      - type: read
+        title: When rows tie at the cut-off
+        md: |
+          What if the 4th and 5th rows have the **same** value? Imagine "the 4 cheapest items". Three teas cost 2.75, and the 4th
+          place falls right in the middle of them. `LIMIT 4` has to pick just one tea, and nothing says which one.
+
+          For fairness, SQL offers **`FETCH FIRST n ROWS WITH TIES`**: it returns the first *n* rows **plus any rows that tie
+          with the last one**. There is no `LIMIT` spelling for this.
+
+      - type: example
+        title: LIMIT 4 picks one tea
+        md: Run it and look at the last row.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price
+          LIMIT 4;
+        after: |
+          Row 4 is *one* of the three 2.75 teas. The other two are left out purely by chance. That is unfair, and it can
+          change from one run to another on a bigger table.
+
+      - type: example
+        title: WITH TIES keeps them all
+        md: Same query, but with `WITH TIES`.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price
+          FETCH FIRST 4 ROWS WITH TIES;
+        after: |
+          Now you get 6 rows: Drip Coffee, Espresso, Chocolate Chip Cookie, and all three teas. The result can be longer than 4
+          rows, because every row that ties with the 4th is included.
+
+          > [!TIP]
+          > `WITH TIES` looks at **all** your `ORDER BY` columns. If you wrote `ORDER BY price, name`, the teas no longer tie
+          > (their names differ), so you would get exactly 4 rows again.
+
+      - type: example
+        title: "Oops: WITH TIES needs a sort"
+        md: Without `ORDER BY`, there is nothing to tie on.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          FETCH FIRST 4 ROWS WITH TIES;
+        expectError: true
+        after: |
+          **WITH TIES cannot be specified without ORDER BY clause**. Ties only exist when rows are ranked, so a sort is
+          required.
+
+      - type: exercise
+        id: m03-l04-e6
+        title: Top 8 loyalty scores, ties included
+        prompt: |
+          Show the `first_name`, `last_name` and `loyalty_points` of the **8 customers with the most loyalty points**, and
+          also anybody who has the **same points as the 8th** customer. Use `FETCH FIRST ... WITH TIES`.
+        solution: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+          ORDER BY loyalty_points DESC
+          FETCH FIRST 8 ROWS WITH TIES;
+        hints:
+          - You need a sort by points, biggest first.
+          - Use `FETCH FIRST 8 ROWS WITH TIES` at the very end.
+          - "ORDER BY loyalty_points DESC FETCH FIRST ___ ROWS ___ ___;"
+        explanation: |
+          Mateo Hernandez and Stefan Larsen both have 540 points and share 8th place, so the result has 9 rows. A plain
+          `LIMIT 8` would have dropped one of them by chance.
+        difficulty: 3
+
+      - type: exercise
+        id: m03-l04-e7
+        title: The newest-members wall, page 2
+        prompt: |
+          The website shows the **newest members** (newest `joined_on` first), **5 per page**. Show the `first_name`,
+          `last_name` and `joined_on` for **page 2**.
+        solution: |
+          SELECT first_name, last_name, joined_on
+          FROM customers
+          ORDER BY joined_on DESC
+          LIMIT 5 OFFSET 5;
+        ordered: true
+        hints:
+          - Page 2 means skipping the first page of 5 customers.
+          - Sort newest first, then use LIMIT with OFFSET.
+          - "ORDER BY joined_on DESC LIMIT ___ OFFSET ___;"
+        explanation: |
+          Page 1 is the five newest members, so page 2 starts with Tariq Carter (2024-04-10). Every customer has a different
+          `joined_on`, which keeps the pages stable.
+        difficulty: 3
+
+      - type: fill
+        id: m03-l04-f1
+        prompt: |
+          Complete the query for **page 2** of the menu with **10 items per page**.
+        template: |
+          SELECT name
+          FROM menu_items
+          ORDER BY name
+          LIMIT ___ OFFSET ___;
+        answers:
+          - ["10"]
+          - ["10"]
+        explanation: |
+          Page size 10 goes in `LIMIT`. For page 2 you skip one page of 10, so `OFFSET 10`.
+
+      - type: parsons
+        id: m03-l04-o1
+        prompt: |
+          Arrange the lines to show the **5 most expensive items**.
+        lines:
+          - SELECT name, price
+          - FROM menu_items
+          - ORDER BY price DESC
+          - LIMIT 5;
+        distractors:
+          - SELECT TOP 5 name, price
+        explanation: |
+          Sort first, then cut: `ORDER BY` before `LIMIT`. `SELECT TOP 5` is how Microsoft SQL Server does it. PostgreSQL does not
+          understand `TOP`.
+
+      - type: read
+        title: Good habits for paging
+        md: |
+          > [!MISTAKE]
+          > **Paging without a unique sort.** If many rows tie in the `ORDER BY`, the database may order them differently from one
+          > page to the next. Customers then see the same product twice, or miss one entirely. Always end your `ORDER BY` with
+          > a column that is unique (like `name` or an `id`).
+
+          > [!REAL-WORLD]
+          > Almost every web shop or app uses `LIMIT` and `OFFSET` behind its "Next page" button. One more thing to know: with huge
+          > tables, a large `OFFSET` gets slow, because the database still has to produce all the skipped rows first. Module 15
+          > shows a faster technique for that.
+    cheatsheet:
+      - title: Top-N
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price DESC
+          LIMIT 5;
+        note: Sort first, then cut. Without ORDER BY you do not get the "top" rows.
+      - title: Pagination
+        sql: |
+          SELECT name
+          FROM menu_items
+          ORDER BY name
+          LIMIT 10 OFFSET 20;
+        note: "Page p with n rows per page: LIMIT n OFFSET (p - 1) * n. Use a unique sort."
+      - title: Standard syntax and ties
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          ORDER BY price
+          FETCH FIRST 4 ROWS WITH TIES;
+        note: WITH TIES also returns rows that tie with the last row (needs ORDER BY).
+  - id: m03-l05
+    title: Putting it together
+    summary: Meet the ShopSmart store database, learn the order SQL really runs your clauses in, and mix everything.
+    minutes: 25
+    dataset: shop
+    steps:
+      - type: read
+        title: Welcome to ShopSmart
+        md: |
+          Time for a bigger playground! You have just been hired at **ShopSmart**, a small online store. Your first job is to
+          prepare the data for the store's **front page**: new customers, bargains, best reviews.
+
+          ShopSmart's database has **8 tables**, like a filing cabinet with 8 drawers:
+
+          | Table | What is inside | Rows |
+          |---|---|---|
+          | `products` | the catalog: name, price, cost, stock | 60 |
+          | `customers` | people with an account | 150 |
+          | `orders` | one row per order: date, status, city | 900 |
+          | `order_items` | which products are in each order | 2,296 |
+          | `payments` | money received for orders | 778 |
+          | `reviews` | star ratings and comments | 320 |
+          | `categories` | product groups like Laptops or Kitchen | 14 |
+          | `suppliers` | companies that supply the products | 8 |
+
+          For now we only use **one table at a time**. Linking tables together comes later, in the JOIN module.
+          Let's peek into the three most important drawers.
+
+      - type: example
+        title: "Drawer 1: products"
+        md: The first 5 products. We sort by `product_id` so you always see the same rows.
+        sql: |
+          SELECT product_id, name, price,
+                 stock_qty, is_active
+          FROM products
+          ORDER BY product_id
+          LIMIT 5;
+        after: |
+          Each row is one product. `price` is in US dollars, `stock_qty` is how many are in the warehouse, and `is_active`
+          says whether it is still for sale (true or false).
+
+      - type: example
+        title: "Drawer 2: customers"
+        md: The first 5 customers.
+        sql: |
+          SELECT customer_id, first_name, last_name,
+                 city, segment
+          FROM customers
+          ORDER BY customer_id
+          LIMIT 5;
+        after: |
+          150 people have an account. `segment` is the type of customer: Consumer, Corporate or Home Office. Customer ids
+          are handed out in the order people signed up.
+
+      - type: example
+        title: "Drawer 3: orders"
+        md: The first 5 orders.
+        sql: |
+          SELECT order_id, customer_id, order_date,
+                 status, shipped_date
+          FROM orders
+          ORDER BY order_id
+          LIMIT 5;
+        after: |
+          `customer_id` tells you *who* ordered. It matches a `customer_id` in the customers table, which is how tables
+          are linked. `status` is one of `processing`, `shipped`, `delivered`, `cancelled` or `returned`.
+          `shipped_date` is empty (NULL) until the order has left the warehouse.
+
+          > [!MISTAKE]
+          > Text values are case-sensitive and the statuses are written in lowercase. `WHERE status = 'Delivered'` finds **0 rows**
+          > because the data says `delivered`. When a query returns nothing, check the capital letters.
+
+      - type: quiz
+        id: m03-l05-q1
+        question: |
+          Where would you look to find the **star rating** a customer gave to a product?
+        options:
+          - products
+          - orders
+          - reviews
+          - payments
+        answer: 2
+        explanation: |
+          Ratings (1 to 5 stars) and review texts live in the `reviews` table. `payments` holds money received, and `orders` holds
+          the purchases themselves.
+
+      - type: viz
+        viz: execution-order
+        title: The order you write is not the order SQL runs
+        md: |
+          Here is a secret. You *write* `SELECT` first, but the database does **not** start there. Click **"Order the database
+          RUNS it"** and watch the clauses move. Click any clause to read what it does.
+        config:
+          highlight: [WHERE, ORDER BY, LIMIT]
+
+      - type: read
+        title: Why the running order matters
+        md: |
+          The database works like a kitchen making a dish: first it **gets the ingredients** (`FROM`), then **throws away what it
+          does not need** (`WHERE`), then **prepares the plate** (`SELECT`), then **arranges it** (`ORDER BY`), and finally
+          **serves only a few portions** (`LIMIT`).
+
+          That explains three things you have already met:
+
+          1. `WHERE` cannot use an alias, because the alias is created later, in `SELECT`.
+          2. `ORDER BY` **can** use an alias, because it runs after `SELECT`.
+          3. `LIMIT` cuts the rows after they are sorted, which is why a "top 5" needs `ORDER BY` first.
+
+          > [!NOTE]
+          > This is the *logical* order, the order that explains the results you see. Behind the scenes, the database may
+          > take shortcuts to be faster, but the answer always behaves as if it followed these steps.
+
+      - type: stepper
+        title: Build the "most profitable products" list, step by step
+        md: |
+          Click through the stages. Each one adds a clause in the order SQL **runs** it, and you can watch the result change.
+        stages:
+          - label: FROM
+            md: Start with every row of the products table (60 rows).
+            sql: |
+              SELECT name, price, cost
+              FROM products;
+          - label: WHERE
+            md: Throw away products that are no longer for sale (56 rows left).
+            sql: |
+              SELECT name, price, cost
+              FROM products
+              WHERE is_active;
+          - label: SELECT
+            md: Pick the columns and calculate the profit, `price - cost`, under a new name.
+            sql: |
+              SELECT name, price - cost AS profit
+              FROM products
+              WHERE is_active;
+          - label: ORDER BY
+            md: Sort by the new alias, biggest profit first. `name` settles ties.
+            sql: |
+              SELECT name, price - cost AS profit
+              FROM products
+              WHERE is_active
+              ORDER BY profit DESC, name;
+          - label: LIMIT
+            md: Keep only the top 5. The 6th product has a clearly lower profit, so there is no tie.
+            sql: |
+              SELECT name, price - cost AS profit
+              FROM products
+              WHERE is_active
+              ORDER BY profit DESC, name
+              LIMIT 5;
+
+      - type: example
+        title: A full sentence
+        md: |
+          Here is a complete query using every clause from this module. The comments (`--`) name each part.
+        sql: |
+          SELECT name, price, stock_qty      -- pick columns
+          FROM products                      -- from this table
+          WHERE is_active                    -- keep for-sale items
+            AND stock_qty > 0                -- that we have in stock
+          ORDER BY price DESC, name          -- priciest first
+          LIMIT 3;                           -- keep three
+        after: |
+          The three priciest products that are for sale and in stock: Aurora 16-inch Pro Laptop (1499.99), Zephyr Gaming Laptop X
+          (1299.99) and Nimbus Air 13 Ultrabook (1099.99).
+
+          Memorise the writing order: **SELECT, FROM, WHERE, ORDER BY, LIMIT**.
+
+      - type: predict
+        id: m03-l05-p1
+        question: |
+          Which row is the **first** one in the result?
+        sql: |
+          SELECT name, price * 0.9 AS sale_price
+          FROM products
+          ORDER BY sale_price
+          LIMIT 1;
+        options:
+          - An error, because ORDER BY cannot use an alias
+          - Screen Protector 3-Pack, 8.991
+          - Natural Bamboo Hairbrush, 11.241
+          - Aurora 16-inch Pro Laptop, 1349.991
+        answer: 1
+        explanation: |
+          `ORDER BY` runs after `SELECT`, so it can sort by the alias `sale_price`. The cheapest product is the Screen Protector
+          3-Pack at 9.99, and 10% off gives 8.991.
+
+      - type: quiz
+        id: m03-l05-q2
+        question: |
+          Which of these queries gives an **error**?
+        options:
+          - "SELECT name, price * 2 AS dbl FROM products ORDER BY dbl;"
+          - "SELECT name, price * 2 AS dbl FROM products WHERE dbl > 100;"
+          - "SELECT name FROM products ORDER BY price;"
+          - "SELECT name FROM products ORDER BY price DESC LIMIT 3;"
+        answer: 1
+        explanation: |
+          `WHERE` runs before `SELECT`, so the alias `dbl` does not exist yet there: *column "dbl" does not exist*. The other three
+          queries are fine. `ORDER BY` can use an alias, and it can sort by a column that is not shown.
+
+      - type: exercise
+        id: m03-l05-e1
+        title: The bargain shelf's opposite - premium picks
+        prompt: |
+          Show the `name` and `price` of the **5 most expensive products**. Put the priciest first, and if two
+          products cost the same, put the one whose `name` comes first alphabetically on top.
+        starter: |
+          SELECT name, price
+          FROM products
+        solution: |
+          SELECT name, price
+          FROM products
+          ORDER BY price DESC, name
+          LIMIT 5;
+        ordered: true
+        hints:
+          - Sort first, then keep five rows.
+          - Two sort columns, `price` (biggest first) and then `name`.
+          - "ORDER BY price DESC, ___ LIMIT ___;"
+        explanation: |
+          Two products cost 899.99 (Aurora 14-inch Laptop and Lumio Phone S5 Plus). They share places 4 and 5, so both fit in the top 5, and
+          the `name` tie-breaker makes their order certain. The 6th product costs 699.99, so nothing is cut off unfairly.
+        difficulty: 1
+
+      - type: exercise
+        id: m03-l05-e2
+        title: Welcome the newest customers
+        prompt: |
+          Show the `first_name`, `last_name` and `signup_date` of the **5 newest customers**: the latest `signup_date` first,
+          and for the same date the higher `customer_id` first.
+        solution: |
+          SELECT first_name, last_name, signup_date
+          FROM customers
+          ORDER BY signup_date DESC, customer_id DESC
+          LIMIT 5;
+        ordered: true
+        hints:
+          - Newest first means the biggest date first.
+          - Sort by `signup_date DESC`, then break ties with `customer_id DESC`.
+          - "ORDER BY signup_date ___, customer_id ___ LIMIT 5;"
+        explanation: |
+          Two customers (145 and 146) signed up on 2024-10-18. The `customer_id` tie-breaker puts customer 146 in and decides the order.
+          The `customer_id` column does not have to be shown to be used for sorting.
+        difficulty: 1
+
+      - type: exercise
+        id: m03-l05-e3
+        title: Running low on stock
+        prompt: |
+          Show the `name` and `stock_qty` of **active** products (`is_active` is true) that have **between 1 and 30** units in
+          stock (including 1 and 30). Show the **lowest stock first**.
+        solution: |
+          SELECT name, stock_qty
+          FROM products
+          WHERE is_active
+            AND stock_qty BETWEEN 1 AND 30
+          ORDER BY stock_qty;
+        ordered: true
+        hints:
+          - Filter with two conditions, then sort.
+          - "BETWEEN 1 AND 30 includes both ends. Sort `stock_qty` smallest first."
+          - "WHERE is_active AND stock_qty BETWEEN ___ AND ___ ORDER BY ___;"
+        explanation: |
+          9 products qualify, from Lumio Phone S5 (7 left) to Lumio Phone S5 Plus (20 left). We excluded products with stock 0 because
+          they are not "low", they are sold out.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l05-e4
+        title: Latest delivered orders
+        prompt: |
+          Show the `order_id`, `order_date` and `ship_city` of the **10 most recent delivered orders** (status `delivered`).
+          Newest `order_date` first, and for the same date the higher `order_id` first.
+        solution: |
+          SELECT order_id, order_date, ship_city
+          FROM orders
+          WHERE status = 'delivered'
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 10;
+        ordered: true
+        hints:
+          - Filter by status first (lowercase text!), then sort, then limit.
+          - Many orders share a date, so you need a tie-breaker.
+          - "WHERE status = ___ ORDER BY order_date DESC, ___ DESC LIMIT 10;"
+        explanation: |
+          The newest delivered order is 892 (2024-12-27). Several orders share a date, such as 2024-12-25 and 2024-12-22, so the
+          second sort column keeps the order fixed and the 10-row cut-off safe.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l05-e5
+        title: Fresh five-star praise
+        prompt: |
+          For the front page, show the `review_id`, `product_id` and `created_at` of the **5 newest reviews** that have a rating of
+          **5** and **written text** (`review_text` is not NULL). Newest first; for the same day, higher `review_id` first.
+        solution: |
+          SELECT review_id, product_id, created_at
+          FROM reviews
+          WHERE rating = 5
+            AND review_text IS NOT NULL
+          ORDER BY created_at DESC, review_id DESC
+          LIMIT 5;
+        ordered: true
+        hints:
+          - Two filters (rating and text), then a two-column sort.
+          - "Use IS NOT NULL to test for written text, not <> ''."
+          - "WHERE rating = 5 AND review_text ___ ___ ___ ORDER BY created_at DESC, review_id DESC LIMIT 5;"
+        explanation: |
+          Reviews 320, 318 and 317 were all written on 2024-12-31, so the `review_id` tie-breaker sorts them. Reviews without text
+          would show NULL in `review_text`, and `IS NOT NULL` leaves them out.
+        difficulty: 2
+
+      - type: exercise
+        id: m03-l05-e6
+        title: Orders that need attention
+        prompt: |
+          The warehouse team wants to see orders placed on or after **2024-12-24**. Show the `order_id`, `status` and
+          `shipped_date` of those orders. List orders that have **not shipped yet** (`shipped_date` is NULL) **first**, then the others by
+          `shipped_date`, oldest first. Orders with the same `shipped_date` go by `order_id`.
+        solution: |
+          SELECT order_id, status, shipped_date
+          FROM orders
+          WHERE order_date >= '2024-12-24'
+          ORDER BY shipped_date NULLS FIRST, order_id;
+        ordered: true
+        hints:
+          - NULLs normally go last in an ascending sort.
+          - "Sort by `shipped_date` with `NULLS FIRST`, then by `order_id`."
+          - "ORDER BY shipped_date ___ ___, order_id;"
+        explanation: |
+          16 orders match. First come 8 orders with no ship date (7 `processing` orders and 1 `cancelled` one), then the shipped ones from
+          2024-12-25 to 2024-12-31. Without `NULLS FIRST`, the unshipped orders would be buried at the bottom.
+        difficulty: 3
+
+      - type: exercise
+        id: m03-l05-e7
+        title: Page 2 of the profit ranking
+        columnNames: true
+        prompt: |
+          Rank **active** products by profit (`price - cost`), biggest profit first, with `name` as the tie-breaker. Show `name`,
+          `price`, `cost` and the profit under the alias `profit`, for **page 2** when there are **10 products per page**.
+        solution: |
+          SELECT name, price, cost, price - cost AS profit
+          FROM products
+          WHERE is_active
+          ORDER BY profit DESC, name
+          LIMIT 10 OFFSET 10;
+        ordered: true
+        hints:
+          - You need WHERE, an alias, ORDER BY and LIMIT with OFFSET. All four tools from this module.
+          - "Page 2 skips the first 10 rows. The alias is created in SELECT and can be used in ORDER BY."
+          - "SELECT name, price, cost, price - cost AS ___ FROM products WHERE is_active ORDER BY ___ DESC, name LIMIT 10 OFFSET ___;"
+        explanation: |
+          Page 2 runs from Stainless Steel Cookware Set (profit 88.76) to Wireless Earbuds Pulse (39.43). Notice how the alias is
+          used in `ORDER BY` but never in `WHERE`.
+        difficulty: 3
+
+      - type: parsons
+        id: m03-l05-o1
+        prompt: |
+          Arrange the clauses in the order you **write** them to list the 3 cheapest active products.
+        lines:
+          - SELECT name, price
+          - FROM products
+          - WHERE is_active
+          - ORDER BY price, name
+          - LIMIT 3;
+        distractors:
+          - HAVING is_active
+        explanation: |
+          Written order: SELECT, FROM, WHERE, ORDER BY, LIMIT. `HAVING` is for filtering groups, which comes later in the course;
+          plain row filters use `WHERE`.
+    cheatsheet:
+      - title: Order you write the clauses
+        sql: |
+          SELECT name, price
+          FROM products
+          WHERE is_active
+          ORDER BY price DESC
+          LIMIT 5;
+        note: "Writing order: SELECT, FROM, WHERE, ORDER BY, LIMIT."
+      - title: Order SQL runs the clauses
+        sql: |
+          SELECT name, price - cost AS profit
+          FROM products
+          WHERE is_active
+          ORDER BY profit DESC;
+        note: "FROM, WHERE, SELECT, ORDER BY, LIMIT. So ORDER BY can use aliases, WHERE cannot."
+      - title: ShopSmart tables
+        sql: |
+          SELECT * FROM products LIMIT 5;
+        note: "products, customers, orders, order_items, payments, reviews, categories, suppliers. Text values like 'delivered' are lowercase."
+testPool:
+  - type: quiz
+    id: m03-t01
+    lesson: m03-l01
+    difficulty: 1
+    question: Stub
+    options: [a, b]
+    answer: 0
+    explanation: stub

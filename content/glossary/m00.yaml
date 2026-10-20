@@ -1,0 +1,49 @@
+glossary:
+  - term: Database
+    definition: An organised collection of information stored on a computer so it can be searched, sorted and updated very quickly. Most databases keep their data in tables.
+    example: "The Bean & Bloom café database holds four tables: menu_items, customers, staff and orders."
+    module: m00
+  - term: Table
+    definition: A grid of data made of rows and columns, with a name. Think of it as a spreadsheet with strict rules. One table holds one kind of thing, such as menu items or customers.
+    example: "SELECT * FROM menu_items;"
+    module: m00
+  - term: Row
+    definition: One complete record in a table, for example one menu item or one customer. Also called a record.
+    example: "Row 2 of menu_items is the Espresso: 2, Espresso, Coffee, 2.50, ..."
+    module: m00
+  - term: Column
+    definition: One kind of information that every row of a table has, such as name or price. Each column has a name and a data type. Also called a field.
+    example: "price is a column of menu_items."
+    module: m00
+  - term: SQL
+    definition: Structured Query Language. The language used to ask questions of a relational database and to change its data. Pronounced "S-Q-L" or "sequel".
+    example: "SELECT name FROM menu_items;"
+    module: m00
+  - term: Query
+    definition: A question you ask the database, written in SQL. Running a query returns a result (usually a table of rows).
+    example: "SELECT name, price FROM menu_items;"
+    module: m00
+  - term: Relational database
+    definition: A database that stores data in separate tables which are linked to each other through ids (keys). PostgreSQL is a relational database.
+    example: "orders.customer_id points to customers.customer_id."
+    module: m00
+  - term: Primary key
+    definition: A column whose value is different in every row and never empty, so it identifies each row. Usually a unique id number.
+    example: "customer_id is the primary key of customers."
+    module: m00
+  - term: Foreign key
+    definition: A column that stores the primary key of a row in another table. It is how tables point to each other.
+    example: "orders.item_id points to menu_items.item_id."
+    module: m00
+  - term: Data type
+    definition: The kind of data a column holds, such as text (words), integer (whole numbers), numeric (decimals), boolean (true or false), date or timestamp. The type decides what you can do with the values.
+    example: "price is numeric, name is text, is_vegan is boolean."
+    module: m00
+  - term: "NULL"
+    definition: SQL's way of saying "there is no value here". It can mean unknown, missing or not applicable. NULL is not the number 0 and not an empty piece of text.
+    example: "The Tiramisu Cup has NULL calories: nobody measured them yet."
+    module: m00
+  - term: Syntax error
+    definition: An error that means PostgreSQL could not understand the grammar of your query, for example a misspelled keyword or a missing comma. The mistake is usually at the word named in the message or just before it.
+    example: "SELCT * FROM menu_items;  -- syntax error at or near \"SELCT\""
+    module: m00

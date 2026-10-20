@@ -1,0 +1,1823 @@
+id: m00
+order: 0
+title: Welcome to SQL
+subtitle: Your very first steps with data — no experience needed
+icon: "👋"
+level: beginner
+description: |
+  Welcome! This short, gentle module is where everyone starts. You'll learn what a **database** is,
+  how to use the SQL workspace (the editor, the **Run** button and the result grid), why **errors are
+  your friends**, and how the pieces of a database fit together.
+
+  There is no pressure here: you work on a tiny practice café called **Bean & Bloom**, every run starts
+  from a fresh copy of the data, and you literally cannot break anything.
+dataset: cafe
+lessons:
+  - id: m00-l01
+    title: What is a database?
+    summary: Meet tables, rows and columns, and run your very first SQL query.
+    minutes: 12
+    steps:
+      - type: read
+        title: Welcome to Bean & Bloom Café
+        md: |
+          Hi there, and welcome to **SQL Quest**! 🎉
+
+          You don't need any coding experience. Not even a little. We'll go in tiny steps, and you
+          can't break anything — every practice query runs on a safe copy of the data.
+
+          **Today's story.** You've just started a part-time job at **Bean & Bloom Café**. Your
+          manager, Maria, asks:
+
+          *"Can you check what's on our menu, and what everything costs?"*
+
+          The café doesn't keep its menu in a paper notebook. It keeps it in a **database**.
+
+          A **database** is an organised collection of information that a computer can search in a
+          blink. Most databases keep their information in **tables**.
+
+          > [!ANALOGY]
+          > A table is just like a spreadsheet in Excel or Google Sheets: a grid of rows and columns.
+          > If you have ever made a shopping list in a spreadsheet, you already understand the idea!
+
+          Ready? Let's talk to the café's database. It takes just one line.
+
+      - type: example
+        title: Your first query
+        md: |
+          Press the blue **Run** button below. That's all you have to do!
+        sql: |
+          SELECT *
+          FROM menu_items;
+        after: |
+          🎉 **You just ran your first SQL query!**
+
+          The database sent back the café's whole menu: **32 rows** (one per menu item) and
+          **8 columns**. Scroll the table down and sideways to explore it.
+
+      - type: read
+        title: Rows, columns and cells
+        md: |
+          What came back is a grid — a **table** — and this one is called `menu_items`. Here are its
+          first three rows:
+
+          | item_id | name | category | price |
+          |---|---|---|---|
+          | 1 | Drip Coffee | Coffee | 1.50 |
+          | 2 | Espresso | Coffee | 2.50 |
+          | 3 | Americano | Coffee | 3.00 |
+
+          - A **column** is one kind of information, like `name` or `price`. Every column has a name.
+          - A **row** is one complete record. Here, one row is one menu item.
+          - A **cell** is where a row and a column meet, such as the price of the Espresso: `2.50`.
+
+          You'll also hear rows called **records** and columns called **fields**. Same thing!
+
+          > [!TIP]
+          > Table and column names use underscores instead of spaces (`menu_items`, not
+          > `menu items`), because SQL reads a space as "this word is finished".
+
+      - type: quiz
+        id: m00-l01-q1
+        question: In the `menu_items` table, what does **one row** describe?
+        options:
+          - "One menu item, with all its details"
+          - "One kind of information, like price"
+          - "The whole café"
+          - "One customer"
+        answer: 0
+        explanation: |
+          A row is one complete record, so here it is one menu item. A *column* is one kind of
+          information (like `price`) that every row has.
+
+      - type: read
+        title: So what is SQL?
+        md: |
+          **SQL** (say "S-Q-L" or "sequel") stands for **Structured Query Language**. It is the
+          language we use to talk to databases.
+
+          A **query** is simply a *question* you ask the database. So "writing a query" means
+          "asking the database a question". That's all SQL is: **asking questions of data**, in words
+          that look a lot like English.
+
+          Here is your first question, word by word:
+
+          | Piece | What it means |
+          |---|---|
+          | `SELECT` | "Show me…" |
+          | `*` | "…every column…" |
+          | `FROM menu_items` | "…from the table called `menu_items`." |
+          | `;` | The full stop: "that's the end of my question." |
+
+          Put together: *"Show me every column from the table called menu_items."*
+
+          > [!NOTE]
+          > The database inside this app is **PostgreSQL**: a free, professional database used by
+          > real companies all over the world. Everything you learn here works on the job.
+
+      - type: example
+        title: Choose just the columns you want
+        md: |
+          You don't have to take every column. Instead of `*`, write the column names you want,
+          separated by **commas**. Press **Run**.
+        sql: |
+          SELECT name, price
+          FROM menu_items;
+        after: |
+          Now you get only two columns, `name` and `price`. There are still **32 rows**: one per menu
+          item.
+
+          The columns show up in the order you list them. This is how you ask for *just* what you
+          need.
+
+      - type: quiz
+        id: m00-l01-q2
+        question: In `SELECT name, price FROM menu_items;`, which keyword says **which table** to read from?
+        options:
+          - "SELECT"
+          - "FROM"
+          - "name"
+          - "price"
+        answer: 1
+        explanation: |
+          `FROM` names the table. `SELECT` lists the columns you want to see.
+
+      - type: example
+        title: Same recipe, different table
+        md: |
+          The café has other tables too. This one is called `staff`: the café team. Same recipe,
+          new table name!
+        sql: |
+          SELECT *
+          FROM staff;
+        after: |
+          That's the whole team: **10 rows** and **6 columns**.
+
+          Notice the column called `manager_id`. It holds a *number* that points to another person in
+          this same table. That's a first hint of how tables connect. More on that in lesson 4.
+
+      - type: exercise
+        id: m00-l01-e1
+        title: Meet the customers
+        prompt: |
+          The café also keeps a table called `customers`: the regulars in its loyalty program.
+
+          Show **every column** of **every row** in `customers`.
+        starter: |
+          SELECT *
+          FROM
+        solution: |
+          SELECT *
+          FROM customers;
+        hints:
+          - It is exactly the same recipe as the very first example. Only the table name changes.
+          - "Start with `SELECT *`, then the word `FROM`, then the table name."
+          - "SELECT * FROM ___;"
+        explanation: |
+          Same recipe, different table: `SELECT *` plus `FROM table_name`. You got **28 rows** (28
+          customers) and **7 columns**.
+        difficulty: 1
+
+      - type: exercise
+        id: m00-l01-e2
+        title: Names and cities
+        prompt: |
+          Show each customer's `first_name` and `city`. Nothing else.
+        starter: |
+          SELECT
+          FROM customers;
+        solution: |
+          SELECT first_name, city
+          FROM customers;
+        hints:
+          - You want two columns, so list two column names after `SELECT`.
+          - Put a comma between the two column names.
+          - "SELECT first_name, ___ FROM customers;"
+        explanation: |
+          Two columns, separated by a comma, in the order you wrote them. The table is still
+          `customers`, so you still get **28 rows**.
+        difficulty: 1
+
+      - type: read
+        title: Many tables, one café
+        md: |
+          You have now peeked at three of the café's tables. There is a fourth one called `orders`
+          (every drink and snack that was sold).
+
+          | Table | What's in it |
+          |---|---|
+          | `menu_items` | what the café sells |
+          | `customers` | the loyalty-program regulars |
+          | `staff` | the café team |
+          | `orders` | every order that was placed |
+
+          Why four tables instead of one giant spreadsheet? Imagine writing "Caramel Latte, $4.95,
+          Coffee, 250 calories…" again on every single order. If the price changed, you would have to
+          fix it in hundreds of places!
+
+          Instead, an order just stores a small number (the *id* of the menu item) and the database
+          looks up the rest. Tables that point to each other like this are called **related** tables,
+          which is why PostgreSQL is a **relational database**.
+
+          The golden rule for now: **one table holds one kind of thing**.
+
+      - type: predict
+        id: m00-l01-p1
+        question: |
+          Look back at the `category` column of the first example. What will this query show?
+        sql: |
+          SELECT category
+          FROM menu_items;
+        options:
+          - "One column with 32 rows, so the same category appears many times"
+          - "One column with 6 rows, one for each different category"
+          - "All 8 columns"
+          - "An error"
+        answer: 0
+        explanation: |
+          SQL gives you one result row for every row in the table, so `category` shows up **32
+          times**. "Coffee" appears 8 times, for example. Don't worry: in the next module you'll
+          learn how to ask for each category only once.
+
+      - type: fill
+        id: m00-l01-f1
+        prompt: Complete the query to show each menu item's `name` and `category`.
+        template: |
+          SELECT name, ___
+          FROM ___;
+        answers:
+          - ["category"]
+          - ["menu_items"]
+        explanation: |
+          After `SELECT` you list the columns (separated by commas), and after `FROM` you name the
+          table.
+
+      - type: exercise
+        id: m00-l01-e3
+        title: The team's pay
+        prompt: |
+          Show each staff member's `name`, `role` and `hourly_rate` (their pay per hour).
+        starter: |
+          SELECT
+          FROM staff;
+        solution: |
+          SELECT name, role, hourly_rate
+          FROM staff;
+        hints:
+          - The table is `staff`. Which three columns do you need?
+          - "List them after `SELECT`, with commas in between: name, role, ..."
+          - "SELECT name, role, ___ FROM staff;"
+        explanation: |
+          Three columns, 10 rows. Whenever you forget a column name, run `SELECT * FROM staff;`
+          first to see all of them.
+        difficulty: 2
+
+      - type: parsons
+        id: m00-l01-o1
+        prompt: |
+          Put the lines in the right order to show each menu item's `name` and `price`.
+        lines:
+          - SELECT name, price
+          - FROM menu_items;
+        explanation: |
+          `SELECT` (what you want to see) always comes before `FROM` (where it lives).
+
+      - type: exercise
+        id: m00-l01-e4
+        title: A newsletter list
+        prompt: |
+          Maria wants to send a newsletter to the regulars. Show each customer's `first_name`,
+          `last_name`, `email` and `city`, in that order.
+        starter: |
+          SELECT
+          FROM customers;
+        solution: |
+          SELECT first_name, last_name, email, city
+          FROM customers;
+        hints:
+          - Four columns this time, so three commas.
+          - There is no comma after the last column.
+          - "SELECT first_name, last_name, ___, ___ FROM customers;"
+        explanation: |
+          Some of the `email` cells say **NULL**. That means the customer never gave the café an
+          email address. We'll meet NULL properly in lesson 4.
+        difficulty: 2
+
+      - type: read
+        title: You did it!
+        md: |
+          Look at what you can already do: ask a real database for a whole table, or just the columns
+          you care about. 🎉
+
+          **Remember:**
+
+          - A **table** is made of **rows** (records) and **columns** (fields).
+          - **SQL** is the language for asking a database questions (queries).
+          - `SELECT` says *what* to show, `FROM` says *where* to look.
+
+          > [!MISTAKE]
+          > A very common slip is forgetting `FROM`. `SELECT * menu_items;` makes PostgreSQL complain
+          > with *syntax error at or near "menu_items"*, because it doesn't know what `menu_items`
+          > is doing there. Always: `SELECT` the columns, then `FROM` the table.
+
+          > [!REAL-WORLD]
+          > Analysts, developers and scientists write queries like this every day, just on bigger
+          > tables: "Which products sold best last month?", "Which customers haven't ordered lately?"
+          > You'll be able to answer questions like those by the end of this course.
+    cheatsheet:
+      - title: Show a whole table
+        sql: |
+          SELECT *
+          FROM menu_items;
+        note: "* means every column. FROM names the table."
+      - title: Pick some columns
+        sql: |
+          SELECT name, price
+          FROM menu_items;
+        note: Separate the columns with commas. They appear in the order you list them.
+  - id: m00-l02
+    title: Your SQL workspace
+    summary: Learn the editor, the Run and Check buttons, the result grid and the Tables panel.
+    minutes: 15
+    steps:
+      - type: read
+        title: A tour of your workspace
+        md: |
+          It's your second day at Bean & Bloom. Maria shows you around the back office:
+          *"This is where you ask the database your questions."*
+
+          In SQL Quest, every example and exercise comes with a small **workspace** that has three parts:
+
+          1. **The editor.** The box where you type SQL. Keywords like `SELECT` get colours, the lines
+             are numbered, and helpful suggestions pop up as you type (tap one, or press Enter, to
+             accept it).
+          2. **The Run button.** It sends your query to the database. On a computer you can also press
+             **Ctrl + Enter** (**⌘ + Enter** on a Mac). On a phone or tablet, just tap **Run**.
+          3. **The result grid.** The table that comes back, right under the editor.
+
+          On a phone, exercises also show a row of quick keys above the editor (`SELECT`, `FROM`,
+          `*`, commas, quotes…), so you never have to hunt for awkward symbols.
+
+          Let's try it!
+
+      - type: example
+        title: Run it and read the grid
+        md: |
+          Press **Run**, then look closely at what appears under the editor.
+        sql: |
+          SELECT *
+          FROM staff;
+        after: |
+          Here's how to read the result grid:
+
+          - The first column, **#**, is just a row counter. It isn't part of your data.
+          - Each column header shows the column's **name** and, in small letters, its **type**
+            (like `text` or `integer`). Lesson 4 explains types.
+          - Under the table you can see how many rows came back (**10 rows** here) and how long the
+            query took, in milliseconds (ms).
+          - A cell that says **NULL** is empty. Look at Maria's `manager_id`. We'll meet NULL soon.
+
+      - type: read
+        title: The other buttons
+        md: |
+          Exercises have a few extra buttons. Here is what each one does:
+
+          | Button | What it does |
+          |---|---|
+          | **Check answer** | Runs your query and compares your *result* with the correct one. A green banner means you got it! |
+          | **Get a hint** | Shows hints one at a time, from a gentle nudge to an almost-complete answer. |
+          | **Expected** | Shows what the correct result looks like, so you know what to aim for. |
+          | **Format** | Tidies the spacing and turns keywords into CAPITALS. |
+          | **↺** (reset) | Puts the starting code back in the editor. |
+          | **Tables** | Opens the table browser (next, in a moment). |
+
+          If your answer isn't right yet, don't worry: SQL Quest shows your result next to the
+          expected result, so you can spot the difference. After two tries (or once you've seen all the
+          hints) a **Show me the solution** button appears. Using it is completely fine!
+
+          Because Check compares **results**, not exact wording, there are usually many correct ways
+          to write the same query.
+
+      - type: quiz
+        id: m00-l02-q1
+        question: What does the **Check answer** button do?
+        options:
+          - "Runs your query and compares its result with the correct result"
+          - "Saves your query for later"
+          - "Deletes your query"
+          - "Makes your query run faster"
+        answer: 0
+        explanation: |
+          **Check answer** compares what your query *returns* with the expected result. **Run** only
+          shows you what your query returns, without grading it.
+
+      - type: example
+        title: Edit it and run it again
+        md: |
+          The editor is yours: you can change anything. Press **Run** once. Then add `, calories`
+          after `price` (don't forget the comma!) and press **Run** again.
+        sql: |
+          SELECT name, price
+          FROM menu_items;
+        after: |
+          If you added `, calories`, a third column appeared. Asking, looking, tweaking and asking
+          again is how everyone works with SQL, from beginners to experts.
+
+          You can edit **every** example in this course and re-run it as often as you like.
+
+      - type: read
+        title: The Tables panel
+        md: |
+          Can't remember a table or column name? Open the **Tables** panel (on a phone, it is the little
+          columns icon).
+
+          - Tap a **table** to open it and see its columns.
+          - A small **key** icon marks a table's *primary key* and a **chain-link** icon marks a column
+            that *links to another table*. Lesson 4 explains both.
+          - The small grey word at the end of each column is its type.
+          - The **eye** icon shows a quick 10-row preview of that table. It's perfect for peeking at
+            a table you haven't seen yet.
+          - Tap a column name to drop it into your query.
+
+          > [!MISTAKE]
+          > The result only changes when you press **Run**. If you edit your query but forget to press
+          > Run, you are still looking at the *old* result and might think your change did nothing.
+
+      - type: quiz
+        id: m00-l02-q2
+        question: |
+          You changed your query, but the result grid looks exactly like before. What is the most
+          likely reason?
+        options:
+          - "You haven't pressed Run since the change"
+          - "The database is broken"
+          - "Results are only updated once per day"
+          - "You need to restart the app"
+        answer: 0
+        explanation: |
+          The grid always shows the result of the **last time you pressed Run**. Edit, then Run!
+
+      - type: exercise
+        id: m00-l02-e1
+        title: Try the hint button
+        prompt: |
+          Show each customer's `first_name` and `loyalty_points`.
+
+          *This one is for practising the workspace: press **Get a hint** once to see how hints
+          work, then write your query and press **Check answer**.*
+        starter: |
+          SELECT
+          FROM customers;
+        solution: |
+          SELECT first_name, loyalty_points
+          FROM customers;
+        hints:
+          - Both columns belong to the `customers` table. Open Tables to see their exact names.
+          - "List the two column names after SELECT, separated by a comma."
+          - "SELECT first_name, ___ FROM customers;"
+        explanation: |
+          Hints are there to help whenever you are stuck. Using them is a normal part of learning.
+        difficulty: 1
+
+      - type: exercise
+        id: m00-l02-e2
+        title: Look up a column
+        prompt: |
+          Show each staff member's `name` and the date they were hired (the column `hired_on`).
+
+          *Not sure which columns the `staff` table has? Open the **Tables** panel, or run
+          `SELECT * FROM staff;` first.*
+        starter: |
+          SELECT
+          FROM staff;
+        solution: |
+          SELECT name, hired_on
+          FROM staff;
+        hints:
+          - Open the Tables panel and tap `staff` to see its columns.
+          - The two columns you need are `name` and `hired_on`.
+          - "SELECT name, ___ FROM staff;"
+        explanation: |
+          Looking up column names in the Tables panel (or with `SELECT *`) is a habit every SQL
+          developer has, even experts.
+        difficulty: 1
+
+      - type: example
+        title: Peek at a big table with LIMIT
+        md: |
+          The `orders` table is the café's biggest, with 180 rows. To peek at just the first few
+          rows, add `LIMIT 5` at the end. `LIMIT` means "stop after this many rows".
+        sql: |
+          SELECT *
+          FROM orders
+          LIMIT 5;
+        after: |
+          Only 5 rows! Each row is one order: who ordered (`customer_id`), what (`item_id`), how many
+          (`quantity`), when (`order_time`) and more.
+
+          Without any sorting, the database simply hands back rows in whatever order it finds them,
+          usually the order they were stored. Sorting is the topic of module 3, and you'll learn
+          `LIMIT` properly in module 1.
+
+      - type: exercise
+        id: m00-l02-e3
+        title: A short peek
+        prompt: |
+          Show **every column** of the **first 6 rows** of `menu_items`.
+        starter: |
+          SELECT *
+          FROM menu_items
+        solution: |
+          SELECT *
+          FROM menu_items
+          LIMIT 6;
+        hints:
+          - You need the word LIMIT, then a number.
+          - "`LIMIT` goes at the very end of the query."
+          - "SELECT * FROM menu_items LIMIT ___;"
+        explanation: |
+          `LIMIT 6` stops the result after 6 rows. The `;` at the end finishes the query.
+        difficulty: 1
+
+      - type: predict
+        id: m00-l02-p1
+        question: What will this query return?
+        sql: |
+          SELECT *
+          FROM customers
+          LIMIT 3;
+        options:
+          - "3 rows and 7 columns"
+          - "3 rows and 1 column"
+          - "28 rows and 7 columns"
+          - "7 rows and 3 columns"
+        answer: 0
+        explanation: |
+          `SELECT *` keeps all 7 columns of `customers`, and `LIMIT 3` cuts the result to 3 rows.
+
+      - type: example
+        title: Four queries, four results
+        md: |
+          You can run several queries at once: just end each one with a semicolon `;`. Press **Run**,
+          then tap the **Result 1**, **Result 2**, **Result 3** and **Result 4** buttons under the
+          editor. The number in brackets is the row count.
+        sql: |
+          SELECT * FROM menu_items;
+          SELECT * FROM customers;
+          SELECT * FROM staff;
+          SELECT * FROM orders;
+        after: |
+          You just visited every table in the café:
+
+          | Result | Table | Rows |
+          |---|---|---|
+          | 1 | `menu_items` | 32 |
+          | 2 | `customers` | 28 |
+          | 3 | `staff` | 10 |
+          | 4 | `orders` | 180 |
+
+          That's 250 rows in total. For long results the grid shows the first 100 rows; tap **Show
+          more** to see the rest.
+
+      - type: exercise
+        id: m00-l02-e4
+        title: Order details
+        prompt: |
+          Show the `order_id`, `order_time` and `payment_method` of the **first 10 rows** of `orders`.
+        starter: |
+          SELECT
+          FROM orders
+        solution: |
+          SELECT order_id, order_time, payment_method
+          FROM orders
+          LIMIT 10;
+        hints:
+          - Three columns after SELECT, separated by commas.
+          - "After the table name, add `LIMIT 10`."
+          - "SELECT order_id, ___, ___ FROM orders LIMIT 10;"
+        explanation: |
+          You combined a column list with `LIMIT`. Each order has a date *and time* (`order_time`)
+          and a payment method: `card`, `cash` or `app`.
+        difficulty: 2
+
+      - type: read
+        title: You can't break the café
+        md: |
+          Here's something that might surprise you: **nothing you do here can break the café.**
+
+          Every time you press **Run**, the database starts from a fresh copy of the café's data.
+          Whatever happened in the previous run is gone.
+
+          Let's prove it with something that sounds scary. The next example uses a command called
+          `DELETE`, which erases rows. Don't try to understand it yet; it is just a sneak peek at
+          module 12. Run it and watch what happens.
+
+      - type: example
+        title: Delete every order (!)
+        md: |
+          This deletes all the orders and then shows the `orders` table. Press **Run**.
+        sql: |
+          DELETE FROM orders;
+          SELECT * FROM orders;
+        after: |
+          Yikes, all 180 orders are gone: the second query shows an empty table (0 rows).
+
+          Now go to the next example, without changing anything.
+
+      - type: example
+        title: Phew, they're back
+        md: |
+          Let's look at the `orders` table again. Press **Run**.
+        sql: |
+          SELECT *
+          FROM orders
+          LIMIT 3;
+        after: |
+          The orders are back! This run started from a fresh copy of the data, so the deletion from
+          the last run never happened here.
+
+          > [!WARNING]
+          > Real company databases are *not* practice copies. A `DELETE` there can be very hard to
+          > undo, which is why professionals are careful. You'll learn those safety habits in
+          > module 12. (If you ever want your changes to stick around while experimenting, the app's
+          > **Playground** keeps them.)
+
+      - type: fill
+        id: m00-l02-f1
+        prompt: Complete the query to show the first 3 rows of the `staff` table.
+        template: |
+          SELECT *
+          FROM ___
+          LIMIT ___;
+        answers:
+          - ["staff"]
+          - ["3"]
+        explanation: |
+          The table name goes after `FROM`, and the number of rows goes after `LIMIT`.
+
+      - type: parsons
+        id: m00-l02-o1
+        prompt: |
+          Put the lines in the right order to show the `order_id` and `quantity` of the first 4 orders.
+        lines:
+          - SELECT order_id, quantity
+          - FROM orders
+          - LIMIT 4;
+        explanation: |
+          The order is always SELECT (what), FROM (where), then LIMIT (how many).
+
+      - type: exercise
+        id: m00-l02-e5
+        title: Menu preview
+        prompt: |
+          Show the `item_id`, `name`, `price` and `calories` of the **first 8 rows** of `menu_items`
+          (in that order).
+        starter: |
+          SELECT
+          FROM menu_items
+        solution: |
+          SELECT item_id, name, price, calories
+          FROM menu_items
+          LIMIT 8;
+        hints:
+          - You need four columns and a LIMIT.
+          - "SELECT item_id, name, ... FROM menu_items LIMIT 8;"
+          - "SELECT item_id, name, ___, ___ FROM menu_items LIMIT 8;"
+        explanation: |
+          Column list first, table second, `LIMIT` last. You've now used every part of the
+          workspace!
+        difficulty: 2
+
+      - type: read
+        title: Workspace mastered
+        md: |
+          Great work! You now know how to use the whole workspace:
+
+          - Type in the **editor**, press **Run** (Ctrl/⌘ + Enter) and read the **result grid**.
+          - Use **Check answer** on exercises, **Get a hint** when stuck, and **Tables** to look up
+            names.
+          - Every run starts from a **fresh copy** of the data, so experiment freely.
+          - `LIMIT n` is a handy way to peek at a long table.
+
+          > [!TIP]
+          > Curious about something? **Try it!** Change a table name, add a column, break a query on
+          > purpose. Experimenting is the fastest way to learn SQL, and now you know it's safe.
+    cheatsheet:
+      - title: Peek at the first rows
+        sql: |
+          SELECT *
+          FROM orders
+          LIMIT 5;
+        note: LIMIT n stops after n rows. It is perfect for peeking at big tables.
+      - title: Run several queries at once
+        sql: |
+          SELECT * FROM staff;
+          SELECT * FROM customers;
+        note: End every query with a semicolon. Each result gets its own button under the editor.
+  - id: m00-l03
+    title: Errors are your friends
+    summary: Learn to read error messages and fix typos, missing commas and semicolons.
+    minutes: 15
+    steps:
+      - type: read
+        title: Meet the red box
+        md: |
+          Day three at the café. You type a query quickly, press **Run**… and a **red box** appears. 😬
+
+          Take a breath. **This is completely normal.** Every developer, even the most experienced
+          one, sees error messages every single day. They are not a sign that you're bad at this.
+          They are the database *helping* you.
+
+          When something goes wrong, SQL Quest shows you:
+
+          - a **plain-English title** (what kind of problem it is),
+          - a short **explanation**,
+          - a few **tips** to try,
+          - a wavy red underline in the editor, right at the spot where PostgreSQL got confused.
+
+          Want the original wording? Tap **PostgreSQL's exact message**. Real error messages are short
+          and get easy to read with practice.
+
+          And remember: **an error never breaks anything.** You fix the query and press **Run** again.
+
+      - type: example
+        title: A typo in a keyword
+        md: |
+          This query has a typo on purpose. Press **Run** and look at the red box.
+        sql: |
+          SELCT *
+          FROM menu_items;
+        expectError: true
+        after: |
+          PostgreSQL says: `syntax error at or near "SELCT"`.
+
+          **Syntax** means grammar: the rules for how SQL must be written. PostgreSQL doesn't
+          recognise the word `SELCT`, so it stops right there. The fix is to spell it `SELECT`.
+
+      - type: exercise
+        id: m00-l03-e1
+        title: Fix the typo
+        prompt: |
+          This query has a typo in it. Fix it so it shows each menu item's `name` and `price`.
+
+          *Tip: press **Run** first and read the red box.*
+        starter: |
+          SELCT name, price
+          FROM menu_items;
+        solution: |
+          SELECT name, price
+          FROM menu_items;
+        hints:
+          - Run the query and read the message. It points at one word.
+          - One keyword is misspelled. What should it be?
+          - "The first word should be SELECT."
+        explanation: |
+          One missing letter was enough to stop the whole query, and the message
+          (`near "SELCT"`) told you exactly where to look.
+        difficulty: 1
+
+      - type: example
+        title: A typo in a table name
+        md: |
+          This time the database will complain about a table. Press **Run**.
+        sql: |
+          SELECT *
+          FROM menu_item;
+        expectError: true
+        after: |
+          PostgreSQL says: `relation "menu_item" does not exist`.
+
+          "Relation" is PostgreSQL's word for a table. There is no table called `menu_item`: ours is
+          `menu_items`, with an **s**. SQL Quest adds a tip too: *Did you mean "menu_items"?*
+
+          The **Tables** panel always shows the exact table names.
+
+      - type: exercise
+        id: m00-l03-e2
+        title: Fix the table name
+        prompt: |
+          This query should show every column of every row in the `customers` table, but it fails.
+          Run it, read the message, and fix it.
+        starter: |
+          SELECT *
+          FROM customer;
+        solution: |
+          SELECT *
+          FROM customers;
+        hints:
+          - Read the message. It says a table does not exist.
+          - Compare the table name in the query with the name in the Tables panel.
+          - "The table name needs an s at the end."
+        explanation: |
+          Table names must match exactly. `customer` and `customers` are two different words to the
+          database.
+        difficulty: 1
+
+      - type: quiz
+        id: m00-l03-q1
+        question: |
+          PostgreSQL says: `relation "staf" does not exist`. What is the problem?
+        options:
+          - "There is no table with that name, probably a typo for `staff`"
+          - "The query is missing its semicolon"
+          - "A column name is misspelled"
+          - "The database is offline"
+        answer: 0
+        explanation: |
+          "Relation" means table. A message about a *column* would say `column "..." does not exist`.
+
+      - type: exercise
+        id: m00-l03-e3
+        title: Fix the column name
+        prompt: |
+          Show each customer's `first_name` and `last_name`. The query below has a bug.
+        starter: |
+          SELECT first_name, lastname
+          FROM customers;
+        solution: |
+          SELECT first_name, last_name
+          FROM customers;
+        hints:
+          - Run it. The message mentions a column that does not exist.
+          - PostgreSQL's HINT line suggests the column it thinks you meant.
+          - "The column is called last_name, with an underscore."
+        explanation: |
+          PostgreSQL's HINT said *Perhaps you meant to reference the column "customers.last_name"*.
+          Hints like that are gold, so always read them! Column names must match exactly, underscores
+          included.
+        difficulty: 1
+
+      - type: read
+        title: Commas, commas, commas
+        md: |
+          The columns in a `SELECT` list are separated by **commas**, and there is **no comma after
+          the last column**. Two slips are very common:
+
+          - An **extra comma** before `FROM`: PostgreSQL expects another column, but `FROM` arrives.
+          - A **missing comma** between two columns. This sometimes gives an error, and sometimes
+            (sneaky!) no error at all. You'll see that in a minute.
+
+          > [!MISTAKE]
+          > `SELECT name, price, FROM menu_items;` has a comma too many. PostgreSQL answers
+          > *syntax error at or near "FROM"*: the last comma promised one more column, then `FROM`
+          > showed up instead.
+
+      - type: exercise
+        id: m00-l03-e4
+        title: One comma too many
+        prompt: |
+          Show each customer's `first_name` and `city`. The query below has a bug.
+        starter: |
+          SELECT first_name, city,
+          FROM customers;
+        solution: |
+          SELECT first_name, city
+          FROM customers;
+        hints:
+          - The message says something is wrong near FROM.
+          - Look at the end of the SELECT line.
+          - "Remove the comma after the last column (city)."
+        explanation: |
+          The rule: commas go *between* columns, never after the last one.
+        difficulty: 2
+
+      - type: example
+        title: The sneaky missing comma
+        md: |
+          Here a comma is missing between `name` and `price`. Press **Run** and see what the database
+          does.
+        sql: |
+          SELECT name price
+          FROM menu_items;
+        after: |
+          No error! But look closely: you got **one** column, it is called `price`, and it holds the
+          item *names*.
+
+          PostgreSQL lets you give a column a nickname (an **alias**) by writing it right after the
+          column. So it read `name price` as "show `name`, and call that column `price`". You'll learn
+          aliases on purpose in lesson m01-l02.
+
+          > [!WARNING]
+          > "No error" doesn't always mean "right answer". After every Run, glance at the **columns**
+          > and the **row count** you got.
+
+      - type: exercise
+        id: m00-l03-e5
+        title: Spot the missing comma
+        prompt: |
+          Maria wants both the `name` and the `price` of every menu item, but this query shows only
+          one column. Fix the bug.
+        starter: |
+          SELECT name price
+          FROM menu_items;
+        solution: |
+          SELECT name, price
+          FROM menu_items;
+        hints:
+          - Count the columns in the result. How many do you want?
+          - Two column names in a row need something between them.
+          - "Put a comma between name and price."
+        explanation: |
+          With the comma, `name` and `price` are two separate columns. Without it, PostgreSQL read
+          `price` as a nickname for `name`.
+        difficulty: 2
+
+      - type: predict
+        id: m00-l03-p1
+        question: What happens when you run this query?
+        sql: |
+          SELECT name, price
+          FORM menu_items;
+        options:
+          - "An error (a syntax error)"
+          - "32 rows with the columns name and price"
+          - "0 rows"
+          - "1 row"
+        answer: 0
+        expectError: true
+        explanation: |
+          `FORM` is a typo for `FROM`. Notice that the message says *near "menu_items"*, not near
+          `FORM`: PostgreSQL took `FORM` for a nickname for `price`, and only noticed the problem at
+          the next word.
+
+          So when an error points at a word, the real mistake is often **at that word or just before it**.
+
+      - type: read
+        title: The semicolon
+        md: |
+          The semicolon `;` marks the end of a query. When you write **several queries**, each one needs
+          its own `;`, so PostgreSQL knows where one ends and the next begins.
+
+          This app is relaxed: a single query still runs if you forget the last `;`. But make it a
+          habit to always write it. Some tools (like PostgreSQL's own command-line tool) wait for it
+          and do nothing without it.
+
+      - type: example
+        title: Two queries, one semicolon missing
+        md: |
+          The first query has no semicolon. Press **Run** and read the message.
+        sql: |
+          SELECT * FROM staff
+          SELECT * FROM menu_items;
+        expectError: true
+        after: |
+          PostgreSQL read both lines as *one* long sentence, so the second `SELECT` made no sense:
+          `syntax error at or near "SELECT"`.
+
+          The fix: put a `;` at the end of the first query.
+
+      - type: read
+        title: Do capital letters matter?
+        md: |
+          It depends on *what* is capitalised:
+
+          - **Keywords** (`SELECT`, `FROM`…) and **table and column names**: **no**. `select` works as well
+            as `SELECT`, and `MENU_ITEMS` finds the table `menu_items`. We write keywords in CAPITALS only
+            because it is easier to read.
+          - **Data inside the table** (the actual text in the cells): **yes**. `'Espresso'` and
+            `'espresso'` are different pieces of text.
+
+          > [!NOTE]
+          > PostgreSQL turns unquoted table and column names into lowercase behind the scenes. That is
+          > why we always write them in lowercase too.
+
+      - type: example
+        title: Capitals in keywords and names
+        md: |
+          This query is written in a messy mix of capitals. Will it work?
+        sql: |
+          select Name, PRICE
+          from MENU_ITEMS
+          limit 3;
+        after: |
+          It works! Capitals in keywords and names don't matter, and the column headers come back in
+          lowercase.
+
+      - type: example
+        title: Capitals in the data
+        md: |
+          Here's a quick peek ahead at module 2: `WHERE` keeps only the rows that match a condition.
+          Press **Run**, then tap **Result 1** and **Result 2**.
+        sql: |
+          SELECT * FROM menu_items WHERE name = 'espresso';
+          SELECT * FROM menu_items WHERE name = 'Espresso';
+        after: |
+          Result 1 has **0 rows**: no item is named `espresso` with a small "e". Result 2 has **1 row**:
+          the Espresso.
+
+          Capitals inside the *data* matter. Keep that in mind when you search for text!
+
+      - type: quiz
+        id: m00-l03-q2
+        question: Which of these queries run **without an error**? Pick all that apply.
+        options:
+          - "`select * from staff;`"
+          - "`SELECT * FROM Staff;`"
+          - "`SELECT * FORM staff;`"
+          - "`SELECT name, FROM staff;`"
+        answer: [0, 1]
+        explanation: |
+          Keywords and table names aren't case-sensitive, so the first two work. The third has the
+          typo `FORM`, and the fourth has a comma too many before `FROM`.
+
+      - type: fill
+        id: m00-l03-f1
+        prompt: Add the missing commas so the query shows `name`, `price` and `calories` as three columns.
+        template: |
+          SELECT name___ price___ calories
+          FROM menu_items;
+        answers:
+          - [","]
+          - [","]
+        explanation: |
+          One comma between each pair of columns, and none after the last one.
+
+      - type: parsons
+        id: m00-l03-o1
+        prompt: |
+          Put the lines in the right order. One line has a comma that would cause an error, so leave
+          it out!
+        lines:
+          - SELECT first_name,
+          - last_name,
+          - city
+          - FROM customers;
+        distractors:
+          - city,
+        explanation: |
+          The last column (`city`) must not be followed by a comma.
+
+      - type: read
+        title: Your debugging routine
+        md: |
+          When a query fails, follow these four steps:
+
+          1. **Read the title and the message.** It often names the exact problem.
+          2. **Find the spot.** Look at the underlined word *and the word just before it*.
+          3. **Check the usual suspects:** spelling of keywords, tables and columns, commas, quotes and
+             semicolons.
+          4. **Fix one thing, then Run again.** With several bugs, each Run reveals the next one.
+
+          Ready for a query with more than one bug?
+
+      - type: exercise
+        id: m00-l03-e6
+        title: Three bugs in one
+        prompt: |
+          This query has **three** bugs. Fix them all so it shows each menu item's `name` and
+          `category`.
+
+          *Tip: fix one bug, press Run, and read the next message.*
+        starter: |
+          SELCT name, category,
+          FROM menu_item;
+        solution: |
+          SELECT name, category
+          FROM menu_items;
+        hints:
+          - Fix them one at a time. Run the query and read the first message.
+          - "The three bugs: a misspelled keyword, an extra comma, and a table name that is missing a letter."
+          - "SELECT name, category FROM menu_items;"
+        explanation: |
+          You found them all: the misspelled `SELECT`, the extra comma before `FROM`, and the table
+          name `menu_items`. Fixing bugs one at a time is exactly how experts do it.
+        difficulty: 3
+
+      - type: read
+        title: Errors are your superpower
+        md: |
+          You can now read most beginner error messages and fix them. 💪
+
+          - `syntax error at or near "X"`: look at **X and the word before it** (typo, comma, missing `;`).
+          - `relation "X" does not exist`: **table name** typo.
+          - `column "X" does not exist`: **column name** typo. Read the HINT!
+          - No error but a strange result? Check the **columns** and the **row count**.
+
+          > [!REAL-WORLD]
+          > Professional developers spend a big part of their day reading error messages and fixing
+          > queries. Staying calm and reading carefully is a real, valuable skill, and you just
+          > practised it.
+    cheatsheet:
+      - title: Common error messages
+        sql: |
+          -- syntax error at or near "SELCT"      -> typo in a keyword
+          -- relation "menu_item" does not exist  -> table name typo
+          -- column "nam" does not exist          -> column name typo
+          SELECT name, price
+          FROM menu_items;
+        note: Read the message and the HINT, then look at the underlined word and the word before it.
+      - title: Commas and semicolons
+        sql: |
+          SELECT name, price
+          FROM menu_items;
+        note: Commas go between columns, never after the last one. End every query with a semicolon.
+  - id: m00-l04
+    title: How databases think
+    summary: See how tables link together with ids, meet data types and NULL, and get a map of the whole course.
+    minutes: 18
+    steps:
+      - type: read
+        title: Who ordered order number 1?
+        md: |
+          Maria is looking at the very first order of the quarter and asks:
+
+          *"Who ordered this, what was it, and who served them?"*
+
+          To answer, we have to follow clues between **tables**. This is how databases "think": each
+          table holds one kind of thing, and tables point to each other using **ids** (numbers).
+
+          Let's play detective. 🔎
+
+      - type: example
+        title: Clue 1, the order itself
+        md: |
+          Here are the first three orders. Look at **order 1**. Press **Run**.
+        sql: |
+          SELECT order_id, customer_id, item_id, staff_id
+          FROM orders
+          LIMIT 3;
+        after: |
+          Order 1 says `customer_id` **24**, `item_id` **7** and `staff_id` **7**. Just numbers, no
+          names! The names live in other tables, and these numbers are the *clues* that point to them.
+
+          (Order 2 has an empty **NULL** cell. Hold that thought: NULL is coming up in a minute.)
+
+      - type: example
+        title: Clue 2, who is customer 24?
+        md: |
+          The `customers` table has a `customer_id` column too. Find the row where it says **24**.
+        sql: |
+          SELECT customer_id, first_name, last_name
+          FROM customers;
+        after: |
+          Customer **24** is **Jack Scott**. So Jack placed order 1.
+
+      - type: example
+        title: Clue 3, what is item 7?
+        md: |
+          Now find `item_id` **7** in the menu.
+        sql: |
+          SELECT item_id, name
+          FROM menu_items;
+        after: |
+          Item **7** is the **Caramel Latte**. One more clue to go: who served Jack?
+
+      - type: exercise
+        id: m00-l04-e1
+        title: Clue 4, who is staff member 7?
+        prompt: |
+          Show the `staff_id` and `name` of everyone in the `staff` table. Then find staff member
+          number **7** in the result. They served order 1!
+        starter: |
+          SELECT
+          FROM staff;
+        solution: |
+          SELECT staff_id, name
+          FROM staff;
+        hints:
+          - The table is `staff`. You need two columns.
+          - "SELECT staff_id, ___ FROM staff;"
+          - "Then scan the staff_id column for the number 7."
+        explanation: |
+          Staff member **7** is **Omar Haddad**. Case closed: *Jack Scott bought a Caramel Latte, served
+          by Omar Haddad.* You just joined three tables by hand! In module 6 you'll teach the database to
+          do this for you in one query.
+        difficulty: 1
+
+      - type: read
+        title: Why ids instead of names?
+        md: |
+          Why does `orders` store the number `24` instead of the name "Jack Scott"?
+
+          - Names can **repeat**. In `customers` there are two customers named Dmitri
+            (Dmitri Schmidt and Dmitri Fischer), and two named Omondi.
+          - Names can **change** or be misspelled. An id never changes.
+          - A short number is quicker for the computer to look up.
+
+          So every table has a column whose value is **different in every row and never empty**. It is
+          called the **primary key**. In `customers` it is `customer_id`.
+
+          A column in *another* table that stores such an id is called a **foreign key**. For example,
+          `orders.customer_id` points to `customers.customer_id`.
+
+          > [!ANALOGY]
+          > A primary key is like a passport number or a library-card number. Two people can share a
+          > name, but never a passport number.
+
+          Want to see them? Open the **Tables** panel and look at `orders`. The key icon marks a
+          primary key, and the chain-link icon marks the columns that link to other tables.
+
+      - type: quiz
+        id: m00-l04-q1
+        question: Why does the `orders` table store a `customer_id` number instead of the customer's name?
+        options:
+          - "Names can repeat or change, but an id is unique and stable"
+          - "Computers cannot store letters"
+          - "SQL does not allow names in tables"
+          - "To make the table look bigger"
+        answer: 0
+        explanation: |
+          Ids are unique and never change, so they identify a row without any confusion. Names can
+          appear twice (two Dmitris!) or be spelled differently.
+
+      - type: read
+        title: Data types in plain words
+        md: |
+          Every column holds one **type** of data. The type decides what you can do with it (you can add
+          two numbers, but you can't add two words). You have already seen type names in small letters
+          in each column header.
+
+          | Type | In plain words | Example column |
+          |---|---|---|
+          | `text` | words and letters | `name` |
+          | `integer` | whole numbers | `calories` |
+          | `numeric` | numbers with decimals, great for money | `price` |
+          | `boolean` | true or false (yes or no) | `is_vegan` |
+          | `date` | a calendar day | `added_on` |
+          | `timestamp` | a date plus a time of day | `order_time` |
+
+      - type: example
+        title: Spot the types
+        md: |
+          Run this query and read the small type label in each column header.
+        sql: |
+          SELECT name, price, calories, is_vegan, added_on
+          FROM menu_items;
+        after: |
+          The headers say `text`, `numeric`, `integer`, `boolean` and `date`. Notice that numbers are
+          lined up on the **right** and text on the left, and that `is_vegan` holds only `true` or
+          `false`.
+
+      - type: quiz
+        id: m00-l04-q2
+        question: |
+          A column records whether a customer has a loyalty card: yes or no. Which type fits best?
+        options:
+          - "boolean"
+          - "date"
+          - "integer"
+          - "timestamp"
+        answer: 0
+        explanation: |
+          A yes/no answer is exactly what `boolean` is for: `true` or `false`.
+
+      - type: exercise
+        id: m00-l04-e2
+        title: When did they join?
+        prompt: |
+          Show each customer's `first_name`, `joined_on` and `loyalty_points`. Then check the type label
+          of each column header.
+        starter: |
+          SELECT
+          FROM customers;
+        solution: |
+          SELECT first_name, joined_on, loyalty_points
+          FROM customers;
+        hints:
+          - All three columns are in `customers`.
+          - "Separate the three column names with commas."
+          - "SELECT first_name, ___, ___ FROM customers;"
+        explanation: |
+          The headers read `text`, `date` and `integer`. A `date` has no time of day, while
+          `orders.order_time` is a `timestamp`, which includes the time too.
+        difficulty: 1
+
+      - type: read
+        title: NULL, the empty cell
+        md: |
+          Some cells in the café's tables show **NULL**. NULL is SQL's way of saying **"there is no value
+          here"**. It can mean:
+
+          - **unknown:** nobody measured the calories yet,
+          - **missing:** a customer didn't share an email,
+          - **doesn't apply:** the top manager has no manager above her.
+
+          NULL is **not** the number 0 and **not** an empty piece of text.
+
+          > [!ANALOGY]
+          > Think of a paper form. A blank line means "no answer given" (NULL). A line where someone wrote
+          > "0" means "the answer is zero". Those are two very different things!
+
+          > [!MISTAKE]
+          > Don't read NULL as zero. "The Tiramisu Cup has NULL calories" does **not** mean "it has 0
+          > calories". It means "we don't know". Mixing the two up leads to wrong answers later on.
+
+      - type: example
+        title: NULL in calories
+        md: |
+          Run the query and look at the `calories` column.
+        sql: |
+          SELECT name, calories
+          FROM menu_items;
+        after: |
+          **4 items have NULL calories**: Smoked Salmon Bagel, Tiramisu Cup, Green Detox Juice and Berry
+          Smoothie. Nobody has measured them yet.
+
+          Compare that with the plain teas: Earl Grey, Green and Peppermint show **0**. That is a real
+          number (they have no calories). **0 is a value, NULL is "no value".**
+
+      - type: example
+        title: NULL in manager_id
+        md: |
+          Now look at `manager_id` in the `staff` table.
+        sql: |
+          SELECT name, role, manager_id
+          FROM staff;
+        after: |
+          Maria Santos, the manager, has a NULL `manager_id`: nobody is above her, so there is no
+          manager to point to. Everyone else's `manager_id` is the id of their boss (a foreign key to
+          the same table!).
+
+      - type: quiz
+        id: m00-l04-q3
+        question: |
+          In the menu, the `calories` of the Tiramisu Cup is NULL. What does that tell us?
+        options:
+          - "The calories are unknown (not recorded), so we can't say it is 0"
+          - "The Tiramisu Cup has 0 calories"
+          - "The Tiramisu Cup is not on the menu"
+          - "The Tiramisu Cup has 1 calorie"
+        answer: 0
+        explanation: |
+          NULL means "no value recorded". It is different from 0, which would be a real measurement.
+
+      - type: exercise
+        id: m00-l04-e3
+        title: Who reports to whom?
+        prompt: |
+          Show each staff member's `name` and `manager_id`. Which row has NULL?
+        starter: |
+          SELECT
+          FROM staff;
+        solution: |
+          SELECT name, manager_id
+          FROM staff;
+        hints:
+          - Two columns from the `staff` table.
+          - "The first column is name, the second is manager_id."
+          - "SELECT name, ___ FROM staff;"
+        explanation: |
+          The NULL belongs to Maria Santos, the manager. The `manager_id` values are *foreign keys* that
+          point to other rows of the same table: `1` is Maria, `2` is Ben Carter, and so on.
+        difficulty: 1
+
+      - type: exercise
+        id: m00-l04-e4
+        title: Orders with gaps
+        prompt: |
+          Show the `order_id`, `customer_id` and `tip` of the **first 10 rows** of `orders`.
+        starter: |
+          SELECT
+          FROM orders
+        solution: |
+          SELECT order_id, customer_id, tip
+          FROM orders
+          LIMIT 10;
+        hints:
+          - Three columns after SELECT, then the table, then a LIMIT.
+          - "Add `LIMIT 10` after the table name."
+          - "SELECT order_id, customer_id, ___ FROM orders LIMIT 10;"
+        explanation: |
+          Did you spot the NULLs? A NULL `customer_id` is a **walk-in customer** (no loyalty card), and
+          a NULL `tip` means no tip information was recorded for that order.
+        difficulty: 2
+
+      - type: fill
+        id: m00-l04-f1
+        prompt: Complete the query to show `order_id` and `customer_id` of the first 5 orders.
+        template: |
+          SELECT order_id, ___
+          FROM ___
+          LIMIT ___;
+        answers:
+          - ["customer_id"]
+          - ["orders"]
+          - ["5"]
+        explanation: |
+          Column list after `SELECT`, table after `FROM`, number of rows after `LIMIT`.
+
+      - type: parsons
+        id: m00-l04-o1
+        prompt: |
+          Put the lines in the right order to show the first 10 menu items' `item_id` and `name`.
+        lines:
+          - SELECT item_id, name
+          - FROM menu_items
+          - LIMIT 10;
+        explanation: |
+          `SELECT`, then `FROM`, then `LIMIT`: always in this order.
+
+      - type: read
+        title: The map of your journey
+        md: |
+          You have now met tables, rows, columns, ids, types and NULL. That is the vocabulary of every
+          database. Here is where the road leads:
+
+          | Stage | Modules | You'll be able to… |
+          |---|---|---|
+          | Foundations | 1 to 4 | Pick columns, filter rows, sort, and use functions |
+          | Summarise and combine | 5 to 9 | Count and average groups, join tables, use subqueries and CTEs |
+          | Advanced | 10 to 16 | Use window functions, change data, design tables, speed queries up |
+          | Expert | 17 to 20 | Program the database, clean messy data, run analytics |
+
+          And a first glance at the keywords you'll meet:
+
+          | Keyword | In plain English | Module |
+          |---|---|---|
+          | `SELECT` | pick the columns | 1 |
+          | `WHERE` | keep only the rows that match | 2 |
+          | `ORDER BY` | sort the rows | 3 |
+          | `GROUP BY` | one summary row per group | 5 |
+          | `JOIN` | combine tables using ids | 6 |
+          | `INSERT` / `UPDATE` / `DELETE` | add, change or remove rows | 12 |
+          | `CREATE TABLE` | design a new table | 13 |
+
+      - type: quiz
+        id: m00-l04-q4
+        question: Which keyword will you use (in module 6) to combine two tables using their ids?
+        options:
+          - "JOIN"
+          - "LIMIT"
+          - "SELECT"
+          - "ORDER BY"
+        answer: 0
+        explanation: |
+          `JOIN` links the rows of two tables, for example orders and customers, through their ids.
+          That is exactly what you did by hand in this lesson.
+
+      - type: exercise
+        id: m00-l04-e5
+        title: The raw trail
+        prompt: |
+          Show the `order_id`, `item_id`, `quantity` and `payment_method` of the **first 8 rows** of
+          `orders` (in that order).
+        starter: |
+          SELECT
+          FROM orders
+        solution: |
+          SELECT order_id, item_id, quantity, payment_method
+          FROM orders
+          LIMIT 8;
+        hints:
+          - Four columns, one table, and a LIMIT.
+          - "Separate the columns with commas and finish with LIMIT 8."
+          - "SELECT order_id, item_id, ___, ___ FROM orders LIMIT 8;"
+        explanation: |
+          Each row is one order: which item (`item_id`), how many (`quantity`) and how it was paid
+          (`payment_method`).
+        difficulty: 2
+
+      - type: read
+        title: Module 0 complete!
+        md: |
+          You made it through **Welcome to SQL**. 🎉 Look at everything you now know:
+
+          - A database stores data in **tables** of **rows** and **columns**.
+          - **SQL** asks questions with `SELECT … FROM …;`.
+          - Errors are **helpful messages**, and fixing them is a normal part of the job.
+          - Tables link through **primary keys** and **foreign keys**, each column has a **type**, and
+            **NULL** means "no value".
+
+          Next stop: **module 1**, where you learn to pick your data with precision: renaming columns,
+          doing calculations, joining text together and more.
+
+          > [!TIP]
+          > Take a short break before the next module. Your brain stores new things best after a little
+          > rest, and you've earned it. ☕
+    cheatsheet:
+      - title: Primary key and foreign key
+        sql: |
+          SELECT customer_id, first_name   -- customer_id is the primary key
+          FROM customers;
+        note: A primary key is unique in every row. A foreign key, like orders.customer_id, points to a primary key in another table.
+      - title: NULL means no value
+        sql: |
+          SELECT name, calories
+          FROM menu_items;
+        note: NULL is not 0 and not empty text. It means unknown, missing or not applicable.
+testPool:
+  # ---- lesson 1: What is a database? -------------------------------------------------
+  - type: exercise
+    id: m00-t01
+    lesson: m00-l01
+    difficulty: 1
+    prompt: |
+      Show the `name` and `calories` of every menu item.
+    starter: |
+      SELECT
+      FROM menu_items;
+    solution: |
+      SELECT name, calories
+      FROM menu_items;
+    hints:
+      - Two columns from the `menu_items` table.
+      - "Separate the columns with a comma."
+    explanation: |
+      Four rows show NULL in `calories`: nobody has measured them yet.
+  - type: quiz
+    id: m00-t02
+    lesson: m00-l01
+    difficulty: 1
+    question: In a database table, what is a **column**?
+    options:
+      - "One kind of information that every row has, like price"
+      - "One complete record, like a single menu item"
+      - "The name of the database"
+      - "A single cell holding one value"
+    answer: 0
+    explanation: |
+      A column is one kind of information (a field) such as `price`. A row is one complete record, and a
+      cell is where a row and a column meet.
+  - type: exercise
+    id: m00-t03
+    lesson: m00-l01
+    difficulty: 2
+    prompt: |
+      Show each customer's `last_name`, `first_name` and `city`.
+    starter: |
+      SELECT
+      FROM customers;
+    solution: |
+      SELECT last_name, first_name, city
+      FROM customers;
+    hints:
+      - Three columns from `customers`.
+      - "Put commas between the column names, but not after the last one."
+    explanation: |
+      Columns appear in the order you list them, so you could also put `city` first.
+  - type: parsons
+    id: m00-t04
+    lesson: m00-l01
+    difficulty: 1
+    prompt: |
+      Put the lines in the right order to show each customer's `first_name` and `city`.
+    lines:
+      - SELECT first_name, city
+      - FROM customers;
+    explanation: |
+      `SELECT` lists the columns, `FROM` names the table.
+  - type: fill
+    id: m00-t05
+    lesson: m00-l01
+    difficulty: 1
+    prompt: Complete the query to show every column of the `staff` table.
+    template: |
+      SELECT ___
+      FROM ___;
+    answers:
+      - ["*"]
+      - ["staff"]
+    explanation: |
+      `*` means "every column", and `FROM` names the table.
+
+  # ---- lesson 2: Your SQL workspace ---------------------------------------------------
+  - type: quiz
+    id: m00-t06
+    lesson: m00-l02
+    difficulty: 1
+    question: |
+      You ran a query that deleted every order. Then you ran a new `SELECT * FROM orders;`. What do
+      you see?
+    options:
+      - "All the orders again, because every run starts from a fresh copy of the data"
+      - "An empty table, because the orders are gone forever"
+      - "An error message"
+      - "Half of the orders"
+    answer: 0
+    explanation: |
+      In the lessons, every Run starts from the original data. That is why experimenting is safe.
+  - type: exercise
+    id: m00-t07
+    lesson: m00-l02
+    difficulty: 1
+    prompt: |
+      Show **every column** of the **first 7 rows** of `customers`.
+    starter: |
+      SELECT *
+      FROM customers
+    solution: |
+      SELECT *
+      FROM customers
+      LIMIT 7;
+    hints:
+      - Use LIMIT at the end of the query.
+      - "SELECT * FROM customers LIMIT ___;"
+    explanation: |
+      `LIMIT 7` stops the result after 7 rows.
+  - type: predict
+    id: m00-t08
+    lesson: m00-l02
+    difficulty: 2
+    question: What will this query return?
+    sql: |
+      SELECT name, price
+      FROM menu_items
+      LIMIT 5;
+    options:
+      - "5 rows and 2 columns"
+      - "32 rows and 2 columns"
+      - "5 rows and 8 columns"
+      - "2 rows and 5 columns"
+    answer: 0
+    explanation: |
+      Two columns are listed after `SELECT`, and `LIMIT 5` keeps only 5 rows.
+  - type: exercise
+    id: m00-t09
+    lesson: m00-l02
+    difficulty: 2
+    prompt: |
+      Show the `customer_id`, `item_id` and `quantity` of the **first 12 rows** of `orders`.
+    starter: |
+      SELECT
+      FROM orders
+    solution: |
+      SELECT customer_id, item_id, quantity
+      FROM orders
+      LIMIT 12;
+    hints:
+      - Three columns, one table, one LIMIT.
+      - "SELECT customer_id, item_id, ___ FROM orders LIMIT 12;"
+    explanation: |
+      Some `customer_id` cells are NULL: those orders came from walk-in customers.
+  - type: quiz
+    id: m00-t10
+    lesson: m00-l02
+    difficulty: 2
+    question: |
+      You can't remember which columns the `staff` table has. What is the quickest way to find out
+      without writing a query?
+    options:
+      - "Open the Tables panel and tap `staff`"
+      - "Press the Check answer button"
+      - "Reload the page"
+      - "Press the reset button"
+    answer: 0
+    explanation: |
+      The Tables panel lists every table with its columns and types. Tapping the eye icon even runs a
+      quick preview of the table.
+
+  # ---- lesson 3: Errors are your friends ----------------------------------------------
+  - type: exercise
+    id: m00-t11
+    lesson: m00-l03
+    difficulty: 1
+    prompt: |
+      Show each menu item's `name` and `price`. The query below has a bug. Fix it!
+    starter: |
+      SELECT neme, price
+      FROM menu_items;
+    solution: |
+      SELECT name, price
+      FROM menu_items;
+    hints:
+      - Run it and read the message and the HINT line.
+      - "One column name is misspelled."
+    explanation: |
+      PostgreSQL's hint said *Perhaps you meant to reference the column "menu_items.name"*. Hints like
+      that point straight at the fix.
+  - type: predict
+    id: m00-t12
+    lesson: m00-l03
+    difficulty: 2
+    question: What happens when you run this query?
+    sql: |
+      SELECT *
+      FROM staf;
+    expectError: true
+    options:
+      - "An error saying the table (relation) \"staf\" does not exist"
+      - "An error saying the column \"staf\" does not exist"
+      - "10 rows"
+      - "0 rows"
+    answer: 0
+    explanation: |
+      The table is called `staff` (two f's). PostgreSQL says `relation "staf" does not exist`, and
+      "relation" means table.
+  - type: exercise
+    id: m00-t13
+    lesson: m00-l03
+    difficulty: 3
+    prompt: |
+      Show each customer's `first_name`, `last_name` and `city` as **three separate columns**. The
+      query below runs without an error, but something is wrong. Fix it!
+    starter: |
+      SELECT first_name, last_name city
+      FROM customers;
+    solution: |
+      SELECT first_name, last_name, city
+      FROM customers;
+    hints:
+      - Count the columns in the result. How many should there be?
+      - "A comma is missing between two columns."
+    explanation: |
+      Without the comma, PostgreSQL read `city` as a nickname (alias) for `last_name`. That is why
+      the result had only two columns and the second one was called `city` but held last names.
+  - type: quiz
+    id: m00-t14
+    lesson: m00-l03
+    difficulty: 2
+    question: Which statement about capital letters in SQL is **true**?
+    options:
+      - "`select` and `SELECT` both work, but the text 'Espresso' is different from 'espresso' in the data"
+      - "`select` does not work. Keywords must always be in capitals"
+      - "'Espresso' and 'espresso' are always treated as the same text"
+      - "Capital letters never matter anywhere in SQL"
+    answer: 0
+    explanation: |
+      Keywords and table or column names ignore capitals, but the actual text stored in the cells is
+      case-sensitive.
+  - type: fill
+    id: m00-t15
+    lesson: m00-l03
+    difficulty: 2
+    prompt: Fill in the two missing keywords to show each staff member's `name` and `role`.
+    template: |
+      ___ name, role
+      ___ staff;
+    answers:
+      - ["SELECT"]
+      - ["FROM"]
+    explanation: |
+      `SELECT` chooses the columns and `FROM` names the table.
+
+  # ---- lesson 4: How databases think --------------------------------------------------
+  - type: exercise
+    id: m00-t16
+    lesson: m00-l04
+    difficulty: 1
+    prompt: |
+      Show the `item_id`, `name` and `is_available` of every menu item.
+    starter: |
+      SELECT
+      FROM menu_items;
+    solution: |
+      SELECT item_id, name, is_available
+      FROM menu_items;
+    hints:
+      - Three columns from `menu_items`.
+      - "The third column is a boolean: it holds true or false."
+    explanation: |
+      `is_available` is a `boolean` column. Three items show `false`: they are not for sale right now.
+  - type: quiz
+    id: m00-t17
+    lesson: m00-l04
+    difficulty: 2
+    question: Which column is the best **primary key** for a `customers` table?
+    options:
+      - "customer_id, a unique number for each customer"
+      - "first_name"
+      - "city"
+      - "email, even though some customers have none"
+    answer: 0
+    explanation: |
+      A primary key must be different in every row and never empty. Names and cities repeat, and some
+      emails are missing (NULL). A unique id is the safe choice.
+  - type: predict
+    id: m00-t18
+    lesson: m00-l04
+    difficulty: 2
+    question: How many of the 4 result rows will show **NULL** in the `email` column?
+    sql: |
+      SELECT first_name, email
+      FROM customers
+      LIMIT 4;
+    options:
+      - "None"
+      - "1"
+      - "2"
+      - "4"
+    answer: 1
+    explanation: |
+      Among the first four customers (Dmitri, Kavya, Nora, Paola), only Paola never shared an email,
+      so exactly one row shows NULL.
+  - type: parsons
+    id: m00-t19
+    lesson: m00-l04
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show each staff member's `name`, `role` and `manager_id`.
+    lines:
+      - SELECT name, role, manager_id
+      - FROM staff;
+    explanation: |
+      Only the manager has a NULL `manager_id`: nobody is above her.
+  - type: exercise
+    id: m00-t20
+    lesson: m00-l04
+    difficulty: 3
+    prompt: |
+      Maria wants to know which of the first 15 orders have no tip recorded. Show the `order_id`,
+      `payment_method` and `tip` of the **first 15 rows** of `orders`.
+    starter: |
+      SELECT
+      FROM orders
+    solution: |
+      SELECT order_id, payment_method, tip
+      FROM orders
+      LIMIT 15;
+    hints:
+      - Three columns plus a LIMIT.
+      - "SELECT order_id, payment_method, ___ FROM orders LIMIT 15;"
+    explanation: |
+      Orders 6, 7 and 14 show NULL in `tip`: no tip information was recorded for them. (That is
+      different from a tip of 0.00.)

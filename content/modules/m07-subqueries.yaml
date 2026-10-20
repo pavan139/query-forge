@@ -1,0 +1,1492 @@
+id: m07
+order: 7
+title: Subqueries — Queries Inside Queries
+subtitle: Let one question help answer another
+icon: "🪆"
+level: intermediate
+description: |
+  Real questions are rarely one step: "Which products cost more than the **average**?" or
+  "Which customers have **never** ordered?" You need an answer *first*, and then you use it.
+
+  In this module you will learn to put one query inside another (a **subquery**), to build lists
+  with `IN`, to ask "does a matching row exist?" with `EXISTS`, to compare each row with its own
+  group, to treat a query like a table, and to compare against whole sets with `ANY` and `ALL`.
+  You will also learn the famous `NOT IN` + `NULL` trap — and how to never fall into it.
+dataset: shop
+lessons:
+  - id: m07-l01
+    title: Scalar subqueries
+    summary: Use a query that returns one value inside WHERE, SELECT and HAVING.
+    minutes: 25
+    steps:
+      - type: read
+        title: Priya has a question
+        md: |
+          Priya from marketing sends you a message:
+
+          > "Which of our products cost **more than the average** product?"
+
+          To answer, you need two things: **(1)** the average price, and **(2)** the products above it.
+          Until now you would run two queries — copy the average from the first, paste it into the second.
+
+          A **subquery** does both steps in one go. It is a `SELECT` written **inside another query**,
+          wrapped in parentheses `( )`. The inner query runs first and hands its answer to the outer query.
+
+          > [!ANALOGY]
+          > Imagine cooking and the recipe says "add the amount of salt you wrote on the sticky note".
+          > You read the sticky note first, then you cook. A subquery is the sticky note: the database
+          > reads it first, then finishes the rest of the query.
+
+          When the inner query returns **exactly one value** (one row, one column), it is called a
+          **scalar subquery**. "Scalar" just means "a single value". You can use it anywhere you could
+          type a single number, piece of text or date.
+
+      - type: example
+        title: The inner query on its own
+        md: |
+          First, the sticky note by itself. Press **Run**.
+        sql: |
+          SELECT AVG(price)
+          FROM products;
+        after: |
+          One row, one column: the average price of all 60 products, about **193.04**
+          (PostgreSQL shows extra zeros after the decimals — that's normal for averages).
+          That is a single value, so it is a perfect scalar subquery.
+
+      - type: stepper
+        title: Working from the inside out
+        md: |
+          Click through the three stages. Notice how stage 3 is stage 2 with the pasted number
+          replaced by the query that produces it.
+        stages:
+          - label: Inner query
+            md: The database runs the inner query first. It produces one value.
+            sql: |
+              SELECT AVG(price)
+              FROM products;
+          - label: Paste the number
+            md: |
+              If we typed that number by hand, we could filter the products. But the number
+              would go **stale** the day a price changes.
+            sql: |
+              SELECT name, price
+              FROM products
+              WHERE price > 193.04
+              ORDER BY price DESC;
+          - label: Use a subquery
+            md: |
+              Now the database finds the average itself, every time. The answer is always up to date.
+            sql: |
+              SELECT name, price
+              FROM products
+              WHERE price > (SELECT AVG(price) FROM products)
+              ORDER BY price DESC;
+
+      - type: example
+        title: Products above the average price
+        md: |
+          Same query as stage 3, written with one clause per line. Run it and count the rows.
+        sql: |
+          SELECT name, price
+          FROM products
+          WHERE price > (
+              SELECT AVG(price)
+              FROM products
+          )
+          ORDER BY price DESC;
+        after: |
+          **12 products** cost more than the average — from the Aurora 16-inch Pro Laptop (1499.99)
+          down to the 10-inch Tablet Lite (229.99). The inner query ran once, produced about 193.04,
+          and the outer query kept every row with a bigger price.
+
+      - type: predict
+        id: m07-l01-p1
+        question: |
+          This query looks for the product whose price equals the highest price.
+          How many rows does it return?
+        sql: |
+          SELECT name
+          FROM products
+          WHERE price = (SELECT MAX(price) FROM products);
+        options: ["1 row", "12 rows", "0 rows", "An error"]
+        answer: 0
+        explanation: |
+          `MAX(price)` is 1499.99, and only one product has that price: *Aurora 16-inch Pro Laptop*.
+          If two products shared the top price, both would be returned.
+
+      - type: exercise
+        id: m07-l01-e1
+        title: Costly to make
+        prompt: |
+          Show the `name` and `cost` of every product whose `cost` is **above the average `cost`**
+          of all products. Use a subquery — don't type the average by hand.
+        starter: |
+          SELECT name, cost
+          FROM products
+          WHERE cost > (SELECT ___ FROM products);
+        solution: |
+          SELECT name, cost
+          FROM products
+          WHERE cost > (SELECT AVG(cost) FROM products);
+        hints:
+          - You need the average of the `cost` column, computed by an inner query.
+          - "The inner query is `SELECT AVG(cost) FROM products`. Wrap it in parentheses after `cost >`."
+          - "SELECT name, cost FROM products WHERE cost > (SELECT AVG(___) FROM products);"
+        explanation: |
+          12 products have a cost above the average of about 112.01. The pattern is always the same:
+          `WHERE column  <comparison>  (SELECT one_value ...)`.
+        difficulty: 1
+
+      - type: read
+        title: The golden rule of scalar subqueries
+        md: |
+          When you use `=`, `>`, `<` and friends, the subquery must give back **one column** and
+          **at most one row**. What happens if it gives more?
+
+          - **Two or more rows** → error: *more than one row returned by a subquery used as an expression*.
+          - **Two or more columns** → error: *subquery must return only one column*.
+          - **Zero rows** → no error! The value is simply **NULL** (an unknown). And as you learned
+            in m02, a comparison with NULL is never true, so the outer query returns nothing.
+
+          > [!MISTAKE]
+          > Writing `WHERE price > (SELECT price FROM products WHERE category_id = 9)`. Kitchen has
+          > eight products, so the subquery returns eight prices, and `>` can only compare against one.
+          > Ask for a single value with `MAX`, `MIN` or `AVG`.
+
+      - type: example
+        title: See the error with your own eyes
+        md: |
+          Run this on purpose. Kitchen (category 9) has several products, so the subquery returns many rows.
+        sql: |
+          SELECT name, price
+          FROM products
+          WHERE price > (
+              SELECT price
+              FROM products
+              WHERE category_id = 9
+          );
+        expectError: true
+        after: |
+          PostgreSQL says: *more than one row returned by a subquery used as an expression*.
+          The fix is to boil the eight prices down to one value — for example with `MAX(price)`
+          ("more expensive than **every** Kitchen product").
+
+      - type: exercise
+        id: m07-l01-e2
+        title: Fix the crash
+        prompt: |
+          This query should show the `name` and `price` of products that cost **more than the most
+          expensive Kitchen product** (`category_id = 9`), but it crashes. Fix it.
+        starter: |
+          SELECT name, price
+          FROM products
+          WHERE price > (
+              SELECT price
+              FROM products
+              WHERE category_id = 9
+          );
+        solution: |
+          SELECT name, price
+          FROM products
+          WHERE price > (
+              SELECT MAX(price)
+              FROM products
+              WHERE category_id = 9
+          );
+        hints:
+          - The inner query returns one price per Kitchen product. You need just one number.
+          - Which aggregate gives the biggest value?
+          - "SELECT ... WHERE price > (SELECT ___(price) FROM products WHERE category_id = 9);"
+        explanation: |
+          The most expensive Kitchen product is the Stainless Steel Cookware Set at 189.99, so the query
+          returns the 12 products priced above it. `MAX` squeezes many rows into one value.
+        difficulty: 1
+
+      - type: example
+        title: The latest order
+        md: |
+          A subquery is perfect for "the newest", "the oldest", "the biggest"... First find the date,
+          then find the rows with that date.
+        sql: |
+          SELECT order_id, customer_id, status, order_date
+          FROM orders
+          WHERE order_date = (SELECT MAX(order_date) FROM orders);
+        after: |
+          The most recent order date in the shop is **2024-12-31**, and exactly one order was placed that
+          day: order 900, from customer 102, still `shipped`. If several orders shared that date,
+          you would see all of them.
+
+      - type: exercise
+        id: m07-l01-e3
+        title: The very first order
+        prompt: |
+          Show the `order_id`, `customer_id` and `order_date` of every order placed on the **earliest
+          order date** in the `orders` table.
+        starter: |
+          SELECT order_id, customer_id, order_date
+          FROM orders
+          WHERE order_date = (SELECT ___ FROM orders);
+        solution: |
+          SELECT order_id, customer_id, order_date
+          FROM orders
+          WHERE order_date = (SELECT MIN(order_date) FROM orders);
+        hints:
+          - It's the mirror image of the latest-order example.
+          - The earliest date is the *smallest* date. Which aggregate finds the smallest?
+          - "SELECT order_id, customer_id, order_date FROM orders WHERE order_date = (SELECT MIN(___) FROM orders);"
+        explanation: |
+          The shop's first day was 2023-01-01, and one order was placed on it. `MIN` finds the smallest value —
+          for dates, the earliest one.
+        difficulty: 1
+
+      - type: read
+        title: A subquery in the SELECT list
+        md: |
+          So far the subquery sat in `WHERE`. A scalar subquery can also be **a column of its own**.
+          That's handy when you want to show each row *next to* a number from the whole table —
+          for example, each product's price next to the shop-wide average.
+
+          > [!TIP]
+          > Think of it as "a column that has the same value on every row". Give it an alias with `AS`
+          > so the result has a friendly column name.
+
+      - type: example
+        title: Prices compared with the average
+        md: |
+          For the five laptops, show the price and how far it is above the shop-wide average price.
+        sql: |
+          SELECT
+              name,
+              price,
+              ROUND(price - (SELECT AVG(price) FROM products), 2)
+                  AS above_avg
+          FROM products
+          WHERE category_id = 12
+          ORDER BY price;
+        after: |
+          The inner query still returns one value (about 193.04), and the database subtracts it from each laptop's price.
+          The Terra Student Laptop 15 is 356.95 above average; the Aurora 16-inch Pro Laptop is 1306.95 above.
+
+      - type: exercise
+        id: m07-l01-e4
+        title: A price index
+        prompt: |
+          For every product in category 8 (Phones), show `name`, `price` and a column called
+          `price_index` = the product's price **divided by the average price of all products**,
+          rounded to 2 decimals. Sort by `price` from highest to lowest.
+        starter: |
+          SELECT name, price,
+              ROUND(price / (SELECT ___ FROM products), 2) AS price_index
+          FROM products
+          WHERE category_id = 8
+          ORDER BY price DESC;
+        solution: |
+          SELECT name, price,
+              ROUND(price / (SELECT AVG(price) FROM products), 2) AS price_index
+          FROM products
+          WHERE category_id = 8
+          ORDER BY price DESC;
+        ordered: true
+        columnNames: true
+        hints:
+          - The subquery goes inside the division, just like a number would.
+          - "Use `(SELECT AVG(price) FROM products)` as the divisor, then wrap everything in ROUND(..., 2)."
+          - "SELECT name, price, ROUND(price / (SELECT AVG(price) FROM ___), 2) AS price_index FROM products WHERE category_id = 8 ORDER BY price DESC;"
+        explanation: |
+          A price index of 4.66 means "4.66 times the shop average" (the Lumio Phone S5 Plus); 0.05 means about a
+          twentieth of it (the Screen Protector 3-Pack). A scalar subquery can sit inside any expression.
+        difficulty: 2
+
+      - type: read
+        title: Subqueries in HAVING
+        md: |
+          Remember `HAVING` filters **groups** after `GROUP BY` (m05). A scalar subquery works there too:
+          "keep only the groups whose average is above the shop-wide average".
+
+      - type: example
+        title: Categories pricier than the shop average
+        sql: |
+          SELECT
+              category_id,
+              ROUND(AVG(price), 2) AS avg_price
+          FROM products
+          GROUP BY category_id
+          HAVING AVG(price) > (SELECT AVG(price) FROM products)
+          ORDER BY category_id;
+        after: |
+          Only 3 of the 11 categories beat the shop-wide average of 193.04: Computers (7), Phones (8)
+          and Laptops (12). The subquery on the right-hand side runs once; `HAVING` compares each group's average to it.
+
+      - type: quiz
+        id: m07-l01-q1
+        question: Where is it possible to use a scalar subquery? (Choose all that apply.)
+        options:
+          - In the WHERE clause
+          - In the SELECT list, as a column
+          - In the HAVING clause
+          - Only in the WHERE clause — nowhere else
+        answer: [0, 1, 2]
+        explanation: |
+          A scalar subquery is just a value, so it can appear almost anywhere a value can: `WHERE`,
+          the `SELECT` list, `HAVING`, and inside calculations.
+
+      - type: exercise
+        id: m07-l01-e5
+        title: Big payments
+        prompt: |
+          Show the `order_id` and `amount` of every payment that is **larger than five times the average
+          payment `amount`**. Sort by `amount` from highest to lowest.
+        starter: |
+          SELECT order_id, amount
+          FROM payments
+          WHERE amount > 5 * (SELECT ___ FROM payments)
+          ORDER BY amount DESC;
+        solution: |
+          SELECT order_id, amount
+          FROM payments
+          WHERE amount > 5 * (SELECT AVG(amount) FROM payments)
+          ORDER BY amount DESC;
+        ordered: true
+        hints:
+          - The average payment is about 339.31. You need "5 times that".
+          - "Put the subquery in parentheses and multiply it: 5 * (SELECT ...)."
+          - "SELECT order_id, amount FROM payments WHERE amount > 5 * (SELECT AVG(___) FROM payments) ORDER BY amount DESC;"
+        explanation: |
+          Five times the average is about 1,696.55, and 9 payments are bigger — the largest is 1,982.96 for order 419.
+          Spotting "unusually large" values this way is a classic data-quality and fraud-check pattern.
+        difficulty: 2
+
+      - type: exercise
+        id: m07-l01-e6
+        title: Categories with costly stock
+        prompt: |
+          Show each `category_id` and its average product `cost` rounded to 2 decimals (call it `avg_cost`),
+          but only for categories whose average `cost` is **above the average `cost` of all products**.
+          Sort by `category_id`.
+        starter: |
+          SELECT category_id, ROUND(AVG(cost), 2) AS avg_cost
+          FROM products
+          GROUP BY category_id
+          HAVING ___
+          ORDER BY category_id;
+        solution: |
+          SELECT category_id, ROUND(AVG(cost), 2) AS avg_cost
+          FROM products
+          GROUP BY category_id
+          HAVING AVG(cost) > (SELECT AVG(cost) FROM products)
+          ORDER BY category_id;
+        ordered: true
+        hints:
+          - Filtering groups means HAVING, not WHERE.
+          - "Compare `AVG(cost)` of the group with a subquery that averages `cost` over the whole table."
+          - "HAVING AVG(cost) > (SELECT AVG(___) FROM products)"
+        explanation: |
+          Four categories qualify: 7 (Computers), 8 (Phones), 10 (Furniture) and 12 (Laptops).
+          `WHERE` can't be used here because the average only exists *after* grouping.
+        difficulty: 2
+
+      - type: fill
+        id: m07-l01-f1
+        prompt: |
+          Complete the query so it lists the products that are **cheaper than** the average price.
+        template: |
+          SELECT name, price
+          FROM products
+          WHERE price ___ (SELECT ___(price) FROM products);
+        answers:
+          - ["<"]
+          - ["AVG"]
+        explanation: |
+          "Cheaper than" means `<`, and the shop-wide average comes from `AVG(price)`.
+
+      - type: predict
+        id: m07-l01-p2
+        question: |
+          There is no product called 'Time Machine'. What does this query return?
+        sql: |
+          SELECT name, price
+          FROM products
+          WHERE price > (
+              SELECT price
+              FROM products
+              WHERE name = 'Time Machine'
+          );
+        options:
+          - "An error: the subquery found no row"
+          - "All 60 products"
+          - "0 rows"
+          - "1 row with NULLs"
+        answer: 2
+        explanation: |
+          A scalar subquery that finds no rows quietly becomes **NULL**. Then `price > NULL` is unknown
+          for every product, so no row passes the filter. No error — just an empty result. Be careful: a typo
+          in the subquery can silently give you "no results".
+
+      - type: parsons
+        id: m07-l01-o1
+        prompt: |
+          Put the lines in order to list products that cost more than the average price, most expensive first.
+        lines:
+          - SELECT name, price
+          - FROM products
+          - WHERE price > (SELECT AVG(price) FROM products)
+          - ORDER BY price DESC;
+        distractors:
+          - WHERE price > SELECT AVG(price) FROM products
+        explanation: |
+          The subquery must be wrapped in parentheses. `ORDER BY` always comes last.
+
+      - type: exercise
+        id: m07-l01-e7
+        title: In between
+        prompt: |
+          Show the `name` and `price` of products that cost **more than the average price** but **less than
+          the price of the product called `Standing Desk 140cm`**. Use two subqueries.
+        starter: |
+          SELECT name, price
+          FROM products
+          WHERE price > (SELECT ___ FROM products)
+            AND price < (SELECT ___ FROM products WHERE ___);
+        solution: |
+          SELECT name, price
+          FROM products
+          WHERE price > (SELECT AVG(price) FROM products)
+            AND price < (
+                SELECT price
+                FROM products
+                WHERE name = 'Standing Desk 140cm'
+            );
+        hints:
+          - You need two conditions joined by AND, each with its own subquery.
+          - "The upper limit is the price of one named product: `SELECT price FROM products WHERE name = 'Standing Desk 140cm'`. Product names are unique, so that's one value."
+          - "WHERE price > (SELECT AVG(price) FROM products) AND price < (SELECT price FROM products WHERE name = '___')"
+        explanation: |
+          The Standing Desk costs 449.99, so the answer is the three products between 193.04 and 449.99:
+          the 27-inch 4K Monitor, the Ergonomic Office Chair and the 10-inch Tablet Lite.
+          Looking up one row by a unique name is another common way to get a single value.
+        difficulty: 3
+    cheatsheet:
+      - title: Compare with an aggregate
+        sql: |
+          SELECT name, price
+          FROM products
+          WHERE price > (SELECT AVG(price) FROM products);
+        note: "The subquery must return ONE column and at most ONE row."
+      - title: Subquery as a column
+        sql: |
+          SELECT name,
+              price - (SELECT AVG(price) FROM products) AS diff
+          FROM products;
+        note: "The same value is repeated on every row."
+      - title: Subquery in HAVING
+        sql: |
+          SELECT category_id, AVG(price)
+          FROM products
+          GROUP BY category_id
+          HAVING AVG(price) > (SELECT AVG(price) FROM products);
+        note: "Zero rows from the subquery means NULL, not an error."
+
+  - id: m07-l02
+    title: IN subqueries
+    summary: Build a list with one query and filter another with it — and dodge the NOT IN + NULL trap.
+    minutes: 30
+    steps:
+      - type: read
+        title: A guest list from another query
+        md: |
+          The procurement team asks: "Which products come from our suppliers in **Japan or Mexico**?"
+
+          In m02 you learned `IN` with a list you type yourself, like `supplier_id IN (3, 6)`.
+          But you don't remember which supplier ids belong to Japan and Mexico — and the list could change
+          next month. So let the database **build the list for you** with a subquery.
+
+          > [!ANALOGY]
+          > `IN` is a bouncer with a guest list. A subquery is the person who *writes the guest list
+          > just before the party starts*. The bouncer then checks every visitor's name against it.
+
+          The inner query must return **one column** (it can return many rows). That column becomes the list.
+
+      - type: stepper
+        title: From typed list to subquery
+        md: Click through the three stages and press Run in each.
+        stages:
+          - label: The list
+            md: The inner query produces a list of supplier ids — one column, two rows.
+            sql: |
+              SELECT supplier_id
+              FROM suppliers
+              WHERE country IN ('Japan', 'Mexico');
+          - label: Typed by hand
+            md: |
+              If we copy those two ids into `IN (...)`, we get the products. It works, but only until
+              a supplier changes country.
+            sql: |
+              SELECT name, supplier_id
+              FROM products
+              WHERE supplier_id IN (3, 6)
+              ORDER BY supplier_id, name;
+          - label: Built by a subquery
+            md: The list now builds itself, every time.
+            sql: |
+              SELECT name, supplier_id
+              FROM products
+              WHERE supplier_id IN (
+                  SELECT supplier_id
+                  FROM suppliers
+                  WHERE country IN ('Japan', 'Mexico')
+              )
+              ORDER BY supplier_id, name;
+
+      - type: example
+        title: Washington customers with a returned order
+        md: |
+          Customer support wants to call the customers in `WA` who have had an order **returned**.
+        sql: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE state = 'WA'
+            AND customer_id IN (
+                SELECT customer_id
+                FROM orders
+                WHERE status = 'returned'
+            )
+          ORDER BY customer_id;
+        after: |
+          Six customers. Customer 121 (Aarav Gupta) has **three** returned orders, so 121 appears three times
+          in the inner list — but he shows up **once** in the result. `IN` only asks "is this id on the
+          list?", so duplicates in the list never create duplicate rows.
+
+      - type: exercise
+        id: m07-l02-e1
+        title: Disappointing products
+        prompt: |
+          Show the `name` of every product that has received at least one **1-star** review
+          (`rating = 1` in the `reviews` table). Sort the names alphabetically.
+        starter: |
+          SELECT name
+          FROM products
+          WHERE product_id IN (
+              SELECT ___
+              FROM reviews
+              WHERE ___
+          )
+          ORDER BY name;
+        solution: |
+          SELECT name
+          FROM products
+          WHERE product_id IN (
+              SELECT product_id
+              FROM reviews
+              WHERE rating = 1
+          )
+          ORDER BY name;
+        ordered: true
+        hints:
+          - The inner query should list the product ids that have a 1-star review.
+          - "Inside the parentheses: `SELECT product_id FROM reviews WHERE rating = 1`."
+          - "SELECT name FROM products WHERE product_id IN (SELECT product_id FROM reviews WHERE rating = ___) ORDER BY name;"
+        explanation: |
+          Four products have a 1-star review: Air Fryer 5L, Programmable Coffee Maker, The Beginner's Guide
+          to Sourdough and Vitamin C Moisturizer. Even if one of them had five 1-star reviews, it would still
+          appear only once.
+        difficulty: 1
+
+      - type: predict
+        id: m07-l02-p1
+        question: |
+          There are 150 customers and 900 orders in total. How many rows does this return?
+        sql: |
+          SELECT customer_id
+          FROM customers
+          WHERE customer_id IN (SELECT customer_id FROM orders);
+        options: ["900", "150", "140", "10"]
+        answer: 2
+        explanation: |
+          Each customer is listed **at most once**, and only customers who appear in `orders` qualify.
+          140 customers have ordered; the other 10 (ids 141 to 150) never did.
+
+      - type: example
+        title: A subquery can only hand over one column
+        md: |
+          What if the inner query returns two columns? `IN` wouldn't know which one to compare.
+        sql: |
+          SELECT first_name
+          FROM customers
+          WHERE customer_id IN (
+              SELECT customer_id, status
+              FROM orders
+          );
+        expectError: true
+        after: |
+          *subquery has too many columns*. Remove the extra column so the inner query returns **just the one**
+          you are comparing against.
+
+      - type: read
+        title: NOT IN — the opposite list
+        md: |
+          Put `NOT` in front of `IN` and you keep the rows that are **not on the list**. This is how you find
+          "things that never happened": customers who never ordered, products nobody bought...
+
+      - type: example
+        title: Customers who never ordered
+        sql: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE customer_id NOT IN (
+              SELECT customer_id
+              FROM orders
+          )
+          ORDER BY customer_id;
+        after: |
+          Ten customers, ids 141 to 150. They all signed up in October 2024 and haven't bought anything
+          yet — a perfect list for a "welcome, here's 10% off" email.
+
+      - type: exercise
+        id: m07-l02-e2
+        title: Products nobody bought
+        prompt: |
+          Show the `product_id` and `name` of every product that has **never been ordered**
+          (it never appears in `order_items`). Sort by `product_id`.
+        starter: |
+          SELECT product_id, name
+          FROM products
+          WHERE product_id ___ (SELECT ___ FROM order_items)
+          ORDER BY product_id;
+        solution: |
+          SELECT product_id, name
+          FROM products
+          WHERE product_id NOT IN (SELECT product_id FROM order_items)
+          ORDER BY product_id;
+        ordered: true
+        hints:
+          - "You want the products that are NOT in the list of ordered product ids."
+          - "Inner query: `SELECT product_id FROM order_items`. Outer: `product_id NOT IN (...)`."
+          - "SELECT product_id, name FROM products WHERE product_id NOT IN (SELECT ___ FROM order_items) ORDER BY product_id;"
+        explanation: |
+          Five products have never been ordered, including the Zephyr Gaming Laptop X and the Standing Desk 140cm.
+          This is safe here because `order_items.product_id` can never be NULL — but the next page shows
+          why that matters.
+        difficulty: 1
+
+      - type: read
+        title: The NOT IN trap (read this twice!)
+        md: |
+          `NOT IN` has one famous trap: **if the list contains even one NULL, `NOT IN` returns no rows at all.**
+
+          Why? Remember from m02 that NULL means "unknown". `x NOT IN (1, NULL)` is really
+          "x is not 1 **and** x is not (an unknown value)". For x = 2, the first part is true, but
+          the second part is **unknown** — and `true AND unknown` is unknown. A row is kept only when the
+          condition is **true**, so the row is thrown away.
+
+          > [!MISTAKE]
+          > Using `NOT IN (SELECT some_column ...)` when `some_column` can contain NULLs. You get an empty
+          > result, no error, no warning — and it looks like "nothing matches". Very easy to miss!
+
+      - type: example
+        title: Try it with tiny lists
+        md: |
+          Four little tests. `IN` is fine with a NULL in the list; `NOT IN` is not.
+        sql: |
+          SELECT
+              2 NOT IN (1, 3)    AS clean_list,
+              2 NOT IN (1, NULL) AS list_with_null,
+              1 IN (1, NULL)     AS found_anyway,
+              2 IN (1, NULL)     AS not_found;
+        after: |
+          - `2 NOT IN (1, 3)` is **true** — as you would expect.
+          - `2 NOT IN (1, NULL)` is **NULL** (unknown), not true. A WHERE clause treats that like false.
+          - `1 IN (1, NULL)` is **true**: a match is a match, NULLs don't spoil it.
+          - `2 IN (1, NULL)` is **NULL**, not false.
+
+      - type: viz
+        viz: null-logic
+        title: Why unknown ruins NOT IN
+        md: |
+          Play with the truth tables. Look at what `NOT` does to an unknown, and what `AND` / `OR` do
+          when one side is unknown. That is exactly what happens inside `NOT IN`.
+
+      - type: example
+        title: The trap with real data
+        md: |
+          The `categories` table has a `parent_id` column. Top-level categories (Electronics, Home...)
+          have a NULL parent. Let's find categories that are **not a parent** of any other category.
+        sql: |
+          SELECT category_id, name
+          FROM categories
+          WHERE category_id NOT IN (
+              SELECT parent_id
+              FROM categories
+          );
+        after: |
+          **0 rows** — but we know that categories like Books and Phones have no children, so the answer
+          is *not* empty. The list `parent_id` contains NULLs (the 6 top-level categories), which poisons
+          `NOT IN`. The next example fixes it.
+
+      - type: example
+        title: The fix — keep NULLs out of the list
+        sql: |
+          SELECT category_id, name
+          FROM categories
+          WHERE category_id NOT IN (
+              SELECT parent_id
+              FROM categories
+              WHERE parent_id IS NOT NULL
+          )
+          ORDER BY category_id;
+        after: |
+          Now we get the **9** categories with no sub-categories: Books, Toys, Beauty, Phones, Kitchen, Furniture,
+          Laptops, Peripherals and Camping. Two rules to remember: add `WHERE column IS NOT NULL` inside a
+          `NOT IN` subquery — or use `NOT EXISTS`, which you meet in the next lesson.
+
+      - type: quiz
+        id: m07-l02-q1
+        question: |
+          The query with `NOT IN (SELECT parent_id FROM categories)` returned 0 rows. What caused it?
+        options:
+          - "The subquery's list contains NULL, so NOT IN can never be true"
+          - "NOT IN does not work with subqueries"
+          - "There are no categories without children"
+          - "The query needs an ORDER BY"
+        answer: 0
+        explanation: |
+          `parent_id` is NULL for the six top-level categories. With a NULL in the list, `NOT IN` evaluates to
+          unknown for every row, so nothing passes. Filter the NULLs out (`WHERE parent_id IS NOT NULL`)
+          or use `NOT EXISTS`.
+
+      - type: predict
+        id: m07-l02-p2
+        question: |
+          The same list (with its NULLs) is used, but now with plain `IN`. How many rows come back?
+        sql: |
+          SELECT category_id
+          FROM categories
+          WHERE category_id IN (SELECT parent_id FROM categories);
+        options: ["5", "6", "0", "14"]
+        answer: 0
+        explanation: |
+          `IN` is happy to ignore the NULLs: a match is a match. Five categories are parents of
+          something: Electronics (1), Home (2), Sports (3), Computers (7) and Outdoor (11).
+
+      - type: exercise
+        id: m07-l02-e3
+        title: Fix the empty result
+        dataset: company
+        prompt: |
+          *(This exercise uses the **company** database.)* HR wants every employee who is **nobody's manager**.
+          Show `emp_id`, `first_name` and `last_name`, sorted by `emp_id`. The query below returns nothing —
+          fix it. (You should end up with 29 employees.)
+        starter: |
+          SELECT emp_id, first_name, last_name
+          FROM employees
+          WHERE emp_id NOT IN (
+              SELECT manager_id
+              FROM employees
+          )
+          ORDER BY emp_id;
+        solution: |
+          SELECT emp_id, first_name, last_name
+          FROM employees
+          WHERE emp_id NOT IN (
+              SELECT manager_id
+              FROM employees
+              WHERE manager_id IS NOT NULL
+          )
+          ORDER BY emp_id;
+        ordered: true
+        hints:
+          - The CEO has no manager, so `manager_id` is NULL for one row. That NULL ends up in the list.
+          - Keep NULLs out of the subquery's list with a WHERE inside it.
+          - "SELECT manager_id FROM employees WHERE manager_id ___ NULL"
+        explanation: |
+          Employees with `manager_id IS NULL` (only the CEO) put a NULL in the list. After removing it, the
+          query returns the 29 people who manage nobody. Always ask: "can this column contain NULL?"
+        difficulty: 2
+
+      - type: exercise
+        id: m07-l02-e4
+        title: Colorado cancellations
+        prompt: |
+          Show `customer_id`, `first_name` and `last_name` of customers who live in `CO` **and** have at least one
+          order with the status `cancelled`. Sort by `customer_id`.
+        starter: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE state = 'CO'
+            AND customer_id IN (___)
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE state = 'CO'
+            AND customer_id IN (
+                SELECT customer_id
+                FROM orders
+                WHERE status = 'cancelled'
+            )
+          ORDER BY customer_id;
+        ordered: true
+        hints:
+          - Combine a normal filter (state) with an IN subquery using AND.
+          - "The inner query lists `customer_id`s from `orders` where the status is 'cancelled'."
+          - "... AND customer_id IN (SELECT customer_id FROM orders WHERE status = '___')"
+        explanation: |
+          Ten Colorado customers had at least one cancelled order. You can mix ordinary conditions and subquery
+          conditions freely with `AND` / `OR`.
+        difficulty: 2
+
+      - type: read
+        title: Subqueries inside subqueries
+        md: |
+          A subquery can contain another subquery. Read them **from the inside out**, like opening
+          nesting dolls: the innermost query runs first and feeds the one around it.
+
+          Example question: "Which orders contain a **Laptop**?" The path is
+          *category → products → order_items → orders*, so we use one `IN` per step.
+
+      - type: example
+        title: Orders that contain a laptop (since November 2024)
+        sql: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE order_date >= '2024-11-01'
+            AND order_id IN (
+                SELECT order_id
+                FROM order_items
+                WHERE product_id IN (
+                    SELECT product_id
+                    FROM products
+                    WHERE category_id = 12
+                )
+            )
+          ORDER BY order_id;
+        after: |
+          Eight orders. Reading inside-out: (1) the product ids in category 12 (Laptops), (2) the order ids whose
+          lines use those products, (3) the orders from November 2024 on with those ids.
+
+          > [!TIP]
+          > With three levels the query gets hard to read. You already know JOINs from m06; in lesson 7 you
+          > will compare both styles, and in m09 you'll meet CTEs, which make deep nesting much easier to read.
+
+      - type: exercise
+        id: m07-l02-e5
+        title: Who bought the flagship laptop?
+        prompt: |
+          Show `customer_id`, `first_name` and `last_name` of every customer who has ever ordered the product named
+          `Aurora 16-inch Pro Laptop`. Sort by `customer_id`. Use nested `IN` subqueries (no JOIN).
+        starter: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE customer_id IN (
+              SELECT customer_id
+              FROM orders
+              WHERE order_id IN (
+                  SELECT order_id
+                  FROM order_items
+                  WHERE product_id IN (___)
+              )
+          )
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE customer_id IN (
+              SELECT customer_id
+              FROM orders
+              WHERE order_id IN (
+                  SELECT order_id
+                  FROM order_items
+                  WHERE product_id IN (
+                      SELECT product_id
+                      FROM products
+                      WHERE name = 'Aurora 16-inch Pro Laptop'
+                  )
+              )
+          )
+          ORDER BY customer_id;
+        ordered: true
+        hints:
+          - "Work from the inside out: product → order_items → orders → customers."
+          - "Innermost: `SELECT product_id FROM products WHERE name = 'Aurora 16-inch Pro Laptop'`."
+          - "Each level is `column IN (SELECT column FROM next_table WHERE ...)`; the starter already has three of the four levels."
+        explanation: |
+          Twelve customers bought it. Four tables, four levels — that is the same path
+          `customers → orders → order_items → products` that you joined in m06.
+        difficulty: 3
+
+      - type: fill
+        id: m07-l02-f1
+        prompt: |
+          Complete the query so it lists the customers who have **written a review**.
+        template: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE customer_id ___ (
+              SELECT ___
+              FROM reviews
+          );
+        answers:
+          - ["IN"]
+          - ["customer_id"]
+        explanation: |
+          The inner query returns the `customer_id` of every review; `IN` keeps customers on that list.
+
+      - type: exercise
+        id: m07-l02-e6
+        title: Ordered but never reviewed
+        prompt: |
+          Show the `product_id` and `name` of products that **have been ordered at least once** but have
+          **never received a review**. Sort by `product_id`.
+        starter: |
+          SELECT product_id, name
+          FROM products
+          WHERE product_id IN (___)
+            AND product_id NOT IN (___)
+          ORDER BY product_id;
+        solution: |
+          SELECT product_id, name
+          FROM products
+          WHERE product_id IN (SELECT product_id FROM order_items)
+            AND product_id NOT IN (SELECT product_id FROM reviews)
+          ORDER BY product_id;
+        ordered: true
+        hints:
+          - "You need two conditions: one `IN` (was ordered) and one `NOT IN` (has no review)."
+          - "The lists come from `order_items.product_id` and `reviews.product_id`. Neither column can be NULL, so NOT IN is safe here."
+          - "WHERE product_id IN (SELECT product_id FROM ___) AND product_id NOT IN (SELECT product_id FROM ___)"
+        explanation: |
+          Three products fit: Laptop Stand, Aluminum (12), Atlas of Hidden Cities (48) and Hydrating Face Serum (58).
+          These are items customers buy but never rate — maybe a nudge email asking for reviews would help.
+        difficulty: 3
+
+      - type: parsons
+        id: m07-l02-o1
+        prompt: |
+          Put the lines in order to list customers in `WA` who have had an order returned.
+        lines:
+          - SELECT first_name, last_name
+          - FROM customers
+          - WHERE state = 'WA'
+          - AND customer_id IN (
+          - SELECT customer_id FROM orders WHERE status = 'returned'
+          - );
+        distractors:
+          - WHERE customer_id IN (
+        explanation: |
+          There is only one WHERE; the second condition is added with AND. The subquery sits inside the parentheses.
+    cheatsheet:
+      - title: IN with a subquery
+        sql: |
+          SELECT name
+          FROM products
+          WHERE supplier_id IN (
+              SELECT supplier_id
+              FROM suppliers
+              WHERE country = 'Japan'
+          );
+        note: "The inner query returns ONE column; duplicates in the list don't duplicate rows."
+      - title: NOT IN — safe version
+        sql: |
+          SELECT category_id
+          FROM categories
+          WHERE category_id NOT IN (
+              SELECT parent_id
+              FROM categories
+              WHERE parent_id IS NOT NULL
+          );
+        note: "One NULL in the list makes NOT IN return nothing. Filter NULLs out, or use NOT EXISTS."
+
+  - id: m07-l03
+    title: EXISTS & NOT EXISTS
+    summary: Ask a yes/no question for every row — "is there at least one matching row?" — and stay safe from NULLs.
+    minutes: 30
+    steps:
+      - type: read
+        title: A yes/no question for every row
+        md: |
+          Marketing asks: "Which customers in **Washington** placed an order **this December**?"
+
+          With `IN` you build a *list* and check membership. `EXISTS` works differently: for each customer
+          it asks a simple **yes/no question** — *"is there at least one matching row in the other table?"*
+          If yes, the customer is kept.
+
+          > [!ANALOGY]
+          > Imagine a filing cabinet with one folder per order. For each customer you open the drawer and ask:
+          > "Is there **at least one** folder with this customer's name on it?" You don't read the folder —
+          > you only care that one exists. That's `EXISTS`.
+
+          In database language this is called a **semi-join** (keep the rows that have a match, but don't pull in any
+          columns or duplicates from the other table). Its opposite, `NOT EXISTS`, is an **anti-join**
+          (keep the rows that have **no** match).
+
+      - type: example
+        title: Washington customers with a December order
+        sql: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE c.state = 'WA'
+            AND EXISTS (
+                SELECT 1
+                FROM orders o
+                WHERE o.customer_id = c.customer_id
+                  AND o.order_date >= '2024-12-01'
+            )
+          ORDER BY c.customer_id;
+        after: |
+          Seven customers. For each Washington customer the database asks: "is there an order with **this**
+          customer's id placed on or after 1 December 2024?" Yes → keep; no → drop.
+
+      - type: read
+        title: How to read an EXISTS subquery
+        md: |
+          Look at the three ingredients:
+
+          1. `EXISTS ( ... )` goes in `WHERE`, and gives **true** if the inner query returns **at least one row**.
+          2. `SELECT 1` — the inner `SELECT` list is irrelevant. `EXISTS` only checks *that* a row exists, not what's in it.
+             `SELECT 1` is the usual habit.
+          3. `WHERE o.customer_id = c.customer_id` — the **link** between the inner query and the *current* outer row.
+
+          The inner query uses a column from the outer query (`c.customer_id`), so it is different for each customer.
+          This is called a **correlated subquery** — you'll explore it fully in lesson 4. Note the aliases
+          `c` and `o`: they tell PostgreSQL which table each `customer_id` belongs to.
+
+          > [!MISTAKE]
+          > Forgetting the link. `EXISTS (SELECT 1 FROM orders)` asks "does the orders table have any rows at
+          > all?" — which is true for **everyone**.
+
+      - type: predict
+        id: m07-l03-p1
+        question: |
+          The link is missing! How many rows does this return?
+        sql: |
+          SELECT customer_id
+          FROM customers
+          WHERE EXISTS (SELECT 1 FROM orders);
+        options: ["0", "140", "150", "900"]
+        answer: 2
+        explanation: |
+          The orders table has rows, so `EXISTS` is true for every customer and all **150** come back. Without
+          `WHERE o.customer_id = c.customer_id`, the inner query doesn't depend on the customer at all.
+
+      - type: exercise
+        id: m07-l03-e1
+        title: Suppliers of pricey products
+        prompt: |
+          Show the `name` of every supplier that supplies **at least one product priced above 300**.
+          Sort by `name`. (Try it with `EXISTS`.)
+        starter: |
+          SELECT s.name
+          FROM suppliers s
+          WHERE EXISTS (
+              SELECT 1
+              FROM products p
+              WHERE p.supplier_id = ___
+                AND ___
+          )
+          ORDER BY s.name;
+        solution: |
+          SELECT s.name
+          FROM suppliers s
+          WHERE EXISTS (
+              SELECT 1
+              FROM products p
+              WHERE p.supplier_id = s.supplier_id
+                AND p.price > 300
+          )
+          ORDER BY s.name;
+        ordered: true
+        hints:
+          - The inner query looks in `products`. It needs a link to the current supplier row and the price condition.
+          - "Link: `p.supplier_id = s.supplier_id`. Extra condition: `p.price > 300`."
+          - "SELECT s.name FROM suppliers s WHERE EXISTS (SELECT 1 FROM products p WHERE p.supplier_id = s.supplier_id AND p.price > ___) ORDER BY s.name;"
+        explanation: |
+          Three suppliers qualify: Jade River Manufacturing, Nordlys Distribution and Tanuki Goods Ltd.
+          Extra conditions (like the price) go **inside** the subquery, next to the link.
+        difficulty: 1
+
+      - type: read
+        title: NOT EXISTS — "has no matching row"
+        md: |
+          Add `NOT` and you keep only the rows for which the inner query returns **nothing**.
+          It's the cleanest way to say "customers who never...", "products without any...".
+
+      - type: example
+        title: Customers who never ordered
+        sql: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          )
+          ORDER BY c.customer_id;
+        after: |
+          The same 10 customers (ids 141 to 150) that `NOT IN` found in the last lesson. For each customer the
+          database looks for an order; if it finds none, the customer is kept.
+
+      - type: exercise
+        id: m07-l03-e2
+        title: Fix the empty result
+        prompt: |
+          This query should list customers who have **never placed an order**, but it returns nothing.
+          Fix it so it shows `customer_id`, `first_name` and `last_name`, sorted by `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders o
+          )
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          )
+          ORDER BY c.customer_id;
+        ordered: true
+        hints:
+          - The inner query isn't connected to the customer, so it always finds orders.
+          - Add a WHERE inside the subquery that matches the order's customer to the outer customer.
+          - "WHERE o.customer_id = c.___"
+        explanation: |
+          Without the link, the orders table is never empty, so `NOT EXISTS` is false for everybody and you get zero
+          rows. With the link, the inner query searches only *this customer's* orders.
+        difficulty: 1
+
+      - type: stepper
+        title: Four ways to ask "who has ordered?"
+        md: |
+          The same question, asked four ways. The first two give 140; look closely at stage 3!
+        stages:
+          - label: IN
+            md: Build a list of customer ids, and test membership.
+            sql: |
+              SELECT COUNT(*) AS customers
+              FROM customers
+              WHERE customer_id IN (SELECT customer_id FROM orders);
+          - label: EXISTS
+            md: Ask a yes/no question for every customer.
+            sql: |
+              SELECT COUNT(*) AS customers
+              FROM customers c
+              WHERE EXISTS (
+                  SELECT 1
+                  FROM orders o
+                  WHERE o.customer_id = c.customer_id
+              );
+          - label: JOIN
+            md: |
+              A join produces **one row per matching order**, not per customer. A customer with 23 orders appears
+              23 times — that's 900 rows, one per order!
+            sql: |
+              SELECT COUNT(*) AS rows_returned
+              FROM customers c
+              JOIN orders o ON o.customer_id = c.customer_id;
+          - label: JOIN + DISTINCT
+            md: Count distinct customers to undo the duplication.
+            sql: |
+              SELECT COUNT(DISTINCT c.customer_id) AS customers
+              FROM customers c
+              JOIN orders o ON o.customer_id = c.customer_id;
+
+      - type: read
+        title: Why NOT EXISTS is NULL-safe
+        md: |
+          Remember the trap: one NULL in the list ruins `NOT IN`. `EXISTS` and `NOT EXISTS` never fall into it.
+          Why? `EXISTS` doesn't compare a value to a list. It only asks "did the inner query return a row?" and
+          the answer is always **true or false** — never unknown.
+
+          > [!TIP]
+          > Rule of thumb: when you need "rows with **no match**", reach for **NOT EXISTS** first. It gives the right
+          > answer even when NULLs are around.
+
+      - type: example
+        title: Categories with no sub-categories — safe this time
+        md: |
+          The very same question that gave **0 rows** with `NOT IN` in the last lesson.
+        sql: |
+          SELECT c.category_id, c.name
+          FROM categories c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM categories child
+              WHERE child.parent_id = c.category_id
+          )
+          ORDER BY c.category_id;
+        after: |
+          The correct **9** rows, without any `IS NOT NULL` trick. The categories table is used twice, so the
+          inner copy gets its own alias, `child`. Top-level categories have a NULL `parent_id`, but `NULL = c.category_id`
+          is never true, so those rows simply don't count as matches.
+
+      - type: example
+        title: A second, sneakier NOT IN problem
+        md: |
+          NULLs can hurt `NOT IN` on the **left** side too. Three products have no supplier (`supplier_id` is NULL).
+          Question: "How many products are **not** supplied by a supplier without a contact email?"
+        sql: |
+          SELECT
+              (SELECT COUNT(*)
+               FROM products
+               WHERE supplier_id NOT IN (
+                   SELECT supplier_id
+                   FROM suppliers
+                   WHERE contact_email IS NULL
+               )) AS with_not_in,
+              (SELECT COUNT(*)
+               FROM products p
+               WHERE NOT EXISTS (
+                   SELECT 1
+                   FROM suppliers s
+                   WHERE s.supplier_id = p.supplier_id
+                     AND s.contact_email IS NULL
+               )) AS with_not_exists;
+        after: |
+          `NOT IN` says **45**, `NOT EXISTS` says **48**. Twelve products come from suppliers without an email
+          (60 − 12 = 48). `NOT IN` also drops the 3 products with a NULL `supplier_id`, because `NULL NOT IN (...)`
+          is unknown. Those three do not come from an email-less supplier, so `NOT EXISTS` is right.
+
+      - type: quiz
+        id: m07-l03-q1
+        question: Which statement about `EXISTS` is true?
+        options:
+          - "It is true as soon as the subquery returns at least one row"
+          - "It compares the values returned by the subquery with a column"
+          - "It can return NULL when the subquery contains NULLs"
+          - "The subquery must select exactly one column"
+        answer: 0
+        explanation: |
+          `EXISTS` only checks whether a row comes back. What the row contains (even NULL) is irrelevant, and the
+          result is always true or false. That's why `SELECT 1`, `SELECT *` and `SELECT NULL` all behave the same inside it.
+
+      - type: predict
+        id: m07-l03-p2
+        question: |
+          The inner `SELECT` returns NULL for every row. How many customers does this return?
+        sql: |
+          SELECT customer_id
+          FROM customers c
+          WHERE EXISTS (
+              SELECT NULL
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          );
+        options: ["0", "140", "150", "An error"]
+        answer: 1
+        explanation: |
+          `EXISTS` cares only that a **row** exists, not that its value is non-NULL. A row containing NULL is still a
+          row. So the 140 customers with orders are kept.
+
+      - type: exercise
+        id: m07-l03-e3
+        title: Products without reviews
+        prompt: |
+          Show the `product_id` and `name` of products that have **no reviews at all**.
+          Use `NOT EXISTS`. Sort by `product_id`.
+        starter: |
+          SELECT p.product_id, p.name
+          FROM products p
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM reviews r
+              WHERE ___
+          )
+          ORDER BY p.product_id;
+        solution: |
+          SELECT p.product_id, p.name
+          FROM products p
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM reviews r
+              WHERE r.product_id = p.product_id
+          )
+          ORDER BY p.product_id;
+        ordered: true
+        hints:
+          - It's the same shape as "customers who never ordered", with products and reviews.
+          - Link the review to the current product with `r.product_id = p.product_id`.
+          - "WHERE r.product_id = p.___"
+        explanation: |
+          Eight products have never been reviewed. Five of them were never even ordered, which explains why
+          nobody reviewed them.
+        difficulty: 2
+
+      - type: exercise
+        id: m07-l03-e4
+        title: Unpaid orders
+        prompt: |
+          Finance wants a list of orders that are **not cancelled** but have **no payment** recorded.
+          Show `order_id`, `order_date` and `status`, sorted by `order_id`.
+        starter: |
+          SELECT o.order_id, o.order_date, o.status
+          FROM orders o
+          WHERE o.status <> 'cancelled'
+            AND NOT EXISTS (___)
+          ORDER BY o.order_id;
+        solution: |
+          SELECT o.order_id, o.order_date, o.status
+          FROM orders o
+          WHERE o.status <> 'cancelled'
+            AND NOT EXISTS (
+                SELECT 1
+                FROM payments p
+                WHERE p.order_id = o.order_id
+            )
+          ORDER BY o.order_id;
+        ordered: true
+        hints:
+          - You need two conditions combined with AND — one plain filter, one NOT EXISTS.
+          - The subquery looks in `payments` for rows with the same `order_id`.
+          - "AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.___)"
+        explanation: |
+          15 orders are unpaid: 6 delivered, 6 still processing and 3 shipped. The delivered ones (like order 681 from
+          October) are probably worth a call to the finance team!
+        difficulty: 2
+
+      - type: exercise
+        id: m07-l03-e5
+        title: Bought but never reviewed
+        prompt: |
+          Show `customer_id`, `first_name` and `last_name` of customers who have **placed at least one order** but have
+          **never written a review**. Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE EXISTS (___)
+            AND NOT EXISTS (___)
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id, c.first_name, c.last_name
+          FROM customers c
+          WHERE EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM reviews r
+              WHERE r.customer_id = c.customer_id
+          )
+          ORDER BY c.customer_id;
+        ordered: true
+        hints:
+          - Two subqueries in the same WHERE, one positive and one negative.
+          - "One looks in `orders`, the other in `reviews`; both link on `customer_id`."
+          - "WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id) AND NOT EXISTS (SELECT 1 FROM ___ r WHERE r.customer_id = c.customer_id)"
+        explanation: |
+          25 customers ordered but never left a review. The `EXISTS` part removes the 10 customers who never ordered at
+          all, so you're left with real buyers to ask for feedback.
+        difficulty: 2
+
+      - type: fill
+        id: m07-l03-f1
+        prompt: |
+          Complete the query to list customers who have **never placed an order**.
+        template: |
+          SELECT c.first_name, c.last_name
+          FROM customers c
+          WHERE ___ EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = ___.customer_id
+          );
+        answers:
+          - ["NOT"]
+          - ["c"]
+        explanation: |
+          `NOT EXISTS` keeps customers with no matching order, and `c.customer_id` links the inner query to the current customer.
+
+      - type: exercise
+        id: m07-l03-e6
+        title: Loved and hated
+        prompt: |
+          Show the `product_id` and `name` of products that have received **at least one 5-star review and at least one
+          1-star review**. Sort by `product_id`.
+        starter: |
+          SELECT p.product_id, p.name
+          FROM products p
+          WHERE EXISTS (___)
+            AND EXISTS (___)
+          ORDER BY p.product_id;
+        solution: |
+          SELECT p.product_id, p.name
+          FROM products p
+          WHERE EXISTS (
+              SELECT 1
+              FROM reviews r
+              WHERE r.product_id = p.product_id
+                AND r.rating = 5
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM reviews r
+              WHERE r.product_id = p.product_id
+                AND r.rating = 1
+          )
+          ORDER BY p.product_id;
+        ordered: true
+        hints:
+          - "You need two separate EXISTS subqueries on the same table — one for each rating."
+          - "A single review can't have rating 5 and rating 1 at once, so don't try `rating = 5 AND rating = 1` inside one subquery."
+          - "WHERE EXISTS (SELECT 1 FROM reviews r WHERE r.product_id = p.product_id AND r.rating = 5) AND EXISTS (SELECT 1 FROM reviews r WHERE ... AND r.rating = ___)"
+        explanation: |
+          Three polarizing products: Air Fryer 5L, The Beginner's Guide to Sourdough and Vitamin C Moisturizer. Each
+          `EXISTS` is its own question about the same product. This "has both A and B" pattern is hard with a plain
+          `JOIN` and easy with two `EXISTS`.
+        difficulty: 3
+
+      - type: parsons
+        id: m07-l03-o1
+        prompt: |
+          Put the lines in order to list customers who have had an order **returned**.
+        lines:
+          - SELECT c.first_name, c.last_name
+          - FROM customers c
+          - WHERE EXISTS (
+          - SELECT 1 FROM orders o
+          - WHERE o.customer_id = c.customer_id
+          - AND o.status = 'returned'
+          - );
+        distractors:
+          - HAVING EXISTS (
+        explanation: |
+          `EXISTS ( ... )` belongs in `WHERE`, not `HAVING`. The link and the extra condition are both inside the parentheses.
+    cheatsheet:
+      - title: EXISTS (has at least one match)
+        sql: |
+          SELECT c.first_name
+          FROM customers c
+          WHERE EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          );
+        note: "The WHERE inside links the inner query to the current outer row (c)."
+      - title: NOT EXISTS (has no match)
+        sql: |
+          SELECT c.first_name
+          FROM customers c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          );
+        note: "NULL-safe: prefer it over NOT IN when the column may contain NULLs."
+
+testPool:
+  - type: quiz
+    id: m07-t01
+    lesson: m07-l01
+    difficulty: 1
+    question: What does a scalar subquery return?
+    options:
+      - One value (one row and one column)
+      - A list of many values
+      - A whole table
+      - Always a number
+    answer: 0
+    explanation: Scalar means a single value; it can be a number, text, a date...

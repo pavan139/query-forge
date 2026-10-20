@@ -1,0 +1,3037 @@
+id: m02
+order: 2
+title: "WHERE — Filtering Rows"
+subtitle: Ask for only the rows you care about
+icon: "🎯"
+level: beginner
+description: |
+  So far every query has returned *every* row. Real questions are pickier: "Which drinks cost under $3?",
+  "Who joined this year?", "Which orders have no tip recorded?"
+
+  In this module you will learn the `WHERE` clause, the tool that keeps only the rows you want. You will
+  compare numbers, text, true/false values and dates, combine rules with `AND`, `OR` and `NOT`, search
+  with `IN`, `BETWEEN` and `LIKE`, and meet `NULL` (the "missing value") and its famous traps.
+  Everything runs on the Bean & Bloom Café data, and you finish by solving the **Café Detective** case.
+dataset: cafe
+lessons:
+  - id: m02-l01
+    title: Comparing numbers
+    summary: Keep only the rows that pass a number test, using WHERE with =, <>, <, >, <= and >=.
+    minutes: 16
+    steps:
+      - type: read
+        title: A question with a rule
+        md: |
+          Maria, the café manager, leans over the counter. *"I'm printing a little **Treats under $3** card.
+          Can you pull that list for me?"*
+
+          Up to now, your queries returned **every** row. That is like handing Maria the whole menu when she
+          only wants the cheap items. The `WHERE` clause lets you add a **condition**: a rule that each row
+          must pass to be included.
+
+          > [!ANALOGY]
+          > Think of a coffee filter. Water and coffee flow through, and the grounds stay behind. `WHERE` is
+          > a filter for rows: rows that pass the rule flow into your result, and the others are held back.
+
+          Here is the shape of a query with a filter. `WHERE` always comes **after** `FROM`:
+
+          ```sql
+          SELECT columns
+          FROM table
+          WHERE condition;
+          ```
+
+      - type: example
+        title: Your first WHERE
+        md: |
+          Press **Run** to see only the items that cost less than 3 dollars.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price < 3;
+        after: |
+          The menu has 32 items, but only **6** pass the rule `price < 3`: Drip Coffee, Espresso, the three
+          plain teas and the Chocolate Chip Cookie. Each row was checked on its own, and the ones that failed
+          were left out.
+
+      - type: read
+        title: The comparison symbols
+        md: |
+          A condition usually **compares** two things. Here are all six comparisons you need:
+
+          | Symbol | Means | Example |
+          |---|---|---|
+          | `=` | equal to | `price = 4.25` |
+          | `<>` | not equal to | `price <> 4.25` |
+          | `!=` | not equal to (same as `<>`) | `price != 4.25` |
+          | `<` | less than | `price < 3` |
+          | `>` | greater than | `price > 5` |
+          | `<=` | less than **or equal to** | `price <= 3` |
+          | `>=` | greater than **or equal to** | `price >= 5` |
+
+          > [!NOTE]
+          > In SQL, a **single** `=` means "is equal to". Nothing is being stored or changed, you are just
+          > asking a yes/no question about each row.
+
+          > [!TIP]
+          > `<>` and `!=` do exactly the same thing. `<>` is the official SQL way, and `!=` is a friendly
+          > shortcut that PostgreSQL also understands. Pick one and stay with it.
+
+      - type: example
+        title: Exactly equal
+        md: |
+          Which items cost exactly 4.25?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price = 4.25;
+        after: |
+          Three items cost exactly 4.25: Cappuccino, Cinnamon Roll and Chocolate Brownie. Notice that
+          numbers are written **without quotes**.
+
+      - type: exercise
+        id: m02-l01-e1
+        title: Treats over five dollars
+        prompt: |
+          Show the `name` and `price` of every menu item that costs **more than 5** dollars.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price > 5;
+        hints:
+          - Look at the first example. You only need to change the rule after WHERE.
+          - 'Think of "more than": it is the `>` symbol.'
+          - "SELECT name, price FROM menu_items WHERE price ___ 5;"
+        explanation: |
+          `price > 5` keeps rows where the price is strictly bigger than 5, so an item priced at exactly 5.00
+          would not be included. This returns 13 rows.
+        difficulty: 1
+
+      - type: stepper
+        title: What the database does, step by step
+        md: |
+          Click through the stages and run each one. Watch the number of rows shrink!
+        stages:
+          - label: FROM
+            md: |
+              The database starts by reading **all** the rows of the table (32 menu items).
+            sql: |
+              SELECT *
+              FROM menu_items;
+          - label: WHERE
+            md: |
+              Next it checks the rule `price < 3` on every row and keeps only the rows that pass.
+            sql: |
+              SELECT *
+              FROM menu_items
+              WHERE price < 3;
+          - label: SELECT
+            md: |
+              Last, it picks the columns you asked for from the rows that are left.
+            sql: |
+              SELECT name, price
+              FROM menu_items
+              WHERE price < 3;
+
+      - type: read
+        title: Filter on a column you don't show
+        md: |
+          Because the filter happens **before** the columns are picked, you can use a column in `WHERE`
+          even if it is not in your `SELECT` list. Maria might ask for "the names of the really
+          high-calorie items", and she does not need to see the calories themselves.
+
+      - type: example
+        title: Filtering on a hidden column
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE calories > 400;
+        after: |
+          Only `name` is shown, yet the rule used `calories`. Six items pass: Cinnamon Roll, Turkey Club,
+          Caprese Panini, Veggie Hummus Wrap, Cheesecake Slice and Chocolate Brownie.
+
+      - type: exercise
+        id: m02-l01-e2
+        title: Our best loyalty members
+        prompt: |
+          Show the `first_name`, `last_name` and `loyalty_points` of every customer who has **500 or more**
+          loyalty points.
+        starter: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, last_name, loyalty_points
+          FROM customers
+          WHERE loyalty_points >= 500;
+        hints:
+          - The table is `customers` and the rule is about the `loyalty_points` column.
+          - '"500 or more" includes 500 itself, so you need the "greater than or equal to" symbol.'
+          - "SELECT first_name, last_name, loyalty_points FROM customers WHERE loyalty_points ___ 500;"
+        explanation: |
+          `>=` includes the boundary value. With plain `>` a customer with exactly 500 points would be left
+          out. (Nobody has exactly 500 points in this data, but the habit matters.) 12 customers qualify.
+        difficulty: 1
+
+      - type: read
+        title: Mind the boundary
+        md: |
+          The difference between `<` and `<=` (or `>` and `>=`) only matters for rows **exactly on the
+          boundary**. Two items cost exactly 5.25: Mocha and Matcha Latte. Watch what happens to them.
+
+          > [!MISTAKE]
+          > Mixing up `>` and `>=` is one of the most common slips, and the query still runs without any
+          > error, so you might not notice. Always ask yourself: *"Should the exact value count?"*
+
+      - type: example
+        title: Greater than, or greater than or equal?
+        md: |
+          First run this with `>`, then change it to `>=` and run it again. How many rows do you get each time?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price > 5.25;
+        after: |
+          With `>` you get **11** rows, and Mocha and Matcha Latte are missing. With `>=` you get **13**
+          rows, because the two items priced at exactly 5.25 now count too.
+
+      - type: predict
+        id: m02-l01-p1
+        question: |
+          Three items cost less than 2.75 (Drip Coffee, Espresso and the Chocolate Chip Cookie). Three more
+          cost **exactly** 2.75 (the plain teas). How many rows will this query return?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price <= 2.75;
+        options: ["3", "6", "29", "32"]
+        answer: 1
+        explanation: |
+          `<=` means "less than **or equal to**", so the 3 cheaper items **and** the 3 items at exactly 2.75
+          are included: 6 rows. With plain `<` you would get only 3.
+
+      - type: exercise
+        id: m02-l01-e3
+        title: Anyone with points
+        prompt: |
+          Show the `first_name` and `loyalty_points` of every customer whose `loyalty_points` is **not
+          equal to 0**.
+        starter: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          WHERE loyalty_points <> 0;
+        hints:
+          - You want everyone except the customers who have exactly zero points.
+          - '"Not equal" can be written `<>` (or `!=`).'
+          - "SELECT first_name, loyalty_points FROM customers WHERE loyalty_points ___ 0;"
+        explanation: |
+          `<>` keeps every row where the value differs from 0. Two customers have 0 points, so you get
+          26 of the 28 customers. `!=` would give the same result.
+        difficulty: 2
+
+      - type: predict
+        id: m02-l01-p2
+        question: |
+          Many programming languages write "equals" as `==`. What will PostgreSQL do with this query?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price == 5;
+        options:
+          - It returns the items that cost exactly 5
+          - It returns no rows
+          - It shows an error, because SQL has no == symbol
+          - It returns every item
+        answer: 2
+        expectError: true
+        explanation: |
+          PostgreSQL says the operator `==` does not exist. SQL only needs **one** `=` to compare. Remove
+          one equals sign and the query works (it returns no rows, because no item costs exactly 5).
+
+      - type: exercise
+        id: m02-l01-e4
+        title: Fix the backwards symbol
+        prompt: |
+          This query should show the `name` and `price` of items that cost **3 dollars or less**, but it
+          has a bug and fails with an error. Fix it.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price =< 3;
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price <= 3;
+        hints:
+          - Read the error message. PostgreSQL does not know the symbol after `price`.
+          - In SQL the `<` or `>` always comes **first**, and the `=` comes second.
+          - "SELECT name, price FROM menu_items WHERE price ___ 3;"
+        explanation: |
+          The correct symbols are `<=` and `>=`. A helpful way to remember: the arrow points at the smaller
+          side first, and then comes the equals sign. Seven items cost 3 or less.
+        difficulty: 2
+
+      - type: exercise
+        id: m02-l01-e5
+        title: Generous tips
+        prompt: |
+          Show the `order_id`, `tip` and `payment_method` of every order where the `tip` was **3 dollars
+          or more**.
+        starter: |
+          SELECT order_id, tip, payment_method
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, tip, payment_method
+          FROM orders
+          WHERE tip >= 3;
+        hints:
+          - The table is `orders`, and the rule is about the `tip` column.
+          - '"3 or more" means greater than or equal to 3.'
+          - "SELECT order_id, tip, payment_method FROM orders WHERE tip ___ 3;"
+        explanation: |
+          13 orders have a tip of 3 or more. Orders whose tip was never recorded (empty) are not included,
+          because the database cannot say whether an unknown tip is 3 or more. You will learn exactly how
+          that works in the last lesson of this module.
+        difficulty: 2
+
+      - type: read
+        title: Math inside WHERE
+        md: |
+          You already know how to calculate in a `SELECT` list (`price * 2`). The same arithmetic works inside
+          a condition. Staff are paid per hour, so "what does an 8-hour shift cost?" is `hourly_rate * 8`.
+
+      - type: example
+        title: A calculation in the rule
+        sql: |
+          SELECT name, hourly_rate, hourly_rate * 8 AS day_pay
+          FROM staff
+          WHERE hourly_rate * 8 > 150;
+        after: |
+          Three people earn more than 150 dollars in an 8-hour shift: Maria (228), Ben (158) and Aiko (172).
+          The calculation `hourly_rate * 8` is done for each row, and then compared with 150.
+
+      - type: example
+        title: Why you cannot use the alias in WHERE
+        md: |
+          The example above showed `AS day_pay` in the SELECT list. What if we use that nickname in `WHERE`?
+        sql: |
+          SELECT name, hourly_rate * 8 AS day_pay
+          FROM staff
+          WHERE day_pay > 150;
+        expectError: true
+        after: |
+          The error says `column "day_pay" does not exist`. The database runs `WHERE` **before** it creates
+          the nicknames in `SELECT`, so at that moment `day_pay` is not known yet. Repeat the calculation in
+          `WHERE` instead (like in the previous example).
+
+      - type: fill
+        id: m02-l01-f1
+        prompt: Complete the query to show the items with **at most** 300 calories.
+        template: |
+          SELECT name, calories
+          FROM menu_items
+          ___ calories ___ 300;
+        answers:
+          - ["WHERE"]
+          - ["<="]
+        explanation: |
+          `WHERE` starts the filter and `<=` means "at most", which is "less than or equal to".
+
+      - type: parsons
+        id: m02-l01-o1
+        prompt: Put the lines in the right order to list customers with **more than 600** loyalty points.
+        lines:
+          - SELECT first_name, loyalty_points
+          - FROM customers
+          - WHERE loyalty_points > 600;
+        distractors:
+          - FILTER loyalty_points > 600;
+        explanation: |
+          The order is always SELECT, then FROM, then WHERE. There is no `FILTER` clause in this position,
+          so that line is left out.
+
+      - type: exercise
+        id: m02-l01-e6
+        title: Happy hour math
+        prompt: |
+          Happy hour takes **20% off** every price (so the happy-hour price is `price * 0.8`). Show the
+          `name` and `price` of every item whose **happy-hour price is 3 dollars or less**.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price * 0.8 <= 3;
+        hints:
+          - Do the math inside the WHERE rule, just like `hourly_rate * 8` in the staff example.
+          - The happy-hour price is `price * 0.8`, and "3 or less" is `<= 3`.
+          - "SELECT name, price FROM menu_items WHERE price * 0.8 ___ 3;"
+        explanation: |
+          The Vegan Banana Bread costs 3.75, and 3.75 * 0.8 is exactly 3.00, so the `<=` lets it in. 11 items
+          qualify. You could also have written `price <= 3.75`, which gives the same rows.
+        difficulty: 3
+    cheatsheet:
+      - title: Filter rows with WHERE
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price < 3;
+        note: WHERE goes after FROM and keeps only the rows where the condition is true.
+      - title: The six comparisons
+        sql: |
+          -- =  <>  !=  <  >  <=  >=
+          WHERE price >= 5
+        note: A single = tests equality. <> and != both mean "not equal".
+      - title: Calculations in a condition
+        sql: |
+          WHERE hourly_rate * 8 > 150
+        note: Math works in WHERE, but SELECT aliases (AS) cannot be used there.
+  - id: m02-l02
+    title: Filtering text
+    summary: Match words with single quotes, avoid the double-quote error, and understand case and alphabet order.
+    minutes: 16
+    steps:
+      - type: read
+        title: Looking for a word
+        md: |
+          A customer at the counter asks: *"What teas do you have?"* The menu has a `category` column that
+          holds words like `Coffee`, `Tea` and `Pastry`. To filter on a word, you compare the column with
+          that word.
+
+          The one important rule: a word (called a **string** or **text value**) is written between
+          **single quotes**, like `'Tea'`.
+
+          > [!ANALOGY]
+          > Single quotes are like a label that says *"this is a word, take it literally."* Without them,
+          > SQL thinks `Tea` is the name of a column and goes looking for it.
+
+          ```sql
+          WHERE category = 'Tea'
+          ```
+
+      - type: example
+        title: Find every tea
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Tea';
+        after: |
+          Five items are in the `Tea` category: three plain teas, plus the Chai Latte and the Matcha Latte.
+          Surprise: some "lattes" are filed under Tea, and only the database knows. That is why it is great
+          to filter on the real data instead of guessing.
+
+      - type: exercise
+        id: m02-l02-e1
+        title: Everything from the bakery
+        prompt: |
+          Show the `name` and `price` of every item in the `Pastry` category.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Pastry';
+        hints:
+          - It works exactly like the tea example, with a different word.
+          - Don't forget the single quotes around the word.
+          - "SELECT name, price FROM menu_items WHERE category = '___';"
+        explanation: |
+          Text in single quotes is matched exactly, so `'Pastry'` finds the 6 pastries (Croissant, Muffin,
+          Danish, Cinnamon Roll, Cookie and Banana Bread).
+        difficulty: 1
+
+      - type: example
+        title: The classic quote mistake
+        md: |
+          Almost every SQL beginner types double quotes around a word at least once. Run this and read the error.
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = "Tea";
+        expectError: true
+        after: |
+          The error says `column "Tea" does not exist`. In PostgreSQL, **double quotes** `"..."` are for the
+          *names* of columns and tables, so the database went looking for a column called Tea. Use **single
+          quotes** for text values.
+
+      - type: read
+        title: Two kinds of quotes
+        md: |
+          | Quotes | Used for | Example |
+          |---|---|---|
+          | `'single'` | text **values** (the words you search for) | `'Tea'` |
+          | `"double"` | **names** of columns and tables | `"Tea"` |
+
+          > [!MISTAKE]
+          > `WHERE category = "Tea"` fails, and so does `WHERE category = Tea` (no quotes at all). Both make
+          > the database look for a *column* named Tea. Words always need **single quotes**.
+
+          > [!TIP]
+          > Typing on a phone or tablet? Some keyboards turn straight quotes `'` into curly quotes `’`.
+          > SQL only understands the straight ones. If you see a strange error mentioning a quote
+          > character, retype the quotes.
+
+      - type: exercise
+        id: m02-l02-e2
+        title: Fix the quotes
+        prompt: |
+          This query should show the `first_name` and `last_name` of customers who live in **Seattle**,
+          but it fails with an error. Fix it.
+        starter: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE city = "Seattle";
+        solution: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE city = 'Seattle';
+        hints:
+          - Read the error. PostgreSQL thinks `"Seattle"` is a column name.
+          - Text values need single quotes, not double quotes.
+          - "SELECT first_name, last_name FROM customers WHERE city = '___';"
+        explanation: |
+          Swapping `"Seattle"` for `'Seattle'` turns a column name into a text value. Six customers live in Seattle.
+        difficulty: 1
+
+      - type: read
+        title: Capital letters matter
+        md: |
+          When you compare text, SQL checks **every character exactly**, including capital letters.
+          `'Tea'` and `'tea'` are *different* words to the database.
+
+          > [!NOTE]
+          > Keywords such as `SELECT` and `where` are not case-sensitive, and neither are column or table
+          > names. Only the **text values** inside single quotes are.
+
+      - type: example
+        title: A lowercase search
+        md: |
+          Run this. The query is valid, so what will you get?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'tea';
+        after: |
+          **Zero rows**, and no error. The query is perfectly valid, but no category is spelled `tea` with a
+          small `t`. A correct query that finds nothing is normal in SQL, and it is a good reminder to check
+          your spelling and capital letters whenever a result is empty.
+
+      - type: predict
+        id: m02-l02-p1
+        question: |
+          The `Juice` category has 4 items. How many rows will this query return?
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'juice';
+        options: ["4", "0", "32", "An error"]
+        answer: 1
+        explanation: |
+          `'juice'` (lowercase j) is not the same text as `'Juice'`, so no row matches. You get an empty
+          result, not an error. In lesson 6 you will learn `ILIKE`, which ignores capital letters.
+
+      - type: exercise
+        id: m02-l02-e3
+        title: The empty result mystery
+        prompt: |
+          This query should list the `name` and `role` of the staff members whose role is **Barista**, but
+          it returns no rows. Fix it so that it returns the 4 baristas.
+        starter: |
+          SELECT name, role
+          FROM staff
+          WHERE role = 'barista';
+        solution: |
+          SELECT name, role
+          FROM staff
+          WHERE role = 'Barista';
+        hints:
+          - The query runs without an error, so look at the text itself.
+          - Check the capital letters in the role.
+          - "SELECT name, role FROM staff WHERE role = '___';"
+        explanation: |
+          The stored value is `Barista` with a capital B. Text matching is exact, so `'barista'` finds nothing.
+        difficulty: 2
+
+      - type: read
+        title: Everyone except...
+        md: |
+          Text works with `<>` (or `!=`) too, to mean "anything but this word".
+
+      - type: example
+        title: Everyone who is not a barista
+        sql: |
+          SELECT name, role
+          FROM staff
+          WHERE role <> 'Barista';
+        after: |
+          Six of the ten team members remain: the manager, two bakers and three cashiers.
+
+      - type: exercise
+        id: m02-l02-e4
+        title: Customers from elsewhere
+        prompt: |
+          Show the `first_name` and `city` of every customer who does **not** live in Portland.
+        starter: |
+          SELECT first_name, city
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, city
+          FROM customers
+          WHERE city <> 'Portland';
+        hints:
+          - You need the "not equal" symbol, and the word in single quotes.
+          - '`<>` (or `!=`) followed by `''Portland''`.'
+          - "SELECT first_name, city FROM customers WHERE city ___ 'Portland';"
+        explanation: |
+          Eight customers live in Portland, so the other 20 remain.
+        difficulty: 2
+
+      - type: read
+        title: Alphabetical order
+        md: |
+          Text can also be compared with `<`, `>`, `<=` and `>=`. SQL compares **letter by letter**, like a
+          dictionary: `'Apple'` comes before `'Banana'`, and `'Mocha'` comes after `'Espresso'`.
+
+          Two details that help:
+
+          - A shorter word that is the beginning of a longer word comes first: `'D'` is *less than* `'Diallo'`.
+          - In this course's database, **all capital letters come before all lowercase letters**. All the
+            names in the café start with a capital letter, so you will not notice any problem.
+
+          > [!NOTE]
+          > How lowercase and capitals are ordered depends on how a PostgreSQL server was set up. Here, a
+          > plain "byte order" is used, so `'Zoe'` sorts before `'adam'`.
+
+      - type: example
+        title: Last names from S onwards
+        sql: |
+          SELECT last_name, first_name
+          FROM customers
+          WHERE last_name >= 'S';
+        after: |
+          Four customers have a last name starting with S or a later letter: Schmidt, Santos, Scott and Torres.
+          `'Santos' >= 'S'` is true because a word that starts with `S` is greater than the single letter `S`.
+
+      - type: exercise
+        id: m02-l02-e5
+        title: The first letters of the alphabet
+        prompt: |
+          Show the `last_name` and `first_name` of every customer whose `last_name` is **less than `'D'`**
+          (in other words, it comes before D in the alphabet).
+        starter: |
+          SELECT last_name, first_name
+          FROM customers
+          WHERE
+        solution: |
+          SELECT last_name, first_name
+          FROM customers
+          WHERE last_name < 'D';
+        hints:
+          - Text can be compared with `<` just like numbers can.
+          - Use `<` and put the letter D in single quotes.
+          - "SELECT last_name, first_name FROM customers WHERE last_name ___ 'D';"
+        explanation: |
+          Four last names come before `'D'`: Clark, Bennett, Carter and Brown. Anyone named Davis or Diallo
+          starts with `D`, which is *greater* than the single letter `'D'`, so they are not included.
+        difficulty: 2
+
+      - type: read
+        title: Quotes inside text
+        md: |
+          What if your text contains an apostrophe, like *Maria's*? The apostrophe looks just like a single
+          quote and would end the text too early. The fix: **type the apostrophe twice**.
+
+      - type: example
+        title: Doubling the apostrophe
+        sql: |
+          SELECT 'Maria''s Café' AS owner;
+        after: |
+          The two apostrophes `''` become one real apostrophe in the result. You would write a `WHERE` the
+          same way, for example `WHERE name = 'Maria''s Special'`.
+
+      - type: quiz
+        id: m02-l02-q1
+        question: Which query correctly shows the items in the **Dessert** category?
+        options:
+          - SELECT name FROM menu_items WHERE category = "Dessert";
+          - SELECT name FROM menu_items WHERE category = Dessert;
+          - SELECT name FROM menu_items WHERE category = 'Dessert';
+          - SELECT name FROM menu_items WHERE category = 'dessert';
+        answer: 2
+        explanation: |
+          Only the third option has single quotes **and** the right capital letter. Double quotes and no
+          quotes look for a column called Dessert, and `'dessert'` is valid but finds nothing.
+
+      - type: fill
+        id: m02-l02-f1
+        prompt: Complete the query to show the staff who are **not** cashiers.
+        template: |
+          SELECT name, role
+          FROM staff
+          WHERE role ___ 'Cashier';
+        answers:
+          - ["<>", "!="]
+        explanation: |
+          `<>` (or `!=`) means "not equal". Seven people remain: everyone except the three cashiers.
+
+      - type: exercise
+        id: m02-l02-e6
+        title: Three bugs in one query
+        prompt: |
+          Maria wants the `name` and `price` of every item in the **Dessert** category (4 items). This
+          query has several mistakes. Run it, read each error, and fix them one by one.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE catagory = "dessert";
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Dessert';
+        hints:
+          - There are three separate problems. The first error message tells you about one of them.
+          - One column name is misspelled, the quotes are the wrong kind, and a capital letter is missing.
+          - "SELECT name, price FROM menu_items WHERE ___ = '___';"
+        explanation: |
+          Debugging is a normal part of SQL: fix one error, run again, and read the next message. The fixes
+          were `category` (spelling), `'single quotes'`, and `'Dessert'` (capital D).
+        difficulty: 3
+    cheatsheet:
+      - title: Text needs single quotes
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'Tea';
+        note: "'single quotes' are for text values. \"double quotes\" are for column and table names."
+      - title: Text is matched exactly
+        sql: |
+          WHERE role = 'Barista'   -- matches
+          WHERE role = 'barista'   -- no match
+        note: Capital letters and spaces matter inside quotes. An empty result is not an error.
+      - title: Alphabetical comparisons
+        sql: |
+          WHERE last_name >= 'S'
+        note: Text can be compared with < > <= >= and <> like numbers. An apostrophe inside text is written twice ('').
+  - id: m02-l03
+    title: Booleans and dates
+    summary: Filter on true/false columns and on dates and timestamps, and avoid the midnight surprise.
+    minutes: 16
+    steps:
+      - type: read
+        title: Yes/no columns
+        md: |
+          A guest at the counter asks: *"What do you have that's vegan?"* Luckily the menu has an
+          `is_vegan` column, and it only ever holds two possible values: `true` or `false`.
+
+          A column like that is called a **boolean**. It is a yes/no switch.
+
+          > [!ANALOGY]
+          > A boolean column is a light switch: each row is either ON (`true`) or OFF (`false`). The menu has
+          > two of them: `is_vegan` and `is_available`.
+
+          To filter on a boolean, compare it with `true` or `false`. These two words are special SQL keywords,
+          so they are written **without quotes**.
+
+      - type: example
+        title: Vegan items only
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE is_vegan = true;
+        after: |
+          14 of the 32 items are vegan. Every row in the result had `true` in its `is_vegan` column.
+
+      - type: read
+        title: A handy shortcut
+        md: |
+          A boolean column is already a true/false answer, so you can leave out the `= true` part:
+
+          ```sql
+          WHERE is_vegan          -- same as: WHERE is_vegan = true
+          WHERE is_vegan = false  -- items that are NOT vegan
+          ```
+
+          Both styles are common. Many people write `= true` while learning, because it is easier to read.
+
+      - type: example
+        title: The short way
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          WHERE is_vegan;
+        after: |
+          Same 14 rows as before. The column on its own is enough, because the row passes whenever the
+          value is `true`.
+
+      - type: exercise
+        id: m02-l03-e1
+        title: Sold out today
+        prompt: |
+          Show the `name` and `category` of every menu item that is **not available** right now
+          (`is_available` is `false`).
+        starter: |
+          SELECT name, category
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, category
+          FROM menu_items
+          WHERE is_available = false;
+        hints:
+          - "`is_available` is a boolean column, so compare it with true or false."
+          - You want the rows where it is `false`. Remember that false has no quotes around it.
+          - "SELECT name, category FROM menu_items WHERE is_available = ___;"
+        explanation: |
+          Three items are unavailable: Smoked Salmon Bagel, Tiramisu Cup and Lemon Tart. `WHERE NOT is_available`
+          would also work, and you will meet `NOT` in lesson 4.
+        difficulty: 1
+
+      - type: quiz
+        id: m02-l03-q1
+        question: |
+          What does this query keep?
+
+          `SELECT name FROM menu_items WHERE is_available;`
+        options:
+          - Rows where is_available is true
+          - Rows where is_available is false
+          - Every row
+          - Nothing, it is an error
+        answer: 0
+        explanation: |
+          A boolean column can be used on its own as a condition. The row passes when the value is `true`.
+          To get the `false` rows you would write `WHERE is_available = false`.
+
+      - type: read
+        title: Dates
+        md: |
+          The café also keeps dates: when an item was added (`added_on`), when a customer joined
+          (`joined_on`), and when a team member started (`hired_on`).
+
+          In SQL a date is written as text in single quotes, in the order **year-month-day**:
+          `'2024-11-30'`. Always use this format. It is clear to everyone and works on every PostgreSQL
+          server.
+
+          Dates compare like a calendar: **earlier means smaller**, and **later means bigger**. So
+          `joined_on < '2023-01-01'` means "joined before 2023".
+
+      - type: example
+        title: New on the menu
+        md: |
+          Which items were added in 2024 or later?
+        sql: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE added_on >= '2024-01-01';
+        after: |
+          Three items were added from 1 January 2024 onward: Lemon Tart (April), Carrot Ginger Juice (March)
+          and Berry Smoothie (the newest, added on 30 November).
+
+      - type: exercise
+        id: m02-l03-e2
+        title: The early supporters
+        prompt: |
+          Show the `first_name` and `joined_on` of every customer who joined **before 2023-01-01**.
+        starter: |
+          SELECT first_name, joined_on
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, joined_on
+          FROM customers
+          WHERE joined_on < '2023-01-01';
+        hints:
+          - "`joined_on` is a date, so compare it with a date in single quotes."
+          - '"Before" means earlier, which is the `<` symbol.'
+          - "SELECT first_name, joined_on FROM customers WHERE joined_on ___ '2023-01-01';"
+        explanation: |
+          Five customers joined before 2023: Dmitri, Kavya, Nora, Paola and Chloe. A person who joined *on*
+          2023-01-01 would not be included, because `<` is strict.
+        difficulty: 1
+
+      - type: example
+        title: Forgetting the quotes (on purpose)
+        md: |
+          What happens if we leave the quotes off a date? Run it and see.
+        sql: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE added_on = 2024-11-30;
+        expectError: true
+        after: |
+          Without quotes, SQL sees `2024-11-30` as a *subtraction*: 2024 minus 11 minus 30, which is the
+          number 1983. It then complains that it cannot compare a date with a number. The fix is to put the
+          date in single quotes: `'2024-11-30'`.
+
+      - type: exercise
+        id: m02-l03-e3
+        title: Fix the date
+        prompt: |
+          This query should show the `first_name` and `joined_on` of customers who joined **after
+          2024-06-01**, but it fails with an error. Fix it.
+        starter: |
+          SELECT first_name, joined_on
+          FROM customers
+          WHERE joined_on > 2024-06-01;
+        solution: |
+          SELECT first_name, joined_on
+          FROM customers
+          WHERE joined_on > '2024-06-01';
+        hints:
+          - The error says SQL cannot compare a date with a number.
+          - Dates need single quotes, just like text.
+          - "SELECT first_name, joined_on FROM customers WHERE joined_on > '___';"
+        explanation: |
+          With quotes, `'2024-06-01'` is read as a date. Two customers joined after that day: Ava and Seun.
+        difficulty: 2
+
+      - type: read
+        title: Dates with a time of day
+        md: |
+          Some columns store the date **and** the time, such as `order_time` in the `orders` table:
+          `2024-12-31 16:26:36`. This kind of column is called a **timestamp**.
+
+          Here is the part that surprises almost everyone. If you write only a date, SQL treats it as
+          **midnight at the start of that day** (`00:00:00`). So `'2024-12-31'` really means
+          `'2024-12-31 00:00:00'`.
+
+          > [!MISTAKE]
+          > `WHERE order_time = '2024-12-31'` does **not** mean "orders on 31 December". It means "orders
+          > placed at exactly midnight". Almost nothing is placed at that exact second, so you get no rows.
+
+      - type: example
+        title: Orders from the start of 31 December
+        sql: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time >= '2024-12-31';
+        after: |
+          Two orders were placed on the last day of the year: #179 at 16:26 and #180 at 18:02. Using `>=` with
+          the start of the day catches everything from midnight onward.
+
+      - type: example
+        title: The midnight trap
+        md: |
+          Same date, but with `=`. Run it.
+        sql: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time = '2024-12-31';
+        after: |
+          **Zero rows**, although two orders exist on that day. Neither order was placed at exactly
+          `00:00:00`. When you want a whole day, use a range (like `>=` plus `<`), which you will practise
+          soon with `AND` and `BETWEEN`.
+
+      - type: predict
+        id: m02-l03-p1
+        question: |
+          The last three orders in the table are #178 (30 December, 07:33) and #179 and #180 (both on
+          31 December). How many rows will this return?
+        sql: |
+          SELECT order_id
+          FROM orders
+          WHERE order_time > '2024-12-30 12:00:00';
+        options: ["3", "2", "1", "0"]
+        answer: 1
+        explanation: |
+          Noon on 30 December is **after** order #178 (07:33), so only #179 and #180 are later than that
+          moment. Timestamps compare just like dates: earlier is smaller, later is bigger.
+
+      - type: exercise
+        id: m02-l03-e4
+        title: The very first orders
+        prompt: |
+          Show the `order_id` and `order_time` of every order placed **before 2024-10-03** (that is, before
+          midnight at the start of 3 October).
+        starter: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time < '2024-10-03';
+        hints:
+          - Compare `order_time` with a date in single quotes.
+          - 'The word "before" means earlier, which is `<`.'
+          - "SELECT order_id, order_time FROM orders WHERE order_time ___ '2024-10-03';"
+        explanation: |
+          Four orders (#1 to #4) happened on 1 and 2 October. Because `'2024-10-03'` means midnight at the
+          start of 3 October, everything on the 1st and 2nd is earlier.
+        difficulty: 2
+
+      - type: fill
+        id: m02-l03-f1
+        prompt: Complete the query to show items added on or after **1 January 2024**.
+        template: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE added_on >= '___';
+        answers:
+          - ["2024-01-01"]
+        explanation: |
+          Dates go inside single quotes in the order year-month-day. The same pattern works for any date
+          column.
+
+      - type: parsons
+        id: m02-l03-o1
+        prompt: Put the lines in order to list the customers who joined in 2024 or later.
+        lines:
+          - SELECT first_name, joined_on
+          - FROM customers
+          - WHERE joined_on >= '2024-01-01';
+        distractors:
+          - WHERE joined_on >= 2024-01-01;
+        explanation: |
+          The date needs single quotes. The distractor without quotes would fail, because SQL would
+          calculate 2024 - 01 - 01 instead of reading a date.
+
+      - type: exercise
+        id: m02-l03-e5
+        title: Member prices for the new items
+        columnNames: true
+        prompt: |
+          Members get 10% off. Show the `name`, the `price`, and the member price `price * 0.9` (named
+          `member_price`) of every item added on or after **2024-01-01**.
+        starter: |
+          SELECT name, price, price * 0.9 AS member_price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price, price * 0.9 AS member_price
+          FROM menu_items
+          WHERE added_on >= '2024-01-01';
+        hints:
+          - The calculation and the alias go in SELECT, and the date rule goes in WHERE.
+          - You can filter on `added_on` even though it is not in the SELECT list.
+          - "SELECT name, price, price * 0.9 AS member_price FROM menu_items WHERE added_on >= '___';"
+        explanation: |
+          This mixes three skills: a calculation with an alias in `SELECT`, a date comparison in `WHERE`, and
+          filtering on a column you don't show. Three items qualify.
+        difficulty: 3
+    cheatsheet:
+      - title: Boolean columns
+        sql: |
+          WHERE is_vegan = true
+          WHERE is_vegan          -- same thing
+          WHERE is_available = false
+        note: true and false are keywords, so no quotes.
+      - title: Dates in 'YYYY-MM-DD'
+        sql: |
+          WHERE added_on >= '2024-01-01'
+        note: Dates go in single quotes, year-month-day. Earlier is smaller, later is bigger.
+      - title: Timestamps and midnight
+        sql: |
+          WHERE order_time >= '2024-12-31'
+        note: A date alone means 00:00:00 of that day, so order_time = '2024-12-31' only matches midnight.
+  - id: m02-l04
+    title: Combining rules with AND, OR, NOT
+    summary: Join several conditions together, and learn the precedence trap that catches everyone once.
+    minutes: 18
+    steps:
+      - type: read
+        title: More than one rule
+        md: |
+          A guest asks: *"I'd like something vegan **and** under $4."* That is two rules at once. Another
+          guest says: *"Coffee **or** tea, I'm not picky."* Also two rules, but a different kind.
+
+          SQL has three little words for combining conditions:
+
+          | Word | Keeps a row when... |
+          |---|---|
+          | `AND` | **both** conditions are true |
+          | `OR` | **at least one** condition is true |
+          | `NOT` | the condition is **false** (it flips the answer) |
+
+          > [!ANALOGY]
+          > Picture a nightclub door. With `AND` you need your ID **and** the right shoes. With `OR` you
+          > can show a ticket **or** be on the guest list. `NOT` is the "not allowed" sign.
+
+      - type: example
+        title: AND needs both
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE is_vegan = true
+            AND price < 4;
+        after: |
+          Eight items are both vegan **and** cheaper than 4: Drip Coffee, Espresso, Americano, Iced
+          Americano, the three plain teas and the Vegan Banana Bread. Splitting the `WHERE` over several
+          lines is a nice habit: one rule per line.
+
+      - type: exercise
+        id: m02-l04-e1
+        title: Light lunch
+        prompt: |
+          Show the `name` and `price` of the sandwiches (`category` is `'Sandwich'`) that cost **less than 9**.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Sandwich'
+            AND price < 9;
+        hints:
+          - You have two rules, and a row must pass both of them.
+          - Join the two conditions with AND. Each side is a full condition.
+          - "SELECT name, price FROM menu_items WHERE category = 'Sandwich' ___ price < 9;"
+        explanation: |
+          Only two sandwiches pass both rules: Avocado Toast (8.50) and Veggie Hummus Wrap (8.95). The
+          Turkey Club, Caprese Panini and Smoked Salmon Bagel fail the price rule.
+        difficulty: 1
+
+      - type: example
+        title: OR needs just one
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          WHERE category = 'Coffee'
+             OR category = 'Tea';
+        after: |
+          13 rows: all 8 coffees and all 5 teas. A row only needs to pass **one** of the two rules.
+
+      - type: read
+        title: Each side needs a full condition
+        md: |
+          In plain English we say "coffee or tea". SQL needs the whole condition on **both** sides of `OR`:
+          `category = 'Coffee' OR category = 'Tea'`.
+
+          > [!MISTAKE]
+          > Don't write `category = 'Coffee' OR 'Tea'`. After `OR`, SQL expects a full condition, not just a
+          > word. Also be careful not to say `AND` when you mean `OR`: one row has only one category, so
+          > `category = 'Coffee' AND category = 'Tea'` can never be true.
+
+      - type: example
+        title: Half a condition (on purpose)
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'Coffee' OR 'Tea';
+        expectError: true
+        after: |
+          PostgreSQL tried to treat the word `'Tea'` as a true/false value and failed. The fix is to repeat
+          the column: `category = 'Coffee' OR category = 'Tea'`.
+
+      - type: example
+        title: AND when you meant OR
+        md: |
+          This query is valid, so you get an answer. Is it the answer you wanted?
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE category = 'Coffee'
+            AND category = 'Tea';
+        after: |
+          **Zero rows.** No item is in two categories at the same time, so the two rules can never both be
+          true. If you want items from either group, use `OR`.
+
+      - type: exercise
+        id: m02-l04-e2
+        title: Bakery counter
+        prompt: |
+          Show the `name` and `category` of every item that is either a `'Pastry'` **or** a `'Dessert'`.
+        starter: |
+          SELECT name, category
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, category
+          FROM menu_items
+          WHERE category = 'Pastry'
+             OR category = 'Dessert';
+        hints:
+          - A row only has to match one of the two categories.
+          - Use OR, and write the column name on both sides.
+          - "SELECT name, category FROM menu_items WHERE category = 'Pastry' ___ category = '___';"
+        explanation: |
+          6 pastries plus 4 desserts gives 10 rows. In lesson 5 you will meet `IN`, a shorter way to write a
+          long list of `OR`s.
+        difficulty: 1
+
+      - type: read
+        title: NOT flips the answer
+        md: |
+          `NOT` turns true into false and false into true. It reads nicely with true/false columns and with
+          conditions in parentheses:
+
+          ```sql
+          WHERE NOT is_vegan          -- the same as is_vegan = false
+          WHERE NOT (price > 5)       -- the same as price <= 5
+          ```
+
+          > [!TIP]
+          > For simple comparisons, `<>` is usually easier to read than `NOT (... = ...)`. Reach for `NOT`
+          > when it makes the sentence clearer, for example `NOT is_vegan`.
+
+      - type: example
+        title: NOT in action
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE NOT is_vegan
+            AND price < 3.5;
+        after: |
+          Two non-vegan items cost less than 3.50: the Butter Croissant (3.25) and the Chocolate Chip Cookie
+          (2.50).
+
+      - type: exercise
+        id: m02-l04-e3
+        title: Cheap and not coffee
+        prompt: |
+          Show the `name` and `price` of items that are **not** in the `'Coffee'` category **and** cost
+          **less than 3**.
+        starter: |
+          SELECT name, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category <> 'Coffee'
+            AND price < 3;
+        hints:
+          - Two rules joined by AND. One of them says "not Coffee".
+          - You can write "not Coffee" as `category <> 'Coffee'` or as `NOT category = 'Coffee'`.
+          - "SELECT name, price FROM menu_items WHERE category <> 'Coffee' AND price ___ 3;"
+        explanation: |
+          Four items pass: the three plain teas and the Chocolate Chip Cookie. `NOT category = 'Coffee'`
+          would give exactly the same rows.
+        difficulty: 2
+
+      - type: read
+        title: The precedence trap
+        md: |
+          What if you mix `AND` and `OR` in the same `WHERE`? SQL does **`AND` first**, then `OR`. It is the
+          same idea as in maths, where multiplication happens before addition.
+
+          So this: `A OR B AND C` is read as: `A OR (B AND C)`.
+
+          That is a classic trap. Someone says "coffee or tea, under 3 dollars" and writes the words in
+          the same order. SQL reads them differently!
+
+      - type: stepper
+        title: Seeing the trap
+        md: |
+          Run each stage and compare the row counts. The three stages show the same words, but different
+          meanings.
+        stages:
+          - label: The trap
+            md: |
+              Written without parentheses. **11 rows**, including expensive coffees such as the Mocha.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              WHERE category = 'Coffee'
+                 OR category = 'Tea' AND price < 3;
+          - label: How SQL reads it
+            md: |
+              SQL groups the `AND` first, so the rule really says "any coffee, **or** a tea under 3".
+              Same **11 rows**.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              WHERE category = 'Coffee'
+                 OR (category = 'Tea' AND price < 3);
+          - label: What you meant
+            md: |
+              Parentheses around the `OR` part force it to be checked first: "coffee or tea" **and**
+              under 3. Now only **5 rows**.
+            sql: |
+              SELECT name, category, price
+              FROM menu_items
+              WHERE (category = 'Coffee' OR category = 'Tea')
+                AND price < 3;
+
+      - type: read
+        title: When in doubt, use parentheses
+        md: |
+          Parentheses `( )` always win: SQL does what is inside them first.
+
+          > [!TIP]
+          > You never lose anything by adding parentheses, even when they are not needed. They make your
+          > intention clear to the next person who reads the query, and that person is often you in a
+          > month.
+
+          The order is: conditions like `price < 3` first, then `NOT`, then `AND`, then `OR`.
+
+      - type: predict
+        id: m02-l04-p1
+        question: |
+          There are 4 desserts. Two juices cost more than 6 (Green Detox Juice 6.50 and Berry Smoothie 6.25).
+          How many rows does this query return?
+        sql: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE category = 'Dessert'
+             OR category = 'Juice'
+            AND price > 6;
+        options: ["2", "4", "6", "8"]
+        answer: 2
+        explanation: |
+          `AND` goes first, so the rule means "any dessert, **or** a juice over 6": 4 desserts + 2 juices =
+          6 rows. With parentheses around the two categories you would get just 4 rows.
+
+      - type: exercise
+        id: m02-l04-e4
+        title: Fix the precedence bug
+        prompt: |
+          Maria wants the **vegan** items that are either `'Coffee'` or `'Tea'`. This query returns too
+          many rows, because of the `AND` / `OR` trap. Fix it so that it returns the 7 vegan coffees and
+          teas. Keep the columns `name`, `category` and `is_vegan`.
+        starter: |
+          SELECT name, category, is_vegan
+          FROM menu_items
+          WHERE category = 'Coffee'
+             OR category = 'Tea' AND is_vegan = true;
+        solution: |
+          SELECT name, category, is_vegan
+          FROM menu_items
+          WHERE (category = 'Coffee' OR category = 'Tea')
+            AND is_vegan = true;
+        hints:
+          - The starter returns all 8 coffees, vegan or not. The `AND` only applies to the tea part.
+          - Add parentheses around the two category rules.
+          - "WHERE (category = 'Coffee' OR category = 'Tea') AND ___;"
+        explanation: |
+          With parentheses, "coffee or tea" is decided first, and **then** the vegan rule is applied to
+          both groups. The result: 4 vegan coffees and 3 vegan teas.
+        difficulty: 2
+
+      - type: quiz
+        id: m02-l04-q1
+        question: |
+          In the condition `A OR B AND C`, what does SQL work out **first**?
+        options:
+          - A OR B
+          - B AND C
+          - All three at the same time
+          - The one on the left, always
+        answer: 1
+        explanation: |
+          `AND` binds more strongly than `OR`, so `B AND C` is evaluated first and the result is combined
+          with `A` using `OR`. Use parentheses to change this: `(A OR B) AND C`.
+
+      - type: exercise
+        id: m02-l04-e5
+        title: Loyal customers in two cities
+        prompt: |
+          Show the `first_name`, `city` and `loyalty_points` of customers who live in **Portland or
+          Seattle** and have **more than 400** loyalty points.
+        starter: |
+          SELECT first_name, city, loyalty_points
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, city, loyalty_points
+          FROM customers
+          WHERE (city = 'Portland' OR city = 'Seattle')
+            AND loyalty_points > 400;
+        hints:
+          - There are three conditions in total, and the points rule must apply to both cities.
+          - Put the two city rules in parentheses, then use AND for the points rule.
+          - "WHERE (city = 'Portland' OR city = '___') AND loyalty_points > ___;"
+        explanation: |
+          9 customers match. Without the parentheses you would get 12 rows, because every Portland customer
+          would be included even with very few points.
+        difficulty: 2
+
+      - type: fill
+        id: m02-l04-f1
+        prompt: Complete the query for Tea **or** Juice items that cost less than 5.
+        template: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE (category = 'Tea' ___ category = 'Juice')
+            ___ price < 5;
+        answers:
+          - ["OR"]
+          - ["AND"]
+        explanation: |
+          `OR` joins the two categories (either one is fine), and `AND` adds the extra price rule that
+          every row must satisfy.
+
+      - type: parsons
+        id: m02-l04-o1
+        prompt: Put the lines in order to list coffees or teas that cost less than 3.
+        lines:
+          - SELECT name, category, price
+          - FROM menu_items
+          - WHERE (category = 'Coffee'
+          - OR category = 'Tea')
+          - AND price < 3;
+        explanation: |
+          Everything inside the parentheses is decided first. The query returns the 5 rows you saw in the
+          stepper.
+
+      - type: exercise
+        id: m02-l04-e6
+        title: Mid-priced bakery
+        prompt: |
+          Show the `name`, `category` and `price` of every `'Pastry'` or `'Dessert'` that costs **between 3
+          and 5 dollars, including 3 and 5**.
+        starter: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE (category = 'Pastry' OR category = 'Dessert')
+            AND price >= 3
+            AND price <= 5;
+        hints:
+          - Combine three ideas (pastry-or-dessert, at least 3, and at most 5).
+          - Use parentheses around the OR part, and join the rest with AND. A price range is two comparisons.
+          - "WHERE (category = 'Pastry' OR category = '___') AND price >= 3 AND price ___ 5;"
+        explanation: |
+          Six items match: five pastries (Croissant, Muffin, Danish, Cinnamon Roll and Banana Bread) and the
+          Chocolate Brownie. A range is just two comparisons joined by `AND`. Lesson 5 shows a shortcut for
+          it.
+        difficulty: 3
+    cheatsheet:
+      - title: AND, OR, NOT
+        sql: |
+          WHERE is_vegan AND price < 4
+          WHERE category = 'Tea' OR category = 'Coffee'
+          WHERE NOT is_vegan
+        note: AND needs both sides true, OR needs at least one, NOT flips true and false.
+      - title: Use parentheses with OR
+        sql: |
+          WHERE (category = 'Coffee' OR category = 'Tea')
+            AND price < 3
+        note: AND is checked before OR. Parentheses make the meaning clear and always win.
+      - title: Repeat the column
+        sql: |
+          WHERE city = 'Austin' OR city = 'Denver'
+        note: Both sides of AND / OR must be complete conditions, not just a value.
+  - id: m02-l05
+    title: IN and BETWEEN
+    summary: Match a list of values with IN, match a range with BETWEEN, and avoid the timestamp trap.
+    minutes: 16
+    steps:
+      - type: read
+        title: A shortcut for many ORs
+        md: |
+          Maria says: *"Show me everything in Tea, Juice or Dessert."* With what you know, that is a chain of
+          `OR`s: `category = 'Tea' OR category = 'Juice' OR category = 'Dessert'`. It works, but it is long.
+
+          `IN` is a shortcut. You give it a **list** of allowed values between parentheses, separated by commas:
+
+          ```sql
+          WHERE category IN ('Tea', 'Juice', 'Dessert')
+          ```
+
+          > [!ANALOGY]
+          > `IN` is a guest list at the door. If the value is on the list, the row gets in.
+
+      - type: example
+        title: Tea or juice
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          WHERE category IN ('Tea', 'Juice');
+        after: |
+          9 rows: 5 teas and 4 juices. It is exactly the same as `category = 'Tea' OR category = 'Juice'`, only
+          shorter. The more values you have, the more `IN` helps.
+
+      - type: exercise
+        id: m02-l05-e1
+        title: Two cities
+        prompt: |
+          Show the `first_name` and `city` of customers who live in **Austin or Denver**.
+        starter: |
+          SELECT first_name, city
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, city
+          FROM customers
+          WHERE city IN ('Austin', 'Denver');
+        hints:
+          - You are looking for rows where the city is one of two values.
+          - Use IN with a list in parentheses. Text values need single quotes.
+          - "SELECT first_name, city FROM customers WHERE city IN ('Austin', '___');"
+        explanation: |
+          5 customers live in Austin and 2 in Denver, so 7 rows. The list can hold as many values as you like.
+        difficulty: 1
+
+      - type: read
+        title: Everyone except the list
+        md: |
+          Put `NOT` in front of `IN` to get everything **not** on the list:
+
+          ```sql
+          WHERE category NOT IN ('Coffee', 'Tea', 'Pastry')
+          ```
+
+          `IN` also works with numbers, which do not need quotes: `WHERE quantity IN (3, 4)`.
+
+      - type: example
+        title: NOT IN
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          WHERE category NOT IN ('Coffee', 'Tea', 'Pastry');
+        after: |
+          13 rows: the sandwiches, desserts and juices. These are all the categories that were *not* on the
+          list.
+
+      - type: example
+        title: IN with numbers
+        sql: |
+          SELECT order_id, quantity
+          FROM orders
+          WHERE quantity IN (3, 4);
+        after: |
+          Eight orders had a quantity of 3 or 4. No quotes around numbers, just commas between them.
+
+      - type: exercise
+        id: m02-l05-e2
+        title: Not behind the counter
+        prompt: |
+          Show the `name` and `role` of staff members whose role is **not** `'Barista'` and **not**
+          `'Cashier'`. Use `NOT IN`.
+        starter: |
+          SELECT name, role
+          FROM staff
+          WHERE
+        solution: |
+          SELECT name, role
+          FROM staff
+          WHERE role NOT IN ('Barista', 'Cashier');
+        hints:
+          - You want everyone whose role is not on a short list of two roles.
+          - Use `NOT IN` followed by a list in parentheses.
+          - "SELECT name, role FROM staff WHERE role NOT IN ('Barista', '___');"
+        explanation: |
+          Three people remain: Maria (Manager) and the two Bakers, Aiko and Hannah.
+        difficulty: 2
+
+      - type: exercise
+        id: m02-l05-e3
+        title: Fix the list
+        prompt: |
+          This query should show the `first_name` and `city` of customers from **Austin or Boston**, but it
+          fails with an error. Fix it.
+        starter: |
+          SELECT first_name, city
+          FROM customers
+          WHERE city IN 'Austin', 'Boston';
+        solution: |
+          SELECT first_name, city
+          FROM customers
+          WHERE city IN ('Austin', 'Boston');
+        hints:
+          - The error points at 'Austin', the first value after IN. SQL was expecting something else right before it.
+          - The whole list must sit inside parentheses.
+          - "WHERE city IN (___, ___);"
+        explanation: |
+          A list for `IN` always needs parentheses around it, with commas between the values. 12 customers
+          live in Austin or Boston (5 and 7).
+        difficulty: 2
+
+      - type: read
+        title: Ranges with BETWEEN
+        md: |
+          Remember asking for prices from 3 to 5? You needed two comparisons: `price >= 3 AND price <= 5`.
+          `BETWEEN` is the shortcut:
+
+          ```sql
+          WHERE price BETWEEN 3 AND 5
+          ```
+
+          Two things to remember:
+
+          - Both ends are **included** (it means "at least 3 and at most 5").
+          - Write the **smaller** value first. `BETWEEN 5 AND 3` finds nothing.
+
+      - type: example
+        title: Both ends count
+        md: |
+          Which items cost between 2.50 and 2.75?
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price BETWEEN 2.5 AND 2.75;
+        after: |
+          Five rows. The Espresso and Cookie cost exactly 2.50 (the lower end) and the three teas cost exactly
+          2.75 (the upper end). All of them are included.
+
+      - type: exercise
+        id: m02-l05-e4
+        title: Mid-range loyalty
+        prompt: |
+          Show the `first_name` and `loyalty_points` of customers with **between 400 and 500** loyalty
+          points (both included). Use `BETWEEN`.
+        starter: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, loyalty_points
+          FROM customers
+          WHERE loyalty_points BETWEEN 400 AND 500;
+        hints:
+          - It is one column checked against a range.
+          - "Pattern: column BETWEEN small AND big."
+          - "SELECT first_name, loyalty_points FROM customers WHERE loyalty_points BETWEEN ___ AND ___;"
+        explanation: |
+          Five customers have between 400 and 500 points. Nobody has exactly 400 or 500, but the ends would
+          count if they did.
+        difficulty: 1
+
+      - type: read
+        title: BETWEEN with dates
+        md: |
+          `BETWEEN` works nicely with dates (columns that have no time of day). To find customers who joined
+          in the first three months of 2023:
+
+          ```sql
+          WHERE joined_on BETWEEN '2023-01-01' AND '2023-03-31'
+          ```
+
+          Both days are included, so someone who joined on 31 March is in. But timestamps need extra care,
+          as you'll see in a moment.
+
+      - type: exercise
+        id: m02-l05-e5
+        title: Menu additions in late 2022
+        prompt: |
+          Show the `name` and `added_on` of items added **between 2022-06-01 and 2022-12-31** (both
+          included).
+        starter: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, added_on
+          FROM menu_items
+          WHERE added_on BETWEEN '2022-06-01' AND '2022-12-31';
+        hints:
+          - "`added_on` is a date, so use BETWEEN with two dates in single quotes."
+          - Smaller (earlier) date first, then AND, then the later date.
+          - "SELECT name, added_on FROM menu_items WHERE added_on BETWEEN '2022-06-01' AND '___';"
+        explanation: |
+          Four items were added in that period: Caramel Latte, Chai Latte, Cinnamon Roll and Caprese Panini.
+        difficulty: 2
+
+      - type: read
+        title: The BETWEEN timestamp trap
+        md: |
+          Remember from lesson 3: a date alone means **midnight at the start** of that day. Now look at
+          this rule for "the last two days of the year":
+
+          ```sql
+          WHERE order_time BETWEEN '2024-12-30' AND '2024-12-31'
+          ```
+
+          The upper end `'2024-12-31'` means `2024-12-31 00:00:00`. Anything placed *later that day* is
+          **outside** the range!
+
+          > [!MISTAKE]
+          > Using `BETWEEN` with a date as the upper end on a **timestamp** column silently drops almost the
+          > whole last day. No error, no warning. The safe pattern is: start `>=` the first day, and end
+          > `<` the day **after** the last day.
+
+      - type: example
+        title: The trap
+        sql: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time BETWEEN '2024-12-30' AND '2024-12-31';
+        after: |
+          Only **one** order (#178, on the 30th). The two orders from 31 December (#179 at 16:26 and #180 at
+          18:02) were placed after midnight, so they were silently left out.
+
+      - type: example
+        title: The safe pattern
+        sql: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time >= '2024-12-30'
+            AND order_time < '2025-01-01';
+        after: |
+          All **three** orders. The range starts at midnight on the 30th and stops just before midnight at
+          the start of 1 January, so every moment of the 31st is included.
+
+      - type: predict
+        id: m02-l05-p1
+        question: |
+          Two orders were placed on 24 December 2024 (#163 at 13:55 and #164 at 14:10). How many rows will
+          this query return?
+        sql: |
+          SELECT order_id
+          FROM orders
+          WHERE order_time BETWEEN '2024-12-24' AND '2024-12-24';
+        options: ["2", "1", "0", "An error"]
+        answer: 2
+        explanation: |
+          The range runs from midnight (00:00:00) to midnight (00:00:00): a single moment. Neither order was
+          placed at exactly that moment, so the result is empty.
+
+      - type: exercise
+        id: m02-l05-e6
+        title: The whole of Christmas Eve
+        prompt: |
+          Show the `order_id` and `order_time` of every order placed **at any time on 2024-12-24**. Use
+          the safe pattern: `>=` the start of the day, and `<` the start of the next day.
+        starter: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE order_time >= '2024-12-24'
+            AND order_time < '2024-12-25';
+        hints:
+          - You need a range that covers the whole day, from midnight to midnight.
+          - Two conditions joined with AND. The upper one uses `<` and the next day's date.
+          - "WHERE order_time >= '2024-12-24' AND order_time < '___';"
+        explanation: |
+          Two orders (#163 and #164). This `>=` and `<` pattern is the most reliable way to select a day, a
+          month or a year from a timestamp column. It also keeps working if times ever include fractions of a
+          second.
+        difficulty: 3
+
+      - type: quiz
+        id: m02-l05-q1
+        question: Which condition means exactly the same as `price BETWEEN 3 AND 5`?
+        options:
+          - price > 3 AND price < 5
+          - price >= 3 AND price <= 5
+          - price >= 3 OR price <= 5
+          - price IN (3, 4, 5)
+        answer: 1
+        explanation: |
+          `BETWEEN` includes both ends, so it is `>=` and `<=` joined with `AND`. `IN (3, 4, 5)` would only
+          match the whole numbers, missing prices such as 3.50. The `OR` version is true for every price.
+
+      - type: fill
+        id: m02-l05-f1
+        prompt: Complete the query to show items that cost between 4 and 6 dollars.
+        template: |
+          SELECT name, price
+          FROM menu_items
+          WHERE price ___ 4 ___ 6;
+        answers:
+          - ["BETWEEN"]
+          - ["AND"]
+        explanation: |
+          `BETWEEN low AND high`. The `AND` here belongs to `BETWEEN`, it is not a separate condition.
+
+      - type: parsons
+        id: m02-l05-o1
+        prompt: Put the lines in order to list tea or juice items that cost between 3 and 5.
+        lines:
+          - SELECT name, category, price
+          - FROM menu_items
+          - WHERE category IN ('Tea', 'Juice')
+          - AND price BETWEEN 3 AND 5;
+        distractors:
+          - AND price BETWEEN 5 AND 3;
+        explanation: |
+          Two items match: Chai Latte (4.50) and Fresh Orange Juice (4.95). The distractor has the numbers the
+          wrong way round, so it would return nothing.
+    cheatsheet:
+      - title: A list with IN
+        sql: |
+          WHERE category IN ('Tea', 'Juice')
+          WHERE category NOT IN ('Coffee', 'Pastry')
+          WHERE quantity IN (3, 4)
+        note: IN is a shorter way to write many ORs. The list goes in parentheses with commas.
+      - title: A range with BETWEEN
+        sql: |
+          WHERE price BETWEEN 3 AND 5
+        note: Both ends are included, and the smaller value goes first.
+      - title: Safe date ranges for timestamps
+        sql: |
+          WHERE order_time >= '2024-12-01'
+            AND order_time < '2025-01-01'
+        note: Don't use BETWEEN with a date as the upper end of a timestamp range. Use >= and <.
+  - id: m02-l06
+    title: Pattern matching with LIKE
+    summary: Search for text that starts with, ends with or contains something, using % and _ wildcards.
+    minutes: 17
+    steps:
+      - type: read
+        title: When you only remember part of a word
+        md: |
+          A guest says: *"I want one of those lattes... I forget which one."* You don't know the exact name,
+          only that it **contains** the word *Latte*. With `=` you would need the whole name. With `LIKE`
+          you can search for a **pattern**.
+
+          Inside a pattern, two special characters are **wildcards**:
+
+          | Wildcard | Stands for |
+          |---|---|
+          | `%` | any number of characters (even none) |
+          | `_` | exactly **one** character |
+
+          > [!ANALOGY]
+          > A wildcard is like the joker card in a card game: it can stand in for whatever you need.
+
+          | Pattern | Finds text that... |
+          |---|---|
+          | `'C%'` | starts with C |
+          | `'%Roll'` | ends with Roll |
+          | `'%Latte%'` | contains Latte anywhere |
+
+      - type: example
+        title: Names containing "Latte"
+        sql: |
+          SELECT name, category
+          FROM menu_items
+          WHERE name LIKE '%Latte%';
+        after: |
+          Four lattes: Vanilla Latte, Caramel Latte (both Coffee), Chai Latte and Matcha Latte (both Tea).
+          The `%` on each side means "anything can come before and after".
+
+      - type: example
+        title: Names starting with "C"
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE name LIKE 'C%';
+        after: |
+          Nine items start with a capital C. A pattern without a `%` at the beginning must match from the very
+          first letter.
+
+      - type: exercise
+        id: m02-l06-e1
+        title: Chocolate lovers
+        prompt: |
+          Show the `name` of every menu item whose name **contains** the word `Chocolate`.
+        starter: |
+          SELECT name
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name
+          FROM menu_items
+          WHERE name LIKE '%Chocolate%';
+        hints:
+          - "You don't know where the word is, so it can have anything before and after it."
+          - Put a `%` on both sides of the word, inside the quotes.
+          - "SELECT name FROM menu_items WHERE name LIKE '%___%';"
+        explanation: |
+          Two items contain Chocolate: the Chocolate Chip Cookie and the Chocolate Brownie. A search with `%` on
+          both sides is the usual "contains" search, like a search box.
+        difficulty: 1
+
+      - type: read
+        title: Equals does not know wildcards
+        md: |
+          > [!MISTAKE]
+          > `=` compares exact text. It treats `%` as an ordinary character, so `name = '%Latte%'` looks for a
+          > name that is literally "%Latte%" and finds nothing. Wildcards only work with `LIKE`.
+
+          Also remember that a `LIKE` pattern with no wildcard at all, such as `LIKE 'Latte'`, must match the
+          **whole** text.
+
+      - type: exercise
+        id: m02-l06-e2
+        title: Why is it empty?
+        prompt: |
+          This query should show the `name` of every item that contains `Latte`, but it returns nothing.
+          Fix it so that it returns the 4 lattes.
+        starter: |
+          SELECT name
+          FROM menu_items
+          WHERE name = '%Latte%';
+        solution: |
+          SELECT name
+          FROM menu_items
+          WHERE name LIKE '%Latte%';
+        hints:
+          - There is no error, but `=` is the wrong tool for a pattern.
+          - Wildcards work with the keyword LIKE.
+          - "SELECT name FROM menu_items WHERE name ___ '%Latte%';"
+        explanation: |
+          `LIKE` understands `%` and `_`. `=` does not. When a query silently returns no rows, check whether
+          the operator fits the job.
+        difficulty: 2
+
+      - type: read
+        title: Capital letters and ILIKE
+        md: |
+          `LIKE` is **case-sensitive**: `'%latte%'` does not match `Vanilla Latte`. PostgreSQL has a friendly
+          extra, `ILIKE`, which works like `LIKE` but **ignores capitalization**. The `I` stands for
+          "insensitive".
+
+          > [!NOTE]
+          > `ILIKE` is a PostgreSQL feature and is not part of standard SQL. Other database systems handle
+          > case differently, so don't assume it exists everywhere.
+
+      - type: example
+        title: LIKE with ILIKE
+        md: |
+          Search with lowercase letters and `ILIKE`.
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE name ILIKE '%coffee%';
+        after: |
+          One row: Drip Coffee. The stored text has a capital C, but `ILIKE` doesn't care. With plain `LIKE`
+          the same pattern finds nothing.
+
+      - type: predict
+        id: m02-l06-p1
+        question: |
+          Four items have "Latte" (capital L) in their names. How many rows does this query return?
+        sql: |
+          SELECT name
+          FROM menu_items
+          WHERE name LIKE '%latte%';
+        options: ["4", "0", "1", "An error"]
+        answer: 1
+        explanation: |
+          `LIKE` is case-sensitive, and no name contains a lowercase `latte`. The result is empty. Changing
+          `LIKE` to `ILIKE` would return the 4 lattes.
+
+      - type: exercise
+        id: m02-l06-e3
+        title: Any capitalization
+        prompt: |
+          Show the `last_name` and `first_name` of customers whose last name contains `son`, no matter
+          how it is capitalized. Use `ILIKE` and write the pattern as `'%SON%'`.
+        starter: |
+          SELECT last_name, first_name
+          FROM customers
+          WHERE
+        solution: |
+          SELECT last_name, first_name
+          FROM customers
+          WHERE last_name ILIKE '%SON%';
+        hints:
+          - Your pattern is in capitals, but the stored names are not.
+          - Use ILIKE so the capital letters don't matter.
+          - "SELECT last_name, first_name FROM customers WHERE last_name ___ '%SON%';"
+        explanation: |
+          Two customers match: Noah and Hannah Robinson. With plain `LIKE` and `'%SON%'` you would get nothing,
+          because "Robinson" has a lowercase "son".
+        difficulty: 2
+
+      - type: read
+        title: The underscore
+        md: |
+          `_` stands for **exactly one** character, no more and no less. It is great when you know how long
+          the text is, or where one unknown letter sits.
+
+          - `'____'` (four underscores) matches any text with exactly **4 characters**.
+          - `'N___'` matches 4-character text that starts with N.
+
+      - type: example
+        title: Four-letter first names
+        sql: |
+          SELECT first_name
+          FROM customers
+          WHERE first_name LIKE '____';
+        after: |
+          Seven customers have a first name of exactly four letters: Nora, Rosa, Rami, Noah, Hugo, Jack and
+          Seun. Each `_` accepted one letter.
+
+      - type: exercise
+        id: m02-l06-e4
+        title: N and three more
+        prompt: |
+          Show the `first_name` of customers whose first name has **exactly 4 letters** and **starts with
+          N**.
+        starter: |
+          SELECT first_name
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name
+          FROM customers
+          WHERE first_name LIKE 'N___';
+        hints:
+          - The pattern is the letter N followed by exactly three other characters.
+          - Each unknown letter is one underscore.
+          - Write the letter N, then one underscore for each of the three unknown letters, all in single quotes.
+        explanation: |
+          Nora and Noah. Naledi (6 letters) and Nathan (6 letters) start with N but are too long, so the
+          pattern rejects them.
+        difficulty: 2
+
+      - type: read
+        title: NOT LIKE
+        md: |
+          Put `NOT` in front of `LIKE` (or `ILIKE`) to exclude a pattern: `name NOT LIKE '%Chocolate%'`.
+
+      - type: example
+        title: Pastries, but no chocolate
+        sql: |
+          SELECT name, price
+          FROM menu_items
+          WHERE category = 'Pastry'
+            AND name NOT LIKE '%Chocolate%';
+        after: |
+          Five of the six pastries remain. The Chocolate Chip Cookie was excluded by the second rule.
+
+      - type: exercise
+        id: m02-l06-e5
+        title: No lowercase e
+        prompt: |
+          Show the `name` of every menu item whose name does **not** contain a lowercase `e`.
+        starter: |
+          SELECT name
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name
+          FROM menu_items
+          WHERE name NOT LIKE '%e%';
+        hints:
+          - It is the opposite of a "contains" search.
+          - Use NOT LIKE with a letter between two % signs.
+          - "SELECT name FROM menu_items WHERE name NOT LIKE '%___%';"
+        explanation: |
+          Six names have no lowercase e: Cappuccino, Mocha, Almond Danish, Cinnamon Roll, Avocado Toast and
+          Tiramisu Cup. A capital `E` would not count, because `LIKE` cares about case.
+        difficulty: 2
+
+      - type: quiz
+        id: m02-l06-q1
+        question: Which pattern matches text that **starts with** `Ch`, whatever follows?
+        options:
+          - "'Ch%'"
+          - "'%Ch'"
+          - "'%Ch%'"
+          - "'Ch_'"
+        answer: 0
+        explanation: |
+          `'Ch%'` means "Ch, then anything". `'%Ch'` matches text that *ends* with Ch, `'%Ch%'` matches text
+          that contains Ch anywhere (not necessarily at the start), and `'Ch_'` only matches three-character
+          text such as "Chi".
+
+      - type: read
+        title: Searching for a real % or _
+        md: |
+          What if the text you want contains a real `%` or `_`, like *Save 50% today*? Put a backslash `\`
+          in front of the special character. That tells `LIKE` to treat it as a normal character.
+
+          ```sql
+          WHERE note LIKE '%50\%%'
+          ```
+
+          Reading it: anything, then `50`, then a real `%` sign (`\%`), then anything.
+
+      - type: example
+        title: Escaping the percent sign
+        md: |
+          This query just tests two pieces of text against the same pattern, without using a table.
+        sql: |
+          SELECT 'Save 50% today' LIKE '%50\%%' AS first_text,
+                 'Save 500 today' LIKE '%50\%%' AS second_text;
+        after: |
+          The first text has a real `50%` in it, so the answer is `true`. The second has `500`, with no `%`
+          sign, so it is `false`. Without the backslash, `50%` would have matched both.
+
+      - type: fill
+        id: m02-l06-f1
+        prompt: Complete the query to find "muffin" no matter how it is capitalized.
+        template: |
+          SELECT name
+          FROM menu_items
+          WHERE name ___ '%muffin%';
+        answers:
+          - ["ILIKE"]
+        explanation: |
+          `ILIKE` ignores capital letters, so it finds the Blueberry Muffin.
+
+      - type: parsons
+        id: m02-l06-o1
+        prompt: Put the lines in order to list customers whose last name starts with O.
+        lines:
+          - SELECT first_name, last_name
+          - FROM customers
+          - WHERE last_name LIKE 'O%';
+        distractors:
+          - WHERE last_name = 'O%';
+        explanation: |
+          Three customers match: Paola Omondi, Naledi Okonkwo and Tendai Omondi. The `=` version would find
+          nobody, because `=` does not understand `%`.
+
+      - type: exercise
+        id: m02-l06-e6
+        title: Roll or chocolate, but not pricey
+        prompt: |
+          Show the `name`, `category` and `price` of items whose name **contains `choc` (any
+          capitalization)** or **ends with `Roll`**, and that cost **less than 4.50**.
+        starter: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, category, price
+          FROM menu_items
+          WHERE (name ILIKE '%choc%' OR name LIKE '%Roll')
+            AND price < 4.5;
+        hints:
+          - You need two pattern rules joined by OR, plus one price rule joined by AND.
+          - Wrap the OR part in parentheses so the price rule applies to both patterns.
+          - "WHERE (name ILIKE '%choc%' OR name LIKE '%___') AND price < 4.5;"
+        explanation: |
+          Three items match: Chocolate Chip Cookie, Chocolate Brownie and Cinnamon Roll. This combines pattern
+          matching with `OR`, `AND` and parentheses from lesson 4.
+        difficulty: 3
+    cheatsheet:
+      - title: LIKE and the wildcards
+        sql: |
+          WHERE name LIKE 'C%'       -- starts with C
+          WHERE name LIKE '%Roll'    -- ends with Roll
+          WHERE name LIKE '%Latte%'  -- contains Latte
+          WHERE name LIKE 'N___'     -- N plus 3 letters
+        note: "% means any number of characters, _ means exactly one."
+      - title: Ignore capitals with ILIKE
+        sql: |
+          WHERE name ILIKE '%latte%'
+          WHERE name NOT ILIKE '%latte%'
+        note: LIKE is case-sensitive. ILIKE is a PostgreSQL feature that ignores case.
+      - title: Searching for a real % or _
+        sql: |
+          WHERE note LIKE '%50\%%'
+        note: A backslash before % or _ makes it an ordinary character.
+  - id: m02-l07
+    title: "NULL: the missing value"
+    summary: Find missing values with IS NULL, and understand why = NULL never works.
+    minutes: 20
+    steps:
+      - type: read
+        title: Nothing there yet
+        md: |
+          Maria has a new idea: *"Which customers never gave us an email? I'd like to send them a postcard
+          instead."*
+
+          Some cells in our tables are **empty**: a customer who did not share an email, an item whose calories
+          nobody has measured, an order where no tip was written down. In SQL an empty cell holds a special
+          marker called **NULL**.
+
+          > [!ANALOGY]
+          > Think of a paper form with a blank question. A blank answer is not "No", and it is not "0". It
+          > means *"we don't know"*. NULL is that blank.
+
+          NULL is not the number 0 and it is not empty text (`''`). It is the **absence of any value**.
+
+      - type: example
+        title: Customers without an email
+        sql: |
+          SELECT first_name, email
+          FROM customers
+          WHERE email IS NULL;
+        after: |
+          Five customers have a NULL email: Paola, Mateo, Pavel, Hugo and Ava. In the result grid, NULL cells
+          are shown as `NULL`.
+
+      - type: read
+        title: IS NULL and IS NOT NULL
+        md: |
+          To test for a missing value, use the words **`IS NULL`**. To keep only the rows that **do** have a
+          value, use **`IS NOT NULL`**.
+
+          ```sql
+          WHERE email IS NULL        -- email is missing
+          WHERE email IS NOT NULL    -- email is present
+          ```
+
+          Notice that it is `IS`, not `=`. The next few steps explain why.
+
+      - type: exercise
+        id: m02-l07-e1
+        title: Calories not measured
+        prompt: |
+          Show the `name` and `calories` of every menu item whose `calories` value is **missing** (NULL).
+        starter: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE calories IS NULL;
+        hints:
+          - "Missing values can't be tested with `=`. There's a special phrase."
+          - Use `IS NULL` after the column name.
+          - "SELECT name, calories FROM menu_items WHERE calories ___ ___;"
+        explanation: |
+          Four items have no calorie information: Smoked Salmon Bagel, Tiramisu Cup, Green Detox Juice and
+          Berry Smoothie. The three plain teas have `0` calories, which is a real value and **not** NULL.
+        difficulty: 1
+
+      - type: example
+        title: The classic trap
+        md: |
+          What if we use `= NULL`, the way we would with any other value?
+        sql: |
+          SELECT first_name, email
+          FROM customers
+          WHERE email = NULL;
+        after: |
+          **Zero rows**, and no error message. This is one of the most famous traps in SQL: five customers
+          do have a NULL email, but `email = NULL` never finds them.
+
+      - type: read
+        title: Why = NULL never works
+        md: |
+          NULL means *unknown*. So what is the answer to "is this unknown thing equal to NULL"? Nobody can
+          say, so the answer is not true and not false. It is **NULL** again (unknown).
+
+          A `WHERE` clause only keeps rows where the condition is **TRUE**. A condition that is FALSE
+          *or* NULL is thrown away. That is why `email = NULL` returns nothing, and why `email <> NULL`
+          returns nothing too.
+
+          > [!MISTAKE]
+          > Never write `= NULL` or `<> NULL`. They always give you zero rows. Always write `IS NULL` or
+          > `IS NOT NULL`.
+
+      - type: example
+        title: Unknown compared with unknown
+        md: |
+          You don't need a table to see this. Here are three questions asked straight to the database.
+        sql: |
+          SELECT NULL = NULL AS equal,
+                 NULL <> NULL AS not_equal,
+                 NULL IS NULL AS is_null;
+        after: |
+          `NULL = NULL` is NULL (unknown), and so is `NULL <> NULL`. Only `NULL IS NULL` gives a clear
+          `true`. That is exactly what the `IS` test is for.
+
+      - type: viz
+        viz: null-logic
+        title: Three-valued logic
+        md: |
+          In SQL a condition can be `TRUE`, `FALSE` or `NULL` (unknown). Pick a value for A and B and watch
+          the tables. Try these:
+
+          - `A = NULL`, `B = FALSE` with **AND**. Even with an unknown, one FALSE decides the answer.
+          - `A = NULL`, `B = TRUE` with **OR**. Even with an unknown, one TRUE decides the answer.
+          - `A = NULL`, `B = TRUE` with **AND**. Now the answer stays unknown.
+
+      - type: predict
+        id: m02-l07-p1
+        question: |
+          Three teas have 0 calories, and four items have a NULL calories value. The menu has 32 items. How
+          many rows does this query return?
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE calories <> 0;
+        options: ["29", "25", "28", "32"]
+        answer: 1
+        explanation: |
+          The three teas with 0 are removed (32 - 3 = 29), and then the 4 NULL rows are removed too, because
+          `NULL <> 0` is unknown, not true. That leaves **25** rows. Rows with NULL silently disappear from
+          both `=` and `<>` tests.
+
+      - type: exercise
+        id: m02-l07-e2
+        title: Fix the walk-in search
+        prompt: |
+          Walk-in customers have no loyalty card, so their `customer_id` is NULL. This query should show
+          the `order_id` and `order_time` of walk-in orders paid with the `'app'`, but it returns no rows.
+          Fix it so that it returns the 9 matching orders.
+        starter: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE customer_id = NULL
+            AND payment_method = 'app';
+        solution: |
+          SELECT order_id, order_time
+          FROM orders
+          WHERE customer_id IS NULL
+            AND payment_method = 'app';
+        hints:
+          - The query runs fine but finds nothing. Look at how NULL is tested.
+          - "`= NULL` never works. Use `IS NULL` instead."
+          - "WHERE customer_id ___ ___ AND payment_method = 'app';"
+        explanation: |
+          `customer_id IS NULL` finds the walk-in orders, and `payment_method = 'app'` narrows them to nine.
+          Combining `IS NULL` with `AND` works like any other condition.
+        difficulty: 2
+
+      - type: exercise
+        id: m02-l07-e3
+        title: Reachable Boston customers
+        prompt: |
+          Show the `first_name` and `email` of customers who live in `'Boston'` **and** have an email
+          address on file.
+        starter: |
+          SELECT first_name, email
+          FROM customers
+          WHERE
+        solution: |
+          SELECT first_name, email
+          FROM customers
+          WHERE city = 'Boston'
+            AND email IS NOT NULL;
+        hints:
+          - Two rules joined by AND. One of them is about the city.
+          - '"Has an email" means the email is not missing.'
+          - "WHERE city = 'Boston' AND email ___ ___ ___;"
+        explanation: |
+          Seven customers live in Boston, and two of them (Pavel and Hugo) have no email, so five remain:
+          Chloe, Naledi, Stefan, Kwame and Jack.
+        difficulty: 2
+
+      - type: read
+        title: Don't forget the unknown rows
+        md: |
+          NULL rows quietly vanish from comparisons such as `calories < 50`. If you also want the rows where
+          the value is unknown, add `OR ... IS NULL`.
+
+          > [!REAL-WORLD]
+          > Analysts get bitten by this all the time: a report of "items with at most 300 calories" silently
+          > skips every item with missing calories, so the numbers look smaller than reality. Always ask
+          > yourself *"What should happen to the missing values?"*
+
+      - type: example
+        title: Low-calorie, or not measured
+        sql: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE calories < 50
+             OR calories IS NULL;
+        after: |
+          11 rows: seven items under 50 calories (including the zero-calorie teas) **plus** the four items
+          with unknown calories. Without the `OR calories IS NULL` part you would get only the first seven.
+
+      - type: exercise
+        id: m02-l07-e4
+        title: Worth double-checking
+        prompt: |
+          Maria wants to double-check any item that has **more than 400 calories** or has **no calorie
+          information**. Show the `name` and `calories` of those items.
+        starter: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE
+        solution: |
+          SELECT name, calories
+          FROM menu_items
+          WHERE calories > 400
+             OR calories IS NULL;
+        hints:
+          - You need one rule for big numbers and one for missing values, and a row needs only one of them.
+          - Join the two rules with OR.
+          - "WHERE calories > 400 ___ calories ___ ___;"
+        explanation: |
+          Ten rows: six items over 400 calories plus the four with NULL. The first rule alone would never
+          return the NULL rows.
+        difficulty: 2
+
+      - type: read
+        title: A NULL inside NOT IN
+        md: |
+          One last warning. A list given to `NOT IN` that contains a NULL makes the condition unknown for
+          **every** row. In plain words: `x NOT IN (1, 2, NULL)` means `x <> 1 AND x <> 2 AND x <> NULL`, and
+          the last part is never true.
+
+          You will not write NULL inside a list by hand, but lists built by *queries* (module 7) can contain
+          NULLs without you noticing. Keep this in your back pocket.
+
+      - type: example
+        title: A NOT IN surprise
+        sql: |
+          SELECT first_name
+          FROM customers
+          WHERE customer_id NOT IN (1, 2, NULL);
+        after: |
+          **Zero rows**, even though customers 3 to 28 are clearly not 1 or 2. Without the NULL in the list
+          (`NOT IN (1, 2)`) you would get 26 rows.
+
+      - type: example
+        title: Bonus - a NULL-friendly "not equal"
+        md: |
+          PostgreSQL has a special comparison, `IS DISTINCT FROM`, that treats NULL like an ordinary value.
+          It never returns unknown. This query asks three questions straight to the database.
+        sql: |
+          SELECT NULL = 0 AS equals,
+                 NULL IS DISTINCT FROM 0 AS is_distinct,
+                 0 IS DISTINCT FROM 0 AS same_value;
+        after: |
+          The normal `=` gives NULL (unknown). `IS DISTINCT FROM` gives a clear answer: NULL and 0 are
+          different (`true`), and 0 and 0 are not different (`false`). You do not need it often, but it's a
+          handy trick when comparing columns that may contain NULL.
+
+      - type: quiz
+        id: m02-l07-q1
+        question: Which condition correctly finds orders where the `tip` was **not recorded**?
+        options:
+          - WHERE tip = NULL
+          - WHERE tip IS NULL
+          - WHERE tip = 0
+          - WHERE tip = ''
+        answer: 1
+        explanation: |
+          Only `IS NULL` detects a missing value. `tip = NULL` finds nothing, `tip = 0` finds orders with an
+          explicit tip of zero (a real value), and `tip = ''` compares a number with empty text.
+
+      - type: fill
+        id: m02-l07-f1
+        prompt: Complete the query to show the customers who **do** have an email address.
+        template: |
+          SELECT first_name, email
+          FROM customers
+          WHERE email ___ ___ NULL;
+        answers:
+          - ["IS"]
+          - ["NOT"]
+        explanation: |
+          `IS NOT NULL` keeps rows where a value exists. 23 of the 28 customers have an email.
+
+      - type: parsons
+        id: m02-l07-o1
+        prompt: Put the lines in order to list menu items with unmeasured calories.
+        lines:
+          - SELECT name, calories
+          - FROM menu_items
+          - WHERE calories IS NULL;
+        distractors:
+          - WHERE calories = NULL;
+        explanation: |
+          `IS NULL` is the only correct way to look for missing values. The distractor is valid SQL but
+          returns nothing.
+
+      - type: exercise
+        id: m02-l07-e5
+        title: Cash tips to chase up
+        prompt: |
+          Show the `order_id`, `customer_id` and `order_time` of orders that were paid in `'cash'`, were
+          placed by a known customer (the `customer_id` is **not** missing), and have **no recorded tip**.
+        starter: |
+          SELECT order_id, customer_id, order_time
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, customer_id, order_time
+          FROM orders
+          WHERE payment_method = 'cash'
+            AND customer_id IS NOT NULL
+            AND tip IS NULL;
+        hints:
+          - There are three conditions, and a row must pass all of them.
+          - One is a text comparison, and two are about missing values (one wants NULL, one wants not NULL).
+          - "WHERE payment_method = 'cash' AND customer_id ___ ___ ___ AND tip ___ ___;"
+        explanation: |
+          16 orders match. This combines a text comparison with both `IS NOT NULL` and `IS NULL`, joined by
+          `AND`.
+        difficulty: 3
+
+      - type: read
+        title: You finished the WHERE toolbox
+        md: |
+          Take a moment to be proud. You can now filter rows by numbers, text, true/false values, dates and
+          missing values, combine rules, search with `IN`, `BETWEEN` and `LIKE`, and avoid the big traps
+          (quotes, `AND`/`OR` order, timestamps and NULL).
+
+          Next comes a short **practice test pool** and the **Café Detective** project, where you will use
+          all of it together to solve a little mystery.
+    cheatsheet:
+      - title: Missing values
+        sql: |
+          WHERE email IS NULL
+          WHERE email IS NOT NULL
+        note: Never write = NULL. It always returns zero rows.
+      - title: Keep the unknown rows
+        sql: |
+          WHERE calories < 50
+             OR calories IS NULL
+        note: A comparison on a NULL value is unknown, so those rows disappear unless you add IS NULL.
+      - title: NULL warnings
+        sql: |
+          WHERE id NOT IN (1, 2, NULL)   -- returns no rows!
+        note: WHERE keeps a row only when the condition is TRUE. FALSE and NULL (unknown) both drop the row.
+testPool:
+  # ---------------------------------------------------------------- l01 Comparing numbers
+  - type: exercise
+    id: m02-t01
+    lesson: m02-l01
+    difficulty: 1
+    prompt: |
+      Show the `name` and `hourly_rate` of every staff member who earns **less than 16** dollars per hour.
+    starter: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE
+    solution: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE hourly_rate < 16;
+    hints:
+      - The table is `staff`, and the rule is about the `hourly_rate` column.
+      - '"Less than 16" uses the `<` symbol.'
+      - "SELECT name, hourly_rate FROM staff WHERE hourly_rate ___ 16;"
+    explanation: |
+      Two people earn less than 16: Chloe Dubois (15.50) and Lena Fischer (15.25). Omar Haddad earns exactly
+      16.00, which is not *less than* 16, so he is not included.
+
+  - type: quiz
+    id: m02-t02
+    lesson: m02-l01
+    difficulty: 1
+    question: Which condition keeps the items that cost **exactly 2.75 and also everything cheaper**?
+    options:
+      - price < 2.75
+      - price <= 2.75
+      - price = 2.75
+      - price <> 2.75
+    answer: 1
+    explanation: |
+      `<=` means "less than or equal to", so it includes the items at exactly 2.75 as well as cheaper ones.
+      `<` leaves out the 2.75 items, `=` keeps only them, and `<>` excludes them.
+
+  - type: exercise
+    id: m02-t03
+    lesson: m02-l01
+    difficulty: 2
+    prompt: |
+      A full-time week is 40 hours. Show the `name` and `hourly_rate` of every staff member whose pay for one
+      40-hour week (`hourly_rate * 40`) is **at least 800** dollars.
+    starter: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE
+    solution: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE hourly_rate * 40 >= 800;
+    hints:
+      - You can do the multiplication inside the WHERE rule.
+      - '"At least" means greater than or equal to.'
+      - "SELECT name, hourly_rate FROM staff WHERE hourly_rate * ___ >= ___;"
+    explanation: |
+      Maria Santos (28.50 x 40 = 1140) and Aiko Tanaka (21.50 x 40 = 860) qualify. Ben Carter is close but
+      earns 19.75 x 40 = 790, which is below 800.
+
+  # ---------------------------------------------------------------- l02 Filtering text
+  - type: exercise
+    id: m02-t04
+    lesson: m02-l02
+    difficulty: 1
+    prompt: |
+      Show the `name` and `hourly_rate` of every staff member whose `role` is `'Cashier'`.
+    starter: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE
+    solution: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE role = 'Cashier';
+    hints:
+      - Text values are compared with `=` and written in single quotes.
+      - "Keep the capital C of Cashier, because the match is exact."
+      - "SELECT name, hourly_rate FROM staff WHERE role = '___';"
+    explanation: |
+      Three cashiers: Omar Haddad, Chloe Dubois and Lena Fischer.
+
+  - type: quiz
+    id: m02-t05
+    lesson: m02-l02
+    difficulty: 1
+    question: |
+      Several customers live in Seattle, yet this query returns **zero rows** (and no error):
+
+      `SELECT first_name FROM customers WHERE city = 'seattle';`
+
+      What is the reason?
+    options:
+      - Text comparison is case-sensitive, and the stored value is 'Seattle' with a capital S
+      - Single quotes are not allowed around city names
+      - The word city is reserved and cannot be used in WHERE
+      - WHERE cannot be used with text columns
+    answer: 0
+    explanation: |
+      Text inside quotes is matched exactly, including capital letters. `'seattle'` and `'Seattle'` are
+      different values. (`ILIKE` is a way to ignore capitals, as you saw in lesson 6.)
+
+  - type: predict
+    id: m02-t06
+    lesson: m02-l02
+    difficulty: 2
+    question: |
+      The café has 8 coffees. Look carefully: there is a **space** before the closing quote. How many rows
+      does this query return?
+    sql: |
+      SELECT name
+      FROM menu_items
+      WHERE category = 'Coffee ';
+    options: ["8", "0", "1", "An error"]
+    answer: 1
+    explanation: |
+      The text `'Coffee '` (with a trailing space) is not the same as `'Coffee'`. Text is compared exactly,
+      spaces included, so nothing matches and the result is empty. There is no error.
+
+  - type: parsons
+    id: m02-t07
+    lesson: m02-l02
+    difficulty: 2
+    prompt: Put the lines in order to list every customer who does **not** live in Denver.
+    lines:
+      - SELECT first_name, city
+      - FROM customers
+      - WHERE city <> 'Denver';
+    distractors:
+      - WHERE city <> "Denver";
+      - WHERE city != Denver;
+    explanation: |
+      The word is text, so it needs single quotes. Double quotes or no quotes make PostgreSQL look for a column
+      named Denver.
+
+  # ---------------------------------------------------------------- l03 Booleans and dates
+  - type: exercise
+    id: m02-t08
+    lesson: m02-l03
+    difficulty: 1
+    prompt: |
+      Show the `name` and `calories` of every menu item that is vegan (`is_vegan` is true).
+    starter: |
+      SELECT name, calories
+      FROM menu_items
+      WHERE
+    solution: |
+      SELECT name, calories
+      FROM menu_items
+      WHERE is_vegan = true;
+    hints:
+      - "`is_vegan` is a true/false column."
+      - 'Compare it with `true` (no quotes), or use the column on its own.'
+      - "SELECT name, calories FROM menu_items WHERE is_vegan ___ ___;"
+    explanation: |
+      14 vegan items. Two of them (Green Detox Juice and Berry Smoothie) show a NULL in `calories`, because
+      nobody has measured them yet. `WHERE is_vegan` works too.
+
+  - type: exercise
+    id: m02-t09
+    lesson: m02-l03
+    difficulty: 2
+    prompt: |
+      Show the `order_id` and `order_time` of every order placed **before 8:00 in the morning on
+      2024-10-02**. Write the moment as `'2024-10-02 08:00:00'`.
+    starter: |
+      SELECT order_id, order_time
+      FROM orders
+      WHERE
+    solution: |
+      SELECT order_id, order_time
+      FROM orders
+      WHERE order_time < '2024-10-02 08:00:00';
+    hints:
+      - Compare `order_time` with a date and time written in single quotes.
+      - Earlier means smaller, so you need `<`.
+      - "SELECT order_id, order_time FROM orders WHERE order_time ___ '2024-10-02 08:00:00';"
+    explanation: |
+      Three orders: #1 and #2 on 1 October, and #3 at 07:18 on 2 October. Order #4 was at 13:43, which is after
+      08:00.
+
+  - type: quiz
+    id: m02-t10
+    lesson: m02-l03
+    difficulty: 3
+    question: |
+      `order_time` stores a date **and** a time. What does this query actually find?
+
+      `SELECT order_id FROM orders WHERE order_time = '2024-11-15';`
+    options:
+      - Orders placed at any time on 15 November
+      - Only orders placed at exactly midnight (00:00:00) on 15 November
+      - Nothing, because it causes an error
+      - Every order before 15 November
+    answer: 1
+    explanation: |
+      A date on its own means midnight at the start of that day. With `=` you only get orders placed at that
+      exact second, which is almost never. To get a whole day, use a range with `>=` and `<`.
+
+  - type: predict
+    id: m02-t11
+    lesson: m02-l03
+    difficulty: 3
+    question: |
+      The last orders in the table are #179 (31 December, 16:26) and #180 (31 December, 18:02). How many
+      rows does this query return?
+    sql: |
+      SELECT order_id
+      FROM orders
+      WHERE order_time > '2024-12-31';
+    options: ["0", "1", "2", "180"]
+    answer: 2
+    explanation: |
+      `'2024-12-31'` means midnight at the start of 31 December. Both orders were placed *after* that moment,
+      so both are included. `>` with a date does not mean "after that whole day".
+
+  # ---------------------------------------------------------------- l04 AND, OR, NOT
+  - type: exercise
+    id: m02-t12
+    lesson: m02-l04
+    difficulty: 1
+    prompt: |
+      Show the `name` and `price` of every item in the `'Coffee'` category that is also **vegan**.
+    starter: |
+      SELECT name, price
+      FROM menu_items
+      WHERE
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      WHERE category = 'Coffee'
+        AND is_vegan = true;
+    hints:
+      - There are two rules, and a row must satisfy both.
+      - Join them with AND.
+      - "WHERE category = 'Coffee' AND ___;"
+    explanation: |
+      Four coffees are vegan: Drip Coffee, Espresso, Americano and Iced Americano. The lattes and the
+      Cappuccino contain milk.
+
+  - type: quiz
+    id: m02-t13
+    lesson: m02-l04
+    difficulty: 3
+    question: |
+      Which `WHERE` clause finds customers who live in **Austin or Denver** and have **more than 300**
+      loyalty points?
+    options:
+      - city = 'Austin' OR city = 'Denver' AND loyalty_points > 300
+      - (city = 'Austin' OR city = 'Denver') AND loyalty_points > 300
+      - city = 'Austin' AND city = 'Denver' AND loyalty_points > 300
+      - city = 'Austin' OR 'Denver' AND loyalty_points > 300
+    answer: 1
+    explanation: |
+      The parentheses make sure the points rule applies to both cities. Without them, `AND` goes first and
+      every Austin customer would be included, whatever their points. The third option can never be true (one
+      city per row), and the fourth is not a valid condition.
+
+  - type: predict
+    id: m02-t14
+    lesson: m02-l04
+    difficulty: 2
+    question: |
+      Six items cost less than 3: Drip Coffee, Espresso, the three plain teas and the Chocolate Chip Cookie
+      (the cookie is not vegan). Two items cost more than 10, and neither is vegan. How many rows does this
+      query return?
+    sql: |
+      SELECT name
+      FROM menu_items
+      WHERE price < 3
+         OR price > 10
+        AND is_vegan = true;
+    options: ["5", "6", "7", "8"]
+    answer: 1
+    explanation: |
+      `AND` goes first: "price over 10 **and** vegan" matches nothing. Then `OR price < 3` keeps all 6 cheap
+      items, vegan or not. If you read it as `(price < 3 OR price > 10) AND is_vegan`, you would get 5,
+      which is not what SQL does.
+
+  - type: parsons
+    id: m02-t15
+    lesson: m02-l04
+    difficulty: 2
+    prompt: Put the lines in order to list the **available** desserts and juices.
+    lines:
+      - SELECT name, category, price
+      - FROM menu_items
+      - WHERE is_available = true
+      - AND (category = 'Dessert'
+      - OR category = 'Juice');
+    explanation: |
+      The parentheses group the two categories so that the availability rule applies to both. Six items match:
+      two desserts and four juices.
+
+  - type: exercise
+    id: m02-t16
+    lesson: m02-l04
+    difficulty: 3
+    prompt: |
+      Show the `first_name`, `city` and `joined_on` of customers who joined **during 2023** (from 2023-01-01
+      to 2023-12-31) and live in **Boston or Austin**.
+    starter: |
+      SELECT first_name, city, joined_on
+      FROM customers
+      WHERE
+    solution: |
+      SELECT first_name, city, joined_on
+      FROM customers
+      WHERE joined_on >= '2023-01-01'
+        AND joined_on < '2024-01-01'
+        AND (city = 'Boston' OR city = 'Austin');
+    hints:
+      - You need three ideas - a start date, an end date and a pair of cities.
+      - The city pair needs parentheses around the OR.
+      - "WHERE joined_on >= '2023-01-01' AND joined_on < '___' AND (city = 'Boston' OR city = '___');"
+    explanation: |
+      Eight customers match. A range of dates is two comparisons joined by AND, and the parentheses keep the
+      OR from messing up the other rules. `BETWEEN '2023-01-01' AND '2023-12-31'` would also work, because
+      `joined_on` is a date without a time.
+
+  # ---------------------------------------------------------------- l05 IN and BETWEEN
+  - type: exercise
+    id: m02-t17
+    lesson: m02-l05
+    difficulty: 1
+    prompt: |
+      Show the `name` and `category` of every item that is a `'Sandwich'` or a `'Dessert'`. Use `IN`.
+    starter: |
+      SELECT name, category
+      FROM menu_items
+      WHERE
+    solution: |
+      SELECT name, category
+      FROM menu_items
+      WHERE category IN ('Sandwich', 'Dessert');
+    hints:
+      - The category must be one of two values.
+      - Use IN followed by a list in parentheses.
+      - "SELECT name, category FROM menu_items WHERE category IN ('Sandwich', '___');"
+    explanation: |
+      9 rows: 5 sandwiches and 4 desserts.
+
+  - type: exercise
+    id: m02-t18
+    lesson: m02-l05
+    difficulty: 2
+    prompt: |
+      Show the `first_name` and `joined_on` of customers who joined **between 2023-06-01 and 2023-08-31**,
+      both days included. Use `BETWEEN`.
+    starter: |
+      SELECT first_name, joined_on
+      FROM customers
+      WHERE
+    solution: |
+      SELECT first_name, joined_on
+      FROM customers
+      WHERE joined_on BETWEEN '2023-06-01' AND '2023-08-31';
+    hints:
+      - It is one date column checked against a range.
+      - "Pattern: column BETWEEN earlier-date AND later-date."
+      - "WHERE joined_on BETWEEN '2023-06-01' AND '___';"
+    explanation: |
+      Five customers. Noah joined on 2023-08-31, the very last day of the range, and is included because
+      `BETWEEN` counts both ends.
+
+  - type: fill
+    id: m02-t19
+    lesson: m02-l05
+    difficulty: 1
+    prompt: Complete the query to show staff who earn from 16 to 20 dollars per hour, both included.
+    template: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE hourly_rate ___ 16 ___ 20;
+    answers:
+      - ["BETWEEN"]
+      - ["AND"]
+    explanation: |
+      `BETWEEN low AND high` includes both ends, so Omar Haddad (exactly 16.00) is in. Six people match.
+
+  - type: predict
+    id: m02-t20
+    lesson: m02-l05
+    difficulty: 2
+    question: |
+      There are 8 coffees and 5 teas (13 items) on the menu of 32. How many rows does this query return?
+    sql: |
+      SELECT name
+      FROM menu_items
+      WHERE category NOT IN ('Coffee', 'Tea');
+    options: ["13", "19", "32", "0"]
+    answer: 1
+    explanation: |
+      `NOT IN` removes the 13 coffees and teas, leaving 32 - 13 = 19 items. (No category here is NULL, so
+      the NULL warning from lesson 7 does not apply.)
+
+  - type: quiz
+    id: m02-t21
+    lesson: m02-l05
+    difficulty: 3
+    question: |
+      `order_time` is a timestamp. Which condition finds **every order placed at any time in November 2024**?
+    options:
+      - order_time BETWEEN '2024-11-01' AND '2024-11-30'
+      - order_time >= '2024-11-01' AND order_time < '2024-12-01'
+      - order_time >= '2024-11-01' AND order_time <= '2024-11-30'
+      - order_time = '2024-11'
+    answer: 1
+    explanation: |
+      The safe pattern is `>=` the first day and `<` the day after the last day. The `BETWEEN` and `<=`
+      versions treat `'2024-11-30'` as midnight, so they silently lose the two orders placed later on 30
+      November (#107 and #108). The last option is not even a valid timestamp.
+
+  # ---------------------------------------------------------------- l06 LIKE
+  - type: exercise
+    id: m02-t22
+    lesson: m02-l06
+    difficulty: 1
+    prompt: |
+      Show the `name` of every menu item whose name **starts with** `Ca`.
+    starter: |
+      SELECT name
+      FROM menu_items
+      WHERE
+    solution: |
+      SELECT name
+      FROM menu_items
+      WHERE name LIKE 'Ca%';
+    hints:
+      - You know how the name begins, but not how it ends.
+      - Use LIKE with the letters first and a % after them.
+      - "SELECT name FROM menu_items WHERE name LIKE '___%';"
+    explanation: |
+      Four items: Cappuccino, Caramel Latte, Caprese Panini and Carrot Ginger Juice.
+
+  - type: fill
+    id: m02-t23
+    lesson: m02-l06
+    difficulty: 2
+    prompt: Complete the query to find items with "chocolate" in the name, whatever the capital letters.
+    template: |
+      SELECT name
+      FROM menu_items
+      WHERE name ___ '%CHOCOLATE%';
+    answers:
+      - ["ILIKE"]
+    explanation: |
+      `ILIKE` ignores capital letters, so the pattern in capitals still finds the Chocolate Chip Cookie and
+      the Chocolate Brownie. Plain `LIKE` would find nothing.
+
+  - type: quiz
+    id: m02-t24
+    lesson: m02-l06
+    difficulty: 2
+    question: |
+      Which of these first names match the pattern `'_o%'`? (Pick all that apply.)
+    options: ["Nora", "Hugo", "Sophia", "Naledi"]
+    answer: [0, 2]
+    explanation: |
+      `_` is exactly one character, so the pattern means "any first letter, then an `o`, then anything".
+      Nora (N-**o**-ra) and Sophia (S-**o**-phia) fit. In Hugo the second letter is `u`, and in Naledi it is `a`.
+
+  - type: exercise
+    id: m02-t25
+    lesson: m02-l06
+    difficulty: 3
+    prompt: |
+      Show the `name` of every menu item whose **second letter is `a`** and whose **last letter is `e`**.
+    starter: |
+      SELECT name
+      FROM menu_items
+      WHERE
+    solution: |
+      SELECT name
+      FROM menu_items
+      WHERE name LIKE '_a%e';
+    hints:
+      - Use one pattern that describes the start and the end.
+      - The first letter can be anything (`_`), then `a`, then anything (`%`), then `e`.
+      - "WHERE name LIKE '_a%___';"
+    explanation: |
+      Four names match: Vanilla Latte, Caramel Latte, Matcha Latte and Carrot Ginger Juice. `_` fixes the
+      position of the second letter, and `%` covers everything in the middle.
+
+  # ---------------------------------------------------------------- l07 NULL
+  - type: exercise
+    id: m02-t26
+    lesson: m02-l07
+    difficulty: 1
+    prompt: |
+      Show the `name` of the staff member who has **no manager** (their `manager_id` is missing).
+    starter: |
+      SELECT name
+      FROM staff
+      WHERE
+    solution: |
+      SELECT name
+      FROM staff
+      WHERE manager_id IS NULL;
+    hints:
+      - A missing value is NULL.
+      - Don't use `=`. Use the special test for NULL.
+      - "SELECT name FROM staff WHERE manager_id ___ ___;"
+    explanation: |
+      Only Maria Santos, the café manager, has no manager above her.
+
+  - type: quiz
+    id: m02-t27
+    lesson: m02-l07
+    difficulty: 2
+    question: What does `SELECT NULL = NULL;` return in PostgreSQL?
+    options:
+      - "true"
+      - "false"
+      - NULL (unknown)
+      - An error
+    answer: 2
+    explanation: |
+      Comparing an unknown value with another unknown value gives an unknown answer, which shows as NULL.
+      That is why you test for missing values with `IS NULL` instead of `= NULL`.
+
+  - type: parsons
+    id: m02-t28
+    lesson: m02-l07
+    difficulty: 2
+    prompt: Put the lines in order to find Austin customers who have no email address.
+    lines:
+      - SELECT first_name, email
+      - FROM customers
+      - WHERE city = 'Austin'
+      - AND email IS NULL;
+    distractors:
+      - AND email = NULL;
+    explanation: |
+      One customer matches: Ava. The `= NULL` distractor runs but never matches anything.
+
+  - type: fill
+    id: m02-t29
+    lesson: m02-l07
+    difficulty: 2
+    prompt: Complete the query to show orders with a tip under 1 dollar **or** no recorded tip.
+    template: |
+      SELECT order_id, tip
+      FROM orders
+      WHERE tip < 1 ___ tip ___ NULL;
+    answers:
+      - ["OR"]
+      - ["IS"]
+    explanation: |
+      `tip < 1` skips every row where the tip is NULL, so `OR tip IS NULL` is needed to bring those rows
+      back.
+
+  - type: exercise
+    id: m02-t30
+    lesson: m02-l07
+    difficulty: 3
+    prompt: |
+      Show the `order_id` and `tip` of every order paid by `'card'` where the tip is either **0.00** or
+      **missing** (NULL).
+    starter: |
+      SELECT order_id, tip
+      FROM orders
+      WHERE
+    solution: |
+      SELECT order_id, tip
+      FROM orders
+      WHERE payment_method = 'card'
+        AND (tip = 0 OR tip IS NULL);
+    hints:
+      - Three ideas this time - card, zero tip and missing tip.
+      - The two tip rules are alternatives (OR), so they need parentheses before the AND.
+      - "WHERE payment_method = 'card' AND (tip = 0 OR tip ___ ___);"
+    explanation: |
+      19 orders. Without the parentheses, `OR` would pull in every order with a NULL tip, whatever the payment
+      method. And `tip = 0` alone would never find the NULL rows.

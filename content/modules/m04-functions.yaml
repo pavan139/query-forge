@@ -1,0 +1,1861 @@
+id: m04
+order: 4
+title: "Functions: Text, Numbers, Dates & CASE"
+subtitle: Clean, calculate and reshape your data with SQL's built-in tools
+icon: "🧰"
+level: beginner
+description: |
+  Real data is rarely in the exact shape you need. Names have the wrong capitalisation, prices need rounding,
+  dates must become month names, and some values are simply missing.
+
+  In this module you meet SQL's built-in **functions**: small, ready-made tools for text, numbers and dates.
+  You will also learn **CASE** (SQL's "if this, then that"), how to convert between types, and how to handle
+  NULLs gracefully. Everything runs on the ShopSmart online-store database.
+dataset: shop
+lessons:
+  - id: m04-l01
+    title: Text functions
+    summary: Change, cut, search and rebuild text with UPPER, TRIM, SUBSTRING, SPLIT_PART and friends.
+    minutes: 30
+    steps:
+      - type: read
+        title: A day in the marketing team
+        md: |
+          Priya from marketing wants a mailing list. The `customers` table has names, emails and phone
+          numbers, but she needs them in a different shape: names in capitals, area codes on their own,
+          email domains split off.
+
+          That is a job for **functions**. A function is a small ready-made tool. You hand it something
+          (its **argument**, written inside parentheses) and it hands back a new value.
+          `UPPER('hi')` gives back `HI`.
+
+          > [!ANALOGY]
+          > Think of a kitchen gadget. Drop in an apple, the slicer gives you slices. The apple in the
+          > fruit bowl is still whole. SQL functions work the same way: they change what you *see* in the
+          > result, never the data stored in the table.
+
+          Functions work on **every row** of your result, so one short line can tidy thousands of values.
+          In this lesson you collect the most useful **text functions**.
+
+      - type: example
+        title: UPPER, LOWER and INITCAP
+        md: |
+          Press **Run**. Three functions change the capital letters of text.
+        sql: |
+          SELECT
+              first_name,
+              UPPER(first_name) AS shouting,
+              LOWER(last_name) AS quiet,
+              INITCAP('mARIA dE la cRUZ') AS tidy
+          FROM customers
+          ORDER BY customer_id
+          LIMIT 4;
+        after: |
+          `UPPER` makes every letter a capital, `LOWER` makes every letter small, and `INITCAP` gives each
+          **word** a capital first letter ("initial capital"). The last column uses a plain text value
+          instead of a column, which is perfectly fine: functions accept both.
+
+          Notice that the `first_name` column next to `shouting` is unchanged.
+
+      - type: exercise
+        id: m04-l01-e1
+        title: Shout the last names
+        prompt: |
+          Show the `customer_id` and the `last_name` in UPPER CASE (name that column `last_name_upper`)
+          for every customer who lives in `'Denver'`. Sort by `customer_id`.
+        starter: |
+          SELECT customer_id,
+          FROM customers
+          WHERE city = 'Denver'
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id, UPPER(last_name) AS last_name_upper
+          FROM customers
+          WHERE city = 'Denver'
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need a function that turns text into capital letters.
+          - "Put the column name inside the function's parentheses: UPPER(last_name)."
+          - "SELECT customer_id, UPPER(___) AS last_name_upper FROM customers WHERE city = 'Denver' ORDER BY customer_id;"
+        explanation: |
+          `UPPER(last_name)` is calculated for each row that survives the `WHERE`. The alias after `AS` gives
+          the new column a friendly name. Careful: the `WHERE` still compares the *original* `city` text.
+        difficulty: 1
+
+      - type: example
+        title: Counting characters with LENGTH
+        md: |
+          `LENGTH` counts the characters in a piece of text, spaces included.
+        sql: |
+          SELECT
+              name,
+              LENGTH(name) AS characters
+          FROM products
+          ORDER BY product_id
+          LIMIT 5;
+        after: |
+          "Aurora 14-inch Laptop" has 21 characters: letters, digits, the hyphen **and the spaces** all
+          count. `LENGTH` is handy for finding names that are too long for a label or a mobile screen.
+
+      - type: exercise
+        id: m04-l01-e2
+        title: Names that are too long
+        prompt: |
+          The label printer can only fit 30 characters. Show the `name` of every product whose name is
+          **longer than 30 characters**, together with its length (call it `name_length`).
+          Show the longest first.
+        solution: |
+          SELECT name, LENGTH(name) AS name_length
+          FROM products
+          WHERE LENGTH(name) > 30
+          ORDER BY name_length DESC;
+        ordered: true
+        columnNames: true
+        hints:
+          - You can use a function inside WHERE, not only inside SELECT.
+          - "WHERE LENGTH(name) > 30 keeps only the long names."
+          - "SELECT name, LENGTH(name) AS name_length FROM products WHERE ___ > 30 ORDER BY name_length DESC;"
+        explanation: |
+          The function is used twice: once in `SELECT` to show the length and once in `WHERE` to filter.
+          You can sort by the alias `name_length` because `ORDER BY` runs after `SELECT`. Three products
+          qualify and all have different lengths, so the order is unambiguous.
+        difficulty: 1
+
+      - type: example
+        title: Trimming extra spaces
+        md: |
+          Spaces at the start or end of text are easy to miss. The square brackets below make them visible.
+        sql: |
+          SELECT
+              LENGTH('   padded   ') AS before_trim,
+              LENGTH(TRIM('   padded   ')) AS after_trim,
+              '[' || LTRIM('   padded   ') || ']' AS left_only,
+              '[' || RTRIM('   padded   ') || ']' AS right_only;
+        after: |
+          `TRIM` removes spaces from **both** ends: 12 characters shrink to 6. `LTRIM` only cleans the left
+          end, `RTRIM` only the right end. Spaces *inside* the text are never touched.
+
+          Stray spaces are the number one reason `'Denver' = 'Denver '` is false, so `TRIM` is a favourite
+          in data cleaning.
+
+      - type: read
+        title: Functions inside functions
+        md: |
+          You can put a function inside another function. SQL works from the **inside out**:
+
+          ```sql
+          UPPER(TRIM('  ana  '))
+          ```
+
+          First `TRIM` makes `'ana'`, then `UPPER` turns that into `'ANA'`. This is called **nesting**.
+
+          > [!TIP]
+          > When a nested expression looks scary, read it from the innermost parentheses outwards,
+          > one step at a time, like peeling an onion.
+
+      - type: exercise
+        id: m04-l01-e3
+        title: Fix the Denver search
+        prompt: |
+          Show `customer_id`, `first_name` and `last_name` of customers who live in Denver, sorted by
+          `customer_id`. The query below finds **nobody**. Can you spot why and fix it?
+        starter: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE UPPER(city) = 'Denver'
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id, first_name, last_name
+          FROM customers
+          WHERE UPPER(city) = 'DENVER'
+          ORDER BY customer_id;
+        ordered: true
+        hints:
+          - What does UPPER(city) produce? Compare it with the text on the right of the equals sign.
+          - "UPPER(city) is always in capitals, so the right side must be in capitals too."
+          - "WHERE UPPER(city) = '___'"
+        explanation: |
+          `UPPER(city)` turns `Denver` into `DENVER`, which can never equal `'Denver'`. Text comparison is
+          **case-sensitive**. A neat trick for case-insensitive searches: make both sides the same case,
+          e.g. `LOWER(city) = 'denver'`. (`ILIKE` from the LIKE lesson does a similar job.)
+        difficulty: 2
+
+      - type: quiz
+        id: m04-l01-q1
+        question: Which function tells you how many characters a piece of text contains?
+        options: [LEN, LENGTH, SIZE, COUNT]
+        answer: 1
+        explanation: |
+          `LENGTH` is the PostgreSQL function. `LEN` exists in some other databases (SQL Server, for example)
+          but PostgreSQL answers "function len does not exist". `COUNT` is a different tool that counts
+          *rows*; you meet it in the aggregation module.
+
+      - type: example
+        title: Cutting out pieces
+        md: |
+          `LEFT` and `RIGHT` grab characters from either end. `SUBSTRING` cuts from anywhere.
+        sql: |
+          SELECT
+              phone,
+              LEFT(phone, 5) AS first_5,
+              RIGHT(phone, 4) AS last_4,
+              SUBSTRING(phone FROM 2 FOR 3) AS middle
+          FROM customers
+          WHERE phone IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 4;
+        after: |
+          `SUBSTRING(phone FROM 2 FOR 3)` reads: "start at character 2 and take 3 characters". For
+          `(213) 555-0100` that is `213`, the area code.
+
+          You can also write it with commas: `SUBSTRING(phone, 2, 3)`. Both forms are identical.
+
+          > [!WARNING]
+          > Counting in SQL text starts at **1**, not 0. Character 1 is the opening bracket `(`, and
+          > character 2 is the first digit.
+
+      - type: exercise
+        id: m04-l01-e4
+        title: Area codes
+        prompt: |
+          Show `customer_id`, `phone` and the three-digit **area code** (call it `area_code`) for customers
+          who have a phone number. Sort by `customer_id` and show only the first 8 rows.
+        starter: |
+          SELECT customer_id, phone,
+          FROM customers
+          WHERE phone IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 8;
+        solution: |
+          SELECT
+              customer_id,
+              phone,
+              SUBSTRING(phone FROM 2 FOR 3) AS area_code
+          FROM customers
+          WHERE phone IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 8;
+        ordered: true
+        columnNames: true
+        hints:
+          - The area code sits inside the brackets of the phone number, e.g. (213).
+          - "Start at character 2 and take 3 characters: SUBSTRING(phone FROM 2 FOR 3)."
+          - "SELECT customer_id, phone, SUBSTRING(phone FROM ___ FOR ___) AS area_code FROM customers WHERE phone IS NOT NULL ORDER BY customer_id LIMIT 8;"
+        explanation: |
+          Because every phone in this table has the same shape, the area code is always at characters 2 to 4.
+          The `WHERE phone IS NOT NULL` filter is optional here (functions on NULL simply return NULL),
+          but it keeps the result tidy.
+        difficulty: 2
+
+      - type: example
+        title: Searching inside text
+        md: |
+          `POSITION` tells you where a piece of text starts. `REPLACE` swaps one piece of text for another.
+        sql: |
+          SELECT
+              email,
+              POSITION('@' IN email) AS at_sign_at,
+              REPLACE(email, 'example.org', 'example.com')
+                  AS new_email
+          FROM customers
+          ORDER BY customer_id
+          LIMIT 4;
+        after: |
+          For `felix.white@example.org` the `@` is character 12, so `POSITION` returns `12`. If the text is
+          **not found**, `POSITION` returns `0` (not an error).
+
+          `REPLACE` changes *every* match. Rows that don't contain `example.org` (customers 2 and 4) come
+          out unchanged.
+
+      - type: predict
+        id: m04-l01-p1
+        question: What does this query return?
+        sql: |
+          SELECT POSITION('@' IN 'ana@mail.com');
+        options: ["3", "4", "5", "0"]
+        answer: 1
+        explanation: |
+          Count the characters: a=1, n=2, a=3, `@`=4. The first character is number 1, so `POSITION`
+          answers `4`.
+
+      - type: stepper
+        title: Taking an email address apart
+        md: |
+          How would you get just the part **before** the `@`? Click through the stages and run each one.
+        stages:
+          - label: The email
+            md: Start with the raw email addresses.
+            sql: |
+              SELECT email
+              FROM customers
+              ORDER BY customer_id
+              LIMIT 3;
+          - label: Find the @
+            md: '`POSITION` tells us where the `@` sits.'
+            sql: |
+              SELECT email, POSITION('@' IN email) AS at_pos
+              FROM customers
+              ORDER BY customer_id
+              LIMIT 3;
+          - label: Cut with LEFT
+            md: We want everything *before* the `@`, so take `at_pos - 1` characters from the left.
+            sql: |
+              SELECT
+                  email,
+                  LEFT(email, POSITION('@' IN email) - 1) AS username
+              FROM customers
+              ORDER BY customer_id
+              LIMIT 3;
+          - label: The easy way
+            md: |
+              `SPLIT_PART(text, separator, n)` chops the text at every separator and returns piece number `n`.
+            sql: |
+              SELECT
+                  email,
+                  SPLIT_PART(email, '@', 1) AS username,
+                  SPLIT_PART(email, '@', 2) AS domain
+              FROM customers
+              ORDER BY customer_id
+              LIMIT 3;
+
+      - type: exercise
+        id: m04-l01-e5
+        title: Which email provider?
+        prompt: |
+          Show `customer_id`, `email` and the **domain** of the email (the part after the `@`, call it
+          `domain`) for customers 1 to 8. Sort by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              email,
+              SPLIT_PART(email, '@', 2) AS domain
+          FROM customers
+          WHERE customer_id <= 8
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Split the email at the @ sign and pick the second piece.
+          - "SPLIT_PART(email, '@', 2) returns the text after the @."
+          - "SELECT customer_id, email, SPLIT_PART(email, '___', ___) AS domain FROM customers WHERE customer_id <= 8 ORDER BY customer_id;"
+        explanation: |
+          `SPLIT_PART` counts pieces from 1. Asking for a piece that doesn't exist (say piece 3 of an email)
+          gives an empty string `''`, not an error. In PostgreSQL 14 and later you may even use a negative
+          number to count from the end: `SPLIT_PART(email, '@', -1)` also returns the domain.
+        difficulty: 2
+
+      - type: fill
+        id: m04-l01-f1
+        prompt: |
+          Complete the query so it shows the **domain** (the text after the `@`) of customer 1's email.
+        template: |
+          SELECT ___(email, '@', ___) AS domain
+          FROM customers
+          WHERE customer_id = 1;
+        answers:
+          - ["SPLIT_PART"]
+          - ["2"]
+        explanation: |
+          `SPLIT_PART(email, '@', 2)` returns the second piece, `example.org`.
+
+      - type: example
+        title: Gluing text together the safe way
+        md: |
+          Remember `||` from the SELECT module? `CONCAT_WS` ("concatenate **with separator**") joins several
+          values and puts the same separator between them. Compare how they treat missing phone numbers.
+        sql: |
+          SELECT
+              first_name,
+              phone,
+              CONCAT_WS(' | ', first_name, phone) AS with_ws,
+              first_name || ' | ' || phone AS with_pipes
+          FROM customers
+          ORDER BY customer_id
+          LIMIT 4;
+        after: |
+          Felix and Owen have no phone (NULL). With `||` the whole result becomes NULL, because "something
+          joined with *unknown*" is unknown. `CONCAT_WS` simply **skips NULLs**, so you still get `Felix`.
+
+          > [!MISTAKE]
+          > Gluing columns with `||` silently loses the whole value as soon as one part is NULL. If a column
+          > can be empty, prefer `CONCAT_WS` (or the `COALESCE` function from the last lesson of this module).
+
+      - type: exercise
+        id: m04-l01-e6
+        title: City and state in one column
+        prompt: |
+          For customers 1 to 6, show `customer_id` and a column `location` that looks like `New York, NY`
+          (city, a comma and a space, then the state). Sort by `customer_id`.
+        solution: |
+          SELECT customer_id, CONCAT_WS(', ', city, state) AS location
+          FROM customers
+          WHERE customer_id <= 6
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You want to join two columns with the same separator between them.
+          - "CONCAT_WS takes the separator first, then the values: CONCAT_WS(', ', city, state)."
+          - "SELECT customer_id, CONCAT_WS('___', city, state) AS location FROM customers WHERE customer_id <= 6 ORDER BY customer_id;"
+        explanation: |
+          `city || ', ' || state` gives the same answer here, but `CONCAT_WS` is shorter and safer when a
+          value might be NULL.
+        difficulty: 2
+
+      - type: example
+        title: Padding with LPAD and RPAD
+        md: |
+          `RPAD(text, length, filler)` pads on the **right** until the text reaches `length`.
+          `LPAD` pads on the **left**. Perfect for price lists and fixed-width codes.
+        sql: |
+          SELECT
+              RPAD(name, 28, '.') || price AS price_line,
+              LPAD('7', 3, '0') AS padded_id
+          FROM products
+          ORDER BY product_id
+          LIMIT 4;
+        after: |
+          Every `price_line` is exactly 28 characters of name-plus-dots, so the prices line up like a
+          restaurant menu. `LPAD('7', 3, '0')` turns `7` into `007`.
+
+          > [!WARNING]
+          > If the text is **already longer** than the target length, `LPAD` and `RPAD` cut it short:
+          > `LPAD('abcdef', 3, '0')` returns `abc`.
+
+      - type: parsons
+        id: m04-l01-o1
+        prompt: |
+          Put the lines in order to show the **first initial** (a capital letter) of every Seattle
+          customer, sorted by `customer_id`. One line does not belong.
+        lines:
+          - SELECT customer_id, UPPER(LEFT(first_name, 1)) AS initial
+          - FROM customers
+          - WHERE city = 'Seattle'
+          - ORDER BY customer_id;
+        distractors:
+          - FROM menu_items
+        explanation: |
+          `LEFT(first_name, 1)` takes one character and `UPPER` wraps around it. The `customers` table is
+          the right source: `menu_items` belongs to a different database.
+
+      - type: exercise
+        id: m04-l01-e7
+        title: Digits only
+        prompt: |
+          Phone numbers look like `(213) 555-0100`. Show `customer_id` and a column `digits` that contains
+          **only the ten digits** (`2135550100`) for customers who have a phone. Sort by `customer_id` and
+          show the first 5 rows.
+        starter: |
+          SELECT customer_id, REPLACE(phone, '(', '') AS digits
+          FROM customers
+          WHERE phone IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 5;
+        solution: |
+          SELECT
+              customer_id,
+              REPLACE(REPLACE(REPLACE(REPLACE(phone,
+                  '(', ''), ')', ''), ' ', ''), '-', '') AS digits
+          FROM customers
+          WHERE phone IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - There are four unwanted characters - the two brackets, a space and a dash - so you need four REPLACEs.
+          - "Replace each one with an empty string '' and nest the calls: REPLACE(REPLACE(phone, '(', ''), ')', '')."
+          - "REPLACE(REPLACE(REPLACE(REPLACE(phone, '(', ''), ')', ''), ' ', ___), '-', ___)"
+        explanation: |
+          Each `REPLACE` removes one kind of character and passes the cleaner text to the next one, working
+          from the inside out. In a later module you will learn `regexp_replace`, which can do this in a
+          single step.
+        difficulty: 3
+
+      - type: exercise
+        id: m04-l01-e8
+        title: Email handles
+        prompt: |
+          Build a login **handle** for each customer: the first letter of `first_name` followed by the
+          whole `last_name`, all in lower case (for Felix White: `fwhite`). Show `customer_id` and
+          `handle` for customers 1 to 6, sorted by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              LOWER(LEFT(first_name, 1) || last_name) AS handle
+          FROM customers
+          WHERE customer_id <= 6
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need LEFT for the first letter, || to join, and a function for lower case.
+          - "Glue first: LEFT(first_name, 1) || last_name. Then wrap the whole thing in LOWER(...)."
+          - "SELECT customer_id, LOWER(LEFT(first_name, ___) || ___) AS handle FROM customers WHERE customer_id <= 6 ORDER BY customer_id;"
+        explanation: |
+          Two functions and an operator working together. You could also write
+          `LOWER(LEFT(first_name, 1)) || LOWER(last_name)` - same result, more typing.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Change the case
+        sql: |
+          SELECT UPPER(name), LOWER(name), INITCAP(name)
+          FROM products;
+        note: UPPER = ALL CAPS, LOWER = all small, INITCAP = Each Word Capitalised.
+      - title: Measure, trim and cut
+        sql: |
+          SELECT LENGTH(t), TRIM(t), LEFT(t, 3), RIGHT(t, 3),
+                 SUBSTRING(t FROM 2 FOR 3)
+          FROM some_table;
+        note: Positions start at 1. TRIM removes spaces at both ends (LTRIM / RTRIM for one end).
+      - title: Search, replace and split
+        sql: |
+          SELECT POSITION('@' IN email),
+                 REPLACE(email, '.org', '.com'),
+                 SPLIT_PART(email, '@', 2)
+          FROM customers;
+        note: POSITION returns 0 when nothing is found. SPLIT_PART pieces are numbered from 1.
+      - title: Join and pad
+        sql: |
+          SELECT CONCAT_WS(', ', city, state),
+                 LPAD('7', 3, '0'), RPAD(name, 20, '.')
+          FROM customers;
+        note: CONCAT_WS skips NULLs; || returns NULL if any part is NULL. LPAD/RPAD cut text that is too long.
+  - id: m04-l02
+    title: Number functions
+    summary: Round, count boxes, find remainders and calculate percentages without nasty surprises.
+    minutes: 30
+    steps:
+      - type: read
+        title: The finance team wants clean numbers
+        md: |
+          Dana from finance is preparing next month's price list. She needs prices with tax added, a sale
+          price that doesn't show half a cent, and a count of how many boxes the warehouse needs.
+
+          You already know `+ - * /`. **Number functions** are the extra calculator buttons: rounding,
+          rounding up and down, remainders, powers and square roots.
+
+          > [!ANALOGY]
+          > Picture a pocket calculator. The big buttons are `+ - × ÷`. The small ones, `√`, `x²` and
+          > `%`, are the functions we learn now.
+
+      - type: example
+        title: ROUND to the number of decimals you want
+        md: |
+          `ROUND(number, decimals)` rounds to that many decimal places. Compare the raw calculation with
+          rounded versions.
+        sql: |
+          SELECT
+              name,
+              price,
+              price * 1.08 AS raw_with_tax,
+              ROUND(price * 1.08, 2) AS with_tax,
+              ROUND(price) AS whole_dollars,
+              ROUND(price, -1) AS nearest_ten
+          FROM products
+          ORDER BY product_id
+          LIMIT 4;
+        after: |
+          Adding 8% tax gives `971.9892`, which is not a real price. `ROUND(..., 2)` fixes that:
+          `971.99`. With **no** second argument `ROUND` gives a whole number, and a **negative** second
+          argument rounds to the left of the decimal point (`-1` = nearest ten, `-2` = nearest hundred).
+
+          > [!NOTE]
+          > On exact `numeric` values (like our prices) `ROUND` rounds halves **away from zero**:
+          > `ROUND(2.5)` is `3`. On `double precision` values PostgreSQL rounds a half to the nearest
+          > *even* number: `ROUND(2.5::float8)` is `2`. You rarely notice, but now you know why.
+
+      - type: exercise
+        id: m04-l02-e1
+        title: A 15% sale on peripherals
+        prompt: |
+          Category 13 is "Peripherals" (mice, keyboards, monitors...). Show each of its products' `name`,
+          `price` and a `sale_price` that is **15% cheaper** (price times 0.85), rounded to 2 decimals.
+          Sort by `product_id`.
+        starter: |
+          SELECT name, price,
+          FROM products
+          WHERE category_id = 13
+          ORDER BY product_id;
+        solution: |
+          SELECT name, price, ROUND(price * 0.85, 2) AS sale_price
+          FROM products
+          WHERE category_id = 13
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - 15% off means you pay 85% of the price.
+          - "Multiply price by 0.85 and wrap the result in ROUND(..., 2)."
+          - "SELECT name, price, ROUND(price * ___, ___) AS sale_price FROM products WHERE category_id = 13 ORDER BY product_id;"
+        explanation: |
+          Multiplying by `0.85` is the same as subtracting 15%. `ROUND(..., 2)` keeps the result a
+          proper money amount. (The checker accepts numbers equal to 2 decimals, but rounding is the right
+          habit for real reports.)
+        difficulty: 1
+
+      - type: example
+        title: Rounding up, rounding down, chopping off
+        md: |
+          `ROUND` goes to the *nearest* number. Sometimes you want to always go **up** (`CEIL`) or always
+          **down** (`FLOOR`), or simply chop the decimals off (`TRUNC`).
+        sql: |
+          SELECT
+              CEIL(4.2) AS up,
+              FLOOR(4.8) AS down,
+              TRUNC(4.8) AS chop,
+              FLOOR(-4.2) AS floor_negative,
+              TRUNC(-4.2) AS trunc_negative;
+        after: |
+          `CEIL(4.2)` is 5 and `FLOOR(4.8)` is 4, whatever the decimals are. For **negative** numbers
+          `FLOOR` still goes down: `FLOOR(-4.2)` is `-5`. `TRUNC` just drops the decimals, so `TRUNC(-4.2)`
+          is `-4`. `CEILING` is another name for `CEIL`.
+
+          Use `CEIL` for "how many boxes do I need?" questions: you can't ship 11.2 boxes.
+
+      - type: exercise
+        id: m04-l02-e2
+        title: How many boxes?
+        prompt: |
+          Camping gear (category 14) ships in boxes of 12 items. For each camping product show `name`,
+          `stock_qty` and `boxes_needed`: how many boxes are needed to hold the whole stock
+          (a partly filled box counts as a box). Sort by `product_id`.
+        solution: |
+          SELECT
+              name,
+              stock_qty,
+              CEIL(stock_qty / 12.0) AS boxes_needed
+          FROM products
+          WHERE category_id = 14
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Divide the stock by 12, then round **up**.
+          - "Divide by 12.0 (with a decimal!) so SQL keeps the fractions, then use CEIL(...)."
+          - "SELECT name, stock_qty, CEIL(stock_qty / ___) AS boxes_needed FROM products WHERE category_id = 14 ORDER BY product_id;"
+        explanation: |
+          134 items need 11.17 boxes, so `CEIL` gives 12. Dividing by `12.0` instead of `12` matters: with
+          two whole numbers SQL would drop the fraction *before* `CEIL` could round it up. More on that
+          trap in a moment.
+        difficulty: 1
+
+      - type: example
+        title: The remainder with % (modulo)
+        md: |
+          `a % b` (or `MOD(a, b)`) gives what is **left over** after dividing `a` by `b`. Whole-number
+          division gives the number of full groups, `%` the leftovers.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              stock_qty / 12 AS full_boxes,
+              stock_qty % 12 AS left_over,
+              MOD(stock_qty, 12) AS same_as_percent
+          FROM products
+          WHERE category_id = 14
+          ORDER BY product_id;
+        after: |
+          The tent: 134 items fill 11 boxes of 12 (that is 132 items) and 2 are left over.
+          Here the whole-number division `stock_qty / 12` is exactly what we *want*: it counts only the
+          **full** boxes.
+
+          A classic use of `%`: `number % 2 = 0` means "even", and `number % 10 = 0` means "a multiple
+          of ten".
+
+      - type: exercise
+        id: m04-l02-e3
+        title: Every 10th customer wins
+        prompt: |
+          The shop picks every 10th customer for a prize: customers whose `customer_id` is a multiple
+          of 10. Show `customer_id` and `first_name` of those customers, sorted by `customer_id`.
+        solution: |
+          SELECT customer_id, first_name
+          FROM customers
+          WHERE customer_id % 10 = 0
+          ORDER BY customer_id;
+        ordered: true
+        hints:
+          - A multiple of 10 leaves no remainder when divided by 10.
+          - "Use the % operator in the WHERE clause and compare the remainder with 0."
+          - "SELECT customer_id, first_name FROM customers WHERE customer_id % ___ = ___ ORDER BY customer_id;"
+        explanation: |
+          `customer_id % 10` is the last digit of the id, so a remainder of 0 means the id ends in 0
+          (10, 20, ..., 150). That gives 15 winners.
+        difficulty: 1
+
+      - type: example
+        title: Powers, square roots and ABS
+        md: |
+          A few more calculator buttons. This query needs no table at all.
+        sql: |
+          SELECT
+              POWER(2, 10) AS two_to_the_10th,
+              SQRT(144) AS square_root,
+              ABS(-7.5) AS no_sign,
+              ROUND(100 * POWER(1.05, 3), 2) AS after_3_years;
+        after: |
+          `POWER(2, 10)` means 2 x 2 x ... (ten times) = 1024. `SQRT(144)` is 12. `ABS` removes a minus sign,
+          which is perfect for "how far apart are these two numbers?" questions.
+
+          The last column is **compound growth**: 100 dollars growing 5% a year for 3 years becomes
+          `115.76`.
+
+      - type: read
+        title: The whole-number division trap
+        md: |
+          When SQL divides two **whole numbers** (integers) it gives a **whole number** and throws the
+          decimals away:
+
+          | Calculation | Result |
+          |---|---|
+          | `7 / 2` | `3` |
+          | `7 / 2.0` | `3.5000000000000000` |
+          | `100 * 3 / 8` | `37` |
+          | `100.0 * 3 / 8` | `37.5000000000000000` |
+
+          The fix is easy: make **at least one** side a number with a decimal point (`2.0`, `100.0`).
+          `stock_qty` is a whole-number column, so `stock_qty / 10` loses decimals, while
+          `stock_qty / 10.0` keeps them.
+
+          > [!MISTAKE]
+          > Computing a percentage as `part / whole * 100` with whole numbers gives `0` whenever
+          > `part < whole`. Multiply by `100.0` **first**: `100.0 * part / whole`.
+
+      - type: example
+        title: Whole-number division in action
+        md: Run it and compare the two columns.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              stock_qty / 10 AS wrong,
+              ROUND(stock_qty / 10.0, 1) AS right
+          FROM products
+          ORDER BY product_id
+          LIMIT 4;
+        after: |
+          The Aurora 16-inch has 9 items: `9 / 10` is `0` in whole numbers, but `9 / 10.0` is `0.9`.
+          When a result looks suspiciously like a whole number, check whether integer division is
+          hiding the decimals.
+
+      - type: predict
+        id: m04-l02-p1
+        question: What does this query return?
+        sql: |
+          SELECT 100 * 3 / 8;
+        options: ["37.5", "37", "38", "0.375"]
+        answer: 1
+        explanation: |
+          `100 * 3` is `300`. Then `300 / 8` divides two whole numbers, so the `.5` is cut off and you get
+          `37` (it is cut off, not rounded to 38). Writing `100.0 * 3 / 8` would give `37.5`.
+
+      - type: example
+        title: Margin as a percentage
+        md: |
+          Pattern for percentages: `(part / whole) * 100`, then `ROUND`. Prices and costs are
+          `numeric` columns with decimals, so there is no integer-division problem here.
+        sql: |
+          SELECT
+              name,
+              price,
+              cost,
+              price - cost AS profit,
+              ROUND((price - cost) / price * 100, 1) AS margin_pct
+          FROM products
+          ORDER BY product_id
+          LIMIT 4;
+        after: |
+          The first laptop earns `288.90` on a `899.99` price, so its **margin** (profit as a share of the
+          selling price) is 32.1%.
+
+          > [!REAL-WORLD]
+          > Finance dashboards are full of this exact pattern: a difference, divided by a base, times 100,
+          > rounded to one or two decimals. You will use it constantly.
+
+      - type: exercise
+        id: m04-l02-e4
+        title: Markup percentage
+        prompt: |
+          **Markup** is profit compared to the *cost* (not the price): `(price - cost) / cost * 100`.
+          For products 1 to 6, show `name`, `cost`, `price` and `markup_pct` rounded to 1 decimal.
+          Sort by `product_id`.
+        solution: |
+          SELECT
+              name,
+              cost,
+              price,
+              ROUND((price - cost) / cost * 100, 1) AS markup_pct
+          FROM products
+          WHERE product_id <= 6
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - It is the same pattern as the margin example, but the division is by the cost.
+          - "Use ROUND((price - cost) / cost * 100, 1)."
+          - "SELECT name, cost, price, ROUND((price - cost) / ___ * 100, ___) AS markup_pct FROM products WHERE product_id <= 6 ORDER BY product_id;"
+        explanation: |
+          Margin divides by the price, markup divides by the cost, so markup is always the bigger number.
+          The Nimbus Air Ultrabook costs 535.55 and sells for 1099.99: a 105.4% markup but only a 51.3%
+          margin.
+        difficulty: 2
+
+      - type: example
+        title: A famous error - ROUND on double precision
+        md: |
+          This query looks innocent. Run it and read the message carefully.
+        sql: |
+          SELECT ROUND(SQRT(2), 2);
+        expectError: true
+        after: |
+          `SQRT(2)` returns a **double precision** number (a "float": a fast but approximate decimal).
+          PostgreSQL has `ROUND(number)` for floats, but `ROUND(number, decimals)` exists **only for exact
+          `numeric` values**. Hence "function round(double precision, integer) does not exist".
+
+          The fix is to convert the float to `numeric` with `::numeric` before rounding:
+
+          ```sql
+          SELECT ROUND(SQRT(2)::numeric, 2);   -- 1.41
+          ```
+
+          The `::` converts a value to another type. Lesson 5 explains it fully; for now just remember
+          the pattern `ROUND(something::numeric, 2)`. Prices, costs and amounts in our shop are already
+          `numeric`, so they never cause this error.
+
+      - type: quiz
+        id: m04-l02-q1
+        question: |
+          `ROUND(SQRT(10), 2)` fails with "function round(double precision, integer) does not exist".
+          Which version works and gives `3.16`?
+        options:
+          - ROUND(SQRT(10)::numeric, 2)
+          - ROUND(SQRT(10), 2.0)
+          - ROUND(2, SQRT(10))
+          - ROUNDED(SQRT(10), 2)
+        answer: 0
+        explanation: |
+          Converting the float with `::numeric` makes the two-argument `ROUND` available. Writing `2.0`
+          instead of `2` doesn't help (it just changes the second argument, and the error persists), the
+          arguments in the third option are in the wrong order, and `ROUNDED` doesn't exist.
+
+      - type: exercise
+        id: m04-l02-e5
+        title: Fix the square-root report
+        prompt: |
+          The warehouse uses a toy rule of thumb: keep about the square root of the current stock as a
+          buffer. The query below should show `name`, `stock_qty` and `root` (the square root rounded to
+          1 decimal) for products 1 to 5, but it crashes. Fix it.
+        starter: |
+          SELECT name, stock_qty, ROUND(SQRT(stock_qty), 1) AS root
+          FROM products
+          WHERE product_id <= 5
+          ORDER BY product_id;
+        solution: |
+          SELECT
+              name,
+              stock_qty,
+              ROUND(SQRT(stock_qty)::numeric, 1) AS root
+          FROM products
+          WHERE product_id <= 5
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Read the error message: ROUND with two arguments doesn't accept a double precision value."
+          - "Convert the square root to numeric: SQRT(stock_qty)::numeric."
+          - "ROUND(SQRT(stock_qty)::___, 1)"
+        explanation: |
+          `stock_qty` is a whole number, so `SQRT` returned a float. Casting just the `SQRT(...)` part to
+          `numeric` before `ROUND` solves it.
+        difficulty: 2
+
+      - type: exercise
+        id: m04-l02-e6
+        title: Closest to a hundred dollars
+        prompt: |
+          A shopper has exactly $100 to spend. Show the `name`, the `price` and the `gap` (how far the
+          price is from 100, **ignoring the minus sign**) of the **4 products whose price is closest to
+          100**. Sort by `gap`, then by `name`.
+        solution: |
+          SELECT name, price, ABS(price - 100) AS gap
+          FROM products
+          ORDER BY gap, name
+          LIMIT 4;
+        ordered: true
+        columnNames: true
+        hints:
+          - A product at 90 and one at 110 are both 10 away from 100. Which function removes the sign?
+          - "ABS(price - 100) gives the distance. Sort by it, smallest first."
+          - "SELECT name, price, ABS(price - ___) AS gap FROM products ORDER BY gap, name LIMIT 4;"
+        explanation: |
+          Without `ABS`, cheap products would have negative gaps and sort first. The tie-breaker `name`
+          keeps the order stable (two products cost 99.99 and two cost 89.99). The 4th and 5th rows have
+          different gaps, so the `LIMIT` cut is safe.
+        difficulty: 2
+
+      - type: fill
+        id: m04-l02-f1
+        prompt: |
+          Complete the query: round 4.2 **up** and 4.8 **down**.
+        template: |
+          SELECT ___(4.2) AS rounded_up, ___(4.8) AS rounded_down;
+        answers:
+          - ["CEIL", "CEILING"]
+          - ["FLOOR"]
+        explanation: |
+          `CEIL` always rounds up (5) and `FLOOR` always rounds down (4).
+
+      - type: parsons
+        id: m04-l02-o1
+        prompt: |
+          Arrange the lines to show each laptop's name and its price **rounded to the nearest ten**,
+          ordered by `product_id`. One line does not belong.
+        lines:
+          - SELECT name, ROUND(price, -1) AS rounded_price
+          - FROM products
+          - WHERE category_id = 12
+          - ORDER BY product_id;
+        distractors:
+          - WHERE rounded_price > 500
+        explanation: |
+          Category 12 is "Laptops". The distractor tries to use the alias `rounded_price` inside `WHERE`,
+          which doesn't work: `WHERE` runs before `SELECT` creates the alias.
+
+      - type: exercise
+        id: m04-l02-e7
+        title: Round to the nearest 5 dollars
+        prompt: |
+          For the "Peripherals" products (category 13) show `name`, `price` and `price_to_5`: the price
+          rounded to the **nearest multiple of 5** (for example 29.99 becomes 30 and 34.99 becomes 35).
+          Sort by `product_id`.
+        solution: |
+          SELECT name, price, ROUND(price / 5) * 5 AS price_to_5
+          FROM products
+          WHERE category_id = 13
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Think of counting in fives. How many fives fit into the price?
+          - "Divide by 5, round to a whole number, then multiply by 5 again."
+          - "SELECT name, price, ROUND(price / ___) * ___ AS price_to_5 FROM products WHERE category_id = 13 ORDER BY product_id;"
+        explanation: |
+          `price / 5` counts the fives (29.99 / 5 = 5.998), `ROUND` snaps to the nearest count (6) and
+          `* 5` converts back to dollars (30). The same trick rounds to the nearest 0.25 (`ROUND(x * 4) / 4`)
+          or the nearest 100.
+        difficulty: 3
+
+    cheatsheet:
+      - title: ROUND, CEIL, FLOOR
+        sql: |
+          SELECT ROUND(price * 1.08, 2),
+                 CEIL(stock_qty / 12.0),
+                 FLOOR(4.8), TRUNC(4.8)
+          FROM products;
+        note: ROUND(x, 2) = 2 decimals, ROUND(x, -1) = nearest ten. CEIL always up, FLOOR always down.
+      - title: Remainder and powers
+        sql: |
+          SELECT 17 % 5, MOD(17, 5),
+                 POWER(2, 10), SQRT(144), ABS(-7.5);
+        note: "n % 2 = 0 means even. ABS removes the minus sign."
+      - title: Integer division and percentages
+        sql: |
+          SELECT 7 / 2, 7 / 2.0,
+                 ROUND(100.0 * 3 / 8, 1);
+        note: Two whole numbers divide to a whole number. Add .0 to keep the decimals.
+      - title: ROUND needs numeric
+        sql: |
+          SELECT ROUND(SQRT(2)::numeric, 2);
+        note: ROUND(x, 2) does not work on double precision (floats). Convert with ::numeric first.
+  - id: m04-l03
+    title: Dates and times I - parts and arithmetic
+    summary: Pull parts out of dates, add and subtract days, and calculate ages with EXTRACT, INTERVAL and AGE.
+    minutes: 30
+    steps:
+      - type: read
+        title: How fast do we ship?
+        md: |
+          Karim, the shop manager, has three questions: "How many days does an order wait before it ships?",
+          "Which weekday is our busiest?" and "How old are our customers?"
+
+          Every answer is hiding in **dates**, so first let's meet the two types you will see most:
+
+          | Type | What it stores | Looks like | Example column |
+          |---|---|---|---|
+          | `date` | a calendar day | `2024-03-15` | `orders.order_date` |
+          | `timestamp` | a day **and** the time | `2024-03-15 14:30:00` | `payments.paid_at` |
+
+          > [!ANALOGY]
+          > A `date` is one page of a wall calendar. A `timestamp` is that page plus a clock showing
+          > the exact moment.
+
+          Always write dates as **year-month-day** (`'2024-03-15'`). It is the international standard and
+          PostgreSQL can never misread it. To be explicit, put the type name in front: `DATE '2024-03-15'`.
+
+      - type: example
+        title: Date or timestamp?
+        md: Run it and compare how the two values are displayed.
+        sql: |
+          SELECT
+              DATE '2024-03-15' AS just_a_date,
+              TIMESTAMP '2024-03-15 14:30:00' AS date_and_time;
+        after: |
+          The `date` has no clock. The `timestamp` shows hours, minutes and seconds.
+          When you compare a `date` with a timestamp, the date counts as **midnight** (`00:00:00`) of
+          that day.
+
+      - type: example
+        title: EXTRACT - pull out one part of a date
+        md: |
+          `EXTRACT(part FROM date)` returns one piece: the year, the month, the day, the weekday...
+        sql: |
+          SELECT
+              order_date,
+              EXTRACT(YEAR FROM order_date) AS yr,
+              EXTRACT(MONTH FROM order_date) AS mon,
+              EXTRACT(DAY FROM order_date) AS day,
+              EXTRACT(DOW FROM order_date) AS weekday
+          FROM orders
+          ORDER BY order_id
+          LIMIT 5;
+        after: |
+          `DOW` means **day of week**, numbered `0` = Sunday, `1` = Monday ... `6` = Saturday. The first
+          order, 2023-01-01, was a Sunday, so it shows `0`.
+
+          Other useful parts: `QUARTER`, `WEEK`, `DOY` (day of the year), `ISODOW` (Monday = 1 ... Sunday = 7),
+          and for timestamps `HOUR`, `MINUTE`, `SECOND`.
+
+          > [!NOTE]
+          > `DATE_PART('year', order_date)` does the same job. The difference: `EXTRACT` returns a
+          > `numeric`, `DATE_PART` returns a `double precision` float. Remember the `ROUND` trap from
+          > the previous lesson? Prefer `EXTRACT`.
+
+      - type: exercise
+        id: m04-l03-e1
+        title: Orders from March 2023
+        prompt: |
+          Show `order_id` and `order_date` of all orders placed in **March 2023**.
+          Sort by `order_id`. (Use `EXTRACT` for the month and the year.)
+        starter: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE EXTRACT(MONTH FROM order_date) = 3
+          ORDER BY order_id;
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE EXTRACT(MONTH FROM order_date) = 3
+              AND EXTRACT(YEAR FROM order_date) = 2023
+          ORDER BY order_id;
+        ordered: true
+        hints:
+          - The starter finds March of every year. What else must be true?
+          - "Add a second condition with AND that checks the year."
+          - "WHERE EXTRACT(MONTH FROM order_date) = 3 AND EXTRACT(YEAR FROM ___) = ___"
+        explanation: |
+          Both conditions must hold, so we combine them with `AND`. Without the year check you would also
+          get March 2024. There are 20 orders in March 2023. (In the next lesson you will see an even
+          shorter way to select a whole month.)
+        difficulty: 1
+
+      - type: quiz
+        id: m04-l03-q1
+        question: |
+          `EXTRACT(DOW FROM some_date)` returns a number for the weekday. Which number means **Sunday**?
+        options: ["0", "1", "6", "7"]
+        answer: 0
+        explanation: |
+          With `DOW`, the week starts on Sunday = 0 and ends with Saturday = 6. If you prefer
+          Monday = 1 ... Sunday = 7 (the ISO week), use `ISODOW` instead. Mixing the two up is a very
+          common mistake.
+
+      - type: exercise
+        id: m04-l03-e2
+        title: Sunday orders in December 2024
+        prompt: |
+          Show `order_id` and `order_date` of orders placed on a **Sunday** in **December 2024**.
+          Sort by `order_id`.
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE EXTRACT(DOW FROM order_date) = 0
+              AND EXTRACT(YEAR FROM order_date) = 2024
+              AND EXTRACT(MONTH FROM order_date) = 12
+          ORDER BY order_id;
+        ordered: true
+        hints:
+          - You need three conditions combined with AND - weekday, year and month.
+          - "Sunday is DOW 0."
+          - "WHERE EXTRACT(DOW FROM order_date) = ___ AND EXTRACT(YEAR FROM order_date) = 2024 AND EXTRACT(MONTH FROM order_date) = ___"
+        explanation: |
+          Five Sundays in December 2024 (1st, 8th, 15th, 22nd and 29th) give 18 orders in total.
+        difficulty: 2
+
+      - type: example
+        title: Date arithmetic - days between and days later
+        md: |
+          Date maths is wonderfully simple: **date minus date** gives the number of days, and
+          **date plus a whole number** gives a later date.
+        sql: |
+          SELECT
+              order_id,
+              order_date,
+              shipped_date,
+              shipped_date - order_date AS days_to_ship,
+              order_date + 7 AS return_deadline
+          FROM orders
+          WHERE order_id BETWEEN 10 AND 13
+          ORDER BY order_id;
+        after: |
+          Order 10 waited 3 days. `order_date + 7` is simply one week later.
+
+          Order 12 was cancelled, so its `shipped_date` is NULL, and a calculation with NULL always
+          gives NULL. That is why `days_to_ship` is empty on that row. (Lesson 7 shows how to deal
+          with that.)
+
+      - type: exercise
+        id: m04-l03-e3
+        title: The slow shipments
+        prompt: |
+          Karim wants to see slow shipments from the busy season. Show `order_id`, `order_date`,
+          `shipped_date` and `days_to_ship` (days between ordering and shipping) for orders placed on or
+          after `2024-11-01` that took **5 days or more** to ship. Sort by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              order_date,
+              shipped_date,
+              shipped_date - order_date AS days_to_ship
+          FROM orders
+          WHERE order_date >= '2024-11-01'
+              AND shipped_date - order_date >= 5
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Subtract the two dates to get the waiting time, and filter on that difference.
+          - "WHERE order_date >= '2024-11-01' AND shipped_date - order_date >= 5"
+          - "SELECT order_id, order_date, shipped_date, shipped_date - ___ AS days_to_ship FROM orders WHERE order_date >= '2024-11-01' AND shipped_date - order_date >= ___ ORDER BY order_id;"
+        explanation: |
+          You can't use the alias `days_to_ship` in the `WHERE` clause, so the subtraction is repeated.
+          Six orders qualify; 5 days is the longest wait in the whole shop. Orders with a NULL
+          `shipped_date` are never selected, because "NULL >= 5" is not true.
+        difficulty: 2
+
+      - type: predict
+        id: m04-l03-p1
+        question: What does this query return?
+        sql: |
+          SELECT DATE '2024-03-01' - DATE '2024-02-01';
+        options: ["28", "29", "30", "31"]
+        answer: 1
+        explanation: |
+          2024 is a leap year, so February has 29 days, and the difference between 1 March and 1 February
+          is 29 days. SQL knows the calendar, so you never need to count month lengths yourself.
+
+      - type: read
+        title: INTERVAL - a length of time
+        md: |
+          Adding a whole number works for **days**. For months, years or hours use an **interval**: a
+          length of time written as text.
+
+          | Interval | Meaning |
+          |---|---|
+          | `INTERVAL '3 days'` | three days |
+          | `INTERVAL '2 weeks'` | fourteen days |
+          | `INTERVAL '1 month'` | one calendar month |
+          | `INTERVAL '1 year 6 months'` | eighteen months |
+          | `INTERVAL '90 minutes'` | an hour and a half |
+
+          > [!TIP]
+          > A month is not a fixed number of days, so `+ INTERVAL '1 month'` is "same day next month".
+          > From 31 January it lands on the **last day of February** (29 February 2024).
+
+      - type: example
+        title: Adding and subtracting intervals
+        md: Run it and look at the new dates.
+        sql: |
+          SELECT
+              order_date,
+              order_date + INTERVAL '1 month' AS plus_1_month,
+              order_date - INTERVAL '2 weeks' AS minus_2_weeks,
+              order_date + INTERVAL '1 year 6 months' AS plus_18m
+          FROM orders
+          ORDER BY order_id
+          LIMIT 3;
+        after: |
+          Notice that the results have a time `00:00:00`: **date + interval gives a timestamp**, because an
+          interval could contain hours. For now that is fine (midnight just means "start of that day").
+          In lesson 5 you will learn to turn it back into a plain date with `::date`.
+
+      - type: exercise
+        id: m04-l03-e4
+        title: The refund window
+        prompt: |
+          Customers can request a refund until **exactly one month after** an order shipped.
+          For orders 1 to 5, show `order_id`, `shipped_date` and `refund_until`
+          (`shipped_date` plus one month). Sort by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              shipped_date,
+              shipped_date + INTERVAL '1 month' AS refund_until
+          FROM orders
+          WHERE order_id <= 5
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need an interval of one month, added to the shipped date.
+          - "shipped_date + INTERVAL '1 month'"
+          - "SELECT order_id, shipped_date, shipped_date + INTERVAL '___' AS refund_until FROM orders WHERE order_id <= 5 ORDER BY order_id;"
+        explanation: |
+          A month is added as a calendar month, not as 30 days. The result is a timestamp at midnight;
+          the checker treats a midnight timestamp and a date as equal.
+        difficulty: 1
+
+      - type: example
+        title: A classic mistake - subtracting quoted text
+        md: |
+          What happens if you subtract two dates that are just quoted text? Run it to find out.
+        sql: |
+          SELECT '2024-12-25' - '2024-12-01';
+        expectError: true
+        after: |
+          PostgreSQL can't tell what kind of values the quoted texts are ("unknown"), so it refuses to guess.
+          Tell it they are dates and everything works:
+
+          ```sql
+          SELECT DATE '2024-12-25' - DATE '2024-12-01';   -- 24
+          ```
+
+          > [!MISTAKE]
+          > Comparing a **column** with quoted text works (`order_date >= '2024-11-01'`) because the
+          > column tells SQL which type to expect. Two bare quoted values don't have that help. Add
+          > `DATE` in front.
+
+      - type: example
+        title: AGE - years, months and days
+        md: |
+          `AGE(later_date, earlier_date)` returns an interval in years, months and days. Wrapping it in
+          `EXTRACT(YEAR FROM ...)` gives age in whole years. We measure ages on **31 December 2024**,
+          the last day of our data.
+        sql: |
+          SELECT
+              customer_id,
+              birth_date,
+              AGE(DATE '2024-12-31', birth_date) AS full_age,
+              EXTRACT(YEAR FROM
+                  AGE(DATE '2024-12-31', birth_date)) AS years
+          FROM customers
+          WHERE birth_date IS NOT NULL
+          ORDER BY customer_id
+          LIMIT 4;
+        after: |
+          Customer 1 is `31 years 1 mon 22 days` old on 31 December 2024; `EXTRACT(YEAR ...)` keeps just the
+          `31`. `AGE` counts real birthdays, so it is much more accurate than dividing days by 365.
+
+          > [!WARNING]
+          > `AGE(birth_date)` with **one** argument measures up to *today*, so the answer changes every
+          > day. In graded exercises we always use a fixed date like `DATE '2024-12-31'`.
+
+      - type: exercise
+        id: m04-l03-e5
+        title: How old on New Year's Eve?
+        prompt: |
+          For customers 1 to 12 who have a `birth_date`, show `customer_id`, `first_name` and
+          `age_years`: their age in whole years on `2024-12-31`. Sort by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              first_name,
+              EXTRACT(YEAR FROM
+                  AGE(DATE '2024-12-31', birth_date)) AS age_years
+          FROM customers
+          WHERE customer_id <= 12
+              AND birth_date IS NOT NULL
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - AGE needs a "later" date and an "earlier" date. EXTRACT can then pick out the years.
+          - "EXTRACT(YEAR FROM AGE(DATE '2024-12-31', birth_date))"
+          - "SELECT customer_id, first_name, EXTRACT(YEAR FROM AGE(DATE '2024-12-31', ___)) AS age_years FROM customers WHERE customer_id <= 12 AND birth_date IS NOT NULL ORDER BY customer_id;"
+        explanation: |
+          Customer 12 has no birth date (NULL), so the `IS NOT NULL` filter leaves 11 customers. Without
+          the filter, customer 12 would simply show an empty age.
+        difficulty: 2
+
+      - type: fill
+        id: m04-l03-f1
+        prompt: |
+          Complete the query to show the **month number** of order 1 and the date **one week later**.
+        template: |
+          SELECT
+              EXTRACT(___ FROM order_date) AS month_number,
+              order_date + ___ AS next_week
+          FROM orders
+          WHERE order_id = 1;
+        answers:
+          - ["MONTH"]
+          - ["7"]
+        explanation: |
+          `EXTRACT(MONTH FROM order_date)` gives `1` for January, and adding `7` days to a date gives the
+          same weekday one week later.
+
+      - type: parsons
+        id: m04-l03-o1
+        prompt: |
+          Arrange the lines to list the five slowest shipments (4 days or more), longest wait first, with
+          ties broken by `order_id`. One line does not belong.
+        lines:
+          - SELECT order_id, shipped_date - order_date AS days_to_ship
+          - FROM orders
+          - WHERE shipped_date - order_date >= 4
+          - ORDER BY days_to_ship DESC, order_id
+          - LIMIT 5;
+        distractors:
+          - WHERE days_to_ship >= 4
+        explanation: |
+          `WHERE` can't use the alias `days_to_ship` because it runs before `SELECT` creates it - that is
+          why the distractor fails and the subtraction is repeated.
+
+      - type: exercise
+        id: m04-l03-e6
+        title: How long in the catalog?
+        prompt: |
+          For all products added in 2024 (`created_at` on or after `2024-01-01`), show `name`,
+          `created_at` and `days_in_catalog`: the number of days from `created_at` to `2024-12-31`.
+          Show the longest-listed product first, tie-break by `name`.
+        solution: |
+          SELECT
+              name,
+              created_at,
+              DATE '2024-12-31' - created_at AS days_in_catalog
+          FROM products
+          WHERE created_at >= '2024-01-01'
+          ORDER BY days_in_catalog DESC, name;
+        ordered: true
+        columnNames: true
+        hints:
+          - Subtract the product's date from the fixed end date.
+          - "DATE '2024-12-31' - created_at gives the number of days."
+          - "SELECT name, created_at, DATE '2024-12-31' - ___ AS days_in_catalog FROM products WHERE created_at >= '2024-01-01' ORDER BY days_in_catalog DESC, name;"
+        explanation: |
+          The later date comes first, so the result is positive. Twelve products were added in 2024; the
+          Noise-Cancelling Headset has been listed for 358 days.
+        difficulty: 2
+
+      - type: exercise
+        id: m04-l03-e7
+        title: Young customers
+        prompt: |
+          Which customers were **younger than 21 when they signed up**? Show `customer_id`, `birth_date`,
+          `signup_date` and `age_at_signup` (age in whole years on the signup date). Skip customers
+          without a `birth_date`. Sort by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              birth_date,
+              signup_date,
+              EXTRACT(YEAR FROM
+                  AGE(signup_date, birth_date)) AS age_at_signup
+          FROM customers
+          WHERE EXTRACT(YEAR FROM AGE(signup_date, birth_date)) < 21
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - This time the "later date" is each customer's own signup_date, not a fixed date.
+          - "Use AGE(signup_date, birth_date) inside EXTRACT, in both SELECT and WHERE."
+          - "SELECT customer_id, birth_date, signup_date, EXTRACT(YEAR FROM AGE(signup_date, ___)) AS age_at_signup FROM customers WHERE EXTRACT(YEAR FROM AGE(signup_date, birth_date)) < ___ ORDER BY customer_id;"
+        explanation: |
+          Nine customers qualify. Customers without a `birth_date` are left out automatically, because
+          the age is NULL and "NULL < 21" is not true. Customer 142 (21 years and 2 months old at signup)
+          is correctly excluded.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Pull out a part of a date
+        sql: |
+          SELECT EXTRACT(YEAR FROM order_date),
+                 EXTRACT(MONTH FROM order_date),
+                 EXTRACT(DOW FROM order_date)
+          FROM orders;
+        note: "DOW: 0 = Sunday ... 6 = Saturday (ISODOW: Monday = 1 ... Sunday = 7)."
+      - title: Date arithmetic
+        sql: |
+          SELECT shipped_date - order_date AS days,
+                 order_date + 7 AS next_week
+          FROM orders;
+        note: date - date = number of days. date + number = a later date.
+      - title: Intervals
+        sql: |
+          SELECT order_date + INTERVAL '1 month',
+                 order_date - INTERVAL '2 weeks'
+          FROM orders;
+        note: date + interval gives a timestamp (midnight). A month is a calendar month, not 30 days.
+      - title: Age
+        sql: |
+          SELECT EXTRACT(YEAR FROM
+                 AGE(DATE '2024-12-31', birth_date))
+          FROM customers;
+        note: AGE(later, earlier) returns years, months and days. AGE with one argument uses today.
+  - id: m04-l04
+    title: Dates and times II - formatting and truncating
+    summary: Group dates into months and weeks with DATE_TRUNC and format them beautifully with TO_CHAR.
+    minutes: 30
+    steps:
+      - type: read
+        title: A report with proper headings
+        md: |
+          Karim is back: "I want a monthly report with headings like *November 2024*, and I need to know
+          the first and last day of each month."
+
+          Two functions do the heavy lifting:
+
+          - **`DATE_TRUNC`** cuts a date down to the start of a month, week, year... ("truncate" means
+            "chop off").
+          - **`TO_CHAR`** turns a date into **text** in exactly the format you describe.
+
+          > [!ANALOGY]
+          > `DATE_TRUNC` is like rounding a time **down** on a clock: 14:35 becomes 14:00. `TO_CHAR` is
+          > like choosing how to *write* the time on a poster: "2:35 pm" or "14:35".
+
+      - type: example
+        title: DATE_TRUNC - back to the start
+        md: |
+          Choose the unit (`'week'`, `'month'`, `'quarter'`, `'year'`) and a date. Here we look at four
+          orders from different months.
+        sql: |
+          SELECT
+              order_date,
+              DATE_TRUNC('week', order_date)::date AS week_start,
+              DATE_TRUNC('month', order_date)::date AS month_start,
+              DATE_TRUNC('quarter', order_date)::date AS quarter_start,
+              DATE_TRUNC('year', order_date)::date AS year_start
+          FROM orders
+          WHERE order_id IN (1, 100, 500, 900)
+          ORDER BY order_id;
+        after: |
+          Every date is "snapped back" to the first moment of its week, month, quarter or year. PostgreSQL
+          weeks start on **Monday**: order 1 (Sunday 2023-01-01) belongs to the week starting Monday
+          2022-12-26.
+
+          `DATE_TRUNC` actually returns a *timestamp* (that is why you would see `00:00:00+00` without the
+          `::date`; the `+00` means UTC time zone). The `::date` at the end turns it back into a plain date.
+          It is a **cast**, which lesson 5 explains properly.
+
+      - type: exercise
+        id: m04-l04-e1
+        title: Which Monday?
+        prompt: |
+          For orders 1, 100, 500 and 900, show `order_id`, `order_date` and `week_start`: the **Monday** of
+          the week the order was placed in, as a plain date. Sort by `order_id`.
+        starter: |
+          SELECT order_id, order_date,
+          FROM orders
+          WHERE order_id IN (1, 100, 500, 900)
+          ORDER BY order_id;
+        solution: |
+          SELECT
+              order_id,
+              order_date,
+              DATE_TRUNC('week', order_date)::date AS week_start
+          FROM orders
+          WHERE order_id IN (1, 100, 500, 900)
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You want to cut each date back to the start of its week.
+          - "DATE_TRUNC('week', order_date) does it. Add ::date at the end for a plain date."
+          - "SELECT order_id, order_date, DATE_TRUNC('___', order_date)::date AS week_start FROM orders WHERE order_id IN (1, 100, 500, 900) ORDER BY order_id;"
+        explanation: |
+          Truncating to the week is how analysts group orders per week: every order of the same week
+          ends up with the same `week_start`. (Next module, grouping makes this really shine.)
+        difficulty: 1
+
+      - type: read
+        title: TO_CHAR - write a date your way
+        md: |
+          `TO_CHAR(date_or_timestamp, 'pattern')` builds text from **format codes**. Letters you don't
+          recognise as codes (like `/`, `-` or `,`) are copied as they are.
+
+          | Code | Meaning | For 2024-03-05 14:07 |
+          |---|---|---|
+          | `YYYY` | 4-digit year | `2024` |
+          | `YY` | 2-digit year | `24` |
+          | `MM` | month number | `03` |
+          | `Mon` | short month name | `Mar` |
+          | `Month` | full month name | `March    ` (see below) |
+          | `DD` | day of the month | `05` |
+          | `Dy` | short weekday | `Tue` |
+          | `Day` | full weekday | `Tuesday  ` |
+          | `HH24` | hour, 24-hour clock | `14` |
+          | `MI` | minutes | `07` |
+          | `SS` | seconds | `00` |
+
+      - type: example
+        title: Formatting dates
+        md: Same date, four different looks.
+        sql: |
+          SELECT
+              order_date,
+              TO_CHAR(order_date, 'DD/MM/YYYY') AS european,
+              TO_CHAR(order_date, 'Mon DD, YYYY') AS us_style,
+              TO_CHAR(order_date, 'Dy') AS weekday,
+              TO_CHAR(order_date, 'YYYY-MM') AS year_month
+          FROM orders
+          WHERE order_id IN (1, 100, 500, 900)
+          ORDER BY order_id;
+        after: |
+          Every column is **text** now, even `year_month`. The pattern `'YYYY-MM'` is very popular for
+          "report month" columns because it sorts correctly as text (`2023-01` comes before `2023-02`).
+
+      - type: example
+        title: A very common mistake - MM is not minutes
+        md: |
+          Payments have a time as well as a date. Compare the two time formats below.
+        sql: |
+          SELECT
+              paid_at,
+              TO_CHAR(paid_at, 'HH24:MI') AS time_ok,
+              TO_CHAR(paid_at, 'HH24:MM') AS time_wrong
+          FROM payments
+          ORDER BY payment_id
+          LIMIT 3;
+        after: |
+          In the format language **`MM` means month**, not minutes. The wrong column shows `14:01`
+          because the payment is in January (month 01). Minutes are `MI`.
+
+          > [!MISTAKE]
+          > Writing `'HH:MM'` instead of `'HH24:MI'`. Also remember that plain `HH` is the *12-hour* clock,
+          > so 2 pm would show as `02`. Use `HH24` for 0 to 23.
+
+      - type: exercise
+        id: m04-l04-e2
+        title: A friendly payment label
+        prompt: |
+          Show `payment_id` and a column `paid_label` for all payments made on **20 December 2024**,
+          written like `Fri 20 Dec 2024, 14:05` (short weekday, day, short month, year, a comma,
+          then hour and minute on the 24-hour clock). Sort by `payment_id`.
+
+          Careful: `paid_at` contains a time of day, so think about how to select a whole day.
+        solution: |
+          SELECT
+              payment_id,
+              TO_CHAR(paid_at, 'Dy DD Mon YYYY, HH24:MI') AS paid_label
+          FROM payments
+          WHERE paid_at >= '2024-12-20'
+              AND paid_at < '2024-12-21'
+          ORDER BY payment_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "To select one whole day, use two conditions: from midnight of that day (>=) up to, but not including, midnight of the next day (<)."
+          - "The format is 'Dy DD Mon YYYY, HH24:MI'."
+          - "SELECT payment_id, TO_CHAR(paid_at, '___') AS paid_label FROM payments WHERE paid_at >= '2024-12-20' AND paid_at < '___' ORDER BY payment_id;"
+        explanation: |
+          Five payments were made that day. `BETWEEN '2024-12-20' AND '2024-12-20'` would find nothing,
+          because it only matches exactly midnight. The `>= start AND < next day` pattern is the safe way
+          to select a day.
+        difficulty: 2
+
+      - type: quiz
+        id: m04-l04-q1
+        question: |
+          Which `TO_CHAR` pattern shows only the time, such as `14:07`, using the 24-hour clock?
+        options: ["'HH:MM'", "'HH24:MI'", "'hh24:mm'", "'HH12:MM'"]
+        answer: 1
+        explanation: |
+          `HH24` is the hour on a 24-hour clock and `MI` is minutes. `MM` always means *month* and plain `HH`
+          or `HH12` use a 12-hour clock.
+
+      - type: example
+        title: Month names without the padding
+        md: |
+          `Month` and `Day` pad the name with spaces to a fixed width (9 characters). Put **`FM`**
+          ("fill mode") in front to switch the padding off.
+        sql: |
+          SELECT
+              order_date,
+              TO_CHAR(order_date, 'Month YYYY') AS padded,
+              LENGTH(TO_CHAR(order_date, 'Month YYYY')) AS padded_length,
+              TO_CHAR(order_date, 'FMMonth YYYY') AS tidy,
+              LENGTH(TO_CHAR(order_date, 'FMMonth YYYY')) AS tidy_length
+          FROM orders
+          WHERE order_id IN (1, 100, 900)
+          ORDER BY order_id;
+        after: |
+          Without `FM`, "June" is followed by five invisible spaces so that every month name has 9
+          letters, and the whole text is always 14 characters long. With `FMMonth` you get exactly
+          `June 2023`. The same works for `FMDay` and `FMDD` (a day without a leading zero).
+
+      - type: exercise
+        id: m04-l04-e3
+        title: Report headings
+        prompt: |
+          For orders 50, 250, 650 and 850 show `order_id` and `report_month`: the month name in full and
+          the year, with no extra spaces, like `November 2023`. Sort by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              TO_CHAR(order_date, 'FMMonth YYYY') AS report_month
+          FROM orders
+          WHERE order_id IN (50, 250, 650, 850)
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use TO_CHAR with the full month name and the year.
+          - "The pattern 'FMMonth YYYY' removes the padding."
+          - "SELECT order_id, TO_CHAR(order_date, '___Month YYYY') AS report_month FROM orders WHERE order_id IN (50, 250, 650, 850) ORDER BY order_id;"
+        explanation: |
+          The results are `April 2023`, `November 2023`, `September 2024` and `December 2024`. Without
+          `FM` the text would contain padding spaces and would not equal the clean label.
+        difficulty: 1
+
+      - type: example
+        title: First and last day of the month
+        md: |
+          First day: `DATE_TRUNC('month', ...)`. Last day: go to the first day of the **next** month, then
+          subtract 1 day.
+        sql: |
+          SELECT
+              order_date,
+              DATE_TRUNC('month', order_date)::date AS first_day,
+              (DATE_TRUNC('month', order_date)
+                  + INTERVAL '1 month')::date - 1 AS last_day
+          FROM orders
+          WHERE order_id IN (1, 29, 380, 900)
+          ORDER BY order_id;
+        after: |
+          Read the `last_day` formula from the inside out: start of the month, plus one month, convert to
+          a date, minus one day. It handles different month lengths automatically: 28 February 2023, but
+          **29 February 2024** (a leap year).
+
+      - type: exercise
+        id: m04-l04-e4
+        title: When does the signup month end?
+        prompt: |
+          For customers 55, 61, 112 and 130 show `customer_id`, `signup_date` and `month_end`: the last
+          day of the month in which they signed up. Sort by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              signup_date,
+              (DATE_TRUNC('month', signup_date)
+                  + INTERVAL '1 month')::date - 1 AS month_end
+          FROM customers
+          WHERE customer_id IN (55, 61, 112, 130)
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - First find the start of the signup month, then jump one month ahead.
+          - "(DATE_TRUNC('month', signup_date) + INTERVAL '1 month')::date - 1"
+          - "SELECT customer_id, signup_date, (DATE_TRUNC('month', ___) + INTERVAL '1 month')::date - ___ AS month_end FROM customers WHERE customer_id IN (55, 61, 112, 130) ORDER BY customer_id;"
+        explanation: |
+          The answers are 2022-12-31, 2023-02-28, 2024-02-29 and 2024-06-30. Dates keep working across
+          year ends and leap years, which is why this pattern beats hard-coding "30 days".
+        difficulty: 2
+
+      - type: read
+        title: Selecting a whole month - ranges beat functions
+        md: |
+          You now have two ways to select "everything in November 2024":
+
+          ```sql
+          -- with a function on the column
+          WHERE DATE_TRUNC('month', order_date) = DATE '2024-11-01'
+
+          -- with a range
+          WHERE order_date >= '2024-11-01'
+            AND order_date <  '2024-12-01'
+          ```
+
+          Both return the same rows. Professionals prefer the **range**: it is easy to read, it works
+          for `timestamp` columns too, and later (in the performance module) you will see that databases
+          can search ranges much faster.
+
+          > [!TIP]
+          > "From the start (included) up to the next start (excluded)" is a pattern you can reuse for any
+          > day, week, month or year.
+
+      - type: exercise
+        id: m04-l04-e5
+        title: February 2023 orders
+        prompt: |
+          Show `order_id` and `order_date` of all orders placed in **February 2023**. Sort by
+          `order_id`.
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE order_date >= '2023-02-01'
+              AND order_date < '2023-03-01'
+          ORDER BY order_id;
+        ordered: true
+        hints:
+          - Choose the first day of the month and the first day of the next month.
+          - "Use >= for the start and < for the end."
+          - "WHERE order_date >= '2023-02-01' AND order_date < '___'"
+        explanation: |
+          Fourteen orders. You could also use `DATE_TRUNC('month', order_date) = DATE '2023-02-01'`
+          and get the same answer.
+        difficulty: 1
+
+      - type: predict
+        id: m04-l04-p1
+        question: What does this query return?
+        sql: |
+          SELECT DATE_TRUNC('month', TIMESTAMP '2024-11-29 14:30:00');
+        options:
+          - "2024-11-01 00:00:00"
+          - "2024-11-29 00:00:00"
+          - "2024-11-01 14:30:00"
+          - "2024-11"
+        answer: 0
+        explanation: |
+          `DATE_TRUNC('month', ...)` resets everything smaller than a month: the day becomes the 1st
+          and the time becomes midnight. The result is still a timestamp, not text like `2024-11`.
+
+      - type: example
+        title: Today and right now (results change every day!)
+        md: |
+          `CURRENT_DATE` is today's date, `NOW()` is the current date and time.
+        sql: |
+          SELECT
+              CURRENT_DATE AS today,
+              NOW() AS right_now,
+              CURRENT_DATE - DATE '2024-12-31' AS days_since_data_ended;
+        after: |
+          > [!WARNING]
+          > These values are different **every time you run them**. That is perfect for live dashboards
+          > ("orders this month"), but useless for exercises with one correct answer. Our exercises
+          > use fixed dates like `2024-12-31`, because the shop data ends there.
+
+          `NOW()` includes a time zone offset (`+00` means UTC). You don't need to worry about time zones
+          in this course.
+
+      - type: fill
+        id: m04-l04-f1
+        prompt: |
+          Complete the query so it shows the year and month of order 1 as `2023-01`.
+        template: |
+          SELECT TO_CHAR(order_date, '___') AS report_month
+          FROM orders
+          WHERE order_id = 1;
+        answers:
+          - ["YYYY-MM"]
+        explanation: |
+          `YYYY` is the 4-digit year, the dash is copied as it is, and `MM` is the month number.
+
+      - type: parsons
+        id: m04-l04-o1
+        prompt: |
+          Arrange the lines to show the **weekday name** (like `Sunday`) of the five newest orders,
+          newest first. One line does not belong.
+        lines:
+          - SELECT order_id, TO_CHAR(order_date, 'FMDay') AS weekday
+          - FROM orders
+          - ORDER BY order_id DESC
+          - LIMIT 5;
+        distractors:
+          - FROM TO_CHAR(orders)
+        explanation: |
+          `TO_CHAR` works on a column inside `SELECT`; it is not a table, so it can't follow `FROM`.
+          Order 900 was placed on 2024-12-31, a Tuesday.
+
+      - type: exercise
+        id: m04-l04-e6
+        title: Orders still being processed
+        prompt: |
+          Show `order_id`, `order_date`, `weekday` (full weekday name without padding, like `Tuesday`) and
+          `days_open` (days from `order_date` to `2024-12-31`) for all orders whose status is
+          `'processing'`. Sort by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              order_date,
+              TO_CHAR(order_date, 'FMDay') AS weekday,
+              DATE '2024-12-31' - order_date AS days_open
+          FROM orders
+          WHERE status = 'processing'
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need one TO_CHAR for the weekday and one date subtraction.
+          - "TO_CHAR(order_date, 'FMDay') and DATE '2024-12-31' - order_date"
+          - "SELECT order_id, order_date, TO_CHAR(order_date, '___') AS weekday, DATE '2024-12-31' - ___ AS days_open FROM orders WHERE status = 'processing' ORDER BY order_id;"
+        explanation: |
+          Seven orders are still processing; the two oldest have been open for a week. A report like this
+          helps the warehouse team spot orders that are stuck.
+        difficulty: 2
+
+      - type: exercise
+        id: m04-l04-e7
+        title: Month-end orders
+        prompt: |
+          Which orders were placed on the **last day of a month** during 2024? Show `order_id` and
+          `order_date` (only orders from 2024-01-01 onwards), sorted by `order_id`.
+
+          Hint for thinking: the last day of a month is the day *before* the 1st of the next month.
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+              AND order_date = (DATE_TRUNC('month', order_date)
+                  + INTERVAL '1 month')::date - 1
+          ORDER BY order_id;
+        ordered: true
+        hints:
+          - Compute each order's month-end (like in the earlier example) and compare it with the order date.
+          - "Keep a row when order_date equals (DATE_TRUNC('month', order_date) + INTERVAL '1 month')::date - 1."
+          - "WHERE order_date >= '2024-01-01' AND order_date = (DATE_TRUNC('month', order_date) + INTERVAL '1 month')::date - ___"
+        explanation: |
+          19 orders were placed on a month-end in 2024. A shortcut also works: if the day after the order is
+          the 1st (`EXTRACT(DAY FROM order_date + 1) = 1`), the order was on a month-end. There is
+          often more than one correct SQL way.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Cut a date down
+        sql: |
+          SELECT DATE_TRUNC('month', order_date)::date AS month_start,
+                 DATE_TRUNC('week', order_date)::date AS week_start
+          FROM orders;
+        note: "Units: 'day', 'week' (Monday), 'month', 'quarter', 'year'. DATE_TRUNC returns a timestamp, so add ::date for a plain date."
+      - title: Format a date as text
+        sql: |
+          SELECT TO_CHAR(order_date, 'FMMonth YYYY'),
+                 TO_CHAR(order_date, 'DD/MM/YYYY'),
+                 TO_CHAR(paid_at, 'HH24:MI')
+          FROM orders, payments;
+        note: "MM = month, MI = minutes, HH24 = 24-hour clock. FM removes padding."
+      - title: Last day of the month
+        sql: |
+          SELECT (DATE_TRUNC('month', order_date)
+                  + INTERVAL '1 month')::date - 1
+          FROM orders;
+        note: Start of month + 1 month - 1 day. Works for leap years too.
+      - title: Select a whole day or month
+        sql: |
+          SELECT * FROM payments
+          WHERE paid_at >= '2024-11-29'
+            AND paid_at <  '2024-11-30';
+        note: Use >= start and < next start. BETWEEN misses most of a day for timestamps. CURRENT_DATE and NOW() change every day.
+testPool:
+  - type: quiz
+    id: m04-t01
+    lesson: m04-l01
+    difficulty: 1
+    question: Which function makes text UPPERCASE?
+    options: [UPPER, LOWER, INITCAP]
+    answer: 0
+    explanation: UPPER.
