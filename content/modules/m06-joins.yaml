@@ -2127,6 +2127,2275 @@ lessons:
           WHERE d.dept_id IS NULL OR e.emp_id IS NULL;
         note: After a FULL JOIN, a NULL key on one side shows a row that has no partner on the other side.
 
+  - id: m06-l06
+    title: Joining 3+ tables
+    summary: Plan a route through several tables and chain JOINs from customers all the way to categories.
+    minutes: 25
+    steps:
+      - type: read
+        title: A report that needs five tables
+        md: |
+          The marketing team is reviewing last month's campaign. They ask you:
+
+          > "For every item bought, show **who** bought it, **what** it was, and which **category** it
+          > belongs to."
+
+          Look at where those facts live. The person's name is in `customers`. The product name is in
+          `products`. The category name is in `categories`. And the link between a customer and a product
+          is hidden in two more tables: `orders` and `order_items`.
+
+          That is **five tables**, but don't panic. You already know how to join two. A longer join is just
+          the same move repeated: every `JOIN` adds **one more table** to the query.
+
+          > [!ANALOGY]
+          > Think of a subway trip with changes. You can't go straight from your home station to the
+          > museum, but you can ride Line A to the centre, change to Line B, and change again. Each `JOIN`
+          > is one more line you ride. The skill is **planning the route** before you start typing.
+
+      - type: read
+        title: Plan the route first
+        md: |
+          Every hop in the route is a foreign key that points at a primary key. Here is the map from
+          customers to categories:
+
+          ```
+          customers.customer_id  <-  orders.customer_id
+          orders.order_id        <-  order_items.order_id
+          order_items.product_id ->  products.product_id
+          products.category_id   ->  categories.category_id
+          ```
+
+          Plan every long join in three steps:
+
+          1. **Write down the columns you need** and the table each one lives in.
+          2. **Find a chain of foreign keys** that connects those tables.
+          3. **Add one `JOIN ... ON ...` per hop.**
+
+          A handy rule: **N tables need N - 1 `ON` rules**. Five tables means four joins. Tables in the
+          middle (here `orders` and `order_items`) may not give you a single column, but they are the
+          stepping stones you must stand on.
+
+      - type: example
+        title: Three tables, two joins
+        md: |
+          Let's start small: what did order 17 contain, and in which category is each product? The route
+          is `order_items` -> `products` -> `categories`.
+        sql: |
+          SELECT oi.order_id,
+                 p.name AS product,
+                 c.name AS category,
+                 oi.quantity
+          FROM order_items AS oi
+          JOIN products AS p
+              ON oi.product_id = p.product_id
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          WHERE oi.order_id = 17
+          ORDER BY oi.order_item_id;
+        after: |
+          Four lines: a pillow (Furniture), a desk mat (Peripherals), the journal (Books) and a kettle
+          (Kitchen). Look at the second `ON`: it links `categories` to `p`, the table we **just added**,
+          not to `oi`. Each new table hooks onto one that is already on the map.
+
+      - type: exercise
+        id: m06-l06-e1
+        title: Order 100 by category
+        prompt: |
+          Show the lines of order 100 with the product `name` as `product`, the category `name` as
+          `category`, and the `quantity`. Sort by product name.
+        starter: |
+          SELECT p.name AS product,
+                 c.name AS category,
+                 oi.quantity
+          FROM order_items AS oi
+          JOIN products AS p
+              ON ___
+          JOIN categories AS c
+              ON ___
+          WHERE oi.order_id = 100
+          ORDER BY product;
+        solution: |
+          SELECT p.name AS product,
+                 c.name AS category,
+                 oi.quantity
+          FROM order_items AS oi
+          JOIN products AS p
+              ON oi.product_id = p.product_id
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          WHERE oi.order_id = 100
+          ORDER BY product;
+        columnNames: true
+        ordered: true
+        hints:
+          - It is the same route as the example, only the order number changes.
+          - "The first ON links order_items to products; the second links products to categories."
+          - "ON oi.product_id = p.product_id ... ON p.category_id = c.category_id"
+        explanation: |
+          A blender and water bottle (2 each), a sleeping bag and a sourdough cookbook (1 each). Because the
+          sort is on the `product` alias, you can write `ORDER BY product`.
+        difficulty: 1
+
+      - type: stepper
+        title: Grow the query one JOIN at a time
+        md: |
+          Here is the full five-table query for order 17, built in five stages. Press Run on each one
+          and watch how the **number of rows** changes.
+        stages:
+          - label: orders
+            md: Start with the order itself. One row.
+            sql: |
+              SELECT o.order_id, o.customer_id
+              FROM orders AS o
+              WHERE o.order_id = 17;
+          - label: + customers
+            md: |
+              Join `customers` to bring in the name. Still **one row**: an order has exactly one customer.
+            sql: |
+              SELECT o.order_id, c.first_name, c.last_name
+              FROM orders AS o
+              JOIN customers AS c
+                  ON o.customer_id = c.customer_id
+              WHERE o.order_id = 17;
+          - label: + order_items
+            md: |
+              Join `order_items`. The order has four lines, so the single row becomes **four rows**. This is
+              the "one-to-many" step.
+            sql: |
+              SELECT o.order_id, c.first_name, oi.product_id,
+                     oi.quantity
+              FROM orders AS o
+              JOIN customers AS c
+                  ON o.customer_id = c.customer_id
+              JOIN order_items AS oi
+                  ON oi.order_id = o.order_id
+              WHERE o.order_id = 17;
+          - label: + products
+            md: |
+              Swap the product number for the product name. Still four rows: each line has exactly one
+              product.
+            sql: |
+              SELECT o.order_id, c.first_name, p.name AS product,
+                     oi.quantity
+              FROM orders AS o
+              JOIN customers AS c
+                  ON o.customer_id = c.customer_id
+              JOIN order_items AS oi
+                  ON oi.order_id = o.order_id
+              JOIN products AS p
+                  ON p.product_id = oi.product_id
+              WHERE o.order_id = 17;
+          - label: + categories
+            md: |
+              The last hop: add the category name. Four joins for five tables, and still four rows.
+            sql: |
+              SELECT o.order_id, c.first_name, p.name AS product,
+                     cat.name AS category
+              FROM orders AS o
+              JOIN customers AS c
+                  ON o.customer_id = c.customer_id
+              JOIN order_items AS oi
+                  ON oi.order_id = o.order_id
+              JOIN products AS p
+                  ON p.product_id = oi.product_id
+              JOIN categories AS cat
+                  ON cat.category_id = p.category_id
+              WHERE o.order_id = 17;
+
+      - type: example
+        title: A customer's recent purchases
+        md: |
+          The same five tables answer a different question: what has **Noor Haddad** (customer 6) bought
+          since 1 December 2024? Filters can use columns from any table in the chain.
+        sql: |
+          SELECT o.order_id,
+                 c.first_name,
+                 p.name AS product,
+                 cat.name AS category
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS cat
+              ON cat.category_id = p.category_id
+          WHERE c.customer_id = 6
+            AND o.order_date >= '2024-12-01'
+          ORDER BY o.order_id, p.name;
+        after: |
+          Order 853 had three products: a blender (Kitchen), an ultrabook (Laptops) and a cookbook
+          (Books). This time we started `FROM customers` and walked the route in the other direction. The
+          result is the same, because a join is just a matching rule: it doesn't care which end you start from.
+
+      - type: quiz
+        id: m06-l06-q1
+        question: |
+          You want each customer's name next to the **names of the products they bought**. Which route of
+          tables connects `customers` to `products`?
+        options:
+          - customers -> products (they share a key)
+          - customers -> orders -> order_items -> products
+          - customers -> payments -> products
+          - customers -> categories -> products
+        answer: 1
+        explanation: |
+          A customer places orders, orders contain order lines, and order lines point at products. There is
+          no direct foreign key between `customers` and `products`, so you have to ride through `orders`
+          and `order_items`.
+
+      - type: read
+        title: One rule for the ON lines
+        md: |
+          An `ON` rule may only mention tables that have **already appeared above it** in the query. The
+          database reads the joins from top to bottom and can't look ahead.
+
+          > [!MISTAKE]
+          > Writing an `ON` that mentions a table you haven't joined yet. If `categories` (alias `c`) comes
+          > after `products` in the list, the rule `p.category_id = c.category_id` is fine. But if you write
+          > it **before** `categories` has been joined, PostgreSQL has never heard of `c`.
+
+      - type: example
+        title: Mentioning a table too early
+        md: |
+          Here the `products` join uses `c.category_id`, but `categories AS c` is only joined on the next line.
+        sql: |
+          SELECT o.order_id, c.name
+          FROM orders AS o
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          JOIN products AS p
+              ON p.category_id = c.category_id
+          JOIN categories AS c
+              ON c.category_id = p.category_id;
+        expectError: true
+        after: |
+          *missing FROM-clause entry for table "c"*. Read the error as: "you used a table called `c`, but
+          it isn't in the query **yet**". Fix it by joining each table first, and only then using it. Here
+          that means `products` must link to `oi`, and `categories` to `p`.
+
+      - type: exercise
+        id: m06-l06-e2
+        title: Fix the order of the joins
+        prompt: |
+          This query should list the product and category of every line in orders 1 to 3, but it fails
+          because `categories` is joined before `products`. Fix it. Keep the same columns, and sort by
+          `order_item_id`.
+        starter: |
+          SELECT oi.order_id, p.name AS product, c.name AS category
+          FROM order_items AS oi
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          JOIN products AS p
+              ON oi.product_id = p.product_id
+          WHERE oi.order_id <= 3
+          ORDER BY oi.order_item_id;
+        solution: |
+          SELECT oi.order_id, p.name AS product, c.name AS category
+          FROM order_items AS oi
+          JOIN products AS p
+              ON oi.product_id = p.product_id
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          WHERE oi.order_id <= 3
+          ORDER BY oi.order_item_id;
+        ordered: true
+        hints:
+          - Read the error message. Which table is used before it is joined?
+          - The categories join needs p, so products must come first.
+          - Swap the two JOIN ... ON blocks, keeping each ON line with its own JOIN.
+        explanation: |
+          Eight lines come back (orders 1, 2 and 3 have 2, 4 and 2 lines). The join order matters only for
+          this reason: every `ON` must refer to tables that are already in the query.
+        difficulty: 2
+
+      - type: predict
+        id: m06-l06-p1
+        question: |
+          `order_items` has 2,296 rows. After joining it to four lookup tables, how many rows does this
+          query return?
+        sql: |
+          SELECT oi.order_item_id
+          FROM order_items AS oi
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS c
+              ON c.category_id = p.category_id
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN customers AS cu
+              ON cu.customer_id = o.customer_id;
+        options: ["60", "900", "2,296", "More than 2,296"]
+        answer: 2
+        explanation: |
+          Every order line has exactly **one** product, one category, one order and one customer. Hopping
+          from the "many" side to the "one" side never adds rows, so the count stays at 2,296.
+
+      - type: read
+        title: Which way does the row count move?
+        md: |
+          This is worth remembering, because it explains almost every surprise in long joins:
+
+          | You hop... | Example | Rows |
+          |---|---|---|
+          | toward the **one** side | order line -> its product | stay the same |
+          | toward the **many** side | customer -> their orders | can multiply |
+
+          Customer 6 is one row in `customers` but 23 rows in `orders`. If you walk from `customers` to
+          `orders` to `order_items`, each customer row is repeated once per order line. That is perfectly
+          fine for listing things. Later in this module you'll see what it does to **totals**.
+
+      - type: exercise
+        id: m06-l06-e3
+        title: Camping gear, delivered
+        prompt: |
+          Show `order_id`, `first_name`, `last_name`, the product `name` as `product` and the `quantity` for
+          every order line whose product is in the category named `'Camping'`, in **delivered** orders
+          placed on or after `'2024-11-15'`. Sort by `order_id`, then `product`.
+        starter: |
+          SELECT o.order_id, c.first_name, c.last_name,
+                 p.name AS product, oi.quantity
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON ___
+          JOIN products AS p
+              ON ___
+          JOIN categories AS cat
+              ON ___
+          WHERE ___
+          ORDER BY o.order_id, product;
+        solution: |
+          SELECT o.order_id, c.first_name, c.last_name,
+                 p.name AS product, oi.quantity
+          FROM orders AS o
+          JOIN customers AS c
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS cat
+              ON cat.category_id = p.category_id
+          WHERE cat.name = 'Camping'
+            AND o.status = 'delivered'
+            AND o.order_date >= '2024-11-15'
+          ORDER BY o.order_id, product;
+        columnNames: true
+        ordered: true
+        hints:
+          - You need all five tables again, because you show customer columns and filter on a category.
+          - "Each ON links the new table to one already listed. The WHERE has three conditions with AND."
+          - "WHERE cat.name = 'Camping' AND o.status = 'delivered' AND o.order_date >= '2024-11-15'"
+        explanation: |
+          Fourteen lines. Notice that the filter on the **category name** sits at the far end of the chain,
+          yet it works exactly like a filter on any other column. Camp stoves and headlamps show up most often.
+          before Christmas.
+        difficulty: 2
+
+      - type: fill
+        id: m06-l06-f1
+        prompt: |
+          Complete the chain so each payment shows the first name of the customer who paid.
+        template: |
+          SELECT cu.first_name, py.amount
+          FROM payments AS py
+          JOIN orders AS o
+              ON ___ = o.order_id
+          JOIN customers AS cu
+              ON o.customer_id = ___;
+        answers:
+          - [py.order_id]
+          - [cu.customer_id]
+        explanation: |
+          `payments` points to `orders` (via `order_id`), and `orders` points to `customers` (via
+          `customer_id`). There is no `customer_id` in `payments`, so `orders` is the stepping stone.
+
+      - type: parsons
+        id: m06-l06-o1
+        prompt: |
+          Put the lines in order to list the distinct products bought by customer 6, alphabetically.
+        lines:
+          - SELECT DISTINCT p.name
+          - FROM customers AS c
+          - JOIN orders AS o
+          - "    ON o.customer_id = c.customer_id"
+          - JOIN order_items AS oi
+          - "    ON oi.order_id = o.order_id"
+          - JOIN products AS p
+          - "    ON p.product_id = oi.product_id"
+          - WHERE c.customer_id = 6
+          - ORDER BY p.name;
+        distractors:
+          - "    ON p.product_id = o.product_id"
+        explanation: |
+          Follow the chain: customers, orders, order_items, products. The distractor fails because `orders`
+          has no `product_id` column: products are reached through `order_items`.
+
+      - type: read
+        title: Mixing in LEFT JOIN
+        md: |
+          You can use any join type in a chain. Let's go back to the 10 customers who have never ordered
+          (customers 141 to 150) and see how a chain treats them:
+
+          - `customers LEFT JOIN orders LEFT JOIN order_items` keeps every customer: **2,306 rows**
+            (2,296 lines plus one empty row for each of the 10 customers with no orders).
+          - `customers LEFT JOIN orders JOIN order_items` gives only **2,296 rows**.
+
+          Why? The plain `JOIN` at the end needs an order line for every row, and the "empty" rows from
+          the `LEFT JOIN` have none. So they are thrown away again.
+
+          > [!TIP]
+          > Once you start a chain with `LEFT JOIN` to keep unmatched rows, keep using `LEFT JOIN` for the
+          > tables that follow. A plain `JOIN` later in the chain can quietly undo it.
+
+      - type: example
+        title: A LEFT JOIN chain
+        md: |
+          Count the order lines per customer for a few customers, including some who never ordered.
+        sql: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COUNT(oi.order_item_id) AS lines
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          LEFT JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id BETWEEN 139 AND 143
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        after: |
+          Customers 139 and 140 have 14 and 6 order lines. Customers 141, 142 and 143 never ordered, yet they
+          still appear, with a count of **0**. We counted `oi.order_item_id`, a column that is NULL for them.
+
+      - type: exercise
+        id: m06-l06-e4
+        title: Categories nothing was sold in
+        prompt: |
+          Which categories have **no order lines at all** (no product in them has ever been ordered)? Show
+          `category_id` and `name`, sorted by `category_id`. Hint: start from `categories`, `LEFT JOIN` the
+          products and then the order lines, group, and keep groups where the count of lines is 0.
+        starter: |
+          SELECT c.category_id, c.name
+          FROM categories AS c
+          LEFT JOIN products AS p
+              ON p.category_id = c.category_id
+          LEFT JOIN order_items AS oi
+              ON ___
+          GROUP BY c.category_id, c.name
+          HAVING ___
+          ORDER BY c.category_id;
+        solution: |
+          SELECT c.category_id, c.name
+          FROM categories AS c
+          LEFT JOIN products AS p
+              ON p.category_id = c.category_id
+          LEFT JOIN order_items AS oi
+              ON oi.product_id = p.product_id
+          GROUP BY c.category_id, c.name
+          HAVING COUNT(oi.order_item_id) = 0
+          ORDER BY c.category_id;
+        ordered: true
+        hints:
+          - Both joins must be LEFT JOINs so that empty categories survive the whole chain.
+          - "COUNT(oi.order_item_id) counts only real lines, so a category with none gets 0."
+          - "HAVING COUNT(oi.order_item_id) = 0"
+        explanation: |
+          Electronics, Home and Sports are top-level departments whose products all live in
+          sub-categories, so nothing is attached to them directly. A plain `WHERE oi.order_item_id IS NULL`
+          would also have listed Books, Toys and others, because those have *some* product nobody ordered.
+          Counting per category answers the question we really asked.
+        difficulty: 3
+
+      - type: exercise
+        id: m06-l06-e5
+        title: A product with its category and supplier
+        prompt: |
+          Show every product in the categories named `'Books'` or `'Toys'`: the product `name` as `product`,
+          the category `name` as `category`, and the supplier's `name` as `supplier`. If a product has no
+          supplier, show the text `'Direct'` instead. Sort by product name. (Some of these products have no
+          supplier, so choose your join types carefully.)
+        starter: |
+          SELECT p.name AS product,
+                 c.name AS category,
+                 COALESCE(s.name, 'Direct') AS supplier
+          FROM products AS p
+          JOIN categories AS c
+              ON ___
+          ___ JOIN suppliers AS s
+              ON ___
+          WHERE ___
+          ORDER BY product;
+        solution: |
+          SELECT p.name AS product,
+                 c.name AS category,
+                 COALESCE(s.name, 'Direct') AS supplier
+          FROM products AS p
+          JOIN categories AS c
+              ON p.category_id = c.category_id
+          LEFT JOIN suppliers AS s
+              ON p.supplier_id = s.supplier_id
+          WHERE c.name IN ('Books', 'Toys')
+          ORDER BY product;
+        columnNames: true
+        ordered: true
+        hints:
+          - "Here `products` is the hub: it points to both `categories` and `suppliers`. The two joins branch out from it."
+          - A product without a supplier would vanish from an INNER JOIN. Which join type keeps it?
+          - "LEFT JOIN suppliers AS s ON p.supplier_id = s.supplier_id, then COALESCE for the label."
+        explanation: |
+          Thirteen products. Two books ("Learn SQL in 30 Days" and "Mindful Mornings Journal") are sourced
+          directly. With an INNER JOIN to `suppliers` they would have disappeared, and nobody would have
+          noticed. Not every route is a straight line: a route can also **branch** from a table in the middle.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Chain several JOINs
+        sql: |
+          SELECT c.first_name, p.name AS product
+          FROM customers AS c
+          JOIN orders AS o ON o.customer_id = c.customer_id
+          JOIN order_items AS oi ON oi.order_id = o.order_id
+          JOIN products AS p ON p.product_id = oi.product_id;
+        note: Each JOIN adds one table. N tables need N - 1 ON rules, and each ON links the new table to one already listed.
+      - title: Plan the route
+        sql: |
+          -- customers -> orders -> order_items -> products -> categories
+          -- customers.customer_id  <- orders.customer_id
+          -- orders.order_id        <- order_items.order_id
+          -- order_items.product_id -> products.product_id
+          -- products.category_id   -> categories.category_id
+        note: Follow the foreign keys. Stepping-stone tables are needed even if you show none of their columns.
+      - title: Keep unmatched rows through a chain
+        sql: |
+          SELECT c.customer_id, COUNT(oi.order_item_id) AS lines
+          FROM customers AS c
+          LEFT JOIN orders AS o ON o.customer_id = c.customer_id
+          LEFT JOIN order_items AS oi ON oi.order_id = o.order_id
+          GROUP BY c.customer_id;
+        note: Keep using LEFT JOIN down the chain. A plain JOIN later on throws the empty rows away again.
+
+  - id: m06-l07
+    title: Self joins
+    summary: Join a table to itself to match employees with their managers and to compare rows with each other.
+    minutes: 25
+    dataset: company
+    steps:
+      - type: read
+        title: Who reports to whom?
+        md: |
+          We are back at **Acme Corp** (the company database from the last lesson). HR sends a request:
+
+          > "Give me a list showing every employee next to **their manager's name**."
+
+          Open the `employees` table and you'll find a puzzle. There is a `manager_id` column, but it only
+          holds a number. Whose number? It's the `emp_id` of another employee, and that employee lives in
+          the **very same table**.
+
+          > [!ANALOGY]
+          > Think of a family tree written as one list of people. Each line has a name and the *number of
+          > that person's mother*. To find the mother's name, you look her up in the same list. A table that
+          > points to itself is called a **self-referencing** table.
+
+      - type: example
+        title: Numbers, not names
+        md: Here is what the data looks like. `manager_id` is a foreign key that points back to `emp_id`.
+        sql: |
+          SELECT emp_id, first_name, last_name, job_title, manager_id
+          FROM employees
+          ORDER BY emp_id
+          LIMIT 8;
+        after: |
+          Employee 1 (the CEO) has no manager, so `manager_id` is NULL. Employees 2 to 7 all have
+          `manager_id` 1: they report to Diego Adeyemi. Employee 8 reports to employee 3.
+
+      - type: read
+        title: The trick, use the table twice
+        md: |
+          To turn those numbers into names, imagine making **two photocopies** of `employees`. Call the
+          first copy `e` (the employee) and the second copy `m` (the manager). Now it's an ordinary join
+          between two tables:
+
+          ```sql
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          ```
+
+          Read the rule as: *"the employee's manager number equals the manager's employee number."*
+
+          That's a **self join**. It isn't a new kind of join: it's the INNER or LEFT JOIN you already know,
+          used with the same table on both sides. The only difference is that **aliases are required**,
+          because otherwise the database couldn't tell the two copies apart.
+
+      - type: viz
+        viz: join
+        title: A tiny org chart
+        md: |
+          The left copy (`e`) is the employee, the right copy (`m`) is the manager. Diego is the CEO and has
+          no manager. Click **LEFT JOIN** to keep him.
+        config:
+          left:
+            name: employees AS e
+            columns: [emp_id, name, manager_id]
+            rows: [[1, Diego, null], [2, Ming, 1], [3, Thiago, 1], [8, Olivia, 3]]
+          right:
+            name: employees AS m
+            columns: [emp_id, name]
+            rows: [[1, Diego], [2, Ming], [3, Thiago], [8, Olivia]]
+          on: [manager_id, emp_id]
+          types: [inner, left]
+
+      - type: example
+        title: Employees with their managers
+        md: |
+          Press Run. The same table appears twice, once as `e` and once as `m`.
+        sql: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.job_title,
+                 m.first_name || ' ' || m.last_name AS manager
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          ORDER BY e.emp_id
+          LIMIT 8;
+        after: |
+          Now every employee has a manager's **name** next to them. We build full names by joining first and
+          last name with `||`, as in module 1. This INNER JOIN returns 54 rows, not 55: the CEO has no
+          manager, so there is no partner for him and he drops out.
+
+      - type: example
+        title: Forgetting the aliases
+        md: |
+          What if we name the table twice without giving each copy its own nickname?
+        sql: |
+          SELECT employees.emp_id
+          FROM employees
+          JOIN employees
+              ON employees.manager_id = employees.emp_id;
+        expectError: true
+        after: |
+          *table name "employees" specified more than once*. The database can't tell which copy you mean in
+          `employees.emp_id`. Give each copy its own alias (`e` and `m`) and the problem disappears.
+
+      - type: exercise
+        id: m06-l07-e1
+        title: The Engineering VP's direct reports
+        prompt: |
+          Show the full name of everyone who reports directly to the employee whose `job_title` is
+          `'VP of Engineering'`. Use these columns: `employee` (first name, a space, then last name),
+          `job_title` (of the employee) and `manager` (the VP's full name, built the same way). Sort by
+          `emp_id` of the employee.
+        starter: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.job_title,
+                 ___ AS manager
+          FROM employees AS e
+          JOIN employees AS m
+              ON ___
+          WHERE ___
+          ORDER BY e.emp_id;
+        solution: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.job_title,
+                 m.first_name || ' ' || m.last_name AS manager
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          WHERE m.job_title = 'VP of Engineering'
+          ORDER BY e.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - It is the previous example plus a WHERE. Which alias holds the manager's job title?
+          - "The filter is on the manager's copy of the table: WHERE m.job_title = ..."
+          - "WHERE m.job_title = 'VP of Engineering'"
+        explanation: |
+          Two directors and an engineering manager report to Thiago Rodriguez. Because the filter used `m.job_title` (the manager's
+          copy), we could name the manager by job title and still show his name in the result.
+        difficulty: 1
+
+      - type: read
+        title: Keeping the boss with a LEFT JOIN
+        md: |
+          An INNER self join drops everyone without a partner, so the CEO disappears. As in lesson 4, a
+          **LEFT JOIN** keeps every row of the left copy (`e`) and fills the manager's columns with NULL
+          when there is none. `COALESCE` can then print a friendly label instead of NULL.
+
+          > [!MISTAKE]
+          > Writing the rule the wrong way round: `ON e.emp_id = m.manager_id`. The query still runs, but now
+          > `m` is the employee and `e` is the boss, so your "manager" column shows each person's
+          > **subordinates**. The foreign key (`manager_id`) belongs to the **employee** alias, and it
+          > points at the primary key (`emp_id`) of the **manager** alias.
+
+      - type: exercise
+        id: m06-l07-e2
+        title: Include the CEO
+        prompt: |
+          Show `emp_id`, the employee's full name as `employee` and the manager's full name as `manager` for
+          employees 1, 2 and 3 (`emp_id <= 3`). The CEO has no manager: show the text `'(none)'` for him.
+          Sort by `emp_id`.
+        starter: |
+          SELECT e.emp_id,
+                 e.first_name || ' ' || e.last_name AS employee,
+                 COALESCE(m.first_name || ' ' || m.last_name, '(none)') AS manager
+          FROM employees AS e
+          ___ JOIN employees AS m
+              ON ___
+          WHERE e.emp_id <= 3
+          ORDER BY e.emp_id;
+        solution: |
+          SELECT e.emp_id,
+                 e.first_name || ' ' || e.last_name AS employee,
+                 COALESCE(m.first_name || ' ' || m.last_name, '(none)') AS manager
+          FROM employees AS e
+          LEFT JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          WHERE e.emp_id <= 3
+          ORDER BY e.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - The CEO has no partner, so which join type keeps unmatched rows of the left copy?
+          - "LEFT JOIN employees AS m ON e.manager_id = m.emp_id"
+          - "The COALESCE is already written for you, so only the join type and the ON rule are missing."
+        explanation: |
+          Diego Adeyemi (the CEO) appears with `(none)`. Concatenating with `||` gives NULL when one part is
+          NULL, so `COALESCE` caught the whole expression and replaced it.
+        difficulty: 2
+
+      - type: exercise
+        id: m06-l07-e3
+        title: Fix the reversed rule
+        prompt: |
+          This query should show employees 8, 9 and 10 with the first name of their **manager**, but the
+          `ON` rule is written the wrong way round. Fix it. Keep the same columns, and sort by `e.emp_id`.
+        starter: |
+          SELECT e.emp_id,
+                 e.first_name AS employee,
+                 m.first_name AS manager
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.emp_id = m.manager_id
+          WHERE e.emp_id IN (8, 9, 10)
+          ORDER BY e.emp_id, m.emp_id;
+        solution: |
+          SELECT e.emp_id,
+                 e.first_name AS employee,
+                 m.first_name AS manager
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          WHERE e.emp_id IN (8, 9, 10)
+          ORDER BY e.emp_id, m.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Run the starter and look at the "manager" column. Those people work for employee 8, 9 or 10, not the other way round.
+          - The foreign key manager_id belongs to e, the employee. It must equal m.emp_id.
+          - "ON e.manager_id = m.emp_id"
+        explanation: |
+          All three report to Thiago. The broken version matched each person with the people who report to
+          *them*. It ran without any error, which is why it's worth reading the rule aloud:
+          "employee's manager number equals the manager's employee number."
+        difficulty: 2
+
+      - type: quiz
+        id: m06-l07-q1
+        question: |
+          Why does a self join need **table aliases**?
+        options:
+          - Because the table is very large
+          - Because the database needs to tell the two copies of the same table apart
+          - Because self joins only work with LEFT JOIN
+          - Because aliases make the query run faster
+        answer: 1
+        explanation: |
+          Both sides of the join are the same table, so the name `employees` is ambiguous. Aliases such as
+          `e` and `m` give each copy its own name. Speed has nothing to do with it.
+
+      - type: read
+        title: Comparing rows inside one table
+        md: |
+          A self join isn't only for hierarchies. Whenever you need to **compare one row with another row of
+          the same table**, put the two copies side by side.
+
+          For example, the `ON` rule doesn't have to use `=`. Any condition that links the two copies
+          works, such as *"the employee earns more than the manager"*. Run it and see.
+
+      - type: example
+        title: Who earns more than their boss?
+        md: |
+          We join each employee to their manager with the usual rule, and then keep only the rows where the
+          employee's salary is higher.
+        sql: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.salary,
+                 m.first_name || ' ' || m.last_name AS manager,
+                 m.salary AS manager_salary
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          WHERE e.salary > m.salary;
+        after: |
+          Just one: Jia Kang, a Business Consultant, earns 135,000 while manager Mei Nakamura earns
+          118,000. The two `salary` columns come from the two different copies, so the aliases `e.` and `m.`
+          are what make the comparison possible.
+
+      - type: exercise
+        id: m06-l07-e4
+        title: Close to the boss's pay
+        prompt: |
+          Find employees who earn **at least 88%** of their manager's salary (`e.salary >= 0.88 * m.salary`).
+          Show `employee` (full name), `salary`, `manager` (full name) and `manager_salary`. Sort by the
+          employee's `emp_id`.
+        starter: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.salary,
+                 m.first_name || ' ' || m.last_name AS manager,
+                 m.salary AS manager_salary
+          FROM employees AS e
+          JOIN employees AS m
+              ON ___
+          WHERE ___
+          ORDER BY e.emp_id;
+        solution: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 e.salary,
+                 m.first_name || ' ' || m.last_name AS manager,
+                 m.salary AS manager_salary
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          WHERE e.salary >= 0.88 * m.salary
+          ORDER BY e.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Same join as the example. Only the WHERE condition changes.
+          - Multiply the manager's salary by 0.88 and compare.
+          - "WHERE e.salary >= 0.88 * m.salary"
+        explanation: |
+          Three people: Violet Wright, Diya Rao and Jia Kang. The next closest, Sophia, is at 87.5%, so the
+          result isn't sensitive to rounding. You can do arithmetic across the two copies in the `WHERE` just
+          like anywhere else.
+        difficulty: 2
+
+      - type: read
+        title: Pairs of colleagues
+        md: |
+          Now a trickier idea: find **pairs of people who share the same manager** (colleagues). Join the
+          table to itself on `manager_id`:
+
+          ```sql
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.manager_id = b.manager_id
+          ```
+
+          Run that alone and you get a mess: every person is paired with **themselves**, and every pair
+          appears **twice** (Vikram with Pierre, and Pierre with Vikram). A single extra condition fixes both:
+
+          ```sql
+              AND a.emp_id < b.emp_id
+          ```
+
+          Because the id of `a` must be **smaller** than the id of `b`, no one is paired with themselves
+          and each pair is listed exactly once.
+
+      - type: example
+        title: Colleagues of Jun Zhang
+        md: |
+          Jun Zhang (employee 19) leads a frontend team of four. Which pairs of teammates exist?
+        sql: |
+          SELECT a.first_name AS person_a,
+                 b.first_name AS person_b
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.manager_id = b.manager_id
+             AND a.emp_id < b.emp_id
+          WHERE a.manager_id = 19
+          ORDER BY a.emp_id, b.emp_id;
+        after: |
+          Four teammates make **6 pairs** (4 x 3 / 2). Try changing `<` to `<>`: you'll get 12 rows, because
+          every pair is now counted in both directions. Changing it to `<=` brings back the self-pairs.
+
+      - type: predict
+        id: m06-l07-p1
+        question: |
+          Employees 8 and 9 both report to employee 3, and so does employee 10. So manager 3 has exactly
+          **three** direct reports. How many rows does this query return?
+        sql: |
+          SELECT a.emp_id AS a_id, b.emp_id AS b_id
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.manager_id = b.manager_id
+             AND a.emp_id < b.emp_id
+          WHERE a.manager_id = 3;
+        options: ["3", "6", "9", "1"]
+        answer: 0
+        explanation: |
+          Three people form three pairs: (8, 9), (8, 10) and (9, 10). With `<>` there would be 6 rows, and
+          without any extra condition there would be 9 (3 x 3, including self-pairs).
+
+      - type: exercise
+        id: m06-l07-e5
+        title: Same department, same salary
+        prompt: |
+          Find pairs of employees who are in the **same department** (`dept_id`) and have **exactly the same
+          salary**. List each pair once. Show `person_a` and `person_b` (full names, built from first and
+          last name) and the shared `salary`. Sort by `salary` (highest first), then by the id of person A, then
+          by the id of person B.
+        starter: |
+          SELECT a.first_name || ' ' || a.last_name AS person_a,
+                 b.first_name || ' ' || b.last_name AS person_b,
+                 a.salary
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.dept_id = b.dept_id
+             AND ___
+             AND ___
+          ORDER BY a.salary DESC, a.emp_id, b.emp_id;
+        solution: |
+          SELECT a.first_name || ' ' || a.last_name AS person_a,
+                 b.first_name || ' ' || b.last_name AS person_b,
+                 a.salary
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.dept_id = b.dept_id
+             AND a.salary = b.salary
+             AND a.emp_id < b.emp_id
+          ORDER BY a.salary DESC, a.emp_id, b.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - You already have the department rule. You need two more conditions in the ON.
+          - One condition says the salaries are equal; the other keeps each pair once.
+          - "AND a.salary = b.salary AND a.emp_id < b.emp_id"
+        explanation: |
+          Nine pairs. Hana, Mariana and Tariq all earn 88,000 in the same department, so they form three
+          pairs among themselves. The two contractors with no department (`dept_id` is NULL) can never match,
+          because `NULL = NULL` is not true. Careful: the rule `a.emp_id < b.emp_id` is what stops each pair
+          from showing up twice.
+        difficulty: 3
+
+      - type: fill
+        id: m06-l07-f1
+        prompt: |
+          Complete the self join that lists each employee next to the manager's first name.
+        template: |
+          SELECT e.first_name AS employee, m.first_name AS manager
+          FROM employees AS e
+          JOIN employees AS ___
+              ON e.manager_id = ___.emp_id;
+        answers:
+          - [m]
+          - [m]
+        explanation: |
+          The second copy of the table is the manager, so we call it `m`. Its primary key (`emp_id`) is what the
+          employee's `manager_id` points at.
+
+      - type: parsons
+        id: m06-l07-o1
+        prompt: |
+          Put the lines in order to show, for the employees with `emp_id` up to 5, the first name of the
+          employee and of their manager, keeping people without a manager.
+        lines:
+          - SELECT e.first_name, m.first_name AS manager
+          - FROM employees AS e
+          - LEFT JOIN employees AS m
+          - "    ON e.manager_id = m.emp_id"
+          - WHERE e.emp_id <= 5
+          - ORDER BY e.emp_id;
+        distractors:
+          - "    ON e.emp_id = m.manager_id"
+        explanation: |
+          Keep-everything-on-the-left means `LEFT JOIN`, and the rule is "employee's manager_id equals the
+          manager's emp_id". The distractor reverses the two sides, which would list subordinates instead.
+
+      - type: read
+        title: Climbing two levels
+        md: |
+          You can use the table **three times** to climb further up the chain: the employee, their manager,
+          and the manager's manager (the "grand-boss").
+
+          ```sql
+          FROM employees AS e
+          LEFT JOIN employees AS m ON e.manager_id = m.emp_id
+          LEFT JOIN employees AS g ON m.manager_id = g.emp_id
+          ```
+
+          Each new copy hooks onto the previous one. Use LEFT JOINs so that people near the top, who run out
+          of bosses, still show up.
+
+          > [!NOTE]
+          > Climbing a fixed number of levels works, but what if you want the *whole* chain up to the CEO?
+          > You can't know how many copies to write. That problem is solved by **recursive CTEs**, which you
+          > will meet in module 9.
+
+      - type: example
+        title: Employee, manager and manager's manager
+        md: |
+          Let's follow five people, from the CEO down to a coordinator.
+        sql: |
+          SELECT e.first_name || ' ' || e.last_name AS employee,
+                 m.first_name || ' ' || m.last_name AS manager,
+                 g.first_name || ' ' || g.last_name AS manager_of_manager
+          FROM employees AS e
+          LEFT JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          LEFT JOIN employees AS g
+              ON m.manager_id = g.emp_id
+          WHERE e.emp_id IN (1, 2, 8, 33, 55)
+          ORDER BY e.emp_id;
+        after: |
+          Diego (the CEO) has no manager and no grand-boss: two NULLs. Ming reports straight to Diego, so
+          only the grand-boss is NULL. Vikram Kumar reports to Jun Zhang, who reports to Layla Khan. Each
+          LEFT JOIN kept the row even when the next step up didn't exist.
+
+      - type: exercise
+        id: m06-l07-e6
+        title: Managers with big teams
+        prompt: |
+          Find managers with **at least 3 direct reports**. Show `manager` (the manager's full name),
+          `boss_of_manager` (the full name of the manager's own manager, or `'(none)'` when there is none)
+          and `reports` (how many people report to them). Sort by `reports` (largest first), then by the
+          manager's `emp_id`.
+        starter: |
+          SELECT m.first_name || ' ' || m.last_name AS manager,
+                 COALESCE(g.first_name || ' ' || g.last_name, '(none)')
+                     AS boss_of_manager,
+                 COUNT(*) AS reports
+          FROM employees AS e
+          JOIN employees AS m
+              ON ___
+          LEFT JOIN employees AS g
+              ON ___
+          GROUP BY m.emp_id, m.first_name, m.last_name,
+                   g.emp_id, g.first_name, g.last_name
+          HAVING ___
+          ORDER BY reports DESC, m.emp_id;
+        solution: |
+          SELECT m.first_name || ' ' || m.last_name AS manager,
+                 COALESCE(g.first_name || ' ' || g.last_name, '(none)')
+                     AS boss_of_manager,
+                 COUNT(*) AS reports
+          FROM employees AS e
+          JOIN employees AS m
+              ON e.manager_id = m.emp_id
+          LEFT JOIN employees AS g
+              ON m.manager_id = g.emp_id
+          GROUP BY m.emp_id, m.first_name, m.last_name,
+                   g.emp_id, g.first_name, g.last_name
+          HAVING COUNT(*) >= 3
+          ORDER BY reports DESC, m.emp_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Three copies of the table, in a chain, then GROUP BY the manager. Each row of e is one report.
+          - "First rule: e.manager_id = m.emp_id. Second rule: m.manager_id = g.emp_id (a LEFT JOIN, since the CEO has no boss)."
+          - "HAVING COUNT(*) >= 3"
+        explanation: |
+          Four managers: the CEO (6 reports, no boss), Jun Zhang (4), Thiago Rodriguez (3) and Mei Nakamura
+          (3). This pulls together a self join, a second self join, GROUP BY and HAVING in one query. If the
+          second join were a plain `JOIN`, the CEO would vanish, because he has no boss to match.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Self join (employee and manager)
+        sql: |
+          SELECT e.first_name AS employee, m.first_name AS manager
+          FROM employees AS e
+          LEFT JOIN employees AS m
+              ON e.manager_id = m.emp_id;
+        note: One table, two aliases. The foreign key belongs to the employee alias; it points at the manager alias's primary key.
+      - title: Pairs without duplicates
+        sql: |
+          SELECT a.first_name, b.first_name
+          FROM employees AS a
+          JOIN employees AS b
+              ON a.manager_id = b.manager_id
+             AND a.emp_id < b.emp_id;
+        note: "a.emp_id < b.emp_id avoids self-pairs and mirrored duplicates."
+      - title: Compare rows with each other
+        sql: |
+          SELECT e.first_name, e.salary, m.salary AS manager_salary
+          FROM employees AS e
+          JOIN employees AS m ON e.manager_id = m.emp_id
+          WHERE e.salary > m.salary;
+        note: The two aliases give you two rows side by side, so you can compare their columns.
+
+  - id: m06-l08
+    title: CROSS JOIN & non-equi joins
+    summary: Pair every row with every row, and match rows with ranges and comparisons instead of equals.
+    minutes: 25
+    steps:
+      - type: read
+        title: Two joins that don't match keys
+        md: |
+          Every join so far matched a foreign key to a primary key with `=`. That covers about nine joins
+          out of ten. Today you'll meet two more tools for the tenth:
+
+          1. **CROSS JOIN**: pair **every** row of one table with **every** row of another. No matching
+             rule at all.
+          2. **Non-equi joins**: match rows using `<`, `>` or `BETWEEN` instead of `=`. ("Equi" means
+             "equal", so *non-equi* means "not using equals".)
+
+          Here is a story for each. The merchandising team wants a **coverage grid** of every supplier
+          against every category, to spot combinations the shop doesn't stock yet. And finance wants to
+          sort products into **price bands** such as Budget and Premium. Neither of those has a key to
+          match on.
+
+          > [!ANALOGY]
+          > A restaurant has 3 starters and 4 main courses. How many two-course meals can you build?
+          > Every starter with every main: 3 x 4 = **12**. That's a CROSS JOIN.
+
+      - type: viz
+        viz: join
+        title: Every row with every row
+        md: |
+          Three sizes and two colours. Click **CROSS JOIN** and count the result: 3 x 2 = 6 rows. There
+          is no stripe, because there is no matching rule.
+        config:
+          left:
+            name: sizes
+            columns: [size_id, size]
+            rows: [[1, S], [2, M], [3, L]]
+          right:
+            name: colours
+            columns: [colour_id, colour]
+            rows: [[1, Red], [2, Blue]]
+          on: [size_id, colour_id]
+          types: [cross]
+
+      - type: read
+        title: The CROSS JOIN pattern
+        md: |
+          ```sql
+          SELECT a.some_column, b.other_column
+          FROM table_a AS a
+          CROSS JOIN table_b AS b;
+          ```
+
+          There is **no `ON`**. The number of result rows is always:
+
+          > rows in A **x** rows in B
+
+          With two small tables that is handy. With two big tables it explodes, so it pays to know the
+          numbers before you press Run.
+
+      - type: example
+        title: Suppliers x categories
+        md: |
+          Take the first two suppliers and three categories (Books, Toys, Kitchen). Every supplier gets
+          paired with every category.
+        sql: |
+          SELECT s.name AS supplier,
+                 c.name AS category
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          WHERE s.supplier_id <= 2
+            AND c.category_id IN (4, 5, 9)
+          ORDER BY s.supplier_id, c.category_id;
+        after: |
+          2 suppliers x 3 categories = **6 rows**. The `WHERE` filters the two lists first, then every
+          remaining supplier meets every remaining category. Each supplier name is repeated three times.
+
+      - type: exercise
+        id: m06-l08-e1
+        title: Four pairings
+        prompt: |
+          Show every combination of the suppliers with `supplier_id` 3 or 4 and the categories with
+          `category_id` 5 or 6. Show the supplier `name` as `supplier` and the category `name` as `category`.
+          Sort by `supplier_id`, then `category_id`.
+        starter: |
+          SELECT s.name AS supplier,
+                 c.name AS category
+          FROM suppliers AS s
+          ___ JOIN categories AS c
+          WHERE ___
+          ORDER BY s.supplier_id, c.category_id;
+        solution: |
+          SELECT s.name AS supplier,
+                 c.name AS category
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          WHERE s.supplier_id IN (3, 4)
+            AND c.category_id IN (5, 6)
+          ORDER BY s.supplier_id, c.category_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - It is the example again with different ids.
+          - "A CROSS JOIN has no ON. Filter both lists in the WHERE with IN (...)."
+          - "WHERE s.supplier_id IN (3, 4) AND c.category_id IN (5, 6)"
+        explanation: |
+          2 x 2 = 4 rows. Jade River Manufacturing and Tanuki Goods each pair with Toys and Beauty. Notice
+          there's nothing to join on: the tables don't need to be related at all.
+        difficulty: 1
+
+      - type: predict
+        id: m06-l08-p1
+        question: |
+          `suppliers` has 8 rows and `categories` has 14. What does this query return?
+        sql: |
+          SELECT COUNT(*)
+          FROM suppliers
+          CROSS JOIN categories;
+        options: ["22", "112", "8", "14"]
+        answer: 1
+        explanation: |
+          A CROSS JOIN returns rows in A **x** rows in B: 8 x 14 = 112. (Adding the row counts to get 22 is
+          the classic slip.)
+
+      - type: read
+        title: The accidental cross join
+        md: |
+          > [!MISTAKE]
+          > Old SQL code lists tables with commas, like `FROM orders, customers`, and puts the matching
+          > rule in the `WHERE`. If someone forgets that rule, the database happily returns **every order
+          > paired with every customer**, with no error at all. Modern `JOIN ... ON` syntax can't do this by
+          > accident, because a missing `ON` is a syntax error. That's one more reason to always write
+          > joins with `JOIN` and `ON`.
+
+      - type: example
+        title: How big can it get?
+        md: |
+          Count the rows when the matching rule is forgotten. There are 900 orders and 150 customers.
+        sql: |
+          SELECT COUNT(*)
+          FROM orders, customers;
+        after: |
+          **135,000** rows (900 x 150) when you wanted 900. Whenever a join returns far more rows than
+          the biggest table, suspect a missing or too-loose `ON` rule.
+
+      - type: read
+        title: A real use, fill in the zeros
+        md: |
+          The best use of CROSS JOIN is to **build a complete grid first** and then `LEFT JOIN` the real
+          data onto it. Combinations with no data stay in the report with a count of 0, instead of
+          silently disappearing the way they would with a plain join.
+
+      - type: example
+        title: The coverage grid
+        md: |
+          For the first three suppliers and the categories Books, Toys and Kitchen: how many products does
+          each supplier have in each category?
+        sql: |
+          SELECT s.name AS supplier,
+                 c.name AS category,
+                 COUNT(p.product_id) AS products
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          LEFT JOIN products AS p
+              ON p.supplier_id = s.supplier_id
+             AND p.category_id = c.category_id
+          WHERE s.supplier_id <= 3
+            AND c.category_id IN (4, 5, 9)
+          GROUP BY s.supplier_id, s.name, c.category_id, c.name
+          ORDER BY s.supplier_id, c.category_id;
+        after: |
+          All 9 combinations appear, including the zeros: Lumen Trading has no Toys, and Tanuki Goods
+          supplies nothing in these three categories at all. Without the CROSS JOIN, those rows would simply
+          be missing and the gaps would be invisible.
+
+      - type: exercise
+        id: m06-l08-e2
+        title: Another coverage grid
+        prompt: |
+          Build the grid for suppliers with `supplier_id` 4 and 5 and for the categories with `category_id`
+          5, 8, 9 and 11 (Toys, Phones, Kitchen, Outdoor). Show `supplier` (name), `category` (name) and
+          `products` (how many products that supplier has in that category, 0 if none). Sort by
+          `supplier_id`, then `category_id`.
+        starter: |
+          SELECT s.name AS supplier,
+                 c.name AS category,
+                 COUNT(p.product_id) AS products
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          LEFT JOIN products AS p
+              ON ___
+          WHERE ___
+          GROUP BY s.supplier_id, s.name, c.category_id, c.name
+          ORDER BY s.supplier_id, c.category_id;
+        solution: |
+          SELECT s.name AS supplier,
+                 c.name AS category,
+                 COUNT(p.product_id) AS products
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          LEFT JOIN products AS p
+              ON p.supplier_id = s.supplier_id
+             AND p.category_id = c.category_id
+          WHERE s.supplier_id IN (4, 5)
+            AND c.category_id IN (5, 8, 9, 11)
+          GROUP BY s.supplier_id, s.name, c.category_id, c.name
+          ORDER BY s.supplier_id, c.category_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - The LEFT JOIN needs two conditions joined with AND, one per grid dimension.
+          - "A product belongs to a grid cell when its supplier_id AND its category_id both match."
+          - "ON p.supplier_id = s.supplier_id AND p.category_id = c.category_id"
+        explanation: |
+          Eight rows (2 x 4). Jade River has 5 Phones but no Outdoor products; Nordlys has only Kitchen
+          items. Counting `p.product_id` (not `*`) is what makes the empty cells show 0.
+        difficulty: 2
+
+      - type: quiz
+        id: m06-l08-q1
+        question: |
+          Which of these is a good use of a `CROSS JOIN`?
+        options:
+          - Matching each order with the customer who placed it
+          - Listing every size together with every colour
+          - Finding customers who never ordered
+          - Putting the rows of one table below the rows of another
+        answer: 1
+        explanation: |
+          A CROSS JOIN builds every combination of two lists, like sizes and colours. Matching orders to
+          customers needs an ON rule; finding missing rows needs a LEFT JOIN; stacking rows is a different
+          tool (UNION, in module 8).
+
+      - type: read
+        title: Non-equi joins, matching by range
+        md: |
+          The `ON` of a join can contain **any condition**, not only `=`. The most useful ones:
+
+          - **Ranges** with `BETWEEN`, or with `>=` and `<`.
+          - **Comparisons** between rows with `<` and `>`.
+
+          Typical uses: price tiers, salary bands, grade boundaries, "which promotion was running on that
+          date?".
+
+          For the next examples we need a small lookup table of price bands. The first two statements of each
+          example create it (you'll learn `CREATE TABLE` in module 13, so ignore the details for now).
+          Each band covers `min_price` up to, but **not including**, `max_price`.
+
+      - type: example
+        title: Price bands
+        md: |
+          Each product matches exactly one band, the one where `min_price <= price < max_price`.
+        sql: |
+          CREATE TABLE price_bands (
+              band text, min_price numeric, max_price numeric);
+          INSERT INTO price_bands VALUES
+              ('Budget', 0, 25), ('Standard', 25, 100),
+              ('Premium', 100, 500), ('Luxury', 500, 100000);
+
+          SELECT b.band,
+                 COUNT(*) AS products,
+                 MIN(p.price) AS cheapest,
+                 MAX(p.price) AS dearest
+          FROM products AS p
+          JOIN price_bands AS b
+              ON p.price >= b.min_price
+             AND p.price < b.max_price
+          GROUP BY b.band, b.min_price
+          ORDER BY b.min_price;
+        after: |
+          13 Budget, 29 Standard, 10 Premium and 8 Luxury products: **60 in total**, exactly the number of
+          products in the shop. Each product found one and only one band. That is what you want from a
+          range join.
+
+      - type: example
+        title: When bands overlap
+        md: |
+          Here is the classic trap. These bands are written with `BETWEEN`, which includes **both ends**,
+          and one band's maximum is the next band's minimum (24.99 and 99.99 are used twice).
+        sql: |
+          CREATE TABLE price_bands (
+              band text, min_price numeric, max_price numeric);
+          INSERT INTO price_bands VALUES
+              ('Budget', 0, 24.99), ('Standard', 24.99, 99.99),
+              ('Premium', 99.99, 499.99), ('Luxury', 499.99, 100000);
+
+          SELECT COUNT(*) AS rows_returned
+          FROM products AS p
+          JOIN price_bands AS b
+              ON p.price BETWEEN b.min_price AND b.max_price;
+        after: |
+          **66 rows** from 60 products. Four products cost exactly 24.99 and two cost exactly 99.99. Each
+          of those six fits **two** bands, so each appears twice. No error, just quietly wrong totals.
+          Fix: make bands touch but never overlap, using `>= min AND < max` as in the previous example.
+
+      - type: exercise
+        id: m06-l08-e3
+        title: Products per band, from a helper table
+        prompt: |
+          A helper table `price_bands(band, min_price, max_price)` already exists for this exercise. A
+          product belongs to a band when `min_price <= price < max_price`. Show each `band` and the number
+          of products in it as `products`. Sort by `min_price`.
+        setup: |
+          CREATE TABLE price_bands (
+              band text, min_price numeric, max_price numeric);
+          INSERT INTO price_bands VALUES
+              ('Budget', 0, 25), ('Standard', 25, 100),
+              ('Premium', 100, 500), ('Luxury', 500, 100000);
+        starter: |
+          SELECT b.band, COUNT(*) AS products
+          FROM products AS p
+          JOIN price_bands AS b
+              ON ___
+          GROUP BY b.band, b.min_price
+          ORDER BY b.min_price;
+        solution: |
+          SELECT b.band, COUNT(*) AS products
+          FROM products AS p
+          JOIN price_bands AS b
+              ON p.price >= b.min_price
+             AND p.price < b.max_price
+          GROUP BY b.band, b.min_price
+          ORDER BY b.min_price;
+        columnNames: true
+        ordered: true
+        hints:
+          - The ON rule is a range check, not an equality.
+          - "The price must be at least min_price and below max_price."
+          - "ON p.price >= b.min_price AND p.price < b.max_price"
+        explanation: |
+          13, 29, 10 and 8, adding up to the 60 products. Grouping by `b.min_price` as well as `b.band` lets
+          us sort the bands from cheapest to dearest.
+        difficulty: 2
+
+      - type: example
+        title: Which promotion was running?
+        md: |
+          Dates work the same way. The helper table `promotions` has a start and end date (both days
+          included), so `BETWEEN` is the right tool here: it matches an order if its date falls inside the
+          window. Orders outside every window have no partner and are dropped by the INNER JOIN.
+        sql: |
+          CREATE TABLE promotions (
+              promo text, starts_on date, ends_on date);
+          INSERT INTO promotions VALUES
+              ('Summer Sale', '2024-06-15', '2024-08-31'),
+              ('Black Friday Week', '2024-11-25', '2024-12-01'),
+              ('Holiday Rush', '2024-12-15', '2024-12-24');
+
+          SELECT pr.promo, COUNT(*) AS orders
+          FROM promotions AS pr
+          JOIN orders AS o
+              ON o.order_date BETWEEN pr.starts_on AND pr.ends_on
+          GROUP BY pr.promo, pr.starts_on
+          ORDER BY pr.starts_on;
+        after: |
+          117 orders during the Summer Sale, 30 in Black Friday week and 35 during Holiday Rush. The three
+          windows don't overlap, so every order matches at most one promotion. If two windows overlapped,
+          an order inside both would be counted twice.
+
+      - type: fill
+        id: m06-l08-f1
+        prompt: |
+          Complete the range join so it keeps only orders placed in the first 30 days after the customer
+          signed up (both end days count).
+        template: |
+          SELECT c.customer_id, o.order_id
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.order_date ___ c.signup_date ___ c.signup_date + 30
+          WHERE c.customer_id IN (63, 64, 68);
+        answers:
+          - [BETWEEN]
+          - [AND]
+        explanation: |
+          `BETWEEN a AND b` is shorthand for `>= a AND <= b`. It includes both ends, which is exactly what
+          you want for whole days, and exactly the trap for numeric bands that touch. Notice that this `ON`
+          mixes an equality (same customer) with a range (the 30-day window).
+
+      - type: exercise
+        id: m06-l08-e4
+        title: Revenue per promotion
+        prompt: |
+          A helper table `promotions(promo, starts_on, ends_on)` exists for this exercise (the same three
+          windows as in the example; both end dates are included). For **delivered** orders only, show each
+          `promo` and its `revenue`: the sum of `quantity * unit_price * (1 - discount)` over the order
+          lines of the orders placed inside the window, rounded to 2 decimals. Sort by `revenue`, highest
+          first.
+        setup: |
+          CREATE TABLE promotions (
+              promo text, starts_on date, ends_on date);
+          INSERT INTO promotions VALUES
+              ('Summer Sale', '2024-06-15', '2024-08-31'),
+              ('Black Friday Week', '2024-11-25', '2024-12-01'),
+              ('Holiday Rush', '2024-12-15', '2024-12-24');
+        starter: |
+          SELECT pr.promo,
+                 ROUND(SUM(___), 2) AS revenue
+          FROM promotions AS pr
+          JOIN orders AS o
+              ON ___
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY pr.promo
+          ORDER BY revenue DESC;
+        solution: |
+          SELECT pr.promo,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM promotions AS pr
+          JOIN orders AS o
+              ON o.order_date BETWEEN pr.starts_on AND pr.ends_on
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY pr.promo
+          ORDER BY revenue DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - "Two joins: promotions to orders by date range (non-equi), then orders to order_items by key (equi)."
+          - "Line revenue is oi.quantity * oi.unit_price * (1 - oi.discount); SUM it and ROUND to 2."
+          - "ON o.order_date BETWEEN pr.starts_on AND pr.ends_on"
+        explanation: |
+          Summer Sale 29,536.84; Holiday Rush 10,177.69; Black Friday Week 5,970.71. You mixed one non-equi
+          join with one ordinary join in the same chain, which is very common in reporting.
+        difficulty: 3
+
+      - type: parsons
+        id: m06-l08-o1
+        prompt: |
+          Put the lines in order to pair supplier 1 with the categories 4 and 5 (Books and Toys), sorted by
+          category id.
+        lines:
+          - SELECT s.name AS supplier, c.name AS category
+          - FROM suppliers AS s
+          - CROSS JOIN categories AS c
+          - WHERE s.supplier_id = 1
+          - "  AND c.category_id IN (4, 5)"
+          - ORDER BY c.category_id;
+        distractors:
+          - "    ON s.supplier_id = c.category_id"
+        explanation: |
+          A CROSS JOIN never has an `ON`. The distractor would be a syntax error here, and in any case it
+          would compare two unrelated ids.
+
+      - type: exercise
+        id: m06-l08-e5
+        title: Orders placed too close together
+        prompt: |
+          Customer service suspects some customers accidentally ordered twice. Find pairs of orders from
+          the **same customer** placed on the same day or the next day. For each pair show `customer_id`,
+          `first_order` (the smaller `order_id`), `second_order` (the larger `order_id`) and `days_apart`
+          (second order date minus first order date). Sort by `customer_id`, `first_order`,
+          `second_order`.
+        starter: |
+          SELECT a.customer_id,
+                 a.order_id AS first_order,
+                 b.order_id AS second_order,
+                 b.order_date - a.order_date AS days_apart
+          FROM orders AS a
+          JOIN orders AS b
+              ON ___
+             AND ___
+             AND ___
+          ORDER BY a.customer_id, first_order, second_order;
+        solution: |
+          SELECT a.customer_id,
+                 a.order_id AS first_order,
+                 b.order_id AS second_order,
+                 b.order_date - a.order_date AS days_apart
+          FROM orders AS a
+          JOIN orders AS b
+              ON a.customer_id = b.customer_id
+             AND a.order_id < b.order_id
+             AND b.order_date - a.order_date <= 1
+          ORDER BY a.customer_id, first_order, second_order;
+        columnNames: true
+        ordered: true
+        hints:
+          - It is a self join on orders, like the pairs of colleagues in the last lesson.
+          - "Three conditions: same customer, a.order_id < b.order_id, and the date difference is at most 1 day."
+          - "AND b.order_date - a.order_date <= 1 (subtracting two dates gives a number of days)"
+        explanation: |
+          23 pairs, 8 of them on the very same day. The ON rule mixes an equality (same customer) with two
+          non-equi conditions (`<` on the ids, and a limit on the day gap). Order ids grow with the order
+          date in this shop, so the first order is never the later one.
+        difficulty: 3
+
+    cheatsheet:
+      - title: CROSS JOIN
+        sql: |
+          SELECT s.name, c.name
+          FROM suppliers AS s
+          CROSS JOIN categories AS c;
+        note: Every row of A with every row of B, no ON. Rows returned = rows in A x rows in B.
+      - title: Grid first, then LEFT JOIN the facts
+        sql: |
+          SELECT s.name, c.name, COUNT(p.product_id)
+          FROM suppliers AS s
+          CROSS JOIN categories AS c
+          LEFT JOIN products AS p
+              ON p.supplier_id = s.supplier_id
+             AND p.category_id = c.category_id
+          GROUP BY s.supplier_id, s.name, c.category_id, c.name;
+        note: Missing combinations stay in the report with a count of 0.
+      - title: Range join without overlaps
+        sql: |
+          SELECT p.name, b.band
+          FROM products AS p
+          JOIN price_bands AS b
+              ON p.price >= b.min_price
+             AND p.price < b.max_price;
+        note: Use >= min and < max so that touching bands never double count. BETWEEN includes both ends.
+
+  - id: m06-l09
+    title: Joins + aggregation
+    summary: Join tables, then summarise them, and learn to spot and fix the fan-out (double counting) trap.
+    minutes: 30
+    steps:
+      - type: read
+        title: The CFO's three questions
+        md: |
+          The finance director at ShopSmart sends three requests:
+
+          1. "How much **revenue** did each customer bring in?"
+          2. "How much revenue did each **product category** bring in?"
+          3. "How many **orders** did each customer place?"
+
+          Each answer lives in more than one table, so you'll **join first, then group**: the JOIN brings the
+          columns together, and `GROUP BY` collapses the rows into one per customer or per category. It is
+          probably the most common query shape in the real world.
+
+          One reminder: there is no "order total" column. The revenue of one order line is
+          `quantity * unit_price * (1 - discount)`, and we add those up. We'll count only **delivered**
+          orders, so cancelled and returned ones don't inflate the numbers.
+
+      - type: example
+        title: Revenue per customer
+        md: |
+          Route: `customers` -> `orders` -> `order_items`. Show the five best customers.
+        sql: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.customer_id, c.first_name, c.last_name
+          ORDER BY revenue DESC
+          LIMIT 5;
+        after: |
+          Noor Haddad leads with $8,458.40, followed by Seun Kamau with $7,227.87. We grouped by
+          `customer_id` **and** the name columns, because everything in `SELECT` that isn't inside an
+          aggregate must be in the `GROUP BY` (module 5). Grouping by id guards against two different
+          customers with the same name.
+
+      - type: exercise
+        id: m06-l09-e1
+        title: Revenue per segment
+        prompt: |
+          Show each customer `segment` and its delivered `revenue` (sum of
+          `quantity * unit_price * (1 - discount)`, rounded to 2 decimals). Sort by revenue, highest first.
+        starter: |
+          SELECT c.segment,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM customers AS c
+          JOIN orders AS o
+              ON ___
+          JOIN order_items AS oi
+              ON ___
+          WHERE ___
+          GROUP BY ___
+          ORDER BY revenue DESC;
+        solution: |
+          SELECT c.segment,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.segment
+          ORDER BY revenue DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - Same three tables and joins as the example. Only the grouping column changes.
+          - "Group by c.segment instead of by customer."
+          - "WHERE o.status = 'delivered' GROUP BY c.segment"
+        explanation: |
+          Consumer $142,528.77, Home Office $46,572.96, Corporate $40,341.77. Together they come to
+          $229,443.50, which is the shop's total delivered revenue. Keep that number in mind: it is the
+          yardstick we'll use to check our joins later in this lesson.
+        difficulty: 1
+
+      - type: example
+        title: Revenue per category
+        md: |
+          Four tables now: `order_items` -> `orders` (for the status filter), `order_items` -> `products`
+          -> `categories`.
+        sql: |
+          SELECT cat.name AS category,
+                 SUM(oi.quantity) AS units,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS cat
+              ON cat.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY cat.category_id, cat.name
+          ORDER BY revenue DESC;
+        after: |
+          Phones bring in the most money ($60,548.25), but Books sell the most units (540) while earning
+          only $11,831.22. Sorting by revenue and sorting by units tell two different stories.
+
+      - type: exercise
+        id: m06-l09-e2
+        title: Revenue per supplier
+        prompt: |
+          For delivered orders, show each supplier's `name` as `supplier` and its `revenue` (rounded to 2
+          decimals). Order lines of products **without a supplier** must not be lost: group them under the
+          text `'Direct'`. Sort by revenue, highest first.
+        starter: |
+          SELECT COALESCE(s.name, 'Direct') AS supplier,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          ___ JOIN suppliers AS s
+              ON ___
+          WHERE o.status = 'delivered'
+          GROUP BY ___
+          ORDER BY revenue DESC;
+        solution: |
+          SELECT COALESCE(s.name, 'Direct') AS supplier,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          LEFT JOIN suppliers AS s
+              ON s.supplier_id = p.supplier_id
+          WHERE o.status = 'delivered'
+          GROUP BY s.supplier_id, s.name
+          ORDER BY revenue DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - Some products have no supplier. Which join keeps rows that find no partner?
+          - "LEFT JOIN suppliers, then group by s.supplier_id and s.name; all the unsupplied rows fall into one NULL group."
+          - "LEFT JOIN suppliers AS s ON s.supplier_id = p.supplier_id ... GROUP BY s.supplier_id, s.name"
+        explanation: |
+          Nine rows. Tanuki Goods leads with $88,929.01, and the 'Direct' group (two Books products sold
+          without a supplier) is worth $6,119.85. With an INNER JOIN that $6,119.85 would have vanished from the
+          report, with no error to warn you.
+        difficulty: 2
+
+      - type: read
+        title: Joins change the grain
+        md: |
+          Here is the idea behind the classic join + aggregation bug. Every table has a **grain**: what one
+          row represents.
+
+          | table | one row is... |
+          |---|---|
+          | `customers` | one customer |
+          | `orders` | one order |
+          | `order_items` | one product line inside an order |
+          | `payments` | one payment for an order |
+
+          When you join to a table with a finer grain, the rows of the coarser table are **repeated**,
+          once per matching row. This repetition is called **fan-out**. Customer 6 has 23 orders, but those
+          orders contain 70 order lines. After `orders JOIN order_items`, each order row is repeated once
+          per line.
+
+          > [!ANALOGY]
+          > Imagine a supermarket receipt that shows "Total paid: $40" at the top and lists 8 products below.
+          > If you copy the total next to every product line and then add up the total column, you get
+          > $320, not $40. The total belongs to the **receipt**, not to each line.
+
+      - type: example
+        title: Counting orders the wrong way
+        md: |
+          How many orders did customer 6 place? Let's count the joined rows, and count the *different*
+          order ids, side by side.
+        sql: |
+          SELECT COUNT(*) AS rows_counted,
+                 COUNT(DISTINCT o.order_id) AS real_orders
+          FROM orders AS o
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.customer_id = 6;
+        after: |
+          `COUNT(*)` says **70**: it counted order *lines*. The true number of orders is **23**.
+          `COUNT(DISTINCT o.order_id)` ignores repeats of the same order id, so it gives the right answer.
+          Rule of thumb: after a join to a finer-grained table, count the **ids of the coarse table** with
+          `COUNT(DISTINCT ...)`.
+
+      - type: predict
+        id: m06-l09-p1
+        question: |
+          Customer 14 placed 23 orders, and those orders contain 52 order lines in total. What does this
+          return?
+        sql: |
+          SELECT COUNT(*)
+          FROM orders AS o
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.customer_id = 14;
+        options: ["23", "52", "75", "1"]
+        answer: 1
+        explanation: |
+          After the join there is one row per order line, and `COUNT(*)` counts rows: 52. To count the orders
+          you would need `COUNT(DISTINCT o.order_id)`, which returns 23.
+
+      - type: exercise
+        id: m06-l09-e3
+        title: Fix the order count
+        prompt: |
+          This query is meant to show how many **orders** customers 10, 14 and 44 placed (column
+          `orders`), but it counts order lines instead. Fix it. Keep the columns and sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COUNT(*) AS orders
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id IN (10, 14, 44)
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COUNT(DISTINCT o.order_id) AS orders
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id IN (10, 14, 44)
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Run the starter. Customer 14 shows 52, but they placed fewer orders than that.
+          - "Count the different order ids, not the joined rows."
+          - "COUNT(DISTINCT o.order_id) AS orders"
+        explanation: |
+          The correct counts are 19, 23 and 23. The broken version gave 63, 52 and 43: the number of order
+          lines. The query ran without errors and the numbers looked plausible, which is what makes
+          fan-out dangerous.
+        difficulty: 2
+
+      - type: read
+        title: Now with money, it gets worse
+        md: |
+          Counts are easy to fix with `DISTINCT`. **Sums** are the real danger, because a wrong total looks
+          just as believable as a right one.
+
+          > [!MISTAKE]
+          > Joining two "many" tables to the same parent, for example `orders` to both `payments` **and**
+          > `order_items`, and then summing a column from one of them. Each payment gets repeated once per
+          > order line, so the payment total is multiplied.
+
+          The payments in the shop really add up to **$263,983.37**. If you join them to `order_items` on
+          the way (through `orders`), that same `SUM(amount)` jumps to **$835,686.01**: over three times too
+          much. Let's watch it happen on one order.
+
+      - type: example
+        title: One payment, four copies
+        md: |
+          Order 17 was paid with a single payment of $128.95 and contains 4 order lines. Join all three
+          tables and look at the rows.
+        sql: |
+          SELECT o.order_id,
+                 py.amount,
+                 oi.order_item_id
+          FROM orders AS o
+          JOIN payments AS py
+              ON py.order_id = o.order_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.order_id = 17
+          ORDER BY oi.order_item_id;
+        after: |
+          The same payment of 128.95 appears **four times**, once per order line. Add up the `amount`
+          column and you get 4 x 128.95 = **515.80**, but the customer only paid 128.95. The `payments` row
+          didn't change: the join simply copied it.
+
+      - type: stepper
+        title: Watch a total inflate
+        md: |
+          How much did customer 6 (Noor Haddad) actually pay? Run both stages and compare.
+        stages:
+          - label: Payments only
+            md: |
+              Join `orders` to `payments` and add up the amounts. 21 payment rows give the true total:
+              $10,946.76.
+            sql: |
+              SELECT COUNT(*) AS rows_joined,
+                     SUM(py.amount) AS total_paid
+              FROM orders AS o
+              JOIN payments AS py
+                  ON py.order_id = o.order_id
+              WHERE o.customer_id = 6;
+          - label: Oops, add order_items
+            md: |
+              Add `JOIN order_items` "for completeness". The payments get copied once per order line: 60
+              rows, and a total of **$39,709.13**, more than three and a half times too big. Nothing in the
+              query looks wrong!
+            sql: |
+              SELECT COUNT(*) AS rows_joined,
+                     SUM(py.amount) AS total_paid
+              FROM orders AS o
+              JOIN payments AS py
+                  ON py.order_id = o.order_id
+              JOIN order_items AS oi
+                  ON oi.order_id = o.order_id
+              WHERE o.customer_id = 6;
+
+      - type: quiz
+        id: m06-l09-q1
+        question: |
+          You want the total of `payments.amount` for each customer. Which join is most likely to give an
+          **inflated** total?
+        options:
+          - customers -> orders -> payments
+          - payments -> orders -> customers
+          - customers -> orders -> payments, plus a join to order_items
+          - payments on its own (no join at all)
+        answer: 2
+        explanation: |
+          Each order has several order lines. Joining `order_items` copies every payment once per line, so the
+          sum is multiplied. The first two options just walk the one-to-many path in two directions, and
+          `payments` on its own can't fan out.
+
+      - type: read
+        title: How to fix a fan-out
+        md: |
+          Four ways to stay safe, from simplest to most powerful:
+
+          1. **Join only what the question needs.** If you want payments per customer, don't touch
+             `order_items`. Different measures can go in different queries.
+          2. **Count with `COUNT(DISTINCT id)`** when you need to count rows of the coarser table.
+          3. **Check your total** against a simple query on one table (we do this in a moment).
+          4. **Aggregate first, join afterwards**: summarise each branch on its own, then join the small
+             results. This is the proper fix when you need both measures in a single row. You'll learn the
+             tools for it in modules 7 (subqueries) and 9 (CTEs).
+
+          > [!WARNING]
+          > `SUM(DISTINCT amount)` looks like a quick fix, but it is **not**. It removes repeated *values*,
+          > not repeated *rows*. Two different payments of exactly $50 would be reduced to one.
+
+      - type: example
+        title: Why SUM(DISTINCT) is not a fix
+        md: |
+          Over the whole `payments` table, with no joins at all, compare the honest sum with `SUM(DISTINCT)`.
+        sql: |
+          SELECT SUM(amount) AS real_total,
+                 SUM(DISTINCT amount) AS distinct_total,
+                 COUNT(*) AS payments,
+                 COUNT(DISTINCT amount) AS different_amounts
+          FROM payments;
+        after: |
+          There are 778 payments but only 599 different amounts. `SUM(DISTINCT amount)` threw away every
+          repeated amount and returned $240,715.20, about $23,000 less than the true $263,983.37. With a
+          join in the mix it would be wrong **and** unrelated to the true figure.
+
+      - type: exercise
+        id: m06-l09-e4
+        title: Customer scorecard
+        prompt: |
+          Build a scorecard of **delivered** orders for customers with **at least 12 delivered orders**.
+          Show `customer_id`, `first_name`, `orders` (number of different delivered orders), `units` (sum
+          of `quantity`) and `revenue` (sum of `quantity * unit_price * (1 - discount)`, rounded to 2
+          decimals). Sort by `revenue`, highest first, then by `customer_id`.
+        starter: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COUNT(___) AS orders,
+                 SUM(oi.quantity) AS units,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.customer_id, c.first_name
+          HAVING ___
+          ORDER BY revenue DESC, c.customer_id;
+        solution: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COUNT(DISTINCT o.order_id) AS orders,
+                 SUM(oi.quantity) AS units,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.customer_id, c.first_name
+          HAVING COUNT(DISTINCT o.order_id) >= 12
+          ORDER BY revenue DESC, c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - "The orders count must ignore repeats caused by the join to order_items."
+          - "COUNT(DISTINCT o.order_id) both in SELECT and in HAVING."
+          - "HAVING COUNT(DISTINCT o.order_id) >= 12"
+        explanation: |
+          Ten customers qualify. Noor Haddad: 18 delivered orders, 62 units, $8,458.40. Here `SUM` is safe
+          because only **one** many-side table (`order_items`) hangs below `orders`, and every figure we add
+          up comes from that table. Only the order count needed `DISTINCT`.
+        difficulty: 2
+
+      - type: fill
+        id: m06-l09-f1
+        prompt: |
+          Complete the query so it counts customer 14's real **orders**, not their order lines.
+        template: |
+          SELECT c.first_name,
+                 COUNT(___ o.order_id) AS orders
+          FROM customers AS c
+          JOIN orders AS o
+              ON o.customer_id = c.customer_id
+          JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id = 14
+          GROUP BY c.first_name;
+        answers:
+          - [DISTINCT]
+        explanation: |
+          `COUNT(DISTINCT o.order_id)` counts each order id once, however many order lines it has.
+
+      - type: read
+        title: The clean fix, a preview
+        md: |
+          Suppose you really do need **units and payments side by side** for each customer. The safe recipe
+          is to summarise each branch separately, and join the two small summaries. Here it is for customer 6,
+          using a *subquery in `FROM`* (a query inside brackets that acts like a temporary table). You'll
+          learn this properly in module 7, so for now just run it and compare the numbers.
+
+      - type: example
+        title: Aggregate first, join afterwards (preview)
+        md: |
+          `i` holds one row per customer with their units; `pay` holds one row per customer with their
+          payments. Joining two one-row-per-customer tables can't fan out.
+        sql: |
+          SELECT c.first_name,
+                 i.units,
+                 pay.paid
+          FROM customers AS c
+          JOIN (SELECT o.customer_id,
+                       SUM(oi.quantity) AS units
+                FROM orders AS o
+                JOIN order_items AS oi
+                    ON oi.order_id = o.order_id
+                GROUP BY o.customer_id) AS i
+              ON i.customer_id = c.customer_id
+          JOIN (SELECT o.customer_id,
+                       SUM(py.amount) AS paid
+                FROM orders AS o
+                JOIN payments AS py
+                    ON py.order_id = o.order_id
+                GROUP BY o.customer_id) AS pay
+              ON pay.customer_id = c.customer_id
+          WHERE c.customer_id = 6;
+        after: |
+          Noor bought 90 units and paid $10,946.76. That is the **true** payment total, the same one we got
+          from the honest `payments`-only query, even though units and payments now sit side by side. Each
+          branch was summed on its own before the join.
+
+      - type: parsons
+        id: m06-l09-o1
+        prompt: |
+          Put the lines in order to show how many units each category sold (all orders), most units first.
+        lines:
+          - SELECT cat.name AS category,
+          - "       SUM(oi.quantity) AS units"
+          - FROM order_items AS oi
+          - JOIN products AS p
+          - "    ON p.product_id = oi.product_id"
+          - JOIN categories AS cat
+          - "    ON cat.category_id = p.category_id"
+          - GROUP BY cat.name
+          - ORDER BY units DESC;
+        distractors:
+          - WHERE SUM(oi.quantity) > 100
+        explanation: |
+          Join first, then group. The distractor is the classic mistake: aggregate functions can't be used
+          in `WHERE`, because rows are filtered before the groups exist. Group filters go in `HAVING`.
+
+      - type: exercise
+        id: m06-l09-e5
+        title: Revenue, including customers with none
+        prompt: |
+          For customers with `customer_id` from 138 to 143 (`BETWEEN 138 AND 143`), show `customer_id`,
+          `first_name` and `revenue`: the delivered revenue of each customer (rounded to 2 decimals), or
+          **0** for customers who have no delivered orders. Every one of the six customers must appear.
+          Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COALESCE(ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2), 0) AS revenue
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND ___
+          LEFT JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id BETWEEN 138 AND 143
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 COALESCE(ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2), 0) AS revenue
+          FROM customers AS c
+          LEFT JOIN orders AS o
+              ON o.customer_id = c.customer_id
+             AND o.status = 'delivered'
+          LEFT JOIN order_items AS oi
+              ON oi.order_id = o.order_id
+          WHERE c.customer_id BETWEEN 138 AND 143
+          GROUP BY c.customer_id, c.first_name
+          ORDER BY c.customer_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - "Remember the trap from the LEFT JOIN lesson: a WHERE on the right table's column undoes the LEFT JOIN."
+          - "Put the status filter inside the ON of the orders join."
+          - "ON o.customer_id = c.customer_id AND o.status = 'delivered'"
+        explanation: |
+          Customers 141, 142 and 143 never ordered and show 0. If the status test were in the `WHERE`, they
+          would disappear. This exercise ties together the LEFT JOIN chain, the filter-in-ON rule,
+          aggregation and `COALESCE`.
+        difficulty: 3
+
+      - type: read
+        title: Always reconcile your total
+        md: |
+          Before you send a number to anyone, check it against a **simple** query that can't fan out. A
+          good report on delivered revenue should match the one-table-plus-one-filter total below.
+
+      - type: example
+        title: The yardstick total
+        md: |
+          Delivered revenue, using only `order_items` and the status from `orders`.
+        sql: |
+          SELECT ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS total_revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          WHERE o.status = 'delivered';
+        after: |
+          **$229,443.50**. The three segments from exercise 1 add up to exactly this, so we trust that
+          report. When you build a category or customer report, add up its rows and compare. If your
+          report's total is bigger, hunt for a fan-out. If it is smaller, hunt for an INNER JOIN that
+          dropped rows.
+
+      - type: exercise
+        id: m06-l09-e6
+        title: Category report with reach
+        prompt: |
+          For delivered orders only, build a category report with these columns: `category` (the category
+          name), `customers` (how many different customers bought from it), `orders` (how many different
+          orders contain it) and `revenue` (rounded to 2 decimals). Sort by `revenue`, highest first.
+        starter: |
+          SELECT cat.name AS category,
+                 COUNT(DISTINCT ___) AS customers,
+                 COUNT(DISTINCT ___) AS orders,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS cat
+              ON cat.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY cat.category_id, cat.name
+          ORDER BY revenue DESC;
+        solution: |
+          SELECT cat.name AS category,
+                 COUNT(DISTINCT o.customer_id) AS customers,
+                 COUNT(DISTINCT o.order_id) AS orders,
+                 ROUND(SUM(oi.quantity * oi.unit_price
+                           * (1 - oi.discount)), 2) AS revenue
+          FROM order_items AS oi
+          JOIN orders AS o
+              ON o.order_id = oi.order_id
+          JOIN products AS p
+              ON p.product_id = oi.product_id
+          JOIN categories AS cat
+              ON cat.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY cat.category_id, cat.name
+          ORDER BY revenue DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - "In this join, one customer or one order can appear on many rows of the same category. Which aggregate removes repeats?"
+          - "COUNT(DISTINCT o.customer_id) and COUNT(DISTINCT o.order_id)."
+          - "The SUM for revenue needs no DISTINCT: every order line is a different row, and each is added once."
+        explanation: |
+          Phones: 98 customers, 200 orders, $60,548.25. Books has the most customers (104) and orders (269) but
+          earns only $11,831.22, a very different picture from phones. `DISTINCT` fixed the counts; the
+          `SUM` stayed honest because it adds a column that belongs to the finest-grained table.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Join, then group
+        sql: |
+          SELECT c.segment,
+                 SUM(oi.quantity * oi.unit_price) AS gross
+          FROM customers AS c
+          JOIN orders AS o ON o.customer_id = c.customer_id
+          JOIN order_items AS oi ON oi.order_id = o.order_id
+          GROUP BY c.segment;
+        note: The JOIN brings the columns together; GROUP BY then collapses the rows into one per group.
+      - title: Count the coarse table with DISTINCT
+        sql: |
+          SELECT c.customer_id,
+                 COUNT(DISTINCT o.order_id) AS orders
+          FROM customers AS c
+          JOIN orders AS o ON o.customer_id = c.customer_id
+          JOIN order_items AS oi ON oi.order_id = o.order_id
+          GROUP BY c.customer_id;
+        note: After joining a finer table, COUNT(*) counts lines. COUNT(DISTINCT id) counts the real orders.
+      - title: Avoid the fan-out
+        sql: |
+          -- Don't JOIN payments AND order_items to the same orders
+          -- and then SUM(payments.amount): every payment is copied
+          -- once per order line. Sum each branch separately.
+          SELECT SUM(amount) FROM payments;
+        note: Join only the tables the question needs, and reconcile your total with a simple one-table query. SUM(DISTINCT) is not a fix.
+
 testPool:
   - type: quiz
     id: m06-t01

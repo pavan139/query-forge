@@ -1889,11 +1889,798 @@ lessons:
           SELECT * FROM products LIMIT 5;
         note: "products, customers, orders, order_items, payments, reviews, categories, suppliers. Text values like 'delivered' are lowercase."
 testPool:
-  - type: quiz
+  # ---------------------------------------------------------------- l01 ORDER BY
+  - type: exercise
     id: m03-t01
     lesson: m03-l01
     difficulty: 1
-    question: Stub
-    options: [a, b]
+    prompt: |
+      Show the `name` and `hourly_rate` of every staff member whose `role` is `'Barista'`, with the
+      **lowest paid first**.
+    starter: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE role = 'Barista'
+    solution: |
+      SELECT name, hourly_rate
+      FROM staff
+      WHERE role = 'Barista'
+      ORDER BY hourly_rate;
+    ordered: true
+    hints:
+      - The filter is already written. You only need to add the sorting clause at the end.
+      - "Lowest first is the default direction, so `ORDER BY` plus the column is enough."
+      - "ORDER BY ___;"
+    explanation: |
+      Four baristas, from Kofi Mensah (16.25) up to Ben Carter (19.75). Every hourly rate is different, so
+      the order is always exactly the same. `ASC` is the default, so you did not need to type it.
+
+  - type: quiz
+    id: m03-t02
+    lesson: m03-l01
+    difficulty: 1
+    question: |
+      Maria runs `SELECT name FROM menu_items;` with **no** `ORDER BY`. What does SQL promise about the
+      order of the rows?
+    options:
+      - They always come back in the same order, because the data has not changed
+      - They come back in alphabetical order
+      - Nothing. Without ORDER BY the order is not guaranteed
+      - They come back with the cheapest item first
+    answer: 2
+    explanation: |
+      Without `ORDER BY`, the database may return the rows in any order, and that order can change (for
+      example after rows are updated). It often *looks* tidy, but you can never rely on it. Only
+      `ORDER BY` guarantees a sequence.
+
+  - type: exercise
+    id: m03-t03
+    lesson: m03-l01
+    difficulty: 2
+    prompt: |
+      Show the `name`, `category` and `added_on` of every menu item that is **available**
+      (`is_available` is true) and was added on or after **2023-01-01**. Put the **newest item first**.
+    starter: |
+      SELECT name, category, added_on
+      FROM menu_items
+      WHERE is_available
+        AND added_on >= '2023-01-01'
+    solution: |
+      SELECT name, category, added_on
+      FROM menu_items
+      WHERE is_available
+        AND added_on >= '2023-01-01'
+      ORDER BY added_on DESC;
+    ordered: true
+    hints:
+      - The filter is done. Now think about which direction puts the newest date on top.
+      - Dates sort like numbers, so the newest (biggest) date first needs `DESC`.
+      - "ORDER BY added_on ___;"
+    explanation: |
+      Six items qualify, from Berry Smoothie (2024-11-30) down to Veggie Hummus Wrap (2023-02-13). Three
+      newer items are missing because they are not available any more: Smoked Salmon Bagel, Tiramisu Cup
+      and Lemon Tart. All six dates are different, so no tie-breaker is needed.
+
+  - type: fill
+    id: m03-t04
+    lesson: m03-l01
+    difficulty: 1
+    prompt: |
+      Complete the query so the **most recently hired** staff member is listed first.
+    template: |
+      SELECT name, hired_on
+      FROM staff
+      ORDER BY ___ ___;
+    answers:
+      - ["hired_on"]
+      - ["DESC"]
+    explanation: |
+      The newest date is the biggest one, so you sort `hired_on` with `DESC`. Lena Fischer (hired
+      2024-09-16) ends up on top.
+
+  # ---------------------------------------------------------------- l02 Sorting by several columns
+  - type: exercise
+    id: m03-t05
+    lesson: m03-l02
+    difficulty: 3
+    prompt: |
+      Show the `order_id`, `payment_method` and `quantity` of every order placed on or after
+      **2024-12-24**.
+
+      Sort by `payment_method` **Z to A**, then by `quantity` with the **biggest first**, and finally by
+      `order_id` (smallest first).
+    starter: |
+      SELECT order_id, payment_method, quantity
+      FROM orders
+      WHERE order_time >= '2024-12-24'
+    solution: |
+      SELECT order_id, payment_method, quantity
+      FROM orders
+      WHERE order_time >= '2024-12-24'
+      ORDER BY payment_method DESC, quantity DESC, order_id;
+    ordered: true
+    hints:
+      - Three sort columns, and each one has its own direction.
+      - "`payment_method` and `quantity` both need DESC. `order_id` keeps the default."
+      - "ORDER BY payment_method ___, quantity ___, order_id;"
+    explanation: |
+      18 rows: the 3 `cash` orders first (order 176 has quantity 2, so it leads), then 7 `card` orders and
+      8 `app` orders. Z to A on text puts `cash` before `card` before `app`. The last column, `order_id`,
+      settles every remaining tie, so the order is final.
+
+  - type: predict
+    id: m03-t06
+    lesson: m03-l02
+    difficulty: 2
+    question: |
+      Which tea is the **last** row of this result?
+    sql: |
+      SELECT name, price
+      FROM menu_items
+      WHERE category = 'Tea'
+      ORDER BY price DESC, name DESC;
+    options:
+      - Earl Grey Tea
+      - Peppermint Tea
+      - Green Tea
+      - Chai Latte
     answer: 0
-    explanation: stub
+    explanation: |
+      Matcha Latte (5.25) and Chai Latte (4.50) come first. The three 2.75 teas tie on price, and
+      `name DESC` puts them in reverse alphabetical order: Peppermint Tea, Green Tea, **Earl Grey Tea**.
+      Each sort column has its own direction, even the tie-breaker.
+
+  - type: quiz
+    id: m03-t07
+    lesson: m03-l02
+    difficulty: 1
+    question: |
+      In `ORDER BY role, hourly_rate DESC`, when does SQL look at `hourly_rate`?
+    options:
+      - Always first, because DESC is the strongest rule
+      - Only when two rows have the same `role`
+      - Only for rows where `role` is NULL
+      - Never. A second sort column is ignored
+    answer: 1
+    explanation: |
+      The first column is the boss. The second column only steps in to break a **tie**, which means
+      rows that have exactly the same `role`. Inside each role, the highest rate comes first.
+
+  - type: parsons
+    id: m03-t08
+    lesson: m03-l02
+    difficulty: 2
+    prompt: |
+      Put the lines in order to list the **Coffee** items, most expensive first, and items with the same
+      price A to Z.
+    lines:
+      - SELECT name, price
+      - FROM menu_items
+      - WHERE category = 'Coffee'
+      - ORDER BY price DESC,
+      - name;
+    distractors:
+      - ORDER BY price DESC name;
+    explanation: |
+      The two sort columns are separated by a **comma**. Without it, PostgreSQL stops with a syntax
+      error. `DESC` belongs to `price` only, so `name` stays A to Z.
+
+  - type: quiz
+    id: m03-t09
+    lesson: m03-l02
+    difficulty: 2
+    question: |
+      A website lists customers by `city` (A to Z) and, inside each city, the **newest member first**
+      (`joined_on`). Which `ORDER BY` does that?
+    options:
+      - ORDER BY city, joined_on DESC
+      - ORDER BY city DESC, joined_on
+      - ORDER BY joined_on DESC, city
+      - ORDER BY city joined_on DESC
+    answer: 0
+    explanation: |
+      The most important rule comes first (`city`, A to Z), then `joined_on DESC` for newest first.
+      The second choice reverses the cities and sorts the dates oldest first. The third choice sorts
+      mainly by date, and the fourth forgets the comma, which is a syntax error.
+
+  # ---------------------------------------------------------------- l03 Sorting tricks
+  - type: exercise
+    id: m03-t10
+    lesson: m03-l03
+    difficulty: 1
+    prompt: |
+      Show the `name` and `calories` of every item in the **Sandwich** category, with the **most
+      calories first**. Items whose calories are unknown (NULL) must come **last**.
+    starter: |
+      SELECT name, calories
+      FROM menu_items
+      WHERE category = 'Sandwich'
+      ORDER BY calories DESC;
+    solution: |
+      SELECT name, calories
+      FROM menu_items
+      WHERE category = 'Sandwich'
+      ORDER BY calories DESC NULLS LAST;
+    ordered: true
+    hints:
+      - In PostgreSQL a descending sort puts NULLs at the top. You want them at the bottom.
+      - Add `NULLS LAST` right after `DESC`.
+      - "ORDER BY calories DESC ___ ___;"
+    explanation: |
+      Turkey Club (620) is first and Smoked Salmon Bagel, whose calories are NULL, is last. Without
+      `NULLS LAST` the bagel would have jumped to the top of the list.
+
+  - type: quiz
+    id: m03-t11
+    lesson: m03-l03
+    difficulty: 2
+    question: |
+      Which `ORDER BY` shows the **fewest calories first** and puts the items with **unknown (NULL)
+      calories at the very top**?
+    options:
+      - ORDER BY calories
+      - ORDER BY calories NULLS FIRST
+      - ORDER BY calories DESC NULLS LAST
+      - ORDER BY calories NULLS LAST
+    answer: 1
+    explanation: |
+      An ascending sort already gives "fewest first", but in PostgreSQL it puts NULLs **last**. Adding
+      `NULLS FIRST` moves them to the top. `NULLS LAST` just repeats the default for ascending, and `DESC`
+      would flip the numbers.
+
+  - type: predict
+    id: m03-t12
+    lesson: m03-l03
+    difficulty: 2
+    question: |
+      Which row comes **first** in this result?
+    sql: |
+      SELECT name, price
+      FROM menu_items
+      ORDER BY price * -1
+      LIMIT 1;
+    options:
+      - Drip Coffee | 1.50
+      - Smoked Salmon Bagel | 12.50
+      - Almond Danish | 3.95
+      - An error, because ORDER BY cannot use a calculation
+    answer: 1
+    explanation: |
+      `price * -1` turns every price into a negative number, and the smallest of those is -12.50. So the
+      most expensive item comes first. It is the same as `ORDER BY price DESC`. Sorting by a calculation
+      is allowed, even if the calculation is not in the SELECT list.
+
+  - type: exercise
+    id: m03-t13
+    lesson: m03-l03
+    difficulty: 2
+    columnNames: true
+    prompt: |
+      Show each staff member's `name` and their pay for a 40-hour week as a column named `weekly_pay`
+      (`hourly_rate * 40`). Include only staff whose `role` is `'Barista'` or `'Cashier'`, and put the
+      **highest weekly pay first**.
+
+      Use exactly the alias `weekly_pay`.
+    starter: |
+      SELECT name, hourly_rate * 40 AS weekly_pay
+      FROM staff
+      WHERE role IN ('Barista', 'Cashier')
+    solution: |
+      SELECT name, hourly_rate * 40 AS weekly_pay
+      FROM staff
+      WHERE role IN ('Barista', 'Cashier')
+      ORDER BY weekly_pay DESC;
+    ordered: true
+    hints:
+      - The calculated column is already in the starter. Now sort the rows.
+      - ORDER BY runs after SELECT, so it can use the alias `weekly_pay`.
+      - "ORDER BY ___ DESC;"
+    explanation: |
+      Seven people, from Ben Carter (790.00) down to Lena Fischer (610.00). Sorting by the alias keeps the
+      query short. All seven weekly pays are different, so no tie-breaker is needed.
+
+  - type: fill
+    id: m03-t14
+    lesson: m03-l03
+    difficulty: 2
+    prompt: |
+      Complete the query so the person with **no manager** (`manager_id` is NULL) is listed **first**,
+      followed by everyone else in `manager_id` order.
+    template: |
+      SELECT name, manager_id
+      FROM staff
+      ORDER BY manager_id ___ ___, name;
+    answers:
+      - ["NULLS"]
+      - ["FIRST"]
+    explanation: |
+      `NULLS FIRST` moves the missing values to the top, so Maria Santos (the manager, who has no boss)
+      leads the list. The second sort column `name` orders the people who share a manager.
+
+  # ---------------------------------------------------------------- l04 Top-N and pagination
+  - type: exercise
+    id: m03-t15
+    lesson: m03-l04
+    difficulty: 2
+    prompt: |
+      Show the `first_name`, `last_name` and `loyalty_points` of the **4 customers with the fewest loyalty
+      points**, fewest first. If two customers have the same points, put the one whose `last_name` comes
+      first alphabetically on top.
+    starter: |
+      SELECT first_name, last_name, loyalty_points
+      FROM customers
+    solution: |
+      SELECT first_name, last_name, loyalty_points
+      FROM customers
+      ORDER BY loyalty_points, last_name
+      LIMIT 4;
+    ordered: true
+    hints:
+      - Sort first, then keep four rows. "Fewest first" is the default direction.
+      - Use two sort columns, `loyalty_points` and then `last_name`, and finish with `LIMIT`.
+      - "ORDER BY loyalty_points, ___ LIMIT ___;"
+    explanation: |
+      Sophia Clark and Gabriela Torres both have 0 points, so `last_name` puts Clark first. Then come Rami
+      Hernandez (25) and Seun Mwangi (115). The 5th customer has 230 points, so nothing is cut off unfairly.
+
+  - type: quiz
+    id: m03-t16
+    lesson: m03-l04
+    difficulty: 1
+    question: |
+      A web shop shows **12 products per page**, sorted by name. Which clause shows **page 4**?
+    options:
+      - LIMIT 12 OFFSET 4
+      - LIMIT 12 OFFSET 36
+      - LIMIT 12 OFFSET 48
+      - LIMIT 36 OFFSET 12
+    answer: 1
+    explanation: |
+      Page 4 means skipping the first three pages: 3 x 12 = 36 rows. The rule is
+      `OFFSET (page - 1) * page size`, so it is `LIMIT 12 OFFSET 36`.
+
+  - type: exercise
+    id: m03-t17
+    lesson: m03-l04
+    difficulty: 2
+    prompt: |
+      The café's wall of fame lists customers alphabetically by `last_name`, then `first_name`, with
+      **6 customers per page**. Show the `first_name` and `last_name` for **page 4**.
+    starter: |
+      SELECT first_name, last_name
+      FROM customers
+      ORDER BY last_name, first_name
+    solution: |
+      SELECT first_name, last_name
+      FROM customers
+      ORDER BY last_name, first_name
+      LIMIT 6 OFFSET 18;
+    ordered: true
+    hints:
+      - Page 4 skips three full pages of 6 customers.
+      - "3 pages x 6 rows = 18 rows to skip. Use both LIMIT and OFFSET."
+      - "LIMIT ___ OFFSET ___;"
+    explanation: |
+      Page 4 runs from Naledi Okonkwo to Noah Robinson. Two customers share the last name Omondi and two
+      share Robinson, and `first_name` settles both ties, so the page never changes between visits.
+
+  - type: predict
+    id: m03-t18
+    lesson: m03-l04
+    difficulty: 2
+    question: |
+      How many rows does this query return?
+    sql: |
+      SELECT first_name, loyalty_points
+      FROM customers
+      ORDER BY loyalty_points
+      FETCH FIRST 1 ROW WITH TIES;
+    options: ["1", "2", "28", "An error"]
+    answer: 1
+    explanation: |
+      Two customers (Sophia and Gabriela) both have 0 points, so they tie for first place. `WITH TIES`
+      keeps every row that ties with the last row of the cut, so you get 2 rows. A plain `LIMIT 1` would
+      return just one of them.
+
+  - type: exercise
+    id: m03-t19
+    lesson: m03-l04
+    difficulty: 3
+    prompt: |
+      Use `FETCH FIRST ... ROWS WITH TIES` to show the `name` and `calories` of the **2 available items**
+      (`is_available` is true) with the **fewest calories**, plus any item that has the same calories as
+      the 2nd one. Rank the items by `calories` only. The order of the rows in your result does not matter.
+    solution: |
+      SELECT name, calories
+      FROM menu_items
+      WHERE is_available
+      ORDER BY calories
+      FETCH FIRST 2 ROWS WITH TIES;
+    hints:
+      - Filter with WHERE, sort by calories, then cut with FETCH FIRST.
+      - "Sort by `calories` only. A second sort column would break the tie and `WITH TIES` would have nothing to keep."
+      - "WHERE is_available ORDER BY calories FETCH FIRST ___ ROWS ___ ___;"
+    explanation: |
+      The three teas (Earl Grey, Green and Peppermint) all have 0 calories. They tie for first place, so
+      even though you asked for 2 rows you get 3. The order of the three teas is not promised, which is
+      why this exercise does not check the row order.
+
+  - type: fill
+    id: m03-t20
+    lesson: m03-l04
+    difficulty: 2
+    prompt: |
+      Complete the standard-SQL query for **page 2** when there are **6 items per page**.
+    template: |
+      SELECT name, price
+      FROM menu_items
+      ORDER BY price DESC, name
+      OFFSET ___ ROWS
+      FETCH NEXT ___ ROWS ONLY;
+    answers:
+      - ["6"]
+      - ["6"]
+    explanation: |
+      Page 2 skips one page of 6 rows (`OFFSET 6`) and then takes the next 6 (`FETCH NEXT 6 ROWS ONLY`).
+      It is the same as `LIMIT 6 OFFSET 6`.
+
+  # ---------------------------------------------------------------- l05 Putting it together (shop)
+  - type: exercise
+    id: m03-t21
+    lesson: m03-l05
+    difficulty: 2
+    dataset: shop
+    prompt: |
+      The `payments` table records the money received (`payment_id`, `order_id`, `amount`, `method` and
+      `paid_at`). Show the `payment_id`, `order_id` and `amount` of the **5 biggest payments** made with
+      the `'gift_card'` method, biggest first.
+    starter: |
+      SELECT payment_id, order_id, amount
+      FROM payments
+      WHERE method = 'gift_card'
+    solution: |
+      SELECT payment_id, order_id, amount
+      FROM payments
+      WHERE method = 'gift_card'
+      ORDER BY amount DESC
+      LIMIT 5;
+    ordered: true
+    hints:
+      - The filter is done. Now sort the amounts and keep only a few rows.
+      - Biggest first means `DESC`. Then cut the list with `LIMIT`.
+      - "ORDER BY amount ___ LIMIT ___;"
+    explanation: |
+      The biggest gift-card payment is 1886.97 (payment 451, for order 508). The 6th biggest is 500.00,
+      which is clearly smaller than the 5th (529.97), so no tie is cut in half. Note that the method is
+      written in lowercase with an underscore: `gift_card`.
+
+  - type: quiz
+    id: m03-t22
+    lesson: m03-l05
+    difficulty: 2
+    question: |
+      A query uses `FROM`, `WHERE`, `SELECT`, `ORDER BY` and `LIMIT`. In which order does SQL
+      **logically run** these clauses?
+    options:
+      - FROM, WHERE, SELECT, ORDER BY, LIMIT
+      - SELECT, FROM, WHERE, ORDER BY, LIMIT
+      - FROM, SELECT, WHERE, LIMIT, ORDER BY
+      - WHERE, FROM, ORDER BY, SELECT, LIMIT
+    answer: 0
+    explanation: |
+      First the table (`FROM`), then the row filter (`WHERE`), then the columns and aliases (`SELECT`),
+      then the sort (`ORDER BY`), and last the cut (`LIMIT`). That is why `ORDER BY` can use an alias while
+      `WHERE` cannot, and why a "top 5" needs the sort *before* the cut.
+
+  - type: exercise
+    id: m03-t23
+    lesson: m03-l05
+    difficulty: 3
+    dataset: shop
+    columnNames: true
+    prompt: |
+      The warehouse ranks **active** products (`is_active` is true) by the value of their stock, which
+      is `price * stock_qty`. Show the `name`, `stock_qty` and the stock value under the alias
+      `stock_value`. Put the **highest value first**, and use `name` as the tie-breaker.
+
+      The report shows **5 products per page**. Show **page 2**.
+    starter: |
+      SELECT name, stock_qty, price * stock_qty AS stock_value
+      FROM products
+      WHERE is_active
+      ORDER BY stock_value DESC, name
+    solution: |
+      SELECT name, stock_qty, price * stock_qty AS stock_value
+      FROM products
+      WHERE is_active
+      ORDER BY stock_value DESC, name
+      LIMIT 5 OFFSET 5;
+    ordered: true
+    hints:
+      - The starter already ranks the products. You only need to pick page 2.
+      - "Page 2 with 5 per page skips the first 5 rows. Use LIMIT and OFFSET at the very end."
+      - "LIMIT ___ OFFSET ___;"
+    explanation: |
+      Page 1 starts with the 27-inch 4K Monitor (50538.67). Page 2 runs from Ergonomic Office Chair
+      (26748.93) to Standing Desk 140cm (18899.58). The alias `stock_value` is used in `ORDER BY`, which
+      runs after `SELECT`, and `name` keeps the order fixed if two values are ever equal.
+
+  - type: parsons
+    id: m03-t24
+    lesson: m03-l05
+    difficulty: 2
+    dataset: shop
+    prompt: |
+      Put the lines in order to list **active** products with the most stock first (ties by `name`),
+      showing the **second block of 5**.
+    lines:
+      - SELECT name, price, stock_qty
+      - FROM products
+      - WHERE is_active
+      - ORDER BY stock_qty DESC, name
+      - LIMIT 5 OFFSET 5;
+    distractors:
+      - LIMIT 5, 5;
+    explanation: |
+      Written order: SELECT, FROM, WHERE, ORDER BY, LIMIT. PostgreSQL wants `LIMIT 5 OFFSET 5`. The
+      short form `LIMIT 5, 5` exists in some other databases (for example MySQL), but PostgreSQL answers
+      with an error.
+
+  - type: predict
+    id: m03-t25
+    lesson: m03-l05
+    difficulty: 3
+    dataset: shop
+    question: |
+      Which `product_id` values does this query return, from the first row to the last?
+    sql: |
+      SELECT product_id, name
+      FROM products
+      WHERE is_active
+      ORDER BY product_id DESC
+      LIMIT 3 OFFSET 4;
+    options:
+      - "56, 55, 54"
+      - "56, 54, 53"
+      - "57, 56, 55"
+      - "55, 54, 53"
+    answer: 1
+    explanation: |
+      `WHERE` runs first. Product 55 (Plush Dragon, Large) is not active, so it is removed before the
+      sorting, skipping and cutting happen. The active ids from the top are 60, 59, 58, 57, 56, 54, 53.
+      `OFFSET 4` skips the first four, and `LIMIT 3` keeps **56, 54, 53**.
+project:
+  id: m03-proj
+  title: Store Front Page
+  icon: "🛍️"
+  dataset: shop
+  md: |
+    ## Makeover day at ShopSmart
+
+    It's Monday morning at **ShopSmart**, and the whole team is buzzing: the website's **front page** is
+    getting a makeover! Sam, the web designer, drops a sketch on your desk. It has six boxes, and each box
+    needs a short list of data from the database.
+
+    *"You're our SQL person now,"* Sam grins. *"Can you fill the boxes?"*
+
+    Here is the sketch:
+
+    1. **Bargain shelf**: the cheapest products we can really sell
+    2. **New arrivals**: the freshest products under $50
+    3. **Student club**: the youngest customers, to invite to a special club
+    4. **Customer love**: happy reviews, a few at a time
+    5. **Customer care**: the unhappiest reviews, so someone can say sorry
+    6. **Summer sale banner**: prices with 15% off
+
+    Every box is a **ranked list**, so you will use everything from this module: `ORDER BY` with
+    tie-breakers, `NULLS FIRST` / `NULLS LAST`, `LIMIT`, `OFFSET`, `WITH TIES` and aliases. The jobs get
+    harder as you go, and each one is a fresh query.
+
+    ## Your toolkit
+
+    You will use three tables from the ShopSmart database:
+
+    - `products`: `product_id`, `name`, `category_id`, `supplier_id`, `price`, `cost`, `stock_qty`,
+      `is_active`, `created_at`
+    - `customers`: `customer_id`, `first_name`, `last_name`, `email`, `phone`, `city`, `state`,
+      `signup_date`, `birth_date`, `segment`
+    - `reviews`: `review_id`, `product_id`, `customer_id`, `rating`, `review_text`, `created_at`
+
+    > [!TIP]
+    > A front-page list must look the same every time someone visits. So whenever two rows could tie,
+    > add one more sort column (a `name` or an `id`) as a **tie-breaker**.
+
+    > [!MISTAKE]
+    > Watch out for NULLs in a descending sort (they jump to the top), and remember that a column alias
+    > works in `ORDER BY` but not in `WHERE`.
+  tasks:
+    - type: exercise
+      id: m03-proj-1
+      title: "Box 1: The bargain shelf"
+      prompt: |
+        *"Let's start with bargains,"* says Sam. *"But only things people can actually buy."*
+
+        Show the `name`, `price` and `stock_qty` of the **6 cheapest products** that are still for sale
+        (`is_active` is true) **and** in stock (`stock_qty` is greater than 0). Put the cheapest first, and
+        if two products cost the same, put the one whose `name` comes first alphabetically on top.
+      starter: |
+        SELECT name, price, stock_qty
+        FROM products
+        WHERE is_active
+      solution: |
+        SELECT name, price, stock_qty
+        FROM products
+        WHERE is_active
+          AND stock_qty > 0
+        ORDER BY price, name
+        LIMIT 6;
+      ordered: true
+      hints:
+        - Filter with WHERE first, then sort, then keep six rows. You need two conditions in WHERE.
+        - "Sort by `price` (cheapest first is the default), then by `name`, and finish with `LIMIT`."
+        - "WHERE is_active AND stock_qty > ___ ORDER BY price, ___ LIMIT ___;"
+      explanation: |
+        The cheapest product is the Screen Protector 3-Pack (9.99). *The Midnight Gardener* costs only 14.99,
+        but it has 0 units in stock, so `stock_qty > 0` keeps it off the shelf. Two products cost 19.99: the
+        `name` tie-breaker puts Jigsaw Puzzle before The Beginner's Guide to Sourdough, and the 7th product
+        (24.49) is clearly dearer, so nothing is cut off unfairly.
+      difficulty: 1
+
+    - type: exercise
+      id: m03-proj-2
+      title: "Box 2: New arrivals under $50"
+      prompt: |
+        *"Next, a shelf of new things for small budgets,"* says Sam.
+
+        Show the `name`, `price` and `created_at` of the **5 newest products** that cost **less than 50**
+        dollars. Newest `created_at` first, and `name` (A to Z) as the tie-breaker.
+      starter: |
+        SELECT name, price, created_at
+        FROM products
+        WHERE price < 50
+      solution: |
+        SELECT name, price, created_at
+        FROM products
+        WHERE price < 50
+        ORDER BY created_at DESC, name
+        LIMIT 5;
+      ordered: true
+      hints:
+        - The price filter is already written. Add a sort and a cut.
+        - "Newest first means the biggest date first, so `created_at` needs `DESC`."
+        - "ORDER BY created_at ___, name LIMIT ___;"
+      explanation: |
+        The five newest bargains are Science Lab Starter Kit (2024-12-05), Fast Charger 65W, Laptop Stand,
+        Hydrating Face Serum and Strategy Board Game. Even newer products, like the Zephyr Gaming Laptop X
+        (1299.99), are too expensive, so `WHERE` removed them before the sorting started.
+      difficulty: 1
+
+    - type: exercise
+      id: m03-proj-3
+      title: "Box 3: Fix the student club list"
+      prompt: |
+        *"Now the Student Club,"* says Sam. *"I want to invite the **6 youngest customers**."* Youngest
+        means the **latest `birth_date`**.
+
+        Show the `customer_id`, `first_name`, `last_name` and `birth_date` of those 6 customers, youngest
+        first. If two customers had the same birth date, the lower `customer_id` would come first.
+
+        A colleague already wrote the query below. It runs, but the list is full of customers with **no
+        birth date at all**. Fix it.
+      starter: |
+        SELECT customer_id, first_name, last_name, birth_date
+        FROM customers
+        ORDER BY birth_date DESC, customer_id
+        LIMIT 6;
+      solution: |
+        SELECT customer_id, first_name, last_name, birth_date
+        FROM customers
+        ORDER BY birth_date DESC NULLS LAST, customer_id
+        LIMIT 6;
+      ordered: true
+      hints:
+        - Run the starter and look at the `birth_date` column. What do you see in every row?
+        - In a descending sort, PostgreSQL puts NULLs first. You can move them to the end.
+        - "ORDER BY birth_date DESC ___ ___, customer_id"
+      explanation: |
+        15 customers have no birth date, and `DESC` put all of them first. `NULLS LAST` pushes them to the
+        bottom, so the list starts with Nadia Rahman (2005-05-20). The 7th youngest customer was born on
+        2003-06-16, a month before the 6th (2003-07-15), so there is no tie at the cut-off.
+      difficulty: 2
+
+    - type: exercise
+      id: m03-proj-4
+      title: "Box 4: Customer love, page 2"
+      prompt: |
+        *"The reviews box is a carousel,"* says Sam. *"It shows **6 reviews per page**, and only happy ones."*
+
+        A happy review has a `rating` of **4 or 5** and some written text (`review_text` is not NULL).
+        Newest first (`created_at`); for reviews written on the same day, the higher `review_id` first.
+
+        Show the `review_id`, `product_id`, `rating` and `created_at` for **page 2** of the carousel.
+      starter: |
+        SELECT review_id, product_id, rating, created_at
+        FROM reviews
+      solution: |
+        SELECT review_id, product_id, rating, created_at
+        FROM reviews
+        WHERE rating >= 4
+          AND review_text IS NOT NULL
+        ORDER BY created_at DESC, review_id DESC
+        LIMIT 6 OFFSET 6;
+      ordered: true
+      hints:
+        - You need a filter with two conditions, a sort with a tie-breaker, and then paging.
+        - "Use `rating >= 4` (or `rating IN (4, 5)`) and `review_text IS NOT NULL`. Page 2 skips 6 rows."
+        - "WHERE rating >= ___ AND review_text ___ ORDER BY created_at DESC, review_id DESC LIMIT 6 OFFSET ___;"
+      explanation: |
+        Page 2 runs from review 311 to review 299. Several reviews share a date (311, 310 and 309 were all
+        written on 2024-12-30), so the `review_id` tie-breaker matters. Without it, a review could appear on both pages, or on neither.
+        `IS NOT NULL` is the right test for "has text", because `<> ''` would not work on NULL.
+      difficulty: 2
+
+    - type: exercise
+      id: m03-proj-5
+      title: "Box 5: The customer care desk"
+      prompt: |
+        *"Our customer care team wants to say sorry to the unhappiest reviewers,"* says Sam. *"And please
+        don't pick just one of them. Give me all of them."*
+
+        Use `FETCH FIRST 1 ROW WITH TIES` to show the `review_id`, `product_id`, `rating` and `created_at`
+        of **every review that has the lowest rating** in the table. Rank the reviews by `rating` only.
+        The order of the rows in your result does not matter.
+      solution: |
+        SELECT review_id, product_id, rating, created_at
+        FROM reviews
+        ORDER BY rating
+        FETCH FIRST 1 ROW WITH TIES;
+      hints:
+        - The lowest rating comes first in an ascending sort. You want the first row and everyone who ties with it.
+        - "Rank by `rating` only. A second sort column would break the tie and leave you with a single row."
+        - "ORDER BY rating FETCH FIRST ___ ROW ___ ___;"
+      explanation: |
+        Five reviews gave just 1 star (reviews 39, 178, 194, 214 and 260). `FETCH FIRST 1 ROW` alone would
+        have shown one of them by chance. `WITH TIES` keeps every row that ties with that first row, so all
+        five sad reviews are on Sam's list. If you added `review_id` to the `ORDER BY`, the ties would
+        disappear and you would get just one row again.
+      difficulty: 3
+
+    - type: exercise
+      id: m03-proj-6
+      title: "Box 6: The summer sale banner"
+      columnNames: true
+      prompt: |
+        *"Last box!"* says Sam. *"A summer sale banner. Everything is **15% off**, and I want to show the
+        products with the biggest sale prices under 50 dollars."*
+
+        Show the `name`, `price` and a column named `sale_price` for products that are **active**, **in
+        stock** (`stock_qty` greater than 0) and have a sale price **below 50**. The sale price is
+        `ROUND(price * 0.85, 2)`.
+
+        Put the **highest sale price first**, use `name` as the tie-breaker, and keep the **top 8**. Use
+        exactly the alias `sale_price`.
+      starter: |
+        SELECT name, price,
+               ROUND(price * 0.85, 2) AS sale_price
+        FROM products
+      solution: |
+        SELECT name, price,
+               ROUND(price * 0.85, 2) AS sale_price
+        FROM products
+        WHERE is_active
+          AND stock_qty > 0
+          AND price * 0.85 < 50
+        ORDER BY sale_price DESC, name
+        LIMIT 8;
+      ordered: true
+      hints:
+        - You need WHERE with three conditions, a sort on the alias, and a cut. WHERE cannot use the alias.
+        - "In WHERE, repeat the calculation: `price * 0.85 < 50`. In ORDER BY, use the alias `sale_price`."
+        - "WHERE is_active AND stock_qty > 0 AND price * ___ < 50 ORDER BY ___ DESC, name LIMIT ___;"
+      explanation: |
+        The Remote Control Rover is first (sale price 42.49). Three products share 38.24 and four share 33.99,
+        and `name` settles every tie, so the order is fixed. Two traps are hiding in the data: the HD Webcam
+        1080p (sale price 42.49) has 0 units in stock, and the Memory Foam Pillow (33.99) is no longer
+        active. The `WHERE` conditions keep both off the banner. Remember that `WHERE` runs before `SELECT`,
+        so the alias `sale_price` only exists from `ORDER BY` onwards.
+      difficulty: 3

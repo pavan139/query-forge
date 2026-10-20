@@ -1,0 +1,488 @@
+id: m10
+order: 10
+title: "Window Functions I: Rankings & Running Totals"
+subtitle: Calculate across rows without losing a single one
+icon: "🏅"
+level: advanced
+description: |
+  Until now, an aggregate such as `AVG` or `SUM` had a price: `GROUP BY` squashed many rows into one.
+  **Window functions** remove that price. They calculate across a group of rows and still give you
+  **every row back**, with the answer sitting in an extra column.
+
+  In this module you'll put a department average next to every salary, rank people with `ROW_NUMBER`,
+  `RANK` and `DENSE_RANK`, pick the top earners in each department, build running totals, and compare
+  each row with the previous one using `LAG` and `LEAD`. You'll work on the Acme Corp salary data and the
+  ShopSmart sales data, and finish with a real "Salary & Sales Insights" project.
+dataset: company
+lessons:
+  - id: m10-l01
+    title: "OVER(): Aggregates That Keep Their Rows"
+    summary: Turn SUM, AVG, COUNT, MIN and MAX into window functions with OVER () and compare every row with the whole.
+    minutes: 25
+    steps:
+      - type: read
+        title: Everyone's salary, next to the average
+        md: |
+          Ravi from Finance stops by your desk with a coffee in hand.
+          *"I have the Finance team's salaries on screen. Could you put the team average right next to each
+          salary, so I can see at a glance who is above and who is below?"*
+
+          Easy, you think. You already know `AVG`. Let's try it and see what happens.
+
+      - type: example
+        title: The plain average
+        md: Press **Run** to average the salaries of the Finance department (`dept_id = 5`).
+        sql: |
+          SELECT AVG(salary) AS avg_salary
+          FROM employees
+          WHERE dept_id = 5;
+        after: |
+          One row, one number: **128000**. That is the average, but we lost the people. Ravi wanted every
+          salary *and* this number side by side.
+
+          This is the price of `GROUP BY` and plain aggregates: **many rows go in, one row comes out**.
+
+      - type: example
+        title: Asking for both at once
+        md: |
+          What if we just add the names to the query? Run it and read the error carefully. You met it in
+          the aggregation module.
+        sql: |
+          SELECT first_name, salary, AVG(salary)
+          FROM employees
+          WHERE dept_id = 5;
+        expectError: true
+        after: |
+          PostgreSQL says `first_name` *must appear in the GROUP BY clause or be used in an aggregate function*.
+          It can't squash 5 rows into 1 and also keep 5 different names.
+
+          We need a tool that **calculates an average without squashing the rows**. That tool is a
+          **window function**.
+
+      - type: read
+        title: Meet OVER ()
+        md: |
+          A **window function** is an ordinary aggregate (like `AVG`) followed by the word `OVER`.
+          That one word changes everything: the rows are **kept**, and the answer is added as a **new column**.
+
+          ```sql
+          AVG(salary) OVER ()
+          ```
+
+          The empty brackets after `OVER` mean: *"the window is all the rows this query found"*.
+          Every row gets the same answer, because every row looks through the same big window.
+
+          > [!ANALOGY]
+          > A school report card prints your score **and** the class average on the same line. Your row is
+          > still your row, nobody was merged into anybody else. The class average is just extra
+          > information printed next to it. That is exactly what `OVER ()` does.
+
+      - type: example
+        title: Each salary next to the average
+        md: |
+          Same `AVG(salary)`, but now with `OVER ()`. Nothing else changes, and the names are back.
+        sql: |
+          SELECT
+              first_name,
+              last_name,
+              salary,
+              ROUND(AVG(salary) OVER (), 2) AS avg_salary
+          FROM employees
+          WHERE dept_id = 5
+          ORDER BY emp_id;
+        after: |
+          **5 rows**, one per Finance employee, and every row shows the same average, **128000**.
+          Ravi can now see that Yusuf (240000) is far above it while Lily (78000) is below.
+
+          Notice that `ROUND(..., 2)` wraps around the *whole* window expression. You can use a window
+          function anywhere you would use a normal value.
+
+      - type: exercise
+        id: m10-l01-e1
+        title: The top HR salary
+        prompt: |
+          For the HR department (`dept_id = 6`), show each person's `first_name` and `salary`, plus the
+          **highest HR salary** in a third column called `top_salary`. The highest salary should appear
+          on every row.
+        starter: |
+          SELECT first_name, salary
+          FROM employees
+          WHERE dept_id = 6;
+        solution: |
+          SELECT
+              first_name,
+              salary,
+              MAX(salary) OVER () AS top_salary
+          FROM employees
+          WHERE dept_id = 6;
+        columnNames: true
+        hints:
+          - "You need an aggregate that finds the biggest value, and it must keep all rows."
+          - "Use MAX(salary) and add OVER () right after it."
+          - "SELECT first_name, salary, MAX(salary) ___ () AS top_salary FROM employees WHERE dept_id = 6;"
+        explanation: |
+          `MAX(salary) OVER ()` finds the biggest salary in the window (the 5 HR rows): **215000**. The window
+          function adds it to every row, so all 5 people stay in the result.
+        difficulty: 1
+
+      - type: viz
+        viz: window
+        title: See the rows stay
+        md: |
+          Here are five Finance salaries. Click the **SUM per group** and **AVG per group** buttons and watch
+          the new `result` column. Then click any row: the highlighted rows show which rows were used.
+
+          Notice that **no row disappears**. Every employee is still there. Here the whole table is one big
+          window, exactly like `OVER ()`.
+        config:
+          table:
+            name: finance
+            columns: [emp_id, name, salary]
+            rows:
+              - [6, Yusuf, 240000]
+              - [15, Ingrid, 142000]
+              - [27, Scarlett, 96000]
+              - [49, Lily, 78000]
+              - [50, Sophia, 84000]
+          partitionBy: ""
+          orderBy: emp_id
+          value: salary
+          functions: [partition_sum, partition_avg]
+
+      - type: quiz
+        id: m10-l01-q1
+        question: |
+          The `employees` table has 55 rows. How many rows does this query return?
+        sql: |
+          SELECT first_name, AVG(salary) OVER ()
+          FROM employees;
+        options:
+          - "1 row, because AVG gives one number"
+          - "55 rows, one per employee"
+          - "7 rows, one per department"
+          - "An error, because first_name is not grouped"
+        answer: 1
+        explanation: |
+          A window function never collapses rows, so you get all **55**, each with the same company-wide average.
+          The error from before only happens with a plain `AVG(salary)`, without `OVER`.
+
+      - type: read
+        title: Comparing a row with the whole
+        md: |
+          Once the average sits on every row, you can **calculate with it**. Two classics:
+
+          - **Difference from the average:** `salary - AVG(salary) OVER ()`
+          - **Share of the total:** `100.0 * salary / SUM(salary) OVER ()`
+
+          Why `100.0` and not `100`? With `100.0` PostgreSQL uses decimals, so you don't lose the fractions.
+
+          > [!REAL-WORLD]
+          > "What percent of the total is this row?" is one of the most common questions in business reports:
+          > share of payroll, share of revenue, share of customers. Window functions make it a one-liner.
+
+      - type: example
+        title: Above or below, and by how much
+        md: Two window functions in one query. Each one has its own `OVER ()`.
+        sql: |
+          SELECT
+              first_name,
+              salary,
+              salary - AVG(salary) OVER () AS vs_avg,
+              ROUND(100.0 * salary / SUM(salary) OVER (), 1)
+                  AS pct_of_total
+          FROM employees
+          WHERE dept_id = 5
+          ORDER BY salary DESC;
+        after: |
+          Yusuf earns **112000 above** the Finance average and makes up **37.5%** of the department's
+          salary bill. Lily is **50000 below** it and makes up 12.2%.
+
+          The five percentages add up to 100, which is a good sanity check for any "share of total" column.
+
+      - type: exercise
+        id: m10-l01-e2
+        title: Marketing vs. the average
+        prompt: |
+          For the Marketing department (`dept_id = 4`), show `first_name`, `salary` and a column
+          `diff_from_avg`: the salary minus the Marketing average salary, **rounded to 2 decimals**.
+        starter: |
+          SELECT first_name, salary
+          FROM employees
+          WHERE dept_id = 4;
+        solution: |
+          SELECT
+              first_name,
+              salary,
+              ROUND(salary - AVG(salary) OVER (), 2) AS diff_from_avg
+          FROM employees
+          WHERE dept_id = 4;
+        columnNames: true
+        hints:
+          - "First write the average as a window function. Then subtract it from salary."
+          - "salary - AVG(salary) OVER (), all wrapped in ROUND(..., 2)."
+          - "SELECT first_name, salary, ROUND(salary - AVG(___) OVER (), 2) AS diff_from_avg FROM employees WHERE dept_id = 4;"
+        explanation: |
+          The Marketing average is about 104555.56, so Isaac (225000) is **120444.44** above it, while the
+          part-time coordinator Scarlett (45000) is **59555.56** below. The 9 differences always add up to roughly zero.
+        difficulty: 2
+
+      - type: fill
+        id: m10-l01-f1
+        prompt: Complete the query so that every HR person's salary appears next to the HR average.
+        template: |
+          SELECT
+              first_name,
+              salary,
+              ___(salary) ___ () AS avg_salary
+          FROM employees
+          WHERE dept_id = 6;
+        answers:
+          - ["AVG"]
+          - ["OVER"]
+        explanation: |
+          `AVG(salary) OVER ()` is the whole recipe: an aggregate, then `OVER`, then the brackets that describe
+          the window. Leave the brackets empty and the window is every row.
+
+      - type: exercise
+        id: m10-l01-e3
+        title: Share of the HR payroll
+        prompt: |
+          For HR (`dept_id = 6`), show `first_name`, `salary` and `pct_of_hr`: each person's salary as a
+          **percentage of the total HR salary**, rounded to **1 decimal place**.
+        starter: |
+          SELECT first_name, salary
+          FROM employees
+          WHERE dept_id = 6;
+        solution: |
+          SELECT
+              first_name,
+              salary,
+              ROUND(100.0 * salary / SUM(salary) OVER (), 1) AS pct_of_hr
+          FROM employees
+          WHERE dept_id = 6;
+        columnNames: true
+        hints:
+          - "You need the total of all HR salaries on every row. Which aggregate adds up?"
+          - "100.0 * salary / SUM(salary) OVER (), then ROUND it to 1 decimal."
+          - "SELECT first_name, salary, ROUND(100.0 * salary / SUM(salary) OVER (), ___) AS pct_of_hr FROM employees WHERE dept_id = 6;"
+        explanation: |
+          The total HR payroll is 531000. Valentina (215000) is **40.5%** of it and Naledi (46000) is
+          **8.7%**. Check: 40.5 + 20.3 + 17.3 + 13.2 + 8.7 = 100.
+        difficulty: 2
+
+      - type: read
+        title: The golden rules of the window
+        md: |
+          Two rules will save you a lot of confusion.
+
+          **Rule 1: `WHERE` runs first.** SQL filters the rows with `WHERE`, and only then calculates the
+          window over the rows that are left. That's why the Finance average was based on 5 people, not 55.
+
+          **Rule 2: you can't use a window function in `WHERE`.** The window doesn't exist yet when `WHERE` runs.
+          Lesson 4 shows the clean workaround. For now, just recognise the error.
+
+          > [!MISTAKE]
+          > Writing `WHERE salary > AVG(salary) OVER ()`. PostgreSQL answers *"window functions are not
+          > allowed in WHERE"*. Window functions can live in `SELECT` (and `ORDER BY`), nowhere earlier.
+
+      - type: example
+        title: The error you'll meet
+        md: We try to keep only people paid above the company average. Run it and read the message.
+        sql: |
+          SELECT first_name, salary
+          FROM employees
+          WHERE salary > AVG(salary) OVER ();
+        expectError: true
+        after: |
+          *"window functions are not allowed in WHERE"*. At the moment `WHERE` runs, the average hasn't been
+          calculated yet. In lesson 4 you'll learn to calculate first and filter second.
+
+      - type: example
+        title: LIMIT comes after the window
+        md: |
+          `LIMIT` is applied at the very end, so a window still sees **all** the rows that passed `WHERE`.
+          This query shows only 5 rows, yet the average is over the whole company.
+        sql: |
+          SELECT
+              first_name,
+              salary,
+              ROUND(AVG(salary) OVER (), 2) AS company_avg
+          FROM employees
+          ORDER BY emp_id
+          LIMIT 5;
+        after: |
+          The average is **129509.09**, the average of all 55 employees, even though only 5 rows are displayed.
+
+          Compare that with the Finance query earlier: there `WHERE` removed rows *before* the window,
+          so the window was smaller. `WHERE` shrinks the window, `LIMIT` does not.
+
+      - type: predict
+        id: m10-l01-p1
+        question: |
+          HR has 5 employees. What does the `n` column contain in the result of this query?
+        sql: |
+          SELECT first_name, salary, COUNT(*) OVER () AS n
+          FROM employees
+          WHERE dept_id = 6;
+        options:
+          - "5 on every row"
+          - "1 on every row"
+          - "1, 2, 3, 4, 5 going down the rows"
+          - "An error"
+        answer: 0
+        explanation: |
+          `COUNT(*) OVER ()` counts all the rows in the window, and the window is all 5 HR rows, so every
+          row shows **5**. (Numbering 1, 2, 3... needs a different tool, which you'll meet in lesson 3.)
+
+      - type: exercise
+        id: m10-l01-e4
+        title: Fix the missing OVER
+        prompt: |
+          This query should show each Marketing employee (`dept_id = 4`) next to the Marketing average
+          salary, in a column called `avg_salary`. It fails. Fix it without adding a `GROUP BY`.
+        starter: |
+          SELECT first_name, salary, AVG(salary) AS avg_salary
+          FROM employees
+          WHERE dept_id = 4;
+        solution: |
+          SELECT
+              first_name,
+              salary,
+              AVG(salary) OVER () AS avg_salary
+          FROM employees
+          WHERE dept_id = 4;
+        columnNames: true
+        hints:
+          - "The error is the same one as at the start of the lesson. What word keeps the rows?"
+          - "Add OVER () right after AVG(salary)."
+          - "SELECT first_name, salary, AVG(salary) ___ () AS avg_salary FROM employees WHERE dept_id = 4;"
+        explanation: |
+          Without `OVER`, `AVG` is a plain aggregate that wants to squash the rows. With `OVER ()` it
+          becomes a window function and all 9 Marketing people stay.
+        difficulty: 2
+
+      - type: parsons
+        id: m10-l01-o1
+        prompt: |
+          Arrange the lines to show each Finance employee's salary next to the total Finance salary,
+          highest salary first.
+        lines:
+          - "SELECT first_name, salary,"
+          - "    SUM(salary) OVER () AS finance_total"
+          - "FROM employees"
+          - "WHERE dept_id = 5"
+          - "ORDER BY salary DESC;"
+        distractors:
+          - "GROUP BY first_name"
+        explanation: |
+          `SELECT` holds the window function, then `FROM`, `WHERE` and `ORDER BY`. No `GROUP BY` is needed:
+          the whole point of `OVER ()` is that you don't squash the rows.
+
+      - type: exercise
+        id: m10-l01-e5
+        title: Current Sales staff
+        prompt: |
+          Look at the people who currently work in Sales: `dept_id = 3` and `terminated_on IS NULL`.
+          Show `emp_id`, `salary`, `avg_salary` (their average salary, rounded to 2 decimals) and `people`
+          (how many people are in the result, using a window function). Sort by `emp_id`.
+        starter: |
+          SELECT emp_id, salary
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY emp_id;
+        solution: |
+          SELECT
+              emp_id,
+              salary,
+              ROUND(AVG(salary) OVER (), 2) AS avg_salary,
+              COUNT(*) OVER () AS people
+          FROM employees
+          WHERE dept_id = 3
+            AND terminated_on IS NULL
+          ORDER BY emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Two window functions, both with empty brackets. Don't forget the second WHERE condition."
+          - "Use AND terminated_on IS NULL, then ROUND(AVG(salary) OVER (), 2) and COUNT(*) OVER ()."
+          - "SELECT emp_id, salary, ROUND(AVG(salary) OVER (), 2) AS avg_salary, COUNT(*) OVER () AS people FROM employees WHERE dept_id = 3 AND ___ ORDER BY emp_id;"
+        explanation: |
+          Sales has 12 people on file, but Mariana left in 2024. Because `WHERE` runs first, the window only
+          sees the **11** current employees, and the average is **125272.73**.
+        difficulty: 2
+
+      - type: exercise
+        id: m10-l01-e6
+        title: How far below the top VP?
+        prompt: |
+          The five Vice Presidents have job titles starting with `'VP of'`. For them, show `job_title`,
+          `salary`, `pct_of_vp_avg` (their salary as a percentage of the average VP salary, **1 decimal**)
+          and `gap_to_top` (the highest VP salary minus their own salary). Sort by `salary` from highest
+          to lowest.
+        starter: |
+          SELECT job_title, salary
+          FROM employees
+          WHERE job_title LIKE 'VP of%'
+          ORDER BY salary DESC;
+        solution: |
+          SELECT
+              job_title,
+              salary,
+              ROUND(100.0 * salary / AVG(salary) OVER (), 1)
+                  AS pct_of_vp_avg,
+              MAX(salary) OVER () - salary AS gap_to_top
+          FROM employees
+          WHERE job_title LIKE 'VP of%'
+          ORDER BY salary DESC;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You need two window functions: an average and a maximum. Each one gets its own OVER ()."
+          - "Percentage: 100.0 * salary / AVG(salary) OVER (). Gap: MAX(salary) OVER () - salary."
+          - "SELECT job_title, salary, ROUND(100.0 * salary / AVG(salary) OVER (), 1) AS pct_of_vp_avg, MAX(salary) OVER () - salary AS ___ FROM employees WHERE job_title LIKE 'VP of%' ORDER BY salary DESC;"
+        explanation: |
+          The average VP salary is 238000. The VP of Engineering is the top earner (**111.3%** of the average,
+          gap 0), and the VP of People is **90.3%** with a gap of **50000**.
+        difficulty: 3
+
+      - type: read
+        title: Window vs. GROUP BY, side by side
+        md: |
+          | | `GROUP BY` | window function |
+          |---|---|---|
+          | Rows in the result | one per group | **all** the rows |
+          | Can show ordinary columns too | only grouped ones | **yes, any** |
+          | Typical use | "totals per department" | "each person next to the department total" |
+
+          They are partners, not enemies. Use `GROUP BY` when you want a summary table. Use `OVER` when you
+          want to keep the detail rows and add context to them.
+
+          Next up: giving each **group** its own window with `PARTITION BY`.
+    cheatsheet:
+      - title: An aggregate that keeps its rows
+        sql: |
+          SELECT name, salary,
+                 AVG(salary) OVER () AS avg_salary
+          FROM employees;
+        note: "OVER () = the window is every row (after WHERE). No rows disappear."
+      - title: Share of the total
+        sql: |
+          SELECT name, salary,
+                 ROUND(100.0 * salary / SUM(salary) OVER (), 1) AS pct
+          FROM employees;
+        note: "Use 100.0 (not 100) so you keep the decimals."
+      - title: Difference from the average
+        sql: |
+          SELECT name, salary - AVG(salary) OVER () AS diff
+          FROM employees;
+        note: "Window functions are allowed in SELECT and ORDER BY, never in WHERE."
+
+testPool:
+  - type: quiz
+    id: m10-t01
+    lesson: m10-l01
+    difficulty: 1
+    question: Which keyword turns `AVG(salary)` into a window function that keeps every row?
+    options: ["GROUP", "OVER", "WINDOW", "PARTITION"]
+    answer: 1
+    explanation: "`OVER` follows the function, with brackets that describe the window. `OVER ()` means all rows."

@@ -1,0 +1,2370 @@
+id: m11
+order: 11
+title: "Window Functions II: Frames & Percentiles"
+subtitle: Choose exactly which rows each window can see
+icon: "🪟"
+level: advanced
+description: |
+  In module 10 you met window functions: `OVER`, `PARTITION BY`, ranking, running totals and `LAG` / `LEAD`.
+  Now you learn the control panel behind them.
+
+  A **window frame** decides exactly which rows each calculation looks at. With frames you can build moving
+  averages, "last 7 days" totals, "best in group" comparisons and percentile reports, and you will finally
+  understand two famous traps: the default frame and `LAST_VALUE`.
+dataset: bank
+lessons:
+  - id: m11-l01
+    title: "Window frames with ROWS"
+    summary: Build moving averages and look-ahead totals with ROWS BETWEEN ... AND ...
+    minutes: 28
+    steps:
+      - type: read
+        title: Smoothing out a zig-zag
+        md: |
+          The card team at Harbor Bank sends you a chart of monthly card spending. It zig-zags wildly: a huge bump in March, another in October. *"Can you smooth it out so we can see the real trend?"*
+
+          The classic answer is a **moving average**: for every month, average that month with the couple of months before it. The average "moves" along the timeline like a sliding window.
+
+          In module 10 you wrote `SUM(...) OVER (ORDER BY ...)` for running totals. Behind the scenes, each row was looking at a bunch of rows around it. That bunch of rows is called the **window frame**. Today you take control of it.
+
+          > [!ANALOGY]
+          > Picture a long strip of paper with one number per month. Cut a small rectangular hole in a card and slide the card along the strip. You can only see the numbers through the hole. The hole is the **frame**, and the average is calculated from whatever is visible.
+
+      - type: example
+        title: The monthly spending table
+        md: |
+          First, build the data we will smooth. Card payments are stored as **negative** amounts (money going out), so we flip the sign with a minus.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent
+          FROM monthly
+          ORDER BY month;
+        after: |
+          Twelve rows, one per month of 2024. Look at **March** (13,814.61) and **October** (15,307.03): they stick out like mountains. Every other month sits around 7,000 to 9,000.
+
+          This little table, called `monthly`, is the starting point for the whole lesson.
+
+      - type: read
+        title: The frame recipe
+        md: |
+          A frame is written inside `OVER (...)`, after `ORDER BY`:
+
+          ```sql
+          AVG(spent) OVER (
+              ORDER BY month
+              ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+          )
+          ```
+
+          Read it like a sentence: *"Average `spent`, in month order, using the rows from two rows before me up to me."*
+
+          You choose a **start** and an **end** from this list:
+
+          | Boundary | Means |
+          |---|---|
+          | `UNBOUNDED PRECEDING` | the very first row |
+          | `n PRECEDING` | n rows before the current row |
+          | `CURRENT ROW` | the row itself |
+          | `n FOLLOWING` | n rows after the current row |
+          | `UNBOUNDED FOLLOWING` | the very last row |
+
+          The word **ROWS** means we count physical rows, one by one, in the `ORDER BY` order.
+
+      - type: example
+        title: A 3-month moving average
+        md: |
+          Press **Run**. The column `n` counts how many rows the frame holds, so you can see the window grow at the start.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+              ), 2) AS avg3,
+              COUNT(*) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+              ) AS n
+          FROM monthly
+          ORDER BY month;
+        after: |
+          January has no earlier months, so its frame holds **1 row** and `avg3` equals `spent`. February's frame holds 2 rows. From March on, every frame holds exactly **3 rows**.
+
+          March: (8,932.70 + 7,212.33 + 13,814.61) / 3 = **9,986.55**. The March mountain is still visible, but the line is much calmer than the raw numbers.
+
+      - type: viz
+        viz: window
+        title: Watch the frame slide
+        md: |
+          Click different rows. The highlighted rows are the ones inside that row's frame. Switch between **Running SUM** (frame starts at the first row) and **3-row moving AVG** (frame is the row and the two before it).
+        config:
+          table:
+            name: monthly
+            columns: [month, spent]
+            rows: [[1, 8933], [2, 7212], [3, 13815], [4, 7966], [5, 8457], [6, 7010]]
+          partitionBy: ""
+          orderBy: month
+          value: spent
+          functions: [moving_avg_3, running_sum]
+
+      - type: quiz
+        id: m11-l01-q1
+        question: |
+          In `ROWS BETWEEN 2 PRECEDING AND CURRENT ROW`, how many rows are in the frame once the window is full (not at the very start)?
+        options:
+          - "2 rows"
+          - "3 rows"
+          - "4 rows"
+          - "It depends on the dates"
+        answer: 1
+        explanation: |
+          Two rows before the current row, **plus the current row itself**, makes 3. Beginners often forget to count the current row.
+
+          With `ROWS`, dates never matter. Only the row positions do.
+
+      - type: exercise
+        id: m11-l01-e1
+        title: A 2-month average
+        prompt: |
+          Using the `monthly` table from the starter, show `month`, `spent`, and a third column `avg2`: the average of **this month and the previous month**, rounded to 2 decimals.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent
+          FROM monthly
+          ORDER BY month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+              ), 2) AS avg2
+          FROM monthly
+          ORDER BY month;
+        hints:
+          - You need a window function next to `month` and `spent`. Which aggregate gives an average?
+          - Use `AVG(spent) OVER (ORDER BY month ROWS BETWEEN ... AND CURRENT ROW)`. How many rows before the current one do you need for a 2-row window?
+          - "ROUND(AVG(spent) OVER (ORDER BY month ROWS BETWEEN ___ PRECEDING AND CURRENT ROW), 2) AS avg2"
+        explanation: |
+          A 2-row window is **1** row before plus the current row. January has no earlier month, so its average is just its own value (8,932.70).
+
+          Shortcut: `ROWS 1 PRECEDING` means the same thing (you will see it in a moment).
+        difficulty: 1
+
+      - type: example
+        title: A centered window
+        md: |
+          A frame can also look **forward**. Here every month is averaged with the month before *and* the month after it.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+              ), 2) AS centered
+          FROM monthly
+          ORDER BY month;
+        after: |
+          A **centered** moving average puts each month in the middle of its own window, so the smoothed line does not lag behind the real one.
+
+          The first and last months have only two rows to average, because there is nothing before January or after December.
+
+      - type: example
+        title: Running totals, spelled out
+        md: |
+          In module 10 a running total was just `SUM(...) OVER (ORDER BY ...)`. Here is the same idea with the frame written out, next to the shorthand form.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              SUM(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running,
+              SUM(spent) OVER (
+                  ORDER BY month
+                  ROWS 2 PRECEDING
+              ) AS last3_total
+          FROM monthly
+          ORDER BY month;
+        after: |
+          `running` starts at the first row and never lets go, so it only grows. `last3_total` only ever holds three months, so it goes up and down.
+
+          The shorthand `ROWS 2 PRECEDING` gives only the start. The end is automatically `CURRENT ROW`.
+
+      - type: exercise
+        id: m11-l01-e2
+        title: Centered average
+        prompt: |
+          From the `monthly` table in the starter, show `month`, `spent` and `centered`: the average of the previous month, this month and the next month, rounded to 2 decimals.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent
+          FROM monthly
+          ORDER BY month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+              ), 2) AS centered
+          FROM monthly
+          ORDER BY month;
+        hints:
+          - This is the centered example again, in your own hands.
+          - The frame goes from 1 row before to 1 row after the current row.
+          - "ROUND(AVG(spent) OVER (ORDER BY month ROWS BETWEEN 1 ___ AND 1 ___), 2) AS centered"
+        explanation: |
+          `1 PRECEDING AND 1 FOLLOWING` is a 3-row window with the current row in the middle. January and December get only 2 rows, so their averages are a little less smooth.
+        difficulty: 1
+
+      - type: predict
+        id: m11-l01-p1
+        question: |
+          Look at the query. What does column `n` show for the **first** month and for the **last** month?
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              COUNT(*) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+              ) AS n
+          FROM monthly
+          ORDER BY month;
+        options:
+          - "3 for both"
+          - "2 for both"
+          - "1 for both"
+          - "2 for the first, 3 for the last"
+        answer: 1
+        explanation: |
+          January has nothing before it, so its frame is *January + February* = 2 rows. December has nothing after it, so its frame is *November + December* = 2 rows. Frames never invent rows that do not exist; they just get smaller at the edges.
+
+      - type: read
+        title: The off-by-one trap
+        md: |
+          > [!MISTAKE]
+          > `3 PRECEDING` means three rows **before** the current row. Together with the current row that is a window of **four** rows, not three. For a "last 3 months" average you want `2 PRECEDING`.
+
+          Whenever you build a window, count like this: *rows before* + *the row itself* + *rows after*.
+
+      - type: exercise
+        id: m11-l01-e3
+        title: Fix the off-by-one
+        prompt: |
+          This query is supposed to average **this month and the previous two months** (3 months in total) as `avg3`. But it is averaging 4 months. Fix the frame.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+              ), 2) AS avg3
+          FROM monthly
+          ORDER BY month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+              ), 2) AS avg3
+          FROM monthly
+          ORDER BY month;
+        hints:
+          - Count the rows in the current frame - how many are there when it is full?
+          - The frame has 3 PRECEDING + CURRENT ROW = 4 rows. You want 3 rows in total.
+          - "Change 3 PRECEDING to ___ PRECEDING."
+        explanation: |
+          The off-by-one is the most common frame bug, and it produces no error, just slightly wrong numbers. Always sanity-check one row by hand, like March: (8,932.70 + 7,212.33 + 13,814.61) / 3.
+        difficulty: 2
+
+      - type: example
+        title: "Frames can't run backwards (expected error)"
+        md: |
+          What if you write the boundaries in the wrong order? Run it and read the message.
+        expectError: true
+        sql: |
+          SELECT
+              txn_id,
+              amount,
+              AVG(amount) OVER (
+                  ORDER BY txn_id
+                  ROWS BETWEEN CURRENT ROW AND 2 PRECEDING
+              ) AS bad_frame
+          FROM transactions
+          WHERE account_id = 2;
+        after: |
+          PostgreSQL says `frame starting from current row cannot have preceding rows`.
+
+          The frame must be written in timeline order: **start first, end second**. The boundaries always go UNBOUNDED PRECEDING, then n PRECEDING, then CURRENT ROW, then n FOLLOWING, then UNBOUNDED FOLLOWING. Fix: `2 PRECEDING AND CURRENT ROW`.
+
+      - type: exercise
+        id: m11-l01-e4
+        title: Look ahead
+        prompt: |
+          The card team wants a **forward-looking** view. For each month show `month`, `spent` and `next3`: the total spending of **this month and the next two months**.
+
+          The last months have fewer than three months ahead, so their totals are smaller. That is fine.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent
+          FROM monthly
+          ORDER BY month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              SUM(spent) OVER (
+                  ORDER BY month
+                  ROWS BETWEEN CURRENT ROW AND 2 FOLLOWING
+              ) AS next3
+          FROM monthly
+          ORDER BY month;
+        hints:
+          - You need a SUM, and the frame must start at the current row and go forward.
+          - "The frame is: ROWS BETWEEN CURRENT ROW AND ... FOLLOWING."
+          - "SUM(spent) OVER (ORDER BY month ROWS BETWEEN CURRENT ROW AND ___ FOLLOWING) AS next3"
+        explanation: |
+          January's total is 8,932.70 + 7,212.33 + 13,814.61 = 29,959.64. December has no months after it, so `next3` there is just December's own spending (8,102.03).
+        difficulty: 2
+
+      - type: example
+        title: Show averages only for full windows
+        md: |
+          The first two rows of a moving average use fewer months, so they are not quite comparable. A tidy trick: count the rows in the same frame and only show the average when the count is 3.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              spent,
+              CASE
+                  WHEN COUNT(*) OVER (ORDER BY month ROWS 2 PRECEDING) = 3
+                  THEN ROUND(AVG(spent) OVER (
+                      ORDER BY month ROWS 2 PRECEDING
+                  ), 2)
+              END AS full_avg3
+          FROM monthly
+          ORDER BY month;
+        after: |
+          January and February show `NULL` because their windows are incomplete. From March on you get the real 3-month average.
+
+          `CASE` with no `ELSE` returns NULL when the condition is false, which is exactly what we want here.
+
+      - type: fill
+        id: m11-l01-f1
+        prompt: Complete the frame so each month is averaged with the **three** months before it (4 rows in total).
+        template: |
+          WITH monthly AS (
+              SELECT date_trunc('month', txn_time)::date AS month,
+                     ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent,
+                 AVG(spent) OVER (
+                     ORDER BY month
+                     ___ BETWEEN ___ PRECEDING AND ___ ROW
+                 ) AS avg4
+          FROM monthly
+          ORDER BY month;
+        answers:
+          - ["ROWS"]
+          - ["3"]
+          - ["CURRENT"]
+        explanation: |
+          `ROWS BETWEEN 3 PRECEDING AND CURRENT ROW` is 3 earlier rows plus the current one: 4 rows.
+
+      - type: exercise
+        id: m11-l01-e5
+        title: One average per category
+        prompt: |
+          Frames work together with `PARTITION BY`: each partition gets its own sliding window, and the window never crosses into another partition.
+
+          For the **dining** and **groceries** categories, January to June 2024 only, show `category`, `month`, `spent` (the category's total card spending that month) and `avg3`: the 3-month moving average **within the category**, rounded to 2 decimals. Sort by `category`, then `month`.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+                AND category IN ('dining', 'groceries')
+                AND txn_time < '2024-07-01'
+              GROUP BY 1, 2
+          )
+          SELECT category, month, spent
+          FROM monthly
+          ORDER BY category, month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+                AND category IN ('dining', 'groceries')
+                AND txn_time < '2024-07-01'
+              GROUP BY 1, 2
+          )
+          SELECT
+              category,
+              month,
+              spent,
+              ROUND(AVG(spent) OVER (
+                  PARTITION BY category
+                  ORDER BY month
+                  ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+              ), 2) AS avg3
+          FROM monthly
+          ORDER BY category, month;
+        ordered: true
+        hints:
+          - The CTE already gives one row per category per month. You only add one window column.
+          - Put `PARTITION BY category` before `ORDER BY month` inside OVER, then add the frame.
+          - "ROUND(AVG(spent) OVER (PARTITION BY ___ ORDER BY ___ ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS avg3"
+        explanation: |
+          Without `PARTITION BY`, the first groceries month would borrow numbers from the end of the dining rows. With it, each category restarts: January of groceries has a frame of 1 row (1,849.23).
+        difficulty: 2
+
+      - type: parsons
+        id: m11-l01-o1
+        prompt: Put the lines in order to show each month's spending and a 3-month moving average.
+        lines:
+          - WITH monthly AS (
+          - "    SELECT date_trunc('month', txn_time)::date AS month,"
+          - "           ROUND(-SUM(amount), 2) AS spent"
+          - "    FROM transactions"
+          - "    WHERE txn_type = 'card_payment'"
+          - "    GROUP BY 1"
+          - )
+          - SELECT month, spent,
+          - "       ROUND(AVG(spent) OVER (ORDER BY month"
+          - "           ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS avg3"
+          - FROM monthly
+          - ORDER BY month;
+        explanation: |
+          The CTE builds the monthly totals first. In the main query, the frame sits inside `OVER (...)` right after `ORDER BY`.
+
+      - type: exercise
+        id: m11-l01-e6
+        title: Is this month unusual?
+        prompt: |
+          Spikes look bigger when you compare them with what came just before. For each month show:
+
+          - `month` and `spent`
+          - `prev3_avg`: the average spending of the **previous three months only** (not including the current month), rounded to 2 decimals
+          - `pct_diff`: how many percent `spent` is above (positive) or below (negative) `prev3_avg`, rounded to 1 decimal
+
+          January has no earlier months, so both new columns are NULL there. Sort by `month`.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          )
+          SELECT month, spent
+          FROM monthly
+          ORDER BY month;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', txn_time)::date AS month,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY 1
+          ),
+          with_prev AS (
+              SELECT
+                  month,
+                  spent,
+                  AVG(spent) OVER (
+                      ORDER BY month
+                      ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                  ) AS prev3
+              FROM monthly
+          )
+          SELECT
+              month,
+              spent,
+              ROUND(prev3, 2) AS prev3_avg,
+              ROUND(100 * (spent - prev3) / prev3, 1) AS pct_diff
+          FROM with_prev
+          ORDER BY month;
+        ordered: true
+        columnNames: true
+        hints:
+          - A frame does not have to include the current row. Which two boundaries would stop one row before it?
+          - "Use ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING. For the percentage, use (spent - prev3) / prev3 * 100. A second CTE keeps the formula readable."
+          - "WITH ..., with_prev AS (SELECT month, spent, AVG(spent) OVER (ORDER BY month ROWS BETWEEN ___ PRECEDING AND ___ PRECEDING) AS prev3 FROM monthly) SELECT month, spent, ROUND(prev3, 2) AS prev3_avg, ROUND(100 * (spent - prev3) / prev3, 1) AS pct_diff FROM with_prev ORDER BY month;"
+        explanation: |
+          March jumps **71.1%** above its previous months, and October a huge **92.5%**. Both are clearly spikes. Quiet months stay within about 30% of normal.
+
+          The frame `3 PRECEDING AND 1 PRECEDING` skips the current row on purpose. For January the frame is empty, and an average of nothing is NULL. A CTE avoids repeating the long window expression twice.
+        difficulty: 3
+
+      - type: read
+        title: You can now steer the frame
+        md: |
+          Nice work. You can now say *exactly* which rows a window function sees: the last 3 rows, the next 3 rows, the rows on both sides, or everything so far.
+
+          > [!REAL-WORLD]
+          > Moving averages are everywhere: smoothing sales charts, stock prices, website traffic and step counts. Analysts almost always write them with `ROWS BETWEEN n PRECEDING AND CURRENT ROW`.
+
+          One question is still open: **what if some months are missing, or two rows share the same date?** `ROWS` just counts rows, so it can quietly give the wrong answer. The next lesson fixes that with `RANGE` and `GROUPS`.
+    cheatsheet:
+      - title: Moving average (last 3 rows)
+        sql: |
+          AVG(x) OVER (
+              ORDER BY d
+              ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+          )
+        note: n PRECEDING plus the current row = n + 1 rows in the frame.
+      - title: Centered window
+        sql: |
+          AVG(x) OVER (
+              ORDER BY d
+              ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+          )
+        note: The frame looks both backwards and forwards. Edge rows get fewer rows.
+      - title: Frame boundaries in order
+        sql: |
+          UNBOUNDED PRECEDING
+          n PRECEDING
+          CURRENT ROW
+          n FOLLOWING
+          UNBOUNDED FOLLOWING
+        note: "The start must come before the end. Shorthand: ROWS 2 PRECEDING means BETWEEN 2 PRECEDING AND CURRENT ROW."
+  - id: m11-l02
+    title: "RANGE & GROUPS frames"
+    summary: Understand the default frame, then build "last 7 days" windows with RANGE and count day-groups with GROUPS.
+    minutes: 32
+    dataset: app
+    steps:
+      - type: read
+        title: Why do two rows show the same running total?
+        md: |
+          FitTrack, a fitness app, records daily step counts. A coach asks you for a **running total** of steps for two users. You write `SUM(steps) OVER (ORDER BY day)`, run it, and notice something odd: on some days **two rows show exactly the same total**. Is it a bug?
+
+          No, it is the **default frame**. When you write `ORDER BY` inside `OVER` but no frame, PostgreSQL quietly adds this one for you:
+
+          ```sql
+          RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ```
+
+          `RANGE` works by **value**, not by position. All rows with the same `ORDER BY` value are called **peers**, and a `RANGE` frame always includes all of the current row's peers.
+
+          > [!ANALOGY]
+          > Think of runners finishing a race. If two runners cross the line at the same moment, you cannot say who was "first". `RANGE` treats them as one block: both get credit for everyone up to and including the whole block.
+
+      - type: example
+        title: Two users, same day
+        md: |
+          Here are the first four days of users 12 and 21. The column `running_default` uses the default frame. The column `running_rows` writes a `ROWS` frame and adds a tie-breaker (`user_id`) so every row has its own place in the line.
+        sql: |
+          SELECT
+              day,
+              user_id,
+              steps,
+              SUM(steps) OVER (ORDER BY day) AS running_default,
+              SUM(steps) OVER (
+                  ORDER BY day, user_id
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_rows
+          FROM daily_steps
+          WHERE user_id IN (12, 21)
+            AND day BETWEEN '2024-03-01' AND '2024-03-04'
+          ORDER BY day, user_id;
+        after: |
+          On 2024-03-01 both users show **14,099** in `running_default` (6,130 + 7,969). They are peers, so each one's frame includes the other.
+
+          `running_rows` goes up one row at a time: 6,130, then 14,099. Same final totals, but each row now has its own step on the staircase.
+
+      - type: quiz
+        id: m11-l02-q1
+        question: |
+          Why does `SUM(steps) OVER (ORDER BY day)` show the same value on two rows with the same `day`?
+        options:
+          - "It is a PostgreSQL bug"
+          - "The default frame is RANGE, so rows with the same day are peers and share one frame"
+          - "SUM ignores duplicate days"
+          - "ORDER BY removes one of the rows"
+        answer: 1
+        explanation: |
+          The default frame is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. `RANGE` includes **all peers** of the current row (rows with the same sort value), so peers always get the same running total.
+
+      - type: read
+        title: Three ways to measure a frame
+        md: |
+          So far you used `ROWS`. There are three frame modes:
+
+          | Mode | Counts in... | Example |
+          |---|---|---|
+          | `ROWS` | physical **rows** | `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW` |
+          | `RANGE` | **distance in value** (for example days) | `RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW` |
+          | `GROUPS` | **groups of peers** (rows with equal sort values) | `GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW` |
+
+          And here is what you get when you do **not** write a frame:
+
+          - **No `ORDER BY`** in `OVER`: the frame is the **whole partition**.
+          - **With `ORDER BY`**: the frame is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` (the default).
+
+          > [!MISTAKE]
+          > Running totals over a column with duplicates (like a date shared by many rows) will give the same total to all rows of that date. If you want a strict row-by-row total, add a tie-breaker to `ORDER BY` and write `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
+
+      - type: exercise
+        id: m11-l02-e1
+        title: The default running total
+        prompt: |
+          For users **6** and **23**, days **2024-03-01 to 2024-03-04**, show `day`, `user_id`, `steps` and `running_steps`: the running total of `steps` by `day`, using the default frame and no tie-breaker (`day` is the only column the window follows).
+        starter: |
+          SELECT day, user_id, steps
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-04'
+          ORDER BY day, user_id;
+        solution: |
+          SELECT
+              day,
+              user_id,
+              steps,
+              SUM(steps) OVER (ORDER BY day) AS running_steps
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-04'
+          ORDER BY day, user_id;
+        hints:
+          - You want a running total, so you need SUM as a window function.
+          - "Use SUM(steps) OVER (ORDER BY day). Do not add a frame - the default is what we want here."
+          - "SUM(steps) OVER (ORDER BY ___) AS running_steps"
+        explanation: |
+          Both users share each day, so you get 8 rows in 4 pairs. Each pair shows the same total, for example 14,514 on 2024-03-01 (8,089 + 6,425).
+        difficulty: 1
+
+      - type: predict
+        id: m11-l02-p1
+        question: |
+          Look at this tiny table: two rows on 1 March and one on 2 March. What are the three values of `running`, from top to bottom?
+        sql: |
+          SELECT
+              day,
+              SUM(steps) OVER (ORDER BY day) AS running
+          FROM (VALUES
+              ('2024-03-01'::date, 100),
+              ('2024-03-01'::date, 50),
+              ('2024-03-02'::date, 10)
+          ) AS t(day, steps);
+        options:
+          - "100, 150, 160"
+          - "150, 150, 160"
+          - "100, 50, 10"
+          - "150, 100, 160"
+        answer: 1
+        explanation: |
+          The two 1 March rows are peers, so both frames contain 100 + 50 = **150**. The 2 March row adds 10 on top: **160**.
+
+          The `(VALUES ...) AS t(day, steps)` trick builds a little table on the spot, which is handy for experiments.
+
+      - type: exercise
+        id: m11-l02-e2
+        title: One row at a time
+        prompt: |
+          Same users (**6** and **23**) and days (**2024-03-01 to 2024-03-04**). This time show `day`, `user_id`, `steps` and `running_rows`: a running total that adds **one row at a time**.
+
+          Order the window by `day`, then `user_id`, and write the frame with `ROWS`.
+        starter: |
+          SELECT day, user_id, steps
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-04'
+          ORDER BY day, user_id;
+        solution: |
+          SELECT
+              day,
+              user_id,
+              steps,
+              SUM(steps) OVER (
+                  ORDER BY day, user_id
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS running_rows
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-04'
+          ORDER BY day, user_id;
+        hints:
+          - The window needs two sort columns so that no two rows are peers.
+          - "ORDER BY day, user_id and then ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW."
+          - "SUM(steps) OVER (ORDER BY day, ___ ROWS BETWEEN ___ PRECEDING AND CURRENT ROW) AS running_rows"
+        explanation: |
+          The tie-breaker `user_id` gives every row a unique spot, and `ROWS` adds one row per step. The first row shows only 8,089, the second 14,514, and so on.
+
+          Without the tie-breaker the order inside a day would be arbitrary, so always add one when you use `ROWS` on data with duplicates.
+        difficulty: 1
+
+      - type: read
+        title: RANGE with a distance
+        md: |
+          Now the superpower. With `RANGE` you can say how far back to look **in the units of the ORDER BY column**. For a date column that means days:
+
+          ```sql
+          AVG(steps) OVER (
+              ORDER BY day
+              RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                        AND CURRENT ROW
+          )
+          ```
+
+          This reads: *"all rows whose date is at most 6 days before mine."* That is a **7-day window**: today plus the previous six days.
+
+          Two rules: the `OVER` must have **exactly one** `ORDER BY` column, and the distance must match the column's type (an `INTERVAL` for dates and timestamps, a plain number for number columns).
+
+      - type: example
+        title: Missing days fool ROWS
+        md: |
+          User 88's tracker sometimes sends nothing, so some days are **missing**. Compare a "7-row" average (`ROWS`) with a "7-day" average (`RANGE`). The last column counts how many days the `RANGE` frame really contains.
+        sql: |
+          SELECT
+              day,
+              steps,
+              ROUND(AVG(steps) OVER (
+                  ORDER BY day
+                  ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+              )) AS avg_rows,
+              ROUND(AVG(steps) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                            AND CURRENT ROW
+              )) AS avg_range,
+              COUNT(*) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                            AND CURRENT ROW
+              ) AS days_in_range
+          FROM daily_steps
+          WHERE user_id = 88
+            AND day BETWEEN '2024-03-01' AND '2024-03-24'
+          ORDER BY day;
+        after: |
+          Look at **2024-03-18**. The row before it is 2024-03-13, five days earlier. `avg_rows` still takes seven *rows*, reaching all the way back to 2 March, so it averages stale data: **6,582**. `avg_range` only uses the days that really fall inside the last 7 calendar days (12, 13 and 18 March): **9,027**, and `days_in_range` says 3.
+
+          When data has gaps, `RANGE` with an interval is the honest "last 7 days".
+
+      - type: quiz
+        id: m11-l02-q2
+        question: |
+          You want "the total of the last 7 **calendar days**" and some days are missing from the table. Which frame is right?
+        options:
+          - "ROWS BETWEEN 6 PRECEDING AND CURRENT ROW"
+          - "RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW"
+          - "GROUPS BETWEEN 6 PRECEDING AND CURRENT ROW"
+          - "ROWS BETWEEN 7 PRECEDING AND CURRENT ROW"
+        answer: 1
+        explanation: |
+          Only `RANGE` with an interval measures **calendar distance**. `ROWS` and `GROUPS` count rows or groups, so missing days make them stretch further back in time than you intended.
+
+      - type: exercise
+        id: m11-l02-e3
+        title: A 7-day average
+        prompt: |
+          For user **12**, days **2024-03-01 to 2024-03-15**, show `day`, `steps` and `avg7`: the average steps over **the last 7 calendar days** (the day itself and the 6 days before), rounded to 1 decimal. Sort by `day`.
+
+          User 12 has several missing days, so choose the frame carefully.
+        starter: |
+          SELECT day, steps
+          FROM daily_steps
+          WHERE user_id = 12
+            AND day BETWEEN '2024-03-01' AND '2024-03-15'
+          ORDER BY day;
+        solution: |
+          SELECT
+              day,
+              steps,
+              ROUND(AVG(steps) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                            AND CURRENT ROW
+              ), 1) AS avg7
+          FROM daily_steps
+          WHERE user_id = 12
+            AND day BETWEEN '2024-03-01' AND '2024-03-15'
+          ORDER BY day;
+        ordered: true
+        hints:
+          - Missing days mean you should measure distance in days, not rows.
+          - "Use RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW."
+          - "ROUND(AVG(steps) OVER (ORDER BY day RANGE BETWEEN INTERVAL '___ days' PRECEDING AND CURRENT ROW), 1) AS avg7"
+        explanation: |
+          Only 6 rows exist in that period, but each average uses just the days that fall inside its own 7-day window. For example, on 12 March the window covers 6 to 12 March, so it averages the rows of 8, 11 and 12 March only.
+        difficulty: 2
+
+      - type: example
+        title: "A number is not an interval (expected error)"
+        md: |
+          What happens if you try a plain number as the distance on a date column? Run it and read the message.
+        expectError: true
+        sql: |
+          SELECT
+              day,
+              AVG(steps) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN 6 PRECEDING AND CURRENT ROW
+              ) AS avg7
+          FROM daily_steps
+          WHERE user_id = 88;
+        after: |
+          PostgreSQL says that `RANGE with offset PRECEDING/FOLLOWING is not supported for column type date and offset type integer`, and the hint says to cast the offset to an appropriate type.
+
+          Dates need an `INTERVAL` distance: `INTERVAL '6 days'`. (If you order by two columns, you get a different error: `RANGE with offset PRECEDING/FOLLOWING requires exactly one ORDER BY column`.)
+
+      - type: exercise
+        id: m11-l02-e4
+        title: Fix the 7-day total
+        prompt: |
+          This query should show, for user **88** between **2024-03-01 and 2024-03-24**, the `total7`: the total steps in the **last 7 calendar days** (the day and the 6 before). It uses `ROWS`, so on days after a gap it adds up steps from too long ago. Fix it.
+        starter: |
+          SELECT
+              day,
+              steps,
+              SUM(steps) OVER (
+                  ORDER BY day
+                  ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+              ) AS total7
+          FROM daily_steps
+          WHERE user_id = 88
+            AND day BETWEEN '2024-03-01' AND '2024-03-24'
+          ORDER BY day;
+        solution: |
+          SELECT
+              day,
+              steps,
+              SUM(steps) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                            AND CURRENT ROW
+              ) AS total7
+          FROM daily_steps
+          WHERE user_id = 88
+            AND day BETWEEN '2024-03-01' AND '2024-03-24'
+          ORDER BY day;
+        ordered: true
+        hints:
+          - The data has gaps, and `ROWS` counts rows, not days.
+          - Replace `ROWS` with `RANGE` and give the distance as an interval.
+          - "RANGE BETWEEN INTERVAL '___ days' PRECEDING AND CURRENT ROW"
+        explanation: |
+          With `RANGE ... INTERVAL '6 days'`, the total on 2024-03-18 only adds 12, 13 and 18 March (17,016 + 6,105 + 3,959 = 27,080) instead of seven stale rows.
+        difficulty: 2
+
+      - type: read
+        title: GROUPS - counting peer groups
+        md: |
+          The third mode, `GROUPS`, counts **groups of peers**. All rows with the same `ORDER BY` value form one group. `GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW` means: *"my group and the group just before it"*.
+
+          With `ORDER BY day`, one group = one day (even if five users have a row on that day). So `GROUPS` is the way to say "today and yesterday" for **many rows per day**, without ever splitting a day in half like `ROWS` can.
+
+          > [!NOTE]
+          > `GROUPS` counts groups that *exist*. If a day has no rows at all, it is not a group, so `GROUPS` skips straight over it. For true calendar distance you still need `RANGE` with an interval.
+
+      - type: example
+        title: Today and the previous day
+        md: |
+          Users 12 and 21, 1 to 6 March. Notice that on 3 March only user 21 has a row. `two_day_total` uses `GROUPS`; `rows_total` uses `ROWS` for comparison.
+        sql: |
+          SELECT
+              day,
+              user_id,
+              steps,
+              SUM(steps) OVER (
+                  ORDER BY day
+                  GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW
+              ) AS two_day_total,
+              SUM(steps) OVER (
+                  ORDER BY day, user_id
+                  ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+              ) AS rows_total
+          FROM daily_steps
+          WHERE user_id IN (12, 21)
+            AND day BETWEEN '2024-03-01' AND '2024-03-06'
+          ORDER BY day, user_id;
+        after: |
+          `two_day_total` is the same for both rows of a day, because both rows see the same two day-groups. On 2024-03-02 it is 27,307 (all four rows of 1 and 2 March). On 2024-03-03 it is 23,035: the two rows of 2 March plus the single row of 3 March.
+
+          `rows_total` only adds two *rows*, so it splits days in half and gives different answers inside one day.
+
+      - type: exercise
+        id: m11-l02-e5
+        title: Two-day group total
+        prompt: |
+          For users **6** and **23**, days **2024-03-01 to 2024-03-05**, show `day`, `user_id`, `steps` and `two_day_total`: the total steps of **all rows of this day and of the previous day** (use a `GROUPS` frame that follows `day`).
+        starter: |
+          SELECT day, user_id, steps
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-05'
+          ORDER BY day, user_id;
+        solution: |
+          SELECT
+              day,
+              user_id,
+              steps,
+              SUM(steps) OVER (
+                  ORDER BY day
+                  GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW
+              ) AS two_day_total
+          FROM daily_steps
+          WHERE user_id IN (6, 23)
+            AND day BETWEEN '2024-03-01' AND '2024-03-05'
+          ORDER BY day, user_id;
+        hints:
+          - You need a frame that counts day-groups, not rows.
+          - "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW, with ORDER BY day only."
+          - "SUM(steps) OVER (ORDER BY day GROUPS BETWEEN ___ PRECEDING AND CURRENT ROW) AS two_day_total"
+        explanation: |
+          Each day-group has two rows (one per user), so a frame of "this group and the one before" contains four rows, except on the first day where there is no earlier group.
+        difficulty: 2
+
+      - type: read
+        title: Leaving rows out with EXCLUDE
+        md: |
+          Sometimes you want to compare a row with its **neighbours**, without counting the row itself. After the frame you can add an `EXCLUDE` option:
+
+          | Option | Leaves out |
+          |---|---|
+          | `EXCLUDE NO OTHERS` | nothing (the default) |
+          | `EXCLUDE CURRENT ROW` | the current row |
+          | `EXCLUDE GROUP` | the current row **and its peers** |
+          | `EXCLUDE TIES` | the peers, but keeps the current row |
+
+          The most useful one by far is `EXCLUDE CURRENT ROW`.
+
+      - type: example
+        title: How does a day compare with its neighbours?
+        md: |
+          For user 88 in March, compare each day with the average of the **other** days within 3 days either side.
+        sql: |
+          SELECT
+              day,
+              steps,
+              ROUND(AVG(steps) OVER (
+                  ORDER BY day
+                  RANGE BETWEEN INTERVAL '3 days' PRECEDING
+                            AND INTERVAL '3 days' FOLLOWING
+                  EXCLUDE CURRENT ROW
+              )) AS others_avg
+          FROM daily_steps
+          WHERE user_id = 88
+            AND day BETWEEN '2024-03-08' AND '2024-03-15'
+          ORDER BY day;
+        after: |
+          On 2024-03-12 the user walked **17,016** steps, while the other days within 3 days averaged only about **5,163**: a clear spike.
+
+          Without `EXCLUDE CURRENT ROW`, the spike itself would pull the average up and hide how unusual it is.
+
+      - type: exercise
+        id: m11-l02-e6
+        title: Spot the spikes
+        prompt: |
+          For user **88** (all dates), find the days where `steps` was **more than twice** the average of the **other days within 3 days before or after** (use `RANGE` with intervals and `EXCLUDE CURRENT ROW`).
+
+          Show `day` and `steps`, sorted by `day`. Remember: a window function cannot be used in `WHERE`, so calculate it in a CTE first.
+        starter: |
+          WITH with_others AS (
+              SELECT day, steps
+              FROM daily_steps
+              WHERE user_id = 88
+          )
+          SELECT day, steps
+          FROM with_others
+          ORDER BY day;
+        solution: |
+          WITH with_others AS (
+              SELECT
+                  day,
+                  steps,
+                  AVG(steps) OVER (
+                      ORDER BY day
+                      RANGE BETWEEN INTERVAL '3 days' PRECEDING
+                                AND INTERVAL '3 days' FOLLOWING
+                      EXCLUDE CURRENT ROW
+                  ) AS others_avg
+              FROM daily_steps
+              WHERE user_id = 88
+          )
+          SELECT day, steps
+          FROM with_others
+          WHERE steps > 2 * others_avg
+          ORDER BY day;
+        ordered: true
+        hints:
+          - Add the "average of the other days" as a column inside the CTE, then filter in the main query.
+          - "Use AVG(steps) OVER (ORDER BY day RANGE BETWEEN INTERVAL '3 days' PRECEDING AND INTERVAL '3 days' FOLLOWING EXCLUDE CURRENT ROW)."
+          - "SELECT day, steps FROM with_others WHERE steps > 2 * ___ ORDER BY day;"
+        explanation: |
+          Two days stand out: 2024-03-12 (17,016 steps) and 2024-03-24 (12,504 steps).
+
+          The filter lives in the outer query because window functions are calculated *after* `WHERE`. Lesson 5 explains this properly.
+        difficulty: 3
+
+      - type: fill
+        id: m11-l02-f1
+        prompt: Complete the frame to get a **14-day** moving total (the day itself plus the 13 days before).
+        template: |
+          SELECT
+              day,
+              SUM(steps) OVER (
+                  ORDER BY day
+                  ___ BETWEEN ___ '13 days' PRECEDING
+                          AND CURRENT ROW
+              ) AS total14
+          FROM daily_steps
+          WHERE user_id = 12;
+        answers:
+          - ["RANGE"]
+          - ["INTERVAL"]
+        explanation: |
+          `RANGE BETWEEN INTERVAL '13 days' PRECEDING AND CURRENT ROW` covers 14 calendar days: 13 before plus the day itself.
+
+      - type: exercise
+        id: m11-l02-e7
+        title: Team rolling week
+        prompt: |
+          First total the steps of **all users together for each day** (`total_steps`). Then add `week_total`: the total of `total_steps` over the **last 7 calendar days** (the day and the 6 before).
+
+          Show `day`, `total_steps` and `week_total` only for the days **2024-05-26 to 2024-05-31**, sorted by `day`. The rolling week must look at the days before 26 May too, so filter the days **after** calculating the window.
+        starter: |
+          WITH daily AS (
+              SELECT day, SUM(steps) AS total_steps
+              FROM daily_steps
+              GROUP BY day
+          )
+          SELECT day, total_steps
+          FROM daily
+          ORDER BY day;
+        solution: |
+          WITH daily AS (
+              SELECT day, SUM(steps) AS total_steps
+              FROM daily_steps
+              GROUP BY day
+          ),
+          rolling AS (
+              SELECT
+                  day,
+                  total_steps,
+                  SUM(total_steps) OVER (
+                      ORDER BY day
+                      RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                                AND CURRENT ROW
+                  ) AS week_total
+              FROM daily
+          )
+          SELECT day, total_steps, week_total
+          FROM rolling
+          WHERE day >= '2024-05-26'
+          ORDER BY day;
+        ordered: true
+        hints:
+          - You need two steps - daily totals, then a window over those totals. Two CTEs are a clean way to do it.
+          - "In the second CTE: SUM(total_steps) OVER (ORDER BY day RANGE BETWEEN INTERVAL '6 days' PRECEDING AND CURRENT ROW). Filter on day in the final SELECT."
+          - "SELECT day, total_steps, week_total FROM rolling WHERE day >= '___' ORDER BY day;"
+        explanation: |
+          If you filtered `WHERE day >= '2024-05-26'` *before* the window, the first rows would have almost nothing to add up. By filtering last, 26 May still sees 20 to 25 May.
+
+          Rule of thumb: windows look at the rows that survive `WHERE`, so filter on window results (or on the days feeding them) in an outer query.
+        difficulty: 3
+
+      - type: read
+        title: Which frame should I use?
+        md: |
+          You now have all three tools. A quick decision guide:
+
+          - Data is **one row per period with no gaps** (months, a complete daily series): `ROWS` is simple and fast.
+          - You want **a real time distance** ("last 7 days", "within 30 minutes"): `RANGE` with an interval.
+          - You want to count **distinct values** ("this day and the previous day", many rows per day): `GROUPS`.
+          - You want to compare a row with others but not itself: add `EXCLUDE CURRENT ROW`.
+
+          > [!REAL-WORLD]
+          > "Rolling 7-day active users" and "30-day revenue" dashboards almost always use `RANGE` with an interval, precisely because real data has missing days.
+    cheatsheet:
+      - title: The default frame
+        sql: |
+          -- ORDER BY with no frame means:
+          RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        note: Rows with the same ORDER BY value (peers) share one frame. No ORDER BY means the whole partition.
+      - title: Last 7 calendar days
+        sql: |
+          SUM(x) OVER (
+              ORDER BY day
+              RANGE BETWEEN INTERVAL '6 days' PRECEDING
+                        AND CURRENT ROW
+          )
+        note: One ORDER BY column only. Use an INTERVAL for date or timestamp columns.
+      - title: GROUPS and EXCLUDE
+        sql: |
+          GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW
+          ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING
+              EXCLUDE CURRENT ROW
+        note: GROUPS counts groups of equal sort values. EXCLUDE CURRENT ROW compares a row with its neighbours.
+  - id: m11-l03
+    title: "FIRST_VALUE, LAST_VALUE, NTH_VALUE"
+    summary: Pick the first, last or n-th value from a window, and escape the famous LAST_VALUE trap.
+    minutes: 30
+    dataset: movies
+    steps:
+      - type: read
+        title: How does this film compare with the best one?
+        md: |
+          FlickNest's editors are building a "shelf" page. Next to each recent film they want to show **the best-earning film with the same age rating**, and how far behind this film is.
+
+          You already know how to rank rows. This time you need to **reach into the window and grab one value**, such as the title of the film at the top. Three functions do exactly that:
+
+          | Function | Returns |
+          |---|---|
+          | `FIRST_VALUE(x)` | `x` from the **first** row of the frame |
+          | `LAST_VALUE(x)` | `x` from the **last** row of the frame |
+          | `NTH_VALUE(x, n)` | `x` from the **n-th** row of the frame |
+
+          > [!ANALOGY]
+          > Imagine the films of one age rating lined up on a shelf, best-earner on the left. `FIRST_VALUE` says "read me the label on the leftmost film", and every film on the shelf gets to know that label.
+
+          Today's films are the 15 movies released in **2020 or later**. We use `PARTITION BY age_rating` so each rating has its own shelf.
+
+      - type: example
+        title: The top earner in each rating
+        md: |
+          We only keep films with a known `box_office_musd` for now (it is in millions of US dollars).
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              FIRST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC
+              ) AS top_film
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        after: |
+          13 films. Inside each age rating, the first row is the highest earner, and `top_film` repeats its title on every row of the group:
+
+          - **PG**: Moonwalk Motel (761.6)
+          - **PG-13**: Jungle Express 1912 (116.7)
+          - **R**: The Quiet Cellar (77.3)
+
+          Notice how no rows disappeared. Unlike `GROUP BY`, a window function keeps every film and just adds a column.
+
+      - type: exercise
+        id: m11-l03-e1
+        title: The longest film in each rating
+        prompt: |
+          For all films released in **2020 or later**, show `title`, `age_rating`, `duration_min` and `longest_film`: the title of the **longest** film with the same age rating.
+
+          Inside each rating, line the films up from the longest to the shortest and use `movie_id` as the tie-breaker.
+        starter: |
+          SELECT title, age_rating, duration_min
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY age_rating, duration_min DESC, movie_id;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              FIRST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              ) AS longest_film
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY age_rating, duration_min DESC, movie_id;
+        hints:
+          - You want a title from the first row of each age rating, when the rows are sorted longest-first.
+          - "Use FIRST_VALUE(title) OVER (PARTITION BY age_rating ORDER BY duration_min DESC, movie_id)."
+          - "FIRST_VALUE(title) OVER (PARTITION BY ___ ORDER BY duration_min ___, movie_id) AS longest_film"
+        explanation: |
+          15 rows. The longest 2020+ films are The Last Terraformer (PG, 126 min), Operation Glass Meridian (PG-13, 140 min) and Velocity Falls (R, 116 min).
+
+          The window's `ORDER BY` decides what "first" means. Flip it to `ASC` and you would get the shortest film instead.
+        difficulty: 1
+
+      - type: example
+        title: How far behind the best?
+        md: |
+          Because `FIRST_VALUE` can return any column, you can use it in arithmetic. Here we compare each film's earnings with the top film's earnings.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd AS earned,
+              ROUND(
+                  FIRST_VALUE(box_office_musd) OVER w - box_office_musd,
+                  1
+              ) AS gap_to_top,
+              ROUND(
+                  100 * box_office_musd
+                  / FIRST_VALUE(box_office_musd) OVER w,
+                  1
+              ) AS pct_of_top
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          WINDOW w AS (
+              PARTITION BY age_rating
+              ORDER BY box_office_musd DESC
+          )
+          ORDER BY age_rating, box_office_musd DESC;
+        after: |
+          The top film in each rating has `gap_to_top` 0 and `pct_of_top` 100. In the PG group, Embers of the Wolf Crown earned 374.3, which is **49.1%** of Moonwalk Motel's 761.6.
+
+          (The `WINDOW w AS (...)` line at the bottom just gives the window a name, so we do not have to write it twice. You will learn it properly in lesson 5.)
+
+      - type: read
+        title: The NULL trap
+        md: |
+          Remember from module 3: in PostgreSQL, **`NULL` sorts first when you sort `DESC`**. Some films have an unknown box office, so with `ORDER BY box_office_musd DESC` those NULL rows would come *first*, and `FIRST_VALUE` would happily pick one of them as the "top" film.
+
+          > [!MISTAKE]
+          > Sorting `DESC` and forgetting `NULLS LAST` puts the unknown values at the front of the line. `FIRST_VALUE` then returns a film with **no** box office number. Add `NULLS LAST`, or filter the NULLs out first.
+
+          Let's see this go wrong, on purpose.
+
+      - type: example
+        title: A top film with no earnings
+        md: |
+          This time we keep every 2020+ film, including two PG-13 films whose box office is unknown.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              FIRST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC, movie_id
+              ) AS top_film
+          FROM movies
+          WHERE release_year >= 2020
+            AND age_rating = 'PG-13'
+          ORDER BY box_office_musd DESC, movie_id;
+        after: |
+          For PG-13 the "top film" is **Dragon of the Salt Marsh**, a film whose box office is `NULL`. That is clearly not the best earner. The NULL rows sit at the top of the `DESC` order, so they win.
+
+          The fix is one word: `ORDER BY box_office_musd DESC NULLS LAST`.
+
+      - type: exercise
+        id: m11-l03-e2
+        title: Fix the top film
+        prompt: |
+          This query should show, for every film released in **2020 or later** (NULL box offices included), the title of the highest-earning film with the same age rating as `top_film`. For PG-13 it currently names a film with an unknown box office. Fix it.
+
+          Keep `movie_id` as the last tie-breaker inside the window.
+        starter: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              FIRST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC, movie_id
+              ) AS top_film
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY age_rating, box_office_musd DESC NULLS LAST, movie_id;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              FIRST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC NULLS LAST, movie_id
+              ) AS top_film
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY age_rating, box_office_musd DESC NULLS LAST, movie_id;
+        hints:
+          - The problem is where NULLs land when you sort descending.
+          - Add NULLS LAST right after DESC in the window's ORDER BY.
+          - "ORDER BY box_office_musd DESC ___ ___, movie_id"
+        explanation: |
+          With `NULLS LAST`, the PG-13 shelf starts with Jungle Express 1912 (116.7), and the two unknown films sit at the end. Always think about NULLs when a window's `ORDER BY` decides which row is first or last.
+        difficulty: 2
+
+      - type: read
+        title: LAST_VALUE - the plot twist
+        md: |
+          `LAST_VALUE` is the mirror image of `FIRST_VALUE`, so you would expect it to return the title of the film at the **end** of the shelf: the lowest earner. Let's try it, with exactly the same window.
+
+      - type: example
+        title: LAST_VALUE does something strange
+        md: Compare `top_film` and `last_film`.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              FIRST_VALUE(title) OVER w AS top_film,
+              LAST_VALUE(title) OVER w AS last_film
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          WINDOW w AS (
+              PARTITION BY age_rating
+              ORDER BY box_office_musd DESC
+          )
+          ORDER BY age_rating, box_office_musd DESC;
+        after: |
+          `last_film` is simply the **same title as the row itself**. It is not the lowest earner at all! Every row says "I am the last one".
+
+          Is it broken? No, and the reason is the default frame you met in the last lesson.
+
+      - type: read
+        title: Why LAST_VALUE fails
+        md: |
+          When a window has `ORDER BY` but no frame, the frame is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. It starts at the top of the group and **ends at the current row**.
+
+          So the "last row of the frame" is always... the current row (or its last peer). `LAST_VALUE` is doing its job perfectly, but you have only shown it a small part of the group.
+
+          > [!MISTAKE]
+          > Using `LAST_VALUE` with the default frame returns the current row's own value. To see the real last row of the whole group, widen the frame: `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+          There are two cures. You can **widen the frame**, or you can **flip the sort order** and use `FIRST_VALUE` instead. The stepper below shows all three versions side by side.
+
+      - type: stepper
+        title: Fixing LAST_VALUE
+        md: |
+          Run each stage and watch the `lowest_earner` column.
+        stages:
+          - label: "1. The trap"
+            md: With the default frame, `LAST_VALUE` just echoes the current title.
+            sql: |
+              SELECT
+                  title,
+                  age_rating,
+                  box_office_musd,
+                  LAST_VALUE(title) OVER (
+                      PARTITION BY age_rating
+                      ORDER BY box_office_musd DESC
+                  ) AS lowest_earner
+              FROM movies
+              WHERE release_year >= 2020
+                AND box_office_musd IS NOT NULL
+              ORDER BY age_rating, box_office_musd DESC;
+          - label: "2. Widen the frame"
+            md: |
+              Now the frame covers the **whole partition**, so the last row is the real last row: the lowest earner.
+            sql: |
+              SELECT
+                  title,
+                  age_rating,
+                  box_office_musd,
+                  LAST_VALUE(title) OVER (
+                      PARTITION BY age_rating
+                      ORDER BY box_office_musd DESC
+                      ROWS BETWEEN UNBOUNDED PRECEDING
+                               AND UNBOUNDED FOLLOWING
+                  ) AS lowest_earner
+              FROM movies
+              WHERE release_year >= 2020
+                AND box_office_musd IS NOT NULL
+              ORDER BY age_rating, box_office_musd DESC;
+          - label: "3. Flip the sort"
+            md: |
+              Sort the other way (lowest first) and ask for the **first** row. Same answer, no wide frame needed. `FIRST_VALUE` always works with the default frame, because the frame always starts at the top.
+            sql: |
+              SELECT
+                  title,
+                  age_rating,
+                  box_office_musd,
+                  FIRST_VALUE(title) OVER (
+                      PARTITION BY age_rating
+                      ORDER BY box_office_musd ASC
+                  ) AS lowest_earner
+              FROM movies
+              WHERE release_year >= 2020
+                AND box_office_musd IS NOT NULL
+              ORDER BY age_rating, box_office_musd DESC;
+
+      - type: predict
+        id: m11-l03-p1
+        question: |
+          Only two R-rated films are from 2020 or later. What does `last_title` show on the **first** row (the longest film, Velocity Falls)?
+        sql: |
+          SELECT
+              title,
+              duration_min,
+              LAST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              ) AS last_title
+          FROM movies
+          WHERE release_year >= 2020
+            AND age_rating = 'R'
+          ORDER BY duration_min DESC, movie_id;
+        options:
+          - "The Quiet Cellar, the shortest film"
+          - "Velocity Falls, the row's own title"
+          - "NULL"
+          - "An error"
+        answer: 1
+        explanation: |
+          With the default frame, the frame of the first row ends at the first row itself. So `LAST_VALUE` gives back **Velocity Falls**. Only on the second row would you see The Quiet Cellar, and that is just because it is also that row's own title.
+
+      - type: quiz
+        id: m11-l03-q1
+        question: |
+          Which change makes `LAST_VALUE(title) OVER (PARTITION BY age_rating ORDER BY box_office_musd DESC)` return the title of the film at the end of the group on every row?
+        options:
+          - "Add DISTINCT before LAST_VALUE"
+          - "Add ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING to the window"
+          - "Remove PARTITION BY"
+          - "Change DESC to ASC"
+        answer: 1
+        explanation: |
+          Widening the frame to the whole partition is the fix. (Changing DESC to ASC would also turn the "last row" into a different row, but it would still be the current row for the default frame, so the trap remains.)
+
+      - type: exercise
+        id: m11-l03-e3
+        title: The lowest earner
+        prompt: |
+          For films released in **2020 or later** with a known `box_office_musd`, show `title`, `age_rating`, `box_office_musd` and `lowest_earner`: the title of the film with the **lowest** box office in the same age rating.
+
+          Use `LAST_VALUE` with a window that lines the films up by `box_office_musd DESC`, and make sure the frame is wide enough.
+        starter: |
+          SELECT title, age_rating, box_office_musd
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              LAST_VALUE(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC
+                  ROWS BETWEEN UNBOUNDED PRECEDING
+                           AND UNBOUNDED FOLLOWING
+              ) AS lowest_earner
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        hints:
+          - The default frame stops at the current row, so it cannot see the end of the group.
+          - Add ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING after the ORDER BY inside OVER.
+          - "LAST_VALUE(title) OVER (PARTITION BY age_rating ORDER BY box_office_musd DESC ROWS BETWEEN UNBOUNDED PRECEDING AND ___ ___) AS lowest_earner"
+        explanation: |
+          PG: Rain Over Valparaiso (17.9), PG-13: The Hungry Lighthouse (10.5), R: Velocity Falls (28.2). Every row in a group now shows the same lowest earner.
+        difficulty: 2
+
+      - type: read
+        title: NTH_VALUE - the second place
+        md: |
+          `NTH_VALUE(x, n)` returns `x` from the **n-th row of the frame**. `NTH_VALUE(title, 2)` is the runner-up.
+
+          It suffers from the same frame trap as `LAST_VALUE`, in a gentler form: with the default frame, a row can only see rows up to itself. So the **first row** of each group does not yet have a second row in its frame, and gets `NULL`.
+
+      - type: example
+        title: The runner-up
+        md: |
+          `narrow` uses the default frame, `wide` uses the full frame. Compare them on the top row of each group.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              NTH_VALUE(title, 2) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC
+              ) AS narrow,
+              NTH_VALUE(title, 2) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC
+                  ROWS BETWEEN UNBOUNDED PRECEDING
+                           AND UNBOUNDED FOLLOWING
+              ) AS wide
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        after: |
+          In `narrow`, the first film of each rating shows `NULL` (its frame only contains itself). In `wide`, every row sees the runner-up: Embers of the Wolf Crown for PG, Twelve Grandmas and a Goat for PG-13, Velocity Falls for R.
+
+          > A group with only one row would have no second film, so `NTH_VALUE(title, 2)` would be NULL there too.
+
+      - type: exercise
+        id: m11-l03-e4
+        title: The runner-up film
+        prompt: |
+          For films released in **2020 or later** with a known `box_office_musd`, show `title`, `age_rating`, `box_office_musd` and `second_best`: the title of the **second-highest-earning** film in the same age rating, visible on every row of the group.
+        starter: |
+          SELECT title, age_rating, box_office_musd
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd,
+              NTH_VALUE(title, 2) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC
+                  ROWS BETWEEN UNBOUNDED PRECEDING
+                           AND UNBOUNDED FOLLOWING
+              ) AS second_best
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        hints:
+          - The function that picks the n-th row is NTH_VALUE(column, n).
+          - Every row must see the runner-up, so use the full frame ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING.
+          - "NTH_VALUE(title, ___) OVER (PARTITION BY age_rating ORDER BY box_office_musd DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS second_best"
+        explanation: |
+          Without the wide frame, the top film of each rating would show NULL. Rule of thumb: for `LAST_VALUE` and `NTH_VALUE`, always write the frame explicitly.
+        difficulty: 2
+
+      - type: example
+        title: "Position 0 does not exist (expected error)"
+        md: |
+          Counting starts at **1**. What if you ask for position 0?
+        expectError: true
+        sql: |
+          SELECT
+              title,
+              NTH_VALUE(title, 0) OVER (ORDER BY movie_id) AS zeroth
+          FROM movies;
+        after: |
+          PostgreSQL says `argument of nth_value must be greater than zero`. The first row is number 1, the same as in everyday counting.
+
+          > [!NOTE]
+          > Some other databases let you write `NTH_VALUE(x, 2) FROM LAST` or `IGNORE NULLS`. PostgreSQL 18 does not support those options. To count from the end, flip the `ORDER BY`.
+
+      - type: fill
+        id: m11-l03-f1
+        prompt: Complete the query so every film shows the title of the **shortest** film (by `duration_min`) of the same age rating among films from 2020 on.
+        template: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ___(title) OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+                  ROWS BETWEEN UNBOUNDED PRECEDING
+                           AND ___ ___
+              ) AS shortest_film
+          FROM movies
+          WHERE release_year >= 2020;
+        answers:
+          - ["LAST_VALUE"]
+          - ["UNBOUNDED"]
+          - ["FOLLOWING"]
+        explanation: |
+          Sorted longest first, the shortest film is the **last** row, so we need `LAST_VALUE`. The frame must stretch to `UNBOUNDED FOLLOWING` so every row can see it.
+
+      - type: exercise
+        id: m11-l03-e5
+        title: First and latest rating
+        prompt: |
+          Which direction do a user's tastes go? For users **3** and **5**, show `user_id`, `rated_at`, `stars`, `first_stars` (the `stars` of that user's **first** rating ever) and `latest_stars` (the `stars` of that user's **most recent** rating).
+
+          Sort the result by `user_id`, then `rated_at`.
+        starter: |
+          SELECT user_id, rated_at, stars
+          FROM ratings
+          WHERE user_id IN (3, 5)
+          ORDER BY user_id, rated_at;
+        solution: |
+          SELECT
+              user_id,
+              rated_at,
+              stars,
+              FIRST_VALUE(stars) OVER (
+                  PARTITION BY user_id
+                  ORDER BY rated_at
+              ) AS first_stars,
+              LAST_VALUE(stars) OVER (
+                  PARTITION BY user_id
+                  ORDER BY rated_at
+                  ROWS BETWEEN UNBOUNDED PRECEDING
+                           AND UNBOUNDED FOLLOWING
+              ) AS latest_stars
+          FROM ratings
+          WHERE user_id IN (3, 5)
+          ORDER BY user_id, rated_at;
+        ordered: true
+        hints:
+          - Each user is a partition, and time (rated_at) decides what "first" and "latest" mean.
+          - FIRST_VALUE works with the default frame; LAST_VALUE needs the frame that reaches UNBOUNDED FOLLOWING.
+          - "FIRST_VALUE(stars) OVER (PARTITION BY user_id ORDER BY rated_at) AS first_stars, LAST_VALUE(stars) OVER (PARTITION BY user_id ORDER BY ___ ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS latest_stars"
+        explanation: |
+          User 3 started at 4.5 stars and most recently gave 5.0; user 5 started at 2.0 and most recently gave 4.0. Each user's values repeat on all of their rows.
+
+          Because `rated_at` is unique, there is no tie to worry about.
+        difficulty: 2
+
+      - type: parsons
+        id: m11-l03-o1
+        prompt: Arrange the lines to show each film next to the title of the top-earning film of its age rating (films from 2020 on, known box office).
+        lines:
+          - SELECT title, age_rating, box_office_musd,
+          - "       FIRST_VALUE(title) OVER ("
+          - "           PARTITION BY age_rating"
+          - "           ORDER BY box_office_musd DESC"
+          - "       ) AS top_film"
+          - FROM movies
+          - WHERE release_year >= 2020
+          - "  AND box_office_musd IS NOT NULL"
+          - ORDER BY age_rating, box_office_musd DESC;
+        explanation: |
+          The window sits inside the SELECT list. `PARTITION BY` comes before `ORDER BY` inside `OVER (...)`. `WHERE` filters the rows before the window runs.
+
+      - type: exercise
+        id: m11-l03-e6
+        title: Best, worst and how close
+        prompt: |
+          For films released in **2020 or later** with a known `box_office_musd`, show:
+
+          - `title` and `age_rating`
+          - `best_film`: the highest-earning film of the same age rating
+          - `worst_film`: the lowest-earning film of the same age rating
+          - `pct_of_best`: this film's box office as a percentage of the best film's, rounded to 1 decimal
+
+          Sort by `age_rating`, then by `box_office_musd` descending.
+        starter: |
+          SELECT title, age_rating
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              FIRST_VALUE(title) OVER w AS best_film,
+              LAST_VALUE(title) OVER (
+                  w ROWS BETWEEN UNBOUNDED PRECEDING
+                             AND UNBOUNDED FOLLOWING
+              ) AS worst_film,
+              ROUND(
+                  100 * box_office_musd
+                  / FIRST_VALUE(box_office_musd) OVER w,
+                  1
+              ) AS pct_of_best
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          WINDOW w AS (
+              PARTITION BY age_rating
+              ORDER BY box_office_musd DESC
+          )
+          ORDER BY age_rating, box_office_musd DESC;
+        ordered: true
+        hints:
+          - You need FIRST_VALUE twice (title and box office) and LAST_VALUE once. Only LAST_VALUE needs the wide frame.
+          - "Optional shortcut - define the window once with WINDOW w AS (PARTITION BY age_rating ORDER BY box_office_musd DESC) and write OVER w. For LAST_VALUE, extend it with OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING). Writing each window out in full works too."
+          - "ROUND(100 * box_office_musd / FIRST_VALUE(___) OVER w, 1) AS pct_of_best"
+        explanation: |
+          The named window `w` saves you from repeating the same `PARTITION BY ... ORDER BY ...` three times, and `OVER (w ROWS ...)` extends it with a frame for just one column. Lesson 5 explores this more.
+
+          Without the full frame, `worst_film` would just echo each row's own title.
+        difficulty: 3
+
+      - type: read
+        title: Your "pick a value" toolkit
+        md: |
+          You can now pull a value from anywhere in the window:
+
+          - `FIRST_VALUE` always works with the default frame, because the frame always starts at the top.
+          - `LAST_VALUE` and `NTH_VALUE` need `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` (or a flipped sort) to see the whole group.
+          - Sort with `NULLS LAST` when NULLs could be mistaken for "the biggest".
+
+          > [!REAL-WORLD]
+          > "Compare with the best/first/last" is everywhere: today's price versus the month's opening price (`FIRST_VALUE`), a customer's first and latest order channel, or the first page a visitor saw in a session.
+    cheatsheet:
+      - title: FIRST_VALUE
+        sql: |
+          FIRST_VALUE(title) OVER (
+              PARTITION BY age_rating
+              ORDER BY box_office_musd DESC NULLS LAST
+          )
+        note: The value from the first row of the frame. Works with the default frame.
+      - title: LAST_VALUE needs a full frame
+        sql: |
+          LAST_VALUE(title) OVER (
+              PARTITION BY age_rating
+              ORDER BY box_office_musd DESC
+              ROWS BETWEEN UNBOUNDED PRECEDING
+                       AND UNBOUNDED FOLLOWING
+          )
+        note: With the default frame it just returns the current row's value.
+      - title: NTH_VALUE
+        sql: |
+          NTH_VALUE(title, 2) OVER (
+              ORDER BY box_office_musd DESC
+              ROWS BETWEEN UNBOUNDED PRECEDING
+                       AND UNBOUNDED FOLLOWING
+          )
+        note: Counting starts at 1. NULL if the frame has fewer than n rows.
+  - id: m11-l04
+    title: "Distribution functions and percentiles"
+    summary: Split rows into buckets with NTILE, measure relative position with PERCENT_RANK and CUME_DIST, and find medians with PERCENTILE_CONT.
+    minutes: 32
+    dataset: movies
+    steps:
+      - type: read
+        title: Is 126 minutes long?
+        md: |
+          FlickNest's editors keep asking questions like *"Is this film long, or just normal?"* or *"Which films are in the top 10% by length?"*
+
+          Ranking (1st, 2nd, 3rd) does not answer that, because the answer depends on how many films there are. What you need is **relative position**: where does a row sit **compared with all the others**?
+
+          SQL gives you four tools for this:
+
+          | Tool | What it tells you |
+          |---|---|
+          | `NTILE(n)` | Which of n equal-sized **buckets** a row falls into |
+          | `PERCENT_RANK()` | How far up the list the row is, from 0 to 1 |
+          | `CUME_DIST()` | What share of rows are at or below this row |
+          | `PERCENTILE_CONT / DISC` | The **value** that sits at a given percentage (like the median) |
+
+          > [!ANALOGY]
+          > Think of exam results. "You scored in the top quarter" is `NTILE(4)`. "You did better than 80% of the class" is a percent rank. "The median score was 62" is a percentile value.
+
+      - type: example
+        title: Quartiles with NTILE
+        md: |
+          `NTILE(4)` deals the rows into 4 buckets, like dealing cards. Here the 15 films released in 2020 or later are sorted from shortest to longest, so bucket **1** holds the shortest films and bucket **4** the longest.
+        sql: |
+          SELECT
+              title,
+              duration_min,
+              NTILE(4) OVER (
+                  ORDER BY duration_min, movie_id
+              ) AS quartile
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY duration_min, movie_id;
+        after: |
+          15 films cannot be split into four equal piles. The first three buckets get **4 films** each and the last one gets **3**. NTILE gives the extra rows to the earliest buckets.
+
+          Look at the two 106-minute films. Because `NTILE` splits by **row count**, not by value, one lands in bucket 1 and the other in bucket 2. That is why the window also sorts by `movie_id`: a tie-breaker makes the split repeatable.
+
+      - type: predict
+        id: m11-l04-p1
+        question: |
+          The first 10 movies (`movie_id` 1 to 10) are split with `NTILE(3)`. How many movies land in bucket 1, bucket 2 and bucket 3?
+        sql: |
+          SELECT bucket, COUNT(*) AS films
+          FROM (
+              SELECT NTILE(3) OVER (ORDER BY movie_id) AS bucket
+              FROM movies
+              WHERE movie_id <= 10
+          ) AS t
+          GROUP BY bucket
+          ORDER BY bucket;
+        options:
+          - "3, 3, 4"
+          - "4, 3, 3"
+          - "4, 4, 2"
+          - "3, 4, 3"
+        answer: 1
+        explanation: |
+          10 divided by 3 is 3 with 1 left over. The leftover row goes to the **first** bucket, so the sizes are **4, 3, 3**.
+
+      - type: exercise
+        id: m11-l04-e1
+        title: Three price tiers
+        prompt: |
+          For films released in **2020 or later** with a known `box_office_musd`, show `title`, `box_office_musd` and `tier`: split the films into **3 tiers** with `NTILE`, where tier 1 holds the lowest earners and tier 3 the highest earners.
+        starter: |
+          SELECT title, box_office_musd
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY box_office_musd;
+        solution: |
+          SELECT
+              title,
+              box_office_musd,
+              NTILE(3) OVER (
+                  ORDER BY box_office_musd
+              ) AS tier
+          FROM movies
+          WHERE release_year >= 2020
+            AND box_office_musd IS NOT NULL
+          ORDER BY box_office_musd;
+        hints:
+          - NTILE takes the number of buckets in its parentheses.
+          - To make tier 1 the lowest earners, the window must sort by box_office_musd ascending.
+          - "NTILE(___) OVER (ORDER BY box_office_musd) AS tier"
+        explanation: |
+          13 films into 3 tiers: the sizes are 5, 4 and 4 (the leftover row goes to tier 1). No two films share the same box office, so there are no ties to worry about.
+        difficulty: 1
+
+      - type: read
+        title: PERCENT_RANK and CUME_DIST
+        md: |
+          Two functions turn a position into a number between 0 and 1:
+
+          - **`PERCENT_RANK()`** = (rank − 1) ÷ (number of rows − 1). It answers: *"what fraction of the **other** rows are below me?"* The first row is always **0**, the last is always **1**.
+          - **`CUME_DIST()`** ("cumulative distribution") = (rows up to and including my peers) ÷ (number of rows). It answers: *"what share of all rows are at or below me?"* It is never 0, and the last row is **1**.
+
+          Both give tied rows the same value.
+
+          > [!MISTAKE]
+          > `NTILE` splits by **row count**, not by value. Two rows with the same value can end up in different buckets unless your `ORDER BY` has a tie-breaker. `PERCENT_RANK` and `CUME_DIST` treat ties fairly: tied rows always get the same number.
+
+      - type: example
+        title: Three ways to say "where am I?"
+        md: |
+          Same 15 films, sorted by length. `rnk` is the plain rank for comparison.
+        sql: |
+          SELECT
+              title,
+              duration_min,
+              RANK() OVER w AS rnk,
+              ROUND((PERCENT_RANK() OVER w)::numeric, 2) AS pct_rank,
+              ROUND((CUME_DIST() OVER w)::numeric, 2) AS cume
+          FROM movies
+          WHERE release_year >= 2020
+          WINDOW w AS (ORDER BY duration_min)
+          ORDER BY duration_min, movie_id;
+        after: |
+          For the shortest film (95 min): `pct_rank` is **0.00** (nobody is below it) but `cume` is **0.07** (1 of 15 films is at or below it).
+
+          For the longest (140 min) both are **1.00**. The two 106-minute films share rank 4, `pct_rank` 0.21 and `cume` 0.33, because `CUME_DIST` counts both of them: 5 of 15 films are at or below 106.
+
+      - type: quiz
+        id: m11-l04-q1
+        question: |
+          Which statement about the **first** (lowest) row of the ordered list is true?
+        options:
+          - "PERCENT_RANK is 0 and CUME_DIST is greater than 0"
+          - "Both PERCENT_RANK and CUME_DIST are 0"
+          - "Both are 1"
+          - "PERCENT_RANK is 1 and CUME_DIST is 0"
+        answer: 0
+        explanation: |
+          `PERCENT_RANK` starts at exactly 0 (no rows below it). `CUME_DIST` counts the row itself, so it starts at 1 ÷ number of rows (a bit more than 0), and the last row is always 1 for both.
+
+      - type: exercise
+        id: m11-l04-e2
+        title: How far up the list?
+        prompt: |
+          For films released in **2020 or later**, show `title`, `duration_min` and `pct_rank`: the `PERCENT_RANK` of the film when lined up by `duration_min` (shortest first), **rounded to 2 decimals**.
+
+          Hint: window functions return a floating-point number, so cast to `numeric` before rounding.
+        starter: |
+          SELECT title, duration_min
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY duration_min, movie_id;
+        solution: |
+          SELECT
+              title,
+              duration_min,
+              ROUND(
+                  PERCENT_RANK() OVER (
+                      ORDER BY duration_min
+                  )::numeric,
+                  2
+              ) AS pct_rank
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY duration_min, movie_id;
+        hints:
+          - PERCENT_RANK() needs an empty pair of parentheses and an OVER clause.
+          - "Put ORDER BY duration_min inside OVER, then wrap everything in ROUND(... ::numeric, 2)."
+          - "ROUND(PERCENT_RANK() OVER (ORDER BY ___)::numeric, 2) AS pct_rank"
+        explanation: |
+          The shortest film gets 0.00 and the longest gets 1.00. Tied films get the same value, for example 0.21 for both 106-minute films.
+        difficulty: 2
+
+      - type: exercise
+        id: m11-l04-e3
+        title: The longest 10%
+        prompt: |
+          Among **all 110 movies**, find the films in the **top 10% by length**: those whose `CUME_DIST` (when sorted by `duration_min` from longest to shortest) is **0.1 or less**.
+
+          Show `title` and `duration_min`, longest first, then by `title`.
+
+          You cannot use a window function in `WHERE`, so calculate it in a CTE first.
+        starter: |
+          WITH ranked AS (
+              SELECT title, duration_min
+              FROM movies
+          )
+          SELECT title, duration_min
+          FROM ranked
+          ORDER BY duration_min DESC, title;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  title,
+                  duration_min,
+                  CUME_DIST() OVER (
+                      ORDER BY duration_min DESC
+                  ) AS cd
+              FROM movies
+          )
+          SELECT title, duration_min
+          FROM ranked
+          WHERE cd <= 0.1
+          ORDER BY duration_min DESC, title;
+        ordered: true
+        hints:
+          - Add the CUME_DIST column inside the CTE, then filter on it in the main query.
+          - "CUME_DIST() OVER (ORDER BY duration_min DESC) counts from the longest film down, so the top 10% have a value up to 0.1."
+          - "WITH ranked AS (SELECT title, duration_min, CUME_DIST() OVER (ORDER BY duration_min ___) AS cd FROM movies) SELECT title, duration_min FROM ranked WHERE cd <= ___ ORDER BY duration_min DESC, title;"
+        explanation: |
+          8 films qualify, from Neon Archive (150 min) down to The Cloud Cobbler (141 min). Because tied films share the same `CUME_DIST`, a tie can never be cut in half: both 145-minute films are in, or both are out.
+
+          This "filter on a window result using a CTE" pattern is the PostgreSQL stand-in for `QUALIFY`, which you will meet in lesson 5.
+        difficulty: 2
+
+      - type: read
+        title: Percentiles as values
+        md: |
+          `NTILE` and `CUME_DIST` tell you *where a row sits*. Sometimes you want the opposite: **"what value sits at the 90% mark?"**
+
+          That is a **percentile**. The 50th percentile is the **median**: half of the values are below it, half above. These two functions find it:
+
+          ```sql
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_min)
+          PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY duration_min)
+          ```
+
+          - `PERCENTILE_CONT` (continuous) **interpolates**: with an even number of values the median is the average of the two middle ones.
+          - `PERCENTILE_DISC` (discrete) returns an **actual value from the data**: the first one whose `CUME_DIST` reaches your fraction.
+
+          The fraction is a number between 0 and 1 (0.5 = median, 0.9 = 90th percentile). The sorting goes inside `WITHIN GROUP (ORDER BY ...)`.
+
+          > [!NOTE]
+          > These are **aggregate** functions, not window functions. They collapse rows into one value, so they pair with `GROUP BY`, not with `OVER`. For integer and decimal columns `PERCENTILE_CONT` returns a floating-point number, so cast to `numeric` before rounding.
+
+      - type: example
+        title: The median is not the average
+        md: |
+          Average, median (`CONT`) and median (`DISC`) of the film lengths, by age rating.
+        sql: |
+          SELECT
+              age_rating,
+              COUNT(*) AS films,
+              ROUND(AVG(duration_min), 1) AS avg_min,
+              PERCENTILE_CONT(0.5) WITHIN GROUP (
+                  ORDER BY duration_min
+              ) AS median_cont,
+              PERCENTILE_DISC(0.5) WITHIN GROUP (
+                  ORDER BY duration_min
+              ) AS median_disc
+          FROM movies
+          GROUP BY age_rating
+          ORDER BY age_rating;
+        after: |
+          The R-rated films (28 of them) have a `median_cont` of **110.5**, the average of the two middle films (109 and 112). `median_disc` shows **109**: an actual film length from the data, and the first value whose `CUME_DIST` reaches 0.5.
+
+          With an odd number of films (like PG with 31) both functions agree: **107**.
+
+      - type: example
+        title: CONT versus DISC on a tiny list
+        md: |
+          Take the four numbers 10, 20, 30, 40 and ask for the median (0.5) and the 25th percentile (0.25).
+        sql: |
+          SELECT
+              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v) AS med_cont,
+              PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY v) AS med_disc,
+              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY v) AS p25_cont,
+              PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY v) AS p25_disc
+          FROM (VALUES (10), (20), (30), (40)) AS t(v);
+        after: |
+          - `med_cont` = **25**: halfway between 20 and 30.
+          - `med_disc` = **20**: the first real value whose `CUME_DIST` (0.5) reaches 0.5.
+          - `p25_cont` = **17.5**: a quarter of the way through, between 10 and 20.
+          - `p25_disc` = **10**.
+
+          `CONT` can give a number that is not in your data. `DISC` never does.
+
+      - type: example
+        title: "Percentiles are not window functions (expected error)"
+        md: |
+          What if you try to put `OVER` after a percentile?
+        expectError: true
+        sql: |
+          SELECT
+              title,
+              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_min)
+                  OVER () AS median
+          FROM movies;
+        after: |
+          PostgreSQL says `OVER is not supported for ordered-set aggregate percentile_cont`.
+
+          `PERCENTILE_CONT` is an **ordered-set aggregate**, a cousin of `SUM` that needs `WITHIN GROUP`. To see the median next to every row, calculate it separately (in a CTE or subquery) and join or cross join it back. The next example does that.
+
+      - type: quiz
+        id: m11-l04-q2
+        question: |
+          You need the typical value and you want it to be a number that **really exists** in the column. Which function?
+        options:
+          - "PERCENTILE_CONT(0.5)"
+          - "PERCENTILE_DISC(0.5)"
+          - "AVG()"
+          - "NTILE(2)"
+        answer: 1
+        explanation: |
+          `PERCENTILE_DISC` always returns one of the actual values. `PERCENTILE_CONT` may interpolate between two values, and `AVG` is usually not a value from the column at all.
+
+      - type: exercise
+        id: m11-l04-e4
+        title: Median box office
+        prompt: |
+          For each `age_rating`, show the `age_rating` and `median_box_office`: the median `box_office_musd` using `PERCENTILE_CONT`, **rounded to 2 decimals**. NULL box offices are ignored automatically.
+
+          Sort by `age_rating`.
+        starter: |
+          SELECT age_rating
+          FROM movies
+          GROUP BY age_rating
+          ORDER BY age_rating;
+        solution: |
+          SELECT
+              age_rating,
+              ROUND(
+                  PERCENTILE_CONT(0.5) WITHIN GROUP (
+                      ORDER BY box_office_musd
+                  )::numeric,
+                  2
+              ) AS median_box_office
+          FROM movies
+          GROUP BY age_rating
+          ORDER BY age_rating;
+        ordered: true
+        hints:
+          - This is an aggregate, so it goes together with GROUP BY age_rating.
+          - "Use PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY box_office_musd), cast to numeric, and ROUND it."
+          - "ROUND(PERCENTILE_CONT(___) WITHIN GROUP (ORDER BY box_office_musd)::numeric, 2) AS median_box_office"
+        explanation: |
+          G: 113.00, PG: 161.80, PG-13: 104.30, R: 78.35. Percentile functions skip NULLs, so films with an unknown box office simply do not take part.
+        difficulty: 2
+
+      - type: read
+        title: Putting a percentile next to every row
+        md: |
+          Since percentiles cannot use `OVER`, here is the standard recipe: compute the number once in a small CTE, then `CROSS JOIN` it to the table. A cross join with a **one-row** table just attaches that row to every row.
+
+      - type: example
+        title: Films above the 90th percentile
+        md: |
+          First find the 90th-percentile length, then keep films that are at least that long.
+        sql: |
+          WITH stats AS (
+              SELECT
+                  PERCENTILE_CONT(0.9) WITHIN GROUP (
+                      ORDER BY duration_min
+                  ) AS p90
+              FROM movies
+          )
+          SELECT title, duration_min, p90
+          FROM movies
+          CROSS JOIN stats
+          WHERE duration_min >= p90
+          ORDER BY duration_min DESC, title;
+        after: |
+          The 90th percentile of film length is exactly **140 minutes**, so 13 films are 140 minutes or longer. Notice the count is a little more than 10% of 110 because five films are tied at exactly 140.
+
+          `stats` has one row, so the cross join does not multiply anything.
+
+      - type: fill
+        id: m11-l04-f1
+        prompt: Complete the query to get the **median** film length for each age rating.
+        template: |
+          SELECT
+              age_rating,
+              ___(0.5) ___ GROUP (
+                  ORDER BY duration_min
+              ) AS median_min
+          FROM movies
+          GROUP BY age_rating;
+        answers:
+          - ["PERCENTILE_CONT", "PERCENTILE_DISC"]
+          - ["WITHIN"]
+        explanation: |
+          `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_min)`. The fraction goes in the first parentheses, the sort in the second.
+
+      - type: parsons
+        id: m11-l04-o1
+        prompt: Arrange the lines to compare the average and the median film length for each age rating.
+        lines:
+          - SELECT age_rating,
+          - "       ROUND(AVG(duration_min), 1) AS avg_min,"
+          - "       PERCENTILE_CONT(0.5) WITHIN GROUP ("
+          - "           ORDER BY duration_min"
+          - "       ) AS median_min"
+          - FROM movies
+          - GROUP BY age_rating
+          - ORDER BY age_rating;
+        explanation: |
+          The percentile is an ordinary aggregate in the SELECT list, so the query needs `GROUP BY age_rating`.
+
+      - type: exercise
+        id: m11-l04-e5
+        title: Average versus median rating
+        prompt: |
+          For movies with **at least 40 ratings**, show `title`, `ratings` (how many ratings), `avg_stars` (average `stars`, 2 decimals) and `median_stars` (median `stars` with `PERCENTILE_CONT`, 2 decimals).
+
+          Show the most-rated movie first. (Join `ratings` to `movies` on `movie_id`.)
+        starter: |
+          SELECT m.title, COUNT(*) AS ratings
+          FROM ratings AS r
+          JOIN movies AS m ON m.movie_id = r.movie_id
+          GROUP BY m.movie_id, m.title
+          HAVING COUNT(*) >= 40
+          ORDER BY ratings DESC;
+        solution: |
+          SELECT
+              m.title,
+              COUNT(*) AS ratings,
+              ROUND(AVG(r.stars), 2) AS avg_stars,
+              ROUND(
+                  PERCENTILE_CONT(0.5) WITHIN GROUP (
+                      ORDER BY r.stars
+                  )::numeric,
+                  2
+              ) AS median_stars
+          FROM ratings AS r
+          JOIN movies AS m ON m.movie_id = r.movie_id
+          GROUP BY m.movie_id, m.title
+          HAVING COUNT(*) >= 40
+          ORDER BY ratings DESC;
+        ordered: true
+        hints:
+          - The starter already groups and filters. Add the two extra columns to the SELECT list.
+          - AVG(r.stars) for the average, and PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r.stars) for the median.
+          - "ROUND(AVG(r.stars), 2) AS avg_stars, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ___)::numeric, 2) AS median_stars"
+        explanation: |
+          11 movies qualify. The two numbers often differ: for **The Honest Liar** the average is 4.15 but the median is 4.50, because the low ratings pull the average down, while at least half of the people gave 4.5 or more.
+
+          A median is resistant to a few extreme values, which is why analysts like it for skewed data.
+        difficulty: 2
+
+      - type: exercise
+        id: m11-l04-e6
+        dataset: bank
+        title: Balance quartiles
+        prompt: |
+          Harbor Bank wants to split its accounts into **quartiles** by year-end balance.
+
+          Work out each account's balance (the `SUM` of its `amount` in `transactions`), then use `NTILE(4)` to sort accounts into quartiles (quartile 1 = lowest balances; break ties by `account_id`). Show one row per quartile with:
+
+          - `quartile`
+          - `accounts`: how many accounts
+          - `lowest`: the smallest balance in it
+          - `highest`: the largest balance in it
+
+          Sort by `quartile`.
+        starter: |
+          WITH balances AS (
+              SELECT account_id, SUM(amount) AS balance
+              FROM transactions
+              GROUP BY account_id
+          )
+          SELECT account_id, balance
+          FROM balances;
+        solution: |
+          WITH balances AS (
+              SELECT account_id, SUM(amount) AS balance
+              FROM transactions
+              GROUP BY account_id
+          ),
+          tiles AS (
+              SELECT
+                  account_id,
+                  balance,
+                  NTILE(4) OVER (
+                      ORDER BY balance, account_id
+                  ) AS quartile
+              FROM balances
+          )
+          SELECT
+              quartile,
+              COUNT(*) AS accounts,
+              MIN(balance) AS lowest,
+              MAX(balance) AS highest
+          FROM tiles
+          GROUP BY quartile
+          ORDER BY quartile;
+        ordered: true
+        columnNames: true
+        hints:
+          - Do it in layers - balances per account, then the NTILE column, then a GROUP BY over the quartiles.
+          - Add a second CTE with NTILE(4) OVER (ORDER BY balance, account_id), then GROUP BY quartile with COUNT, MIN and MAX.
+          - "SELECT quartile, COUNT(*) AS accounts, MIN(balance) AS lowest, MAX(balance) AS highest FROM tiles GROUP BY ___ ORDER BY quartile;"
+        explanation: |
+          124 accounts have transactions, so every quartile holds exactly **31** accounts. The bottom quartile runs from -2,409.32 (an overdrawn account) up to 1,158.76, while the top quartile starts at 26,300.78 and reaches 98,441.82.
+
+          `NTILE` first, then `GROUP BY` the bucket number: that is the classic recipe for a "summary per bucket".
+        difficulty: 3
+
+      - type: read
+        title: Reading the shape of your data
+        md: |
+          You now have a full toolbox for describing a distribution:
+
+          - **Buckets**: `NTILE(4)` for quartiles, `NTILE(10)` for deciles.
+          - **Position**: `PERCENT_RANK` and `CUME_DIST` for "better than x%".
+          - **Values**: `PERCENTILE_CONT` / `PERCENTILE_DISC` for medians and p90.
+
+          > [!REAL-WORLD]
+          > Averages hide a lot. A banking analyst reports the **median** balance next to the average (here 10,482 versus 17,345), and an engineer watches the **p90** or **p99** response time, never just the average. Percentiles show what typical *and* extreme users experience.
+    cheatsheet:
+      - title: NTILE buckets
+        sql: |
+          NTILE(4) OVER (ORDER BY price, id) AS quartile
+        note: Equal-sized by row count; leftover rows go to the first buckets. Add a tie-breaker.
+      - title: PERCENT_RANK and CUME_DIST
+        sql: |
+          PERCENT_RANK() OVER (ORDER BY x)  -- 0 to 1
+          CUME_DIST()    OVER (ORDER BY x)  -- share at or below
+        note: PERCENT_RANK = (rank - 1) / (rows - 1). CUME_DIST = rows up to my peers / rows.
+      - title: Median and percentiles
+        sql: |
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
+          PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x)
+        note: Aggregates (use GROUP BY, not OVER). CONT interpolates; DISC returns a real value.
+testPool:
+  - type: quiz
+    id: m11-t01
+    lesson: m11-l01
+    difficulty: 2
+    question: |
+      How many rows are in the frame `ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING` for a row in the middle of the data?
+    options: ["3", "4", "5", "2"]
+    answer: 1
+    explanation: |
+      1 before + the row itself + 2 after = 4.

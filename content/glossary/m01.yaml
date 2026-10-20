@@ -1,0 +1,53 @@
+glossary:
+  - term: SELECT
+    definition: The SQL keyword that chooses which columns (or calculated values) appear in your result. It only reads data and never changes the table. The columns appear in the order you list them.
+    example: "SELECT name, price FROM menu_items;"
+    module: m01
+  - term: FROM
+    definition: The keyword that names the table a query reads its data from. It comes right after the list of columns.
+    example: "SELECT name FROM staff;"
+    module: m01
+  - term: Wildcard (*)
+    definition: The star in SELECT * means "every column of the table". Handy for a first look at a table, but a list of column names is clearer and safer in real reports.
+    example: "SELECT * FROM staff;"
+    module: m01
+  - term: Alias
+    definition: A nickname for a column in the result, created with AS. It changes only the heading you see, never the table underneath.
+    example: "SELECT price AS cost FROM menu_items;"
+    module: m01
+  - term: Quoted identifier
+    definition: A name written in double quotes. It lets a heading contain spaces, capital letters or special characters. Do not confuse it with single quotes, which make text values.
+    example: "SELECT name AS \"Item Name\" FROM menu_items;"
+    module: m01
+  - term: Expression
+    definition: Anything that produces a value, such as a column, a number, a piece of text or a calculation like price * 2. Expressions can sit in the SELECT list, and they should get an alias.
+    example: "SELECT price * 2 AS price_for_two FROM menu_items;"
+    module: m01
+  - term: Order of operations
+    definition: The rule for which part of a calculation happens first. Multiplication and division come before addition and subtraction, and parentheses override everything.
+    example: "SELECT 2 + 3 * 4, (2 + 3) * 4;   -- 14 and 20"
+    module: m01
+  - term: Integer division
+    definition: Dividing a whole number by a whole number gives a whole number, with the decimals cut off. Make one side a decimal (like 2.0) to keep the decimals.
+    example: "SELECT 5 / 2, 5 / 2.0;   -- 2 and 2.5000000000000000"
+    module: m01
+  - term: String literal
+    definition: A fixed piece of text written directly in a query, in single quotes. To put an apostrophe inside it, write two single quotes in a row.
+    example: "SELECT 'Maria''s special' AS board;"
+    module: m01
+  - term: Concatenation
+    definition: Joining pieces of text into one. In PostgreSQL you use the || operator or the CONCAT function. With ||, a NULL piece makes the whole result NULL; CONCAT treats NULL as empty text.
+    example: "SELECT first_name || ' ' || last_name FROM customers;"
+    module: m01
+  - term: DISTINCT
+    definition: A keyword placed right after SELECT that removes duplicate rows from the result. With several columns it keeps each unique combination, and all NULLs count as one value.
+    example: "SELECT DISTINCT city FROM customers;"
+    module: m01
+  - term: LIMIT
+    definition: A clause at the very end of a query that keeps at most n rows. Without sorting, which rows you get is not guaranteed, so use it for quick peeks.
+    example: "SELECT * FROM orders LIMIT 5;"
+    module: m01
+  - term: Comment
+    definition: A note inside your SQL that the database ignores. A line comment starts with two dashes and runs to the end of the line; a block comment sits between /* and */.
+    example: "-- price list for the till"
+    module: m01

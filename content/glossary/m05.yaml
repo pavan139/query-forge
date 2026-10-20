@@ -1,0 +1,57 @@
+glossary:
+  - term: Aggregate function
+    definition: A function that looks at many rows and gives back one value, such as a count, a total, an average, a smallest or a largest value. COUNT, SUM, AVG, MIN and MAX are the everyday ones. Most of them skip NULLs.
+    example: "SELECT SUM(amount) FROM payments;  -- many rows in, one number out"
+    module: m05
+  - term: COUNT(*)
+    definition: Counts rows, whatever is inside them. It returns 0 (not an empty result) when no row matches. COUNT(column) is different, because it skips rows where that column is NULL.
+    example: "SELECT COUNT(*) FROM orders WHERE status = 'delivered';"
+    module: m05
+  - term: COUNT(DISTINCT)
+    definition: Counts each different value only once, so repeats do not add up. NULL is not a value, so it is not counted.
+    example: "SELECT COUNT(DISTINCT customer_id) FROM orders;  -- different customers, not orders"
+    module: m05
+  - term: SUM, AVG, MIN, MAX
+    definition: SUM adds values up, AVG averages them, MIN and MAX find the smallest and the largest. SUM and AVG need numbers, MIN and MAX also work on dates and text. With no rows to look at they return NULL.
+    example: "SELECT MIN(price), MAX(price), ROUND(AVG(price), 2) FROM products;"
+    module: m05
+  - term: GROUP BY
+    definition: A clause that puts rows into piles (groups) with the same value, so an aggregate runs once per pile. The result has one row per group.
+    example: "SELECT status, COUNT(*) FROM orders GROUP BY status;"
+    module: m05
+  - term: Group
+    definition: All the rows that share the same value in the GROUP BY column(s). NULLs are put together in one group of their own. Each group becomes exactly one row in the result.
+    example: "Grouping 900 orders by status makes 5 groups: delivered, cancelled, returned, shipped, processing."
+    module: m05
+  - term: Golden rule of GROUP BY
+    definition: In a grouped query, every column in SELECT, HAVING and ORDER BY must either appear in GROUP BY or be wrapped in an aggregate function. Otherwise PostgreSQL says the column must appear in the GROUP BY clause.
+    example: "SELECT status, COUNT(*) FROM orders GROUP BY status;  -- status is grouped, COUNT is aggregated"
+    module: m05
+  - term: HAVING
+    definition: Filters finished groups, after GROUP BY and the aggregates have been calculated. WHERE filters single rows before grouping, HAVING filters whole groups after it.
+    example: "SELECT state, COUNT(*) FROM customers GROUP BY state HAVING COUNT(*) >= 10;"
+    module: m05
+  - term: FILTER clause
+    definition: Lets one aggregate look at only the rows that meet a condition, without changing the other aggregates in the same query.
+    example: "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled FROM orders;"
+    module: m05
+  - term: Conditional aggregation
+    definition: Counting or adding up only the rows that meet a condition, using FILTER or a CASE expression inside the aggregate. It puts several numbers side by side in one row.
+    example: "SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END)"
+    module: m05
+  - term: Pivot-style report
+    definition: A report where values that would normally be separate rows (like statuses or payment methods) become columns next to each other. You build one with GROUP BY plus conditional aggregation.
+    example: "One row per month with columns delivered, cancelled and returned."
+    module: m05
+  - term: STRING_AGG
+    definition: An aggregate that glues the values of many rows into one piece of text, with a separator you choose. Put ORDER BY inside the brackets to control the order. Numbers must be cast to text first.
+    example: "STRING_AGG(name, ', ' ORDER BY name)"
+    module: m05
+  - term: Array
+    definition: A list of values stored together in one cell, written with curly braces. ARRAY_AGG collects the values of many rows into an array and keeps their type.
+    example: "SELECT ARRAY_AGG(product_id) FROM order_items WHERE order_id = 1;  -- {17,47}"
+    module: m05
+  - term: BOOL_AND and BOOL_OR
+    definition: Aggregates that answer yes/no questions about a group. BOOL_OR is true if at least one row meets the condition (any), BOOL_AND is true only if every row meets it (all).
+    example: "SELECT category_id, BOOL_OR(stock_qty = 0) AS any_sold_out FROM products GROUP BY category_id;"
+    module: m05

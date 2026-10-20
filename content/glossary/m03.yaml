@@ -1,0 +1,57 @@
+glossary:
+  - term: ORDER BY
+    definition: The clause that sorts the rows of a result. It comes after WHERE (and before LIMIT). Without it, the database may return rows in any order, and that order is never guaranteed.
+    example: "SELECT name, price FROM menu_items ORDER BY price;  -- cheapest first"
+    module: m03
+  - term: Ascending (ASC)
+    definition: Sorting from small to big. Numbers go 1, 2, 3, text goes A to Z and dates go oldest to newest. It is the default, so you rarely need to type ASC.
+    example: "ORDER BY price ASC  -- 1.50 first, 12.50 last"
+    module: m03
+  - term: Descending (DESC)
+    definition: Sorting from big to small. Numbers go 3, 2, 1, text goes Z to A and dates go newest to oldest. Each sort column has its own direction, and DESC only affects the column right before it.
+    example: "ORDER BY joined_on DESC  -- newest member first"
+    module: m03
+  - term: Tie
+    definition: Two or more rows that have the same value in the sort column, so the sort alone cannot decide which one comes first.
+    example: "Earl Grey Tea, Green Tea and Peppermint Tea all cost 2.75, so they tie when you sort by price."
+    module: m03
+  - term: Tie-breaker
+    definition: An extra sort column, added after the main one, that is only used when two rows tie. Ending your ORDER BY with a column whose values are all different (like a name or an id) makes the order fully predictable.
+    example: "ORDER BY price, name  -- teas with the same price now appear A to Z"
+    module: m03
+  - term: NULLS FIRST / NULLS LAST
+    definition: Options that say where missing values (NULL) go in a sorted list. In PostgreSQL, NULLs come last with ASC and first with DESC, unless you say otherwise. Other databases may use different defaults.
+    example: "ORDER BY calories DESC NULLS LAST  -- unknown calories go to the end"
+    module: m03
+  - term: Top-N query
+    definition: A query that sorts the rows and keeps only the first N, such as the 5 most expensive items. It always needs ORDER BY before LIMIT, otherwise you get some rows, not the top rows.
+    example: "SELECT name, price FROM menu_items ORDER BY price DESC LIMIT 5;"
+    module: m03
+  - term: LIMIT
+    definition: A clause that keeps only the first n rows of the result. It runs last, after the rows have been filtered and sorted.
+    example: "LIMIT 3  -- keep three rows"
+    module: m03
+  - term: OFFSET
+    definition: A clause that skips the first n rows before the rows are returned. Together with LIMIT it shows one page of a long list. Use it with a unique ORDER BY so the pages stay stable.
+    example: "LIMIT 10 OFFSET 10  -- rows 11 to 20"
+    module: m03
+  - term: Pagination
+    definition: Splitting a long list into pages, like a website with Next and Previous buttons. For page p with n rows per page, use LIMIT n OFFSET (p - 1) * n.
+    example: "Page 3 with 10 items per page: LIMIT 10 OFFSET 20"
+    module: m03
+  - term: FETCH FIRST ... ROWS ONLY
+    definition: The official SQL standard way to write LIMIT. PostgreSQL understands both. FETCH FIRST 5 ROWS ONLY means the same as LIMIT 5, and OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY means the same as LIMIT 10 OFFSET 10.
+    example: "ORDER BY price DESC FETCH FIRST 3 ROWS ONLY;"
+    module: m03
+  - term: WITH TIES
+    definition: An option of FETCH FIRST that also returns every row that ties with the last row of the cut, so the result can be longer than n. It needs an ORDER BY, and it looks at all ORDER BY columns.
+    example: "ORDER BY price FETCH FIRST 4 ROWS WITH TIES;  -- 6 rows on the café menu"
+    module: m03
+  - term: Order of execution
+    definition: The order in which SQL logically runs the clauses of a query, which is different from the order you write them. It runs FROM, then WHERE, then SELECT, then ORDER BY and finally LIMIT. This is why ORDER BY can use an alias but WHERE cannot.
+    example: "Written: SELECT, FROM, WHERE, ORDER BY, LIMIT.  Run: FROM, WHERE, SELECT, ORDER BY, LIMIT."
+    module: m03
+  - term: Collation
+    definition: The set of rules a database uses to compare and sort text. In SQL Quest's database, text is compared by character code, so every capital letter sorts before every lowercase letter. Other databases often sort more like a dictionary.
+    example: "Sorting 'Zebra' and 'apple' puts 'Zebra' first here."
+    module: m03

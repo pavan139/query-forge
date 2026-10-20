@@ -3035,3 +3035,230 @@ testPool:
     explanation: |
       19 orders. Without the parentheses, `OR` would pull in every order with a NULL tip, whatever the payment
       method. And `tip = 0` alone would never find the NULL rows.
+
+project:
+  id: m02-proj
+  title: Café Detective
+  icon: "🕵️"
+  dataset: cafe
+  md: |
+    ## The case of the mystery note
+
+    This morning Maria found an envelope tucked under the till at **Bean & Bloom Café**. Inside was a
+    handwritten note:
+
+    > *"Thank you for the BEST dessert I have ever eaten! It came in a little cup. Please, please bring
+    > it back! — P.O."*
+
+    Maria would love to thank the writer in person, but she has no idea who "P.O." is. She remembers a
+    few things and asks you, her new **Café Detective**, to follow the clues:
+
+    - the dessert is **not on the menu any more**;
+    - the visit was sometime in **October**;
+    - the writer **paid by card** and scanned their **loyalty card**.
+
+    You'll solve the case in **six small jobs**. Each one uses a different part of this module: numbers,
+    text, true/false values, dates, `AND` / `OR`, `IN`, `LIKE` and `NULL`.
+
+    ## Your toolkit
+
+    You will use three tables from the café database:
+
+    - `menu_items`: `item_id`, `name`, `category`, `price`, `calories`, `is_vegan`, `is_available`,
+      `added_on`
+    - `customers`: `customer_id`, `first_name`, `last_name`, `email`, `city`, `joined_on`,
+      `loyalty_points`
+    - `orders`: `order_id`, `customer_id`, `item_id`, `staff_id`, `quantity`, `order_time`,
+      `payment_method`, `tip`
+
+    > [!TIP]
+    > Each job is a fresh query, but it often **starts from the one before**. Copy the conditions you
+    > already wrote and add the new clue. The order of the rows never matters here, so no sorting is needed.
+
+    > [!MISTAKE]
+    > Watch out for the classic traps: single quotes for text, `IS NULL` instead of `= NULL`, and
+    > timestamps that include a time of day.
+  tasks:
+    - type: exercise
+      id: m02-proj-1
+      title: "Clue 1: Desserts off the menu"
+      prompt: |
+        *"The note says **dessert**,"* says Maria, *"and I'm sure we don't sell it any more. Which desserts
+        have we taken off the menu?"*
+
+        Show the `item_id`, `name` and `price` of every item in the `'Dessert'` category that is **not
+        available** (`is_available` is false).
+      starter: |
+        SELECT item_id, name, price
+        FROM menu_items
+        WHERE
+      solution: |
+        SELECT item_id, name, price
+        FROM menu_items
+        WHERE category = 'Dessert'
+          AND is_available = false;
+      hints:
+        - Two rules at once. One is about the category (text) and one is about the true/false column.
+        - "Join the two rules with AND. Text goes in single quotes: category = 'Dessert'."
+        - "SELECT item_id, name, price FROM menu_items WHERE category = ___ AND is_available = ___;"
+      explanation: |
+        Two desserts are off the menu: the **Tiramisu Cup** (item 27, $6.95) and the **Lemon Tart**
+        (item 28, $5.50). "A little cup" sounds a lot like the Tiramisu Cup, but a good detective checks
+        both. You could also write `NOT is_available` for the second rule.
+      difficulty: 1
+
+    - type: exercise
+      id: m02-proj-2
+      title: "Clue 2: Orders in October"
+      prompt: |
+        *"Now let's see who bought those two desserts,"* says Maria. *"I'm certain it was in **October**."*
+
+        The Tiramisu Cup is `item_id` 27 and the Lemon Tart is `item_id` 28. Show the `order_id`,
+        `customer_id`, `item_id` and `order_time` of every order for **either** of those two items that
+        was placed at **any time in October 2024**, from the start of 1 October to the very end of
+        31 October (an order at 5 pm on 31 October counts too).
+      starter: |
+        SELECT order_id, customer_id, item_id, order_time
+        FROM orders
+        WHERE
+      solution: |
+        SELECT order_id, customer_id, item_id, order_time
+        FROM orders
+        WHERE item_id IN (27, 28)
+          AND order_time >= '2024-10-01'
+          AND order_time < '2024-11-01';
+      hints:
+        - Two rules joined by AND. One picks the items (a short list) and one picks the dates.
+        - "For the items, `IN (27, 28)` is handy. For the month, use `>=` the first day and `<` the first day of NEXT month, because `order_time` has a time of day."
+        - "WHERE item_id IN (___, ___) AND order_time >= '2024-10-01' AND order_time < '___';"
+      explanation: |
+        Two orders: **#26** (a walk-in, so `customer_id` is NULL) and **#54** (customer 4, on 31 October at
+        17:46). Order 54 sits on the very last day of the month, so `BETWEEN '2024-10-01' AND '2024-10-31'`
+        would have missed it, because `'2024-10-31'` means midnight at the *start* of that day.
+      difficulty: 2
+
+    - type: exercise
+      id: m02-proj-3
+      title: "Clue 3: Fix the broken query"
+      prompt: |
+        *"The writer paid by **card** and scanned a loyalty card, so we know who they are,"* adds Maria.
+
+        Your assistant wrote the query below to narrow down the October dessert orders. It runs without
+        an error, but it shows **no rows** at all. Fix it so that it returns the one matching order.
+      starter: |
+        SELECT order_id, customer_id, order_time, payment_method
+        FROM orders
+        WHERE item_id IN (27, 28)
+          AND order_time >= '2024-10-01'
+          AND order_time < '2024-11-01'
+          AND payment_method = 'card'
+          AND customer_id <> NULL;
+      solution: |
+        SELECT order_id, customer_id, order_time, payment_method
+        FROM orders
+        WHERE item_id IN (27, 28)
+          AND order_time >= '2024-10-01'
+          AND order_time < '2024-11-01'
+          AND payment_method = 'card'
+          AND customer_id IS NOT NULL;
+      hints:
+        - The query is almost perfect. Look closely at the very last line.
+        - "A comparison with NULL is never true. Use the special phrase `IS NOT NULL` instead of `<> NULL`."
+        - "... AND customer_id ___ ___ ___;"
+      explanation: |
+        Only order **#54** is left: customer **4** paid by card for the Tiramisu Cup at 17:46 on Halloween
+        night. `customer_id <> NULL` is unknown for every row, so the old query threw everything away.
+        Remember: `IS NULL` and `IS NOT NULL` are the only ways to test for a missing value.
+      difficulty: 2
+
+    - type: exercise
+      id: m02-proj-4
+      title: "Clue 4: The signature"
+      prompt: |
+        *"Let's double-check with the signature,"* says Maria. *"The note is signed **P.O.**"*
+
+        Show the `customer_id`, `first_name`, `last_name`, `city` and `email` of every customer whose
+        first name starts with the capital letter `P` **and** whose last name starts with the capital
+        letter `O`.
+      starter: |
+        SELECT customer_id, first_name, last_name, city, email
+        FROM customers
+        WHERE
+      solution: |
+        SELECT customer_id, first_name, last_name, city, email
+        FROM customers
+        WHERE first_name LIKE 'P%'
+          AND last_name LIKE 'O%';
+      hints:
+        - You need one pattern for the first name and one for the last name, joined by AND.
+        - "`LIKE 'P%'` means: starts with P, followed by anything. Use one pattern per column."
+        - "WHERE first_name LIKE '___' AND last_name LIKE '___';"
+      explanation: |
+        Exactly one customer: **Paola Omondi** from Seattle, customer **4**, the same `customer_id` you found
+        in Clue 3. Two independent clues agree, so the case is solved! Pavel Popov starts with P but his last
+        name does not start with O, and Naledi Okonkwo is the other way round, which is why `AND` matters.
+        Notice that Paola's `email` is NULL.
+      difficulty: 2
+
+    - type: exercise
+      id: m02-proj-5
+      title: "Clue 5: Postcards for everyone"
+      prompt: |
+        *"Paola has no email, so I can't write to her,"* says Maria. *"I'll send a postcard with a free
+        Tiramisu voucher. And I'll do the same for all our other long-time members with no email."*
+
+        Show the `first_name`, `last_name`, `city` and `joined_on` of every customer whose `email` is
+        **missing** and who joined **before 1 January 2024**.
+      starter: |
+        SELECT first_name, last_name, city, joined_on
+        FROM customers
+        WHERE
+      solution: |
+        SELECT first_name, last_name, city, joined_on
+        FROM customers
+        WHERE email IS NULL
+          AND joined_on < '2024-01-01';
+      hints:
+        - Two rules joined by AND. One is about a missing value and one is about a date.
+        - "Missing means `IS NULL`. Dates are written in single quotes, like '2024-01-01'."
+        - "WHERE email ___ ___ AND joined_on < '___';"
+      explanation: |
+        Four postcards to write: **Paola**, **Mateo**, **Pavel** and **Hugo**. Ava has no email either, but
+        she joined in June 2024, so she is not a long-time member yet.
+      difficulty: 2
+
+    - type: exercise
+      id: m02-proj-6
+      title: "Bonus case: The vanishing tips"
+      prompt: |
+        *"One more thing, detective,"* says Maria as you pack up. *"My accountant thinks tips aren't being
+        written down properly for card and app payments in the busy holiday weeks."*
+
+        Show the `order_id`, `order_time`, `payment_method` and `tip` of every order that:
+
+        - was placed **on or after 15 December 2024** (the data ends on 31 December);
+        - was paid by `'card'` **or** `'app'`;
+        - has a tip that is either **0.00** or **missing** (NULL).
+      starter: |
+        SELECT order_id, order_time, payment_method, tip
+        FROM orders
+        WHERE
+      solution: |
+        SELECT order_id, order_time, payment_method, tip
+        FROM orders
+        WHERE order_time >= '2024-12-15'
+          AND payment_method IN ('card', 'app')
+          AND (tip = 0 OR tip IS NULL);
+      hints:
+        - Three rules joined by AND. The third rule is itself two alternatives, so think about parentheses.
+        - "Use `IN ('card', 'app')` for the payment and `(tip = 0 OR tip IS NULL)` for the tip."
+        - "WHERE order_time >= '2024-12-15' AND payment_method IN (___, ___) AND (tip = ___ OR tip ___ ___);"
+      explanation: |
+        **8 orders**: seven with a missing tip and one (order 171) with an explicit 0.00. Without the
+        parentheses, `OR tip IS NULL` would escape from the `AND` rules and pull in 55 rows from all months and
+        payment types. And a `BETWEEN '2024-12-15' AND '2024-12-31'` would have missed order 180, placed at
+        18:02 on 31 December.
+
+        **Case closed!** You used numbers, text, booleans, dates, `AND`/`OR`, `IN`, `LIKE` and `NULL`, the
+        whole WHERE toolbox, to solve a real mystery. Well done, detective!
+      difficulty: 3

@@ -1135,7 +1135,8 @@ lessons:
           SELECT first_name, last_name, city
           FROM customers;
         solution: |
-          SELECT CONCAT(first_name, ' ', last_name, ', ', city) AS label
+          SELECT CONCAT(first_name, ' ', last_name,
+                        ', ', city) AS label
           FROM customers;
         columnNames: true
         hints:
@@ -1956,7 +1957,8 @@ lessons:
           SELECT order_id, payment_method
           FROM orders;
         solution: |
-          SELECT 'Order #' || order_id || ' paid by ' || payment_method AS summary
+          SELECT 'Order #' || order_id || ' paid by '
+                 || payment_method AS summary
           FROM orders
           LIMIT 10;
         columnNames: true
@@ -1997,6 +1999,532 @@ lessons:
           SELECT name, /* inline note */ price
           FROM menu_items;
         note: -- ignores the rest of the line. /* ... */ can span several lines.
+testPool:
+  # ---- Lesson 1: Choosing columns ------------------------------------------------
+  - type: exercise
+    id: m01-t01
+    lesson: m01-l01
+    difficulty: 1
+    title: The welcome wall
+    prompt: |
+      Maria is making a welcome wall for the loyalty members. Show each customer's `first_name`, `city`
+      and `joined_on` date.
+    starter: |
+      SELECT
+      FROM customers;
+    solution: |
+      SELECT first_name, city, joined_on
+      FROM customers;
+    hints:
+      - Three columns from the `customers` table.
+      - List them after SELECT, separated by commas.
+      - "SELECT first_name, ___, ___ FROM customers;"
+    explanation: |
+      28 rows (one per customer) and only the three columns you asked for. Commas go between the
+      columns, never after the last one.
+
+  - type: quiz
+    id: m01-t02
+    lesson: m01-l01
+    difficulty: 1
+    question: |
+      A weekly report uses `SELECT * FROM menu_items;`. Next month someone adds a new column to the
+      `menu_items` table. What happens to the report?
+    options:
+      - "It quietly gets an extra column, because * means every column"
+      - "Nothing changes: * remembers the old list of columns"
+      - "It stops working and shows an error"
+      - "The new column only appears if you run the report twice"
+    answer: 0
+    explanation: |
+      `*` means "every column that exists right now", so the result changes whenever the table does.
+      A column list such as `SELECT name, price` keeps the report exactly the same.
+
+  - type: parsons
+    id: m01-t03
+    lesson: m01-l01
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show each order's `order_id`, then its `payment_method`,
+      then its `tip`. One line is a distractor: leave it out.
+    lines:
+      - "SELECT order_id,"
+      - "payment_method,"
+      - "tip"
+      - "FROM orders;"
+    distractors:
+      - "tip,"
+    explanation: |
+      The columns come in the order you list them, with a comma after each one except the last. `tip,`
+      would put a comma right before `FROM`, which is a syntax error.
+
+  - type: exercise
+    id: m01-t04
+    lesson: m01-l01
+    difficulty: 1
+    title: One comma too many
+    prompt: |
+      Show each menu item's `name`, `category` and `calories`. The query below has a bug. Fix it!
+    starter: |
+      SELECT name, category, calories,
+      FROM menu_items;
+    solution: |
+      SELECT name, category, calories
+      FROM menu_items;
+    hints:
+      - Run it and read the message. Which word does PostgreSQL complain about?
+      - It points at FROM. Look at the character just before it.
+      - Delete the comma after the last column.
+    explanation: |
+      A comma means "another column follows". After `calories` comes `FROM`, so PostgreSQL got confused
+      right there. Commas go **between** columns only.
+
+  # ---- Lesson 2: Renaming with aliases -------------------------------------------
+  - type: fill
+    id: m01-t05
+    lesson: m01-l02
+    difficulty: 1
+    prompt: Complete the query so the `role` column is shown with the heading **job**.
+    template: |
+      SELECT role ___ job
+      FROM staff;
+    answers:
+      - ["AS"]
+    explanation: |
+      `AS` gives a column a new heading in the result. The table `staff` still has its column `role`.
+
+  - type: quiz
+    id: m01-t06
+    lesson: m01-l02
+    difficulty: 2
+    question: |
+      What heading will the result column have?
+    sql: |
+      SELECT price AS Cost
+      FROM menu_items;
+    options:
+      - "cost"
+      - "Cost"
+      - "COST"
+      - "\"Cost\""
+    answer: 0
+    explanation: |
+      Without double quotes, PostgreSQL folds names to lowercase, so `Cost` becomes `cost`. To keep the
+      capital letter you would write `AS "Cost"`.
+
+  - type: predict
+    id: m01-t07
+    lesson: m01-l02
+    difficulty: 3
+    question: |
+      What are the three column headings of this result, from left to right?
+    sql: |
+      SELECT name AS "Item",
+             price AS Cost,
+             calories AS "kcal"
+      FROM menu_items;
+    options:
+      - "Item, cost, kcal"
+      - "Item, Cost, kcal"
+      - "item, cost, kcal"
+      - "An error"
+    answer: 0
+    explanation: |
+      `"Item"` is quoted, so its capital I stays. `Cost` is not quoted, so it becomes `cost`. `"kcal"` is
+      quoted but already lowercase, so it looks the same either way.
+
+  - type: exercise
+    id: m01-t08
+    lesson: m01-l02
+    difficulty: 3
+    title: The staff badge sheet
+    prompt: |
+      Build the staff badge sheet with these four columns, in this order: `staff_id` as **Badge No**,
+      `name` as **Staff Member**, `hired_on` as **Start Date** and `hourly_rate` as **Rate ($/h)**.
+    starter: |
+      SELECT staff_id, name, hired_on, hourly_rate
+      FROM staff;
+    solution: |
+      SELECT staff_id AS "Badge No",
+             name AS "Staff Member",
+             hired_on AS "Start Date",
+             hourly_rate AS "Rate ($/h)"
+      FROM staff;
+    columnNames: true
+    hints:
+      - Every heading has a capital letter or a space, so every alias needs double quotes.
+      - "staff_id AS \"Badge No\""
+      - "SELECT staff_id AS \"Badge No\", name AS ___, hired_on AS ___, hourly_rate AS ___ FROM staff;"
+    explanation: |
+      Four aliases in double quotes. Special characters such as `$`, `/` and brackets are fine inside
+      double quotes. Only the headings change; the data and the table stay the same.
+
+  # ---- Lesson 3: Calculations in SELECT -------------------------------------------
+  - type: exercise
+    id: m01-t09
+    lesson: m01-l03
+    difficulty: 1
+    title: Bonus points
+    prompt: |
+      To celebrate the new menu, every customer gets **50 bonus points**. Show each customer's
+      `first_name` and their `loyalty_points` plus 50, with the heading **bonus_points**.
+    starter: |
+      SELECT first_name
+      FROM customers;
+    solution: |
+      SELECT first_name, loyalty_points + 50 AS bonus_points
+      FROM customers;
+    columnNames: true
+    hints:
+      - Add the calculation as a second column.
+      - "loyalty_points + 50 AS bonus_points"
+      - "SELECT first_name, loyalty_points ___ 50 AS bonus_points FROM customers;"
+    explanation: |
+      The calculation is repeated for every row. Dmitri goes from 850 to 900 points. Without the alias
+      the heading would be `?column?`.
+
+  - type: predict
+    id: m01-t10
+    lesson: m01-l03
+    difficulty: 2
+    question: What will this query return?
+    sql: |
+      SELECT (8 + 2) * 3 - 4 / 2 AS result;
+    options:
+      - "28"
+      - "13"
+      - "12"
+      - "An error"
+    answer: 0
+    explanation: |
+      Parentheses first: `8 + 2 = 10`. Then `*` and `/` before `-`: `10 * 3 = 30` and `4 / 2 = 2`.
+      Finally `30 - 2 = 28`. Without the parentheses the answer would be 12.
+
+  - type: quiz
+    id: m01-t11
+    lesson: m01-l03
+    difficulty: 2
+    question: |
+      Kavya has **695** loyalty points. What does the `rewards` column show for her row?
+    sql: |
+      SELECT first_name,
+             loyalty_points / 100 AS rewards
+      FROM customers;
+    options:
+      - "6"
+      - "6.95"
+      - "7"
+      - "0.0695"
+    answer: 0
+    explanation: |
+      Both `loyalty_points` and `100` are whole numbers, so PostgreSQL gives a whole number back and
+      simply cuts off the decimals: 6 (not rounded up to 7). `loyalty_points / 100.0` would give
+      6.95.
+
+  - type: fill
+    id: m01-t12
+    lesson: m01-l03
+    difficulty: 2
+    prompt: |
+      A customer earns a free coffee at **1000** loyalty points. Complete the query so it shows how
+      many more points each customer still needs.
+    template: |
+      SELECT first_name,
+             ___ - loyalty_points AS points_to_go
+      FROM customers;
+    answers:
+      - ["1000"]
+    explanation: |
+      The target comes first, then you subtract what the customer already has: Dmitri, with 850 points,
+      has 150 to go.
+
+  - type: exercise
+    id: m01-t13
+    lesson: m01-l03
+    difficulty: 3
+    title: Calories on the poster
+    prompt: |
+      A health poster shows each item's calories as a percentage of a 2,000-calorie day. Show each menu
+      item's `name` and `calories` ÷ 2000 × 100 (keep the decimals) with the heading **pct_of_day**.
+
+      The starter query shows only zeros (and NULLs). Fix it!
+    starter: |
+      SELECT name, calories / 2000 * 100 AS pct_of_day
+      FROM menu_items;
+    solution: |
+      SELECT name, calories / 2000.0 * 100 AS pct_of_day
+      FROM menu_items;
+    columnNames: true
+    hints:
+      - Zeros everywhere is the sign of dividing one whole number by another.
+      - Make at least one number in the division a decimal number.
+      - "SELECT name, calories / 2000.0 * ___ AS pct_of_day FROM menu_items;"
+    explanation: |
+      `calories / 2000` is whole ÷ whole, so it is cut off to 0, and 0 × 100 is still 0. Writing
+      `2000.0` keeps the decimals (a Turkey Club with 620 calories is 31% of a day). Multiplying
+      first, `calories * 100.0 / 2000`, works too. The four items with NULL calories stay NULL.
+
+  # ---- Lesson 4: Text in SELECT ----------------------------------------------------
+  - type: fill
+    id: m01-t14
+    lesson: m01-l04
+    difficulty: 1
+    prompt: |
+      Complete the query so each line reads like `Ben Carter is a Barista`.
+    template: |
+      SELECT CONCAT(___, ' is a ', ___) AS line
+      FROM staff;
+    answers:
+      - ["name"]
+      - ["role"]
+    explanation: |
+      `CONCAT` joins its pieces in the order you list them: the `name` column, the text ` is a ` and the
+      `role` column. Spaces inside the quotes are part of the text.
+
+  - type: quiz
+    id: m01-t15
+    lesson: m01-l04
+    difficulty: 2
+    question: |
+      Which text literal correctly holds the sentence **It's open**?
+    options:
+      - "`'It's open'`"
+      - "`'It''s open'`"
+      - "`\"It's open\"`"
+      - "`'It\\'s open'`"
+    answer: 1
+    explanation: |
+      Inside single quotes, two single quotes in a row stand for one apostrophe. The first option ends
+      the text too early, double quotes mean a column name, and a backslash is not an escape character
+      in standard PostgreSQL text.
+
+  - type: exercise
+    id: m01-t16
+    lesson: m01-l04
+    difficulty: 2
+    title: Mailing list
+    prompt: |
+      Show one column called **contact** for each customer, formatted like
+      `Kavya Gupta <kavya.gupta@example.com>`: the `first_name`, a space, the `last_name`, a space and
+      then the `email` between `<` and `>`.
+
+      Use `CONCAT`, so customers without an email still get a line (like `Paola Omondi <>`). The
+      starter uses `||`, which leaves five customers with NULL.
+    starter: |
+      SELECT first_name || ' ' || last_name
+             || ' <' || email || '>' AS contact
+      FROM customers;
+    solution: |
+      SELECT CONCAT(first_name, ' ', last_name,
+                    ' <', email, '>') AS contact
+      FROM customers;
+    columnNames: true
+    hints:
+      - With `||`, one NULL piece makes the whole line NULL. Which function treats NULL as empty text?
+      - CONCAT takes all the pieces as a comma-separated list.
+      - "SELECT CONCAT(first_name, ' ', last_name, ' <', ___, '>') AS contact FROM customers;"
+    explanation: |
+      `CONCAT` treats NULL as empty text, so the five customers without an email still get a line such as
+      `Paola Omondi <>`. Choosing between `||` and `CONCAT` is choosing what a missing piece should do.
+
+  - type: exercise
+    id: m01-t17
+    lesson: m01-l04
+    difficulty: 3
+    title: The pay note
+    prompt: |
+      Show one column called **pay_note** with text like `Maria Santos: $28.50/h = $228.00/day`. Build it
+      from: the `name`, the text `: $`, the `hourly_rate`, the text `/h = $`, the daily pay
+      (`hourly_rate * 8`) and the text `/day`.
+    starter: |
+      SELECT name, hourly_rate
+      FROM staff;
+    solution: |
+      SELECT name || ': $' || hourly_rate
+             || '/h = $' || (hourly_rate * 8)
+             || '/day' AS pay_note
+      FROM staff;
+    columnNames: true
+    hints:
+      - Six pieces joined with `||`, three of them text literals.
+      - "The literals are ': $', '/h = $' and '/day'. The daily pay is a calculation inside the chain."
+      - "SELECT name || ': $' || hourly_rate || '/h = $' || (hourly_rate * ___) || '/day' AS pay_note FROM staff;"
+    explanation: |
+      Text, columns and a calculation, all in one `||` chain. The brackets around `hourly_rate * 8` are
+      optional (`*` is calculated before `||`), but they make the intent clear to the reader.
+
+  # ---- Lesson 5: DISTINCT ------------------------------------------------------------
+  - type: exercise
+    id: m01-t18
+    lesson: m01-l05
+    difficulty: 1
+    title: How many at once?
+    prompt: |
+      Which quantities do customers order? Show each `quantity` from the `orders` table only once.
+    starter: |
+      SELECT quantity
+      FROM orders;
+    solution: |
+      SELECT DISTINCT quantity
+      FROM orders;
+    hints:
+      - The `orders` table has 180 rows but only a few different quantities.
+      - Put the word DISTINCT right after SELECT.
+      - "SELECT DISTINCT ___ FROM orders;"
+    explanation: |
+      Just 4 rows: the quantities 1, 2, 3 and 4. `DISTINCT` is the quickest way to see which different
+      values a column contains. The rows may come back in any order.
+
+  - type: predict
+    id: m01-t19
+    lesson: m01-l05
+    difficulty: 2
+    question: |
+      The `manager_id` column says who each staff member reports to. The café manager reports to nobody,
+      so that one value is NULL. How many rows does this query return?
+    sql: |
+      SELECT DISTINCT manager_id
+      FROM staff;
+    options:
+      - "4"
+      - "3"
+      - "10"
+      - "1"
+    answer: 0
+    explanation: |
+      Three different managers are mentioned (staff members 1, 2 and 3), plus **one** NULL row: `DISTINCT`
+      keeps NULL as a value and shows it once. That makes 4 rows.
+
+  - type: quiz
+    id: m01-t20
+    lesson: m01-l05
+    difficulty: 3
+    question: |
+      Maria hopes this query returns one row per city (5 rows). Every customer joined on a different
+      date. How many rows does it really return?
+    sql: |
+      SELECT DISTINCT(city), joined_on
+      FROM customers;
+    options:
+      - "28"
+      - "5"
+      - "23"
+      - "An error"
+    answer: 0
+    explanation: |
+      `DISTINCT` is a keyword for the **whole row**, so the brackets around `city` change nothing. The
+      query looks at `city` and `joined_on` together, and since all 28 join dates are different, no
+      row is a duplicate. To get 5 rows, select only `city`.
+
+  - type: exercise
+    id: m01-t21
+    lesson: m01-l05
+    difficulty: 3
+    title: Who reports to whom?
+    prompt: |
+      Show each unique combination of `role` and `manager_id` in the `staff` table, with the headings
+      **job** and **reports_to**.
+    starter: |
+      SELECT role AS job, manager_id AS reports_to
+      FROM staff;
+    solution: |
+      SELECT DISTINCT role AS job, manager_id AS reports_to
+      FROM staff;
+    columnNames: true
+    hints:
+      - The starter shows all 10 people. You want each combination once.
+      - DISTINCT goes right after SELECT and looks at the whole row.
+      - "SELECT DISTINCT role AS job, manager_id AS ___ FROM staff;"
+    explanation: |
+      7 rows. Some roles appear twice because their people report to different managers (for example
+      Cashiers report to staff member 1 or 2). The manager has NULL in `reports_to`, and that row is
+      kept once.
+
+  # ---- Lesson 6: LIMIT, comments and readable SQL -----------------------------------
+  - type: parsons
+    id: m01-t22
+    lesson: m01-l06
+    difficulty: 1
+    prompt: |
+      Put the lines in the right order to peek at the first 3 menu items, starting with a comment that
+      explains the query. One line is a distractor: leave it out.
+    lines:
+      - "/* First look at the menu */"
+      - "SELECT name, category"
+      - "FROM menu_items"
+      - "LIMIT 3;"
+    distractors:
+      - "// First look at the menu"
+    explanation: |
+      Block comments are written `/* ... */`. The `//` style belongs to other languages, so PostgreSQL
+      would report an error. `LIMIT` always comes last.
+
+  - type: quiz
+    id: m01-t23
+    lesson: m01-l06
+    difficulty: 2
+    question: |
+      Maria runs this query to find the **most expensive** item on the menu. Why is that a risky way to
+      find it?
+    sql: |
+      SELECT name, price
+      FROM menu_items
+      LIMIT 1;
+    options:
+      - "Without sorting, LIMIT 1 gives just some row, not necessarily the most expensive"
+      - "LIMIT can only be used together with SELECT *"
+      - "LIMIT 1 always returns the row with the lowest price"
+      - "LIMIT 1 is not allowed: the smallest limit is 2"
+    answer: 0
+    explanation: |
+      `LIMIT` only decides **how many** rows you get, not which ones. Here it happens to return Drip
+      Coffee, the cheapest item, which is the opposite of what Maria wanted. To get the most expensive
+      item you must sort first with `ORDER BY` (module 3) and then use `LIMIT`.
+
+  - type: predict
+    id: m01-t24
+    lesson: m01-l06
+    difficulty: 2
+    question: How many columns and rows does this query return?
+    sql: |
+      SELECT name -- , role
+      FROM staff
+      LIMIT 100;
+    options:
+      - "1 column and 10 rows"
+      - "2 columns and 10 rows"
+      - "1 column and 100 rows"
+      - "An error"
+    answer: 0
+    explanation: |
+      The comment hides `, role`, so only `name` is selected: 1 column. `LIMIT 100` is a maximum, and the
+      `staff` table has just 10 rows, so you get all 10 without any error.
+
+  - type: exercise
+    id: m01-t25
+    lesson: m01-l06
+    difficulty: 3
+    title: Order tags
+    prompt: |
+      Show the first 5 rows of `orders` with two columns: **order_ref**, the text `ORD-` followed by the
+      `order_id` (like `ORD-1`), and **tip_doubled**, the `tip` multiplied by 2.
+    starter: |
+      SELECT 'ORD-' || order_id AS order_ref
+      FROM orders;
+    solution: |
+      SELECT 'ORD-' || order_id AS order_ref,
+             tip * 2 AS tip_doubled
+      FROM orders
+      LIMIT 5;
+    columnNames: true
+    hints:
+      - You need one more column and a LIMIT. The starter already builds the order_ref.
+      - "Add , tip * 2 AS tip_doubled after the first column, and LIMIT 5 at the very end."
+      - "SELECT 'ORD-' || order_id AS order_ref, tip * ___ AS tip_doubled FROM orders LIMIT 5;"
+    explanation: |
+      Text, a calculation, two aliases and `LIMIT` in one query, with `LIMIT` last. This is the whole
+      module in a single statement.
+
 project:
   id: m01-proj
   title: The Café Menu Board
@@ -2106,7 +2634,8 @@ project:
         SELECT name, category, price
         FROM menu_items;
       solution: |
-        SELECT name || ' (' || category || ') - $' || price AS board_line
+        SELECT name || ' (' || category
+               || ') - $' || price AS board_line
         FROM menu_items;
       columnNames: true
       hints:
@@ -2152,10 +2681,12 @@ project:
           **winter price** (`price + 0.50`);
         - **price_for_two**: the winter price doubled.
       starter: |
-        SELECT name || ' (' || category || ') - $' || price AS board_line
+        SELECT name || ' (' || category
+               || ') - $' || price AS board_line
         FROM menu_items;
       solution: |
-        SELECT name || ' (' || category || ') - $' || (price + 0.50) AS board_line,
+        SELECT name || ' (' || category
+               || ') - $' || (price + 0.50) AS board_line,
                (price + 0.50) * 2 AS price_for_two
         FROM menu_items
         LIMIT 8;

@@ -1850,6 +1850,1604 @@ lessons:
           WHERE paid_at >= '2024-11-29'
             AND paid_at <  '2024-11-30';
         note: Use >= start and < next start. BETWEEN misses most of a day for timestamps. CURRENT_DATE and NOW() change every day.
+  - id: m04-l05
+    title: Converting types
+    summary: "Turn text into numbers and dates (and back again) with CAST, the :: shortcut, TO_DATE and TO_NUMBER."
+    minutes: 30
+    steps:
+      - type: read
+        title: Everything arrived as text
+        md: |
+          Dana from finance got a spreadsheet from a supplier. When it was imported, **every** value arrived
+          as text. The price `'29.99'` looks like a number, but SQL sees it as a few characters, so Dana
+          can't add it up, round it or compare it.
+
+          The fix is to **convert** values from one **data type** to another. A data type is the *kind* of
+          value a column holds. You have already met these:
+
+          | Type | Holds | Example |
+          |---|---|---|
+          | `integer` | whole numbers | `42` |
+          | `numeric` | exact decimals | `29.99` |
+          | `text` | characters | `'hello'` |
+          | `date` | a calendar day | `2024-03-15` |
+          | `timestamp` | a day and a time | `2024-03-15 14:30:00` |
+          | `boolean` | true or false | `true` |
+
+          Converting a value to another type is called a **cast**.
+
+          > [!ANALOGY]
+          > A cast is like pouring a drink from a bottle into a glass: the drink stays the same, only
+          > the container changes. And if you try to pour something that doesn't fit, such as the word
+          > "banana" into a number container, SQL refuses and shows an error.
+
+      - type: example
+        title: Which type is it?
+        md: |
+          `pg_typeof(value)` tells you the type of any value or column. Handy when something behaves
+          strangely.
+        sql: |
+          SELECT
+              pg_typeof(name) AS name_is,
+              pg_typeof(price) AS price_is,
+              pg_typeof(stock_qty) AS stock_is,
+              pg_typeof(created_at) AS created_is,
+              pg_typeof(is_active) AS active_is
+          FROM products
+          LIMIT 1;
+        after: |
+          Every column has exactly one type: `text`, `numeric`, `integer`, `date` and `boolean`. Functions
+          and operators are picky about types, and that pickiness is what we learn to handle now.
+
+      - type: example
+        title: Two ways to write a cast
+        md: |
+          `CAST(value AS type)` is the long, readable form. `value::type` (two colons) is the short
+          form PostgreSQL people love. They do exactly the same thing.
+        sql: |
+          SELECT
+              '42' AS plain_text,
+              CAST('42' AS integer) + 1 AS with_cast,
+              '42'::integer + 1 AS with_colons,
+              pg_typeof('42'::integer) AS new_type;
+        after: |
+          The text `'42'` cannot be added to 1, but after the cast it is a real number: `43`. You have
+          already used `::date` and `::numeric` in earlier lessons. Now you know what the two colons do.
+
+          > [!TIP]
+          > The `::` sticks to the value **right before it**. In `price * 100::integer` only the `100` is
+          > cast. Use parentheses to cast a whole calculation: `(price * 100)::integer`.
+
+      - type: example
+        title: Functions are picky about types
+        md: |
+          `LENGTH` counts the characters of *text*. What happens when you give it a `numeric` price?
+        sql: |
+          SELECT name, LENGTH(price)
+          FROM products;
+        expectError: true
+        after: |
+          Read the message: "function length(numeric) does not exist". The database is saying "I know
+          `LENGTH`, but not for numbers." The hint at the bottom, **"You might need to add explicit type
+          casts"**, is the clue. Convert the price to text first:
+
+          ```sql
+          SELECT name, LENGTH(price::text)
+          FROM products;
+          ```
+
+          Whenever you see "function ... does not exist" or "operator does not exist" with type names in
+          brackets, think: *a cast is missing*.
+
+      - type: exercise
+        id: m04-l05-e1
+        title: How wide is the price tag?
+        prompt: |
+          A label printer prints each price exactly as stored, for example `899.99`. For products 1 to 6,
+          show `name`, `price` and `price_chars`: the number of characters of the price when it is
+          written as text. Sort by `product_id`.
+        starter: |
+          SELECT name, price, LENGTH(price) AS price_chars
+          FROM products
+          WHERE product_id <= 6
+          ORDER BY product_id;
+        solution: |
+          SELECT name, price, LENGTH(price::text) AS price_chars
+          FROM products
+          WHERE product_id <= 6
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter crashes because LENGTH needs text, and price is a number.
+          - "Cast the price to text with ::text before giving it to LENGTH."
+          - "SELECT name, price, LENGTH(price::___) AS price_chars FROM products WHERE product_id <= 6 ORDER BY product_id;"
+        explanation: |
+          `price::text` turns `899.99` into the text `'899.99'` (6 characters, the dot counts), and then
+          `LENGTH` can count it. The original `price` column in your result is still a number.
+        difficulty: 1
+
+      - type: read
+        title: What can be converted into what?
+        md: |
+          Casting text into a number only works when the text **really looks like** that number. Here is
+          what PostgreSQL does with a few typical values:
+
+          | Expression | Result |
+          |---|---|
+          | `'42'::integer` | `42` |
+          | `' 42 '::integer` | `42` (spaces around are ignored) |
+          | `'007'::integer` | `7` (leading zeros vanish) |
+          | `'4.7'::numeric` | `4.7` |
+          | `4.7::integer` | `5` (a decimal number is **rounded**) |
+          | `'12abc'::integer` | **error** |
+          | `''::integer` | **error** (empty text is not a number) |
+          | `'4.7'::integer` | **error** (an integer has no decimal point) |
+          | `'$1,299.50'::numeric` | **error** (`$` and `,` are not allowed) |
+
+          > [!MISTAKE]
+          > Storing phone numbers, zip codes or codes like `0042` as numbers. The leading zero disappears
+          > for good: `'0100'::integer` is `100`. Anything you never calculate with belongs in **text**.
+
+      - type: example
+        title: A cast error
+        md: |
+          One bad value is enough to stop the whole query. Run it and read the message.
+        sql: |
+          SELECT '12abc'::integer;
+        expectError: true
+        after: |
+          "invalid input syntax for type integer: "12abc"". The message shows the exact value that could
+          not be converted, which makes bad data easy to find.
+
+          In real imports the troublemakers are values like `'N/A'`, `''` (empty), `'12 pcs'` or
+          `'1,299'`. A later module (data cleaning) shows safe ways to handle them. For now: **clean the
+          text first, then cast.**
+
+      - type: predict
+        id: m04-l05-p1
+        question: What does this query do?
+        sql: |
+          SELECT '4.7'::integer;
+        options: ["Returns 4", "Returns 5", "Returns 4.7", "Fails with an error"]
+        answer: 3
+        expectError: true
+        explanation: |
+          The text `'4.7'` contains a decimal point, and `integer` cannot read that, so you get
+          "invalid input syntax for type integer". Two safe routes: `'4.7'::numeric` keeps the decimals,
+          and `'4.7'::numeric::integer` gives `5` (casts can be chained).
+
+      - type: example
+        title: Casting fixes whole-number division
+        md: |
+          Remember the whole-number division trap from the number-functions lesson? A cast is the tidy
+          cure: make one side a `numeric` before dividing.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              stock_qty / 12 AS whole_only,
+              stock_qty::numeric / 12 AS with_cast
+          FROM products
+          WHERE category_id = 14
+          ORDER BY product_id;
+        after: |
+          `stock_qty / 12` throws the fraction away (134 / 12 = 11). With `stock_qty::numeric / 12` the
+          division keeps its decimals (11.1666...). Writing `12.0` also works, but the cast is the only
+          option when **both** sides are columns, such as `part / total`.
+
+      - type: exercise
+        id: m04-l05-e2
+        title: Fix the fill-level report
+        prompt: |
+          The warehouse has room for **500 units** of every product. For products 1 to 6 show `name`,
+          `stock_qty` and `fill_pct`: the stock as a percentage of 500, rounded to 1 decimal. Sort by
+          `product_id`.
+
+          The query below shows `0.0` for every product. Fix it with a cast.
+        starter: |
+          SELECT name, stock_qty,
+              ROUND(stock_qty / 500 * 100, 1) AS fill_pct
+          FROM products
+          WHERE product_id <= 6
+          ORDER BY product_id;
+        solution: |
+          SELECT name, stock_qty,
+              ROUND(stock_qty::numeric / 500 * 100, 1) AS fill_pct
+          FROM products
+          WHERE product_id <= 6
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "stock_qty and 500 are both whole numbers, so stock_qty / 500 is cut down to 0."
+          - "Cast stock_qty to numeric before the division: stock_qty::numeric / 500."
+          - "ROUND(stock_qty::___ / 500 * 100, 1)"
+        explanation: |
+          With whole numbers `15 / 500` is `0`, and `0 * 100` is still `0`. Casting `stock_qty` to
+          `numeric` makes every following step keep its decimals: 15 units fill 3.0% of the room, the
+          wireless mouse (360 units) fills 72.0%.
+        difficulty: 2
+
+      - type: read
+        title: Text and dates
+        md: |
+          Text in the standard `YYYY-MM-DD` form converts to a date without trouble:
+          `'2024-03-15'::date` (you may also write `DATE '2024-03-15'`).
+
+          But dates written in other ways are risky. What does `03/04/2024` mean? In the US it is
+          **March 4** (month first). In much of Europe it is **3 April** (day first). In this course's
+          database, `'03/04/2024'::date` is read month first, so it becomes March 4.
+
+          The safe tool is **`TO_DATE(text, pattern)`**. You describe the pattern with the same format
+          codes as `TO_CHAR` (`YYYY`, `MM`, `DD`, `Mon`, `Month`...), so there is no guessing. Think of
+          `TO_DATE` as `TO_CHAR` in reverse.
+
+      - type: example
+        title: TO_DATE in action
+        md: The same text read in different ways.
+        sql: |
+          SELECT
+              '03/04/2024'::date AS guessed,
+              TO_DATE('03/04/2024', 'MM/DD/YYYY') AS month_first,
+              TO_DATE('03/04/2024', 'DD/MM/YYYY') AS day_first,
+              TO_DATE('March 5, 2024', 'Month DD, YYYY') AS long_form;
+        after: |
+          The same eight characters give two different dates: `2024-03-04` (month first) and `2024-04-03`
+          (day first). You decide with the pattern.
+
+          The last column shows that even a date written in words can be read. If the text is not a real
+          date (say `31/02/2024`), you get an error instead of a wrong answer.
+
+      - type: exercise
+        id: m04-l05-e3
+        title: A supplier delivery note
+        prompt: |
+          A supplier's delivery note says the goods arrive on `'07/11/2024'` (**day** first, so
+          7 November). Show two columns in one row:
+
+          - `delivery_date`: the text converted to a real date
+          - `days_left`: the number of days from that date to `2024-12-31`
+        solution: |
+          SELECT
+              TO_DATE('07/11/2024', 'DD/MM/YYYY') AS delivery_date,
+              DATE '2024-12-31'
+                  - TO_DATE('07/11/2024', 'DD/MM/YYYY') AS days_left;
+        columnNames: true
+        hints:
+          - The text is day/month/year, so tell TO_DATE that with the right pattern.
+          - "TO_DATE('07/11/2024', 'DD/MM/YYYY'), and date minus date gives days."
+          - "SELECT TO_DATE('07/11/2024', '___') AS delivery_date, DATE '2024-12-31' - TO_DATE('07/11/2024', '___') AS days_left;"
+        explanation: |
+          Read as day first, the note means 7 November 2024, which is 54 days before the end of the
+          year. If you used `MM/DD/YYYY` by mistake you would get 11 July instead. Always check the
+          pattern against a date you know.
+        difficulty: 2
+
+      - type: stepper
+        title: Cleaning a price that arrived as text
+        md: |
+          The supplier's price is the text `'$1,299.50'`. Click through the stages and run each one.
+        stages:
+          - label: Raw text
+            md: A price tag with a dollar sign and a thousands comma. It is text, so no maths yet.
+            sql: |
+              SELECT
+                  '$1,299.50'::text AS raw_price,
+                  pg_typeof('$1,299.50'::text) AS its_type;
+          - label: Remove the symbols
+            md: '`REPLACE` deletes the `$` and the comma. The result is still text.'
+            sql: |
+              SELECT
+                  REPLACE(REPLACE('$1,299.50', '$', ''), ',', '')
+                      AS cleaned_text;
+          - label: Cast to numeric
+            md: Now the text looks like a number, so `::numeric` works. Add 10% and round.
+            sql: |
+              SELECT
+                  ROUND(REPLACE(REPLACE('$1,299.50', '$', ''), ',', '')
+                      ::numeric * 1.1, 2) AS plus_10_pct;
+          - label: The shortcut
+            md: |
+              `TO_NUMBER(text, pattern)` reads the number straight from the text. In the pattern `9` is a
+              digit, `,` a thousands comma and `.` the decimal point.
+            sql: |
+              SELECT
+                  TO_NUMBER('$1,299.50', '$9,999.99') AS parsed,
+                  ROUND(TO_NUMBER('$1,299.50', '$9,999.99') * 1.1, 2)
+                      AS plus_10_pct;
+
+      - type: example
+        title: From timestamp to date
+        md: |
+          `payments.paid_at` has a date **and** a time. Casting it to `date` drops the time, which is a
+          simple way to pick one calendar day.
+        sql: |
+          SELECT
+              payment_id,
+              paid_at,
+              paid_at::date AS paid_on,
+              amount
+          FROM payments
+          WHERE paid_at::date = DATE '2024-12-20'
+          ORDER BY payment_id;
+        after: |
+          Five payments were made on 20 December, at different times of the day, and `paid_at::date`
+          turns them all into the same day. This is shorter than the `>= start AND < next day` range from
+          the previous lesson. On huge tables the range is still faster, but for everyday reports the
+          cast reads beautifully.
+
+      - type: exercise
+        id: m04-l05-e4
+        title: Black Friday weekend payments
+        prompt: |
+          Show `payment_id`, `paid_on` (the date only), `method` and `amount` for all payments made from
+          `2024-11-29` to `2024-11-30`, **both days included**. Sort by `payment_id`.
+        solution: |
+          SELECT
+              payment_id,
+              paid_at::date AS paid_on,
+              method,
+              amount
+          FROM payments
+          WHERE paid_at::date BETWEEN '2024-11-29' AND '2024-11-30'
+          ORDER BY payment_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Cast the timestamp to a date and the time of day stops mattering.
+          - "WHERE paid_at::date BETWEEN '2024-11-29' AND '2024-11-30'"
+          - "SELECT payment_id, paid_at::___ AS paid_on, method, amount FROM payments WHERE paid_at::date BETWEEN '2024-11-29' AND '2024-11-30' ORDER BY payment_id;"
+        explanation: |
+          11 payments: 7 on Friday and 4 on Saturday. Without the cast, `paid_at BETWEEN '2024-11-29' AND
+          '2024-11-30'` would end at **midnight** of the 30th and silently return only the 7 Friday
+          payments. Casting to `date` makes `BETWEEN` safe.
+        difficulty: 1
+
+      - type: quiz
+        id: m04-l05-q1
+        question: |
+          `price` is 899.99. What does `price::integer` return?
+        options:
+          - "899 (the decimals are chopped off)"
+          - "900 (rounded to the nearest whole number)"
+          - "899.99 (nothing changes)"
+          - "An error"
+        answer: 1
+        explanation: |
+          Casting a decimal number to `integer` **rounds** it. If you want to chop the decimals off
+          instead, use `TRUNC(price)`, which gives `899`.
+
+      - type: exercise
+        id: m04-l05-e5
+        title: Fix the customer codes
+        prompt: |
+          The new CRM wants a customer code made of the letter `C` and the customer id padded with
+          zeros to **4 digits**, such as `C0007`. For customers 1 to 5 show `customer_id` and
+          `customer_code`, sorted by `customer_id`.
+
+          The query below crashes. Can you fix it?
+        starter: |
+          SELECT customer_id,
+              'C' || LPAD(customer_id, 4, '0') AS customer_code
+          FROM customers
+          WHERE customer_id <= 5
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id,
+              'C' || LPAD(customer_id::text, 4, '0') AS customer_code
+          FROM customers
+          WHERE customer_id <= 5
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The error says function lpad(integer, ...) does not exist. LPAD pads text, but customer_id is a number."
+          - "Cast customer_id to text before padding it: customer_id::text."
+          - "'C' || LPAD(customer_id::___, 4, '0')"
+        explanation: |
+          `LPAD` works on text, so the number must be converted first: `7::text` becomes `'7'` and
+          `LPAD('7', 4, '0')` becomes `'0007'`. This is the same type pickiness as in the `LENGTH`
+          example, just with a different function.
+        difficulty: 2
+
+      - type: fill
+        id: m04-l05-f1
+        prompt: |
+          Complete the query so that it turns the text `'25-12-2024'` (day-month-year) into a date.
+        template: |
+          SELECT TO_DATE('25-12-2024', '___-MM-___');
+        answers:
+          - ["DD"]
+          - ["YYYY"]
+        explanation: |
+          The pattern mirrors the text: `DD` for the day (25), `MM` for the month (12) and `YYYY` for
+          the four-digit year (2024). The dashes are copied as they are.
+
+      - type: exercise
+        id: m04-l05-e6
+        title: Quarter labels
+        prompt: |
+          Reports often label periods like `2024-Q4`. For orders 1, 300, 600 and 900 show `order_id` and
+          `quarter_label`: the year, then `-Q`, then the quarter number (1 to 4) of the `order_date`.
+          Sort by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              EXTRACT(YEAR FROM order_date)::text
+                  || '-Q'
+                  || EXTRACT(QUARTER FROM order_date)::text
+                  AS quarter_label
+          FROM orders
+          WHERE order_id IN (1, 300, 600, 900)
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "EXTRACT(YEAR FROM ...) and EXTRACT(QUARTER FROM ...) give numbers. Glue the pieces together with ||."
+          - "Convert both numbers with ::text and put the text '-Q' between them."
+          - "SELECT order_id, EXTRACT(YEAR FROM order_date)::text || '-Q' || EXTRACT(QUARTER FROM ___)::text AS quarter_label FROM orders WHERE order_id IN (1, 300, 600, 900) ORDER BY order_id;"
+        explanation: |
+          The results are `2023-Q1`, `2023-Q4`, `2024-Q3` and `2024-Q4`. PostgreSQL would also accept the
+          shorter `TO_CHAR(order_date, 'YYYY-"Q"Q')`, where the second `Q` is the quarter code. Both give
+          the same text.
+        difficulty: 2
+
+      - type: parsons
+        id: m04-l05-o1
+        prompt: |
+          Arrange the lines to show the payments made on **22 December 2024** with their date (without
+          the time), sorted by `payment_id`. One line does not belong.
+        lines:
+          - SELECT payment_id, paid_at::date AS paid_on
+          - FROM payments
+          - WHERE paid_at::date = DATE '2024-12-22'
+          - ORDER BY payment_id;
+        distractors:
+          - WHERE paid_at = DATE '2024-12-22'
+        explanation: |
+          Casting `paid_at` to `date` first matches the whole day. The distractor compares the full
+          timestamp with midnight, so it only finds payments made at exactly `00:00:00`.
+
+      - type: exercise
+        id: m04-l05-e7
+        title: Area codes as numbers
+        prompt: |
+          Show `customer_id`, `phone` and `area_code` for customers 1 to 60 whose area code is
+          **between 300 and 350** (both included). `area_code` must be the three digits after the
+          opening bracket, converted to a whole **number**. Sort by `area_code`, then by `customer_id`.
+        starter: |
+          SELECT customer_id, phone,
+              SUBSTRING(phone FROM 2 FOR 3) AS area_code
+          FROM customers
+          WHERE customer_id <= 60
+              AND SUBSTRING(phone FROM 2 FOR 3) BETWEEN 300 AND 350
+          ORDER BY area_code, customer_id;
+        solution: |
+          SELECT
+              customer_id,
+              phone,
+              SUBSTRING(phone FROM 2 FOR 3)::integer AS area_code
+          FROM customers
+          WHERE customer_id <= 60
+              AND SUBSTRING(phone FROM 2 FOR 3)::integer
+                  BETWEEN 300 AND 350
+          ORDER BY area_code, customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The starter fails because SUBSTRING returns text, and text cannot be compared with the numbers 300 and 350."
+          - "Cast the extracted digits to integer in WHERE (and in SELECT, so area_code is a number)."
+          - "SUBSTRING(phone FROM 2 FOR 3)::___ BETWEEN 300 AND 350"
+        explanation: |
+          Ten customers match: five in area code 303, two in 305 and three in 312. The cast has to be
+          repeated in `WHERE` because the alias `area_code` doesn't exist yet when `WHERE` runs. Customers
+          without a phone (NULL) drop out automatically.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Two spellings of a cast
+        sql: |
+          SELECT CAST('42' AS integer),
+                 '42'::integer,
+                 price::text,
+                 (price * 100)::integer
+          FROM products;
+        note: "value::type sticks to the value before it; use parentheses to cast a whole calculation. Decimal to integer rounds."
+      - title: Text to date and number
+        sql: |
+          SELECT TO_DATE('15/03/2024', 'DD/MM/YYYY'),
+                 TO_NUMBER('$1,299.50', '$9,999.99'),
+                 '2024-03-15'::date;
+        note: "TO_DATE and TO_NUMBER read text with a pattern (like TO_CHAR in reverse). Impossible dates raise an error."
+      - title: Fixing integer division and timestamps
+        sql: |
+          SELECT stock_qty::numeric / 12 FROM products;
+          SELECT paid_at::date FROM payments;
+        note: "Cast one side to numeric to keep decimals. timestamp::date drops the time of day."
+      - title: Typical cast errors
+        sql: |
+          -- invalid input syntax for type integer: "12abc"
+          SELECT '12abc'::integer;
+          -- function lpad(integer, ...) does not exist
+          SELECT LPAD(7, 4, '0');
+        note: "'12abc', '' and '4.7' cannot become integers. 'Function/operator does not exist' usually means a cast is missing."
+  - id: m04-l06
+    title: CASE WHEN
+    summary: "SQL's if-this-then-that: label rows, group numbers into bands and sort in your own order."
+    minutes: 30
+    steps:
+      - type: read
+        title: Badges for the home page
+        md: |
+          Karim wants every product on the home page to carry a badge: **Budget**, **Standard**,
+          **Premium**... The price is a number, but the badge is a *word* that depends on the number.
+
+          SQL's way of saying "if this, then that, otherwise something else" is **CASE**:
+
+          ```sql
+          CASE
+              WHEN condition THEN result
+              WHEN other_condition THEN other_result
+              ELSE fallback_result
+          END
+          ```
+
+          SQL checks the `WHEN` lines **from top to bottom**. The first condition that is true decides the
+          result. If none is true, the `ELSE` result is used. `END` closes the whole block, and you give
+          it a column name with `AS`, just like any other value.
+
+          > [!ANALOGY]
+          > Imagine a bouncer with a list of rules: "Under 18? Go left. Wearing a hat? Go right. Everyone
+          > else: straight in." The bouncer stops at the **first** rule that matches. CASE works the same
+          > way for every row.
+
+      - type: example
+        title: Your first CASE
+        md: |
+          Label each product by how many are left in the warehouse. Run it and read the new column.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              CASE
+                  WHEN stock_qty = 0 THEN 'Out of stock'
+                  WHEN stock_qty < 20 THEN 'Low'
+                  ELSE 'In stock'
+              END AS stock_status
+          FROM products
+          WHERE product_id <= 9
+          ORDER BY product_id;
+        after: |
+          The webcam (0 units) matches the first `WHEN`. Five products have fewer than 20 units, so they
+          are `Low`. The mouse (360 units) matches nothing and falls through to `ELSE`.
+
+          Notice that the webcam would *also* satisfy `stock_qty < 20`. It is labelled `Out of stock`
+          because that line comes first. Keep this in mind, it is important in a minute.
+
+      - type: exercise
+        id: m04-l06-e1
+        title: Cheap, mid or pricey
+        prompt: |
+          For products 1 to 10 show `name`, `price` and `price_label`:
+
+          - `'Cheap'` when the price is **below 50**
+          - `'Mid'` when it is **below 200**
+          - `'Pricey'` otherwise
+
+          Sort by `product_id`.
+        starter: |
+          SELECT name, price,
+              CASE
+                  WHEN price < 50 THEN 'Cheap'
+              END AS price_label
+          FROM products
+          WHERE product_id <= 10
+          ORDER BY product_id;
+        solution: |
+          SELECT
+              name,
+              price,
+              CASE
+                  WHEN price < 50 THEN 'Cheap'
+                  WHEN price < 200 THEN 'Mid'
+                  ELSE 'Pricey'
+              END AS price_label
+          FROM products
+          WHERE product_id <= 10
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need two more branches after 'Cheap'. Work from the lowest limit upwards.
+          - "WHEN price < 200 THEN 'Mid' comes second, and ELSE catches everything else."
+          - "CASE WHEN price < 50 THEN 'Cheap' WHEN price < ___ THEN 'Mid' ELSE '___' END AS price_label"
+        explanation: |
+          A price of 129.99 is below 200 but not below 50, so it skips the first `WHEN` and lands in
+          `Mid`. Because we go upwards (50, then 200), each line only has to describe its own band: the
+          earlier lines have already taken the cheaper prices out of the game.
+        difficulty: 1
+
+      - type: example
+        title: Order matters - the first match wins
+        md: |
+          Here the lines are in the **wrong order**. Which badge does the 899.99 laptop get?
+        sql: |
+          SELECT
+              name,
+              price,
+              CASE
+                  WHEN price >= 25 THEN 'Standard'
+                  WHEN price >= 100 THEN 'Premium'
+                  ELSE 'Budget'
+              END AS tier
+          FROM products
+          WHERE product_id IN (1, 6, 7, 21)
+          ORDER BY product_id;
+        after: |
+          The laptop is "Standard"! Its price (899.99) is at least 25, so the first `WHEN` is true and
+          SQL never even looks at the `Premium` line.
+
+          > [!MISTAKE]
+          > Putting a broad condition before a narrow one. For "at least" rules, start with the **highest**
+          > limit and go down. For "below" rules, start with the **lowest** limit and go up. Then every
+          > line is only reached by rows that missed all the lines above it.
+
+      - type: exercise
+        id: m04-l06-e2
+        title: Fix the tiers
+        prompt: |
+          Tag products 1 to 13 with a `tier`: `'Luxury'` (price at least 500), `'Premium'` (at least
+          100), `'Standard'` (at least 25) or `'Budget'` (below 25). Show `name`, `price` and `tier`,
+          sorted by `product_id`.
+
+          The query below puts almost everything in `Standard`. Fix the order of the lines.
+        starter: |
+          SELECT name, price,
+              CASE
+                  WHEN price >= 25 THEN 'Standard'
+                  WHEN price >= 100 THEN 'Premium'
+                  WHEN price >= 500 THEN 'Luxury'
+                  ELSE 'Budget'
+              END AS tier
+          FROM products
+          WHERE product_id <= 13
+          ORDER BY product_id;
+        solution: |
+          SELECT
+              name,
+              price,
+              CASE
+                  WHEN price >= 500 THEN 'Luxury'
+                  WHEN price >= 100 THEN 'Premium'
+                  WHEN price >= 25 THEN 'Standard'
+                  ELSE 'Budget'
+              END AS tier
+          FROM products
+          WHERE product_id <= 13
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "'At least' rules must be checked from the biggest limit to the smallest."
+          - "Check 500 first, then 100, then 25."
+          - "WHEN price >= 500 THEN 'Luxury' WHEN price >= ___ THEN 'Premium' WHEN price >= ___ THEN 'Standard' ELSE 'Budget'"
+        explanation: |
+          Only the Desk Mat XL (19.99) is a `Budget` item in this range. The fix did not change a single
+          condition, only their order. In CASE, **the order is part of the logic**.
+        difficulty: 2
+
+      - type: stepper
+        title: Building a CASE step by step
+        md: |
+          Watch what happens to the `tier` column as we add one line at a time. Run each stage.
+        stages:
+          - label: The prices
+            md: Five products, from the most to the least expensive.
+            sql: |
+              SELECT name, price
+              FROM products
+              WHERE product_id IN (1, 8, 7, 6, 21)
+              ORDER BY price DESC;
+          - label: One WHEN
+            md: |
+              A single `WHEN` and no `ELSE`. Rows that don't match get **NULL** (nothing) in the new column.
+            sql: |
+              SELECT name, price,
+                  CASE
+                      WHEN price >= 500 THEN 'Luxury'
+                  END AS tier
+              FROM products
+              WHERE product_id IN (1, 8, 7, 6, 21)
+              ORDER BY price DESC;
+          - label: Second WHEN
+            md: A second line catches the next band.
+            sql: |
+              SELECT name, price,
+                  CASE
+                      WHEN price >= 500 THEN 'Luxury'
+                      WHEN price >= 100 THEN 'Premium'
+                  END AS tier
+              FROM products
+              WHERE product_id IN (1, 8, 7, 6, 21)
+              ORDER BY price DESC;
+          - label: Add ELSE
+            md: '`ELSE` takes care of everything that is left, so no NULLs remain.'
+            sql: |
+              SELECT name, price,
+                  CASE
+                      WHEN price >= 500 THEN 'Luxury'
+                      WHEN price >= 100 THEN 'Premium'
+                      ELSE 'Everyday'
+                  END AS tier
+              FROM products
+              WHERE product_id IN (1, 8, 7, 6, 21)
+              ORDER BY price DESC;
+
+      - type: quiz
+        id: m04-l06-q1
+        question: |
+          A `CASE` has several `WHEN` lines but **no `ELSE`**. What does a row get when none of the
+          conditions is true?
+        options: ["An error", "0", "NULL", "An empty text ''"]
+        answer: 2
+        explanation: |
+          Without `ELSE`, unmatched rows get **NULL**. That is why you should nearly always write an
+          `ELSE`: either a real fallback label like `'Other'`, or, if NULL is what you want, an explicit
+          `ELSE NULL` so the next reader knows it was on purpose.
+
+      - type: read
+        title: Simple CASE - one column, exact values
+        md: |
+          When you only compare **one column** with **exact values**, there is a shorter form:
+
+          ```sql
+          CASE status
+              WHEN 'delivered' THEN 'Done'
+              WHEN 'shipped' THEN 'On its way'
+              ELSE 'Other'
+          END
+          ```
+
+          It means the same as `CASE WHEN status = 'delivered' THEN ... WHEN status = 'shipped' THEN ...`.
+          The first form is called a **searched CASE** (any condition), the second a **simple CASE**
+          (only `=`). For ranges (`<`, `>`, `BETWEEN`), `AND`/`OR` or `IS NULL`, use the searched form.
+
+          > [!MISTAKE]
+          > `CASE col WHEN NULL THEN ...` never matches, because it really means `col = NULL`, which is
+          > never true. Write `CASE WHEN col IS NULL THEN ...` instead.
+
+      - type: example
+        title: Friendly order messages
+        md: |
+          Turn the technical `status` into a message a customer would understand.
+        sql: |
+          SELECT
+              order_id,
+              status,
+              CASE status
+                  WHEN 'processing' THEN 'Packing'
+                  WHEN 'shipped' THEN 'On its way'
+                  WHEN 'delivered' THEN 'Delivered'
+                  ELSE 'Closed'
+              END AS message
+          FROM orders
+          WHERE order_id BETWEEN 885 AND 892
+          ORDER BY order_id;
+        after: |
+          Eight orders, four different messages. The cancelled order 888 matches none of the three
+          values and gets the `ELSE` message `Closed`.
+
+      - type: exercise
+        id: m04-l06-e3
+        title: Stars to words
+        prompt: |
+          For reviews 1 to 10 show `review_id`, `rating` and `verdict`, using a simple CASE on the rating:
+          5 is `'Excellent'`, 4 is `'Good'`, 3 is `'Okay'` and anything else is `'Poor'`.
+          Sort by `review_id`.
+        solution: |
+          SELECT
+              review_id,
+              rating,
+              CASE rating
+                  WHEN 5 THEN 'Excellent'
+                  WHEN 4 THEN 'Good'
+                  WHEN 3 THEN 'Okay'
+                  ELSE 'Poor'
+              END AS verdict
+          FROM reviews
+          WHERE review_id <= 10
+          ORDER BY review_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You compare one column (rating) with exact values, so the short CASE form fits.
+          - "CASE rating WHEN 5 THEN 'Excellent' ... ELSE 'Poor' END"
+          - "CASE rating WHEN 5 THEN 'Excellent' WHEN ___ THEN 'Good' WHEN ___ THEN 'Okay' ELSE 'Poor' END AS verdict"
+        explanation: |
+          Ratings 1 and 2 are not listed, so both fall through to `ELSE` and become `Poor`. Writing
+          `CASE WHEN rating = 5 THEN ...` gives exactly the same result.
+        difficulty: 1
+
+      - type: predict
+        id: m04-l06-p1
+        question: What does this query return?
+        sql: |
+          SELECT CASE
+              WHEN NULL = NULL THEN 'same'
+              ELSE 'different'
+          END;
+        options: ["same", "different", "NULL", "An error"]
+        answer: 1
+        explanation: |
+          `NULL = NULL` is not true, it is NULL ("unknown"). A `WHEN` only fires for a condition that is
+          really **true**, so SQL moves on to `ELSE` and returns `different`. To test for NULL use
+          `WHEN x IS NULL`.
+
+      - type: example
+        title: CASE in ORDER BY - your own sort order
+        md: |
+          Alphabetical order puts `cancelled` first and `shipped` last, which isn't how a warehouse
+          thinks. CASE can turn each status into a **sort number**.
+        sql: |
+          SELECT order_id, status
+          FROM orders
+          WHERE order_id BETWEEN 885 AND 900
+          ORDER BY
+              CASE status
+                  WHEN 'processing' THEN 1
+                  WHEN 'shipped' THEN 2
+                  ELSE 3
+              END,
+              order_id;
+        after: |
+          First all `processing` orders (rank 1), then `shipped` (rank 2), then everything else (rank 3).
+          Inside each group the second sort key, `order_id`, keeps a clear order. The sort numbers are
+          never shown, they only steer the sorting.
+
+      - type: exercise
+        id: m04-l06-e4
+        title: Problems first
+        prompt: |
+          For orders 885 to 900 show `order_id` and `status`, sorted so that **`processing`** orders come
+          first, then **`cancelled`** orders, then all other orders. Inside each group sort by `order_id`.
+        solution: |
+          SELECT order_id, status
+          FROM orders
+          WHERE order_id BETWEEN 885 AND 900
+          ORDER BY
+              CASE status
+                  WHEN 'processing' THEN 1
+                  WHEN 'cancelled' THEN 2
+                  ELSE 3
+              END,
+              order_id;
+        ordered: true
+        hints:
+          - Give each status a sort number inside ORDER BY.
+          - "processing = 1, cancelled = 2, everything else = 3, then order_id as tie-breaker."
+          - "ORDER BY CASE status WHEN 'processing' THEN 1 WHEN '___' THEN 2 ELSE 3 END, order_id;"
+        explanation: |
+          The 7 processing orders come first, then the single cancelled order (888), then the remaining
+          8. Without the `order_id` tie-breaker, the order inside a group would be left to chance.
+        difficulty: 2
+
+      - type: example
+        title: A CASE with mixed results
+        md: |
+          Show "Sold out" when nothing is left, otherwise the number of units. Run it and read the error.
+        sql: |
+          SELECT
+              name,
+              CASE
+                  WHEN stock_qty = 0 THEN 'Sold out'
+                  ELSE stock_qty
+              END AS stock_info
+          FROM products
+          WHERE product_id <= 9
+          ORDER BY product_id;
+        expectError: true
+        after: |
+          All results of a CASE (every `THEN` and the `ELSE`) become **one column**, and a column has one
+          type. SQL tries to turn `'Sold out'` into a number and fails: "invalid input syntax for type
+          integer".
+
+          The fix is to make all branches the same type, here text:
+
+          ```sql
+          ELSE stock_qty::text
+          ```
+
+          (You met `::text` in the previous lesson.)
+
+      - type: exercise
+        id: m04-l06-e5
+        title: What should the warehouse do?
+        prompt: |
+          For every product with **fewer than 20 units** in stock, show `name`, `stock_qty` and `action`:
+
+          - `'Discontinued'` if the product is no longer active (`is_active` is false)
+          - otherwise `'Reorder now'` if the stock is 0
+          - otherwise `'Reorder soon'`
+
+          Sort by `product_id`.
+        solution: |
+          SELECT
+              name,
+              stock_qty,
+              CASE
+                  WHEN NOT is_active THEN 'Discontinued'
+                  WHEN stock_qty = 0 THEN 'Reorder now'
+                  ELSE 'Reorder soon'
+              END AS action
+          FROM products
+          WHERE stock_qty < 20
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Three outcomes, but the order of the checks matters. Which rule must win over the others?
+          - "Check is_active first: an inactive product with 0 stock is 'Discontinued', not 'Reorder now'."
+          - "CASE WHEN NOT is_active THEN 'Discontinued' WHEN stock_qty = ___ THEN 'Reorder now' ELSE 'Reorder soon' END AS action"
+        explanation: |
+          Fifteen products have low stock. Four of them are discontinued, and three of those (Desk Mat XL,
+          Budget Phone Go and Plush Dragon) also have 0 units, so the inactive check has to come first.
+          You can use a boolean column directly as a condition: `WHEN NOT is_active` means "when it is
+          false".
+        difficulty: 2
+
+      - type: fill
+        id: m04-l06-f1
+        prompt: |
+          Complete the CASE so that cancelled orders are labelled `Stopped` and all other orders `Active`.
+        template: |
+          SELECT order_id,
+              CASE
+                  ___ status = 'cancelled' THEN 'Stopped'
+                  ELSE 'Active'
+              ___ AS state
+          FROM orders;
+        answers:
+          - ["WHEN"]
+          - ["END"]
+        explanation: |
+          Each branch starts with `WHEN condition THEN result`, and the whole block must be closed with
+          `END`. Forgetting `END` is the most common CASE typo.
+
+      - type: exercise
+        id: m04-l06-e6
+        title: Age groups
+        prompt: |
+          For customers 1 to 12 show `customer_id`, `first_name` and `age_group`, based on their age in
+          whole years on `2024-12-31`:
+
+          - `'Unknown'` if there is no `birth_date`
+          - `'Under 30'` if younger than 30
+          - `'30 to 49'` if 30 to 49
+          - `'50 or older'` otherwise
+
+          Sort by `customer_id`.
+        solution: |
+          SELECT
+              customer_id,
+              first_name,
+              CASE
+                  WHEN birth_date IS NULL THEN 'Unknown'
+                  WHEN EXTRACT(YEAR FROM
+                      AGE(DATE '2024-12-31', birth_date)) < 30
+                      THEN 'Under 30'
+                  WHEN EXTRACT(YEAR FROM
+                      AGE(DATE '2024-12-31', birth_date)) < 50
+                      THEN '30 to 49'
+                  ELSE '50 or older'
+              END AS age_group
+          FROM customers
+          WHERE customer_id <= 12
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Deal with the missing birth date in the very first WHEN, using IS NULL.
+          - "Age in whole years: EXTRACT(YEAR FROM AGE(DATE '2024-12-31', birth_date)). Compare it with 30, then 50."
+          - "CASE WHEN birth_date IS NULL THEN 'Unknown' WHEN EXTRACT(YEAR FROM AGE(DATE '2024-12-31', birth_date)) < ___ THEN 'Under 30' WHEN ... < ___ THEN '30 to 49' ELSE '50 or older' END"
+        explanation: |
+          Customer 3 (22) is under 30, customers 1, 5, 6 and 7 are 30 to 49, customer 12 is unknown and
+          the other six are 50 or older. Checking `IS NULL` first keeps the rest of the logic simple: later
+          lines never see a missing date.
+        difficulty: 3
+
+      - type: parsons
+        id: m04-l06-o1
+        prompt: |
+          Arrange the lines to label the first five products `'Premium'` (price at least 100) or
+          `'Regular'`, sorted by `product_id`. One line does not belong.
+        lines:
+          - SELECT name,
+          - CASE
+          - WHEN price >= 100 THEN 'Premium'
+          - ELSE 'Regular'
+          - END AS tier
+          - FROM products
+          - ORDER BY product_id
+          - LIMIT 5;
+        distractors:
+          - IF price >= 100 THEN 'Premium'
+        explanation: |
+          A `SELECT` query has no `IF`. CASE is how SQL expresses "if / then / else" inside a query. The
+          block always runs `CASE`, then `WHEN ... THEN` lines, an optional `ELSE`, and finally `END`.
+
+      - type: example
+        title: CASE inside a calculation
+        md: |
+          CASE produces a single value, so it can sit anywhere a value fits - even in the middle of
+          a sum. Orders under $50 pay $4.99 shipping; bigger ones ship free.
+        sql: |
+          SELECT
+              name,
+              price,
+              price
+                  + CASE WHEN price >= 50 THEN 0 ELSE 4.99 END
+                  AS price_with_shipping
+          FROM products
+          WHERE product_id IN (6, 7, 9, 21)
+          ORDER BY product_id;
+        after: |
+          The CASE returns either `0` or `4.99` and the `+` adds it to the price: the mouse costs
+          29.99 + 4.99 = 34.98, the keyboard (89.99) ships free. You could also wrap the whole thing in
+          `ROUND(..., 2)`.
+
+      - type: exercise
+        id: m04-l06-e7
+        title: The weekend sale
+        prompt: |
+          Weekend sale rules: **20% off** products priced at **$500 or more**, **10% off** products from
+          $100 up to (but not including) $500, nothing off below $100.
+
+          For products 1 to 10 show `name`, `price` and `sale_price` (the price after the discount,
+          rounded to 2 decimals). Sort by `product_id`.
+        solution: |
+          SELECT
+              name,
+              price,
+              ROUND(price * CASE
+                  WHEN price >= 500 THEN 0.80
+                  WHEN price >= 100 THEN 0.90
+                  ELSE 1
+              END, 2) AS sale_price
+          FROM products
+          WHERE product_id <= 10
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - 20% off means you pay 80%, which is price times 0.80.
+          - "Let CASE produce the multiplier (0.80, 0.90 or 1), multiply the price by it and wrap it all in ROUND(..., 2)."
+          - "ROUND(price * CASE WHEN price >= 500 THEN 0.80 WHEN price >= ___ THEN 0.90 ELSE ___ END, 2) AS sale_price"
+        explanation: |
+          Letting CASE return just the multiplier keeps the formula short: the price is written once.
+          Check the order again: the `>= 500` line must come before `>= 100`, or the laptops would only
+          get 10% off.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Searched CASE (any condition)
+        sql: |
+          SELECT name,
+              CASE
+                  WHEN price >= 500 THEN 'Luxury'
+                  WHEN price >= 100 THEN 'Premium'
+                  ELSE 'Everyday'
+              END AS tier
+          FROM products;
+        note: "Lines are checked top to bottom and the first true WHEN wins. No ELSE means NULL."
+      - title: Simple CASE (exact values)
+        sql: |
+          SELECT order_id,
+              CASE status
+                  WHEN 'shipped' THEN 'On its way'
+                  WHEN 'delivered' THEN 'Done'
+                  ELSE 'Other'
+              END AS message
+          FROM orders;
+        note: "Only equality is possible. To test for NULL use WHEN col IS NULL."
+      - title: CASE for a custom sort order
+        sql: |
+          SELECT order_id, status
+          FROM orders
+          ORDER BY
+              CASE status
+                  WHEN 'processing' THEN 1
+                  ELSE 2
+              END,
+              order_id;
+        note: "Return a sort number per row. Add a tie-breaker for a stable order."
+      - title: Rules and traps
+        sql: |
+          -- all results must have the same type
+          CASE WHEN stock_qty = 0 THEN 'Sold out'
+               ELSE stock_qty::text END
+        note: "Mixing text and numbers in THEN/ELSE fails. Put narrow conditions before broad ones, and finish with END."
+  - id: m04-l07
+    title: Handling NULLs
+    summary: "Fill blanks with COALESCE, avoid division by zero with NULLIF, and pick the biggest or smallest value with GREATEST and LEAST."
+    minutes: 30
+    steps:
+      - type: read
+        title: Blanks in the report
+        md: |
+          Karim opens the customer list and frowns. The `phone` column is full of empty cells, the "days to
+          ship" column is blank for cancelled orders, and some mailing labels came out completely empty.
+
+          Those blanks are **NULL**: the database's way of saying "unknown" or "missing". You already know
+          that you test for it with `IS NULL` (never `= NULL`). Now you learn what NULL does to your
+          calculations, and three tools to tame it:
+
+          | Tool | What it does |
+          |---|---|
+          | `COALESCE(a, b, ...)` | gives the **first value that is not NULL** (fills blanks) |
+          | `NULLIF(a, b)` | gives NULL **if a equals b**, otherwise a (blocks division by zero) |
+          | `GREATEST(...)` / `LEAST(...)` | the biggest / smallest of several values |
+
+          > [!ANALOGY]
+          > NULL is an empty line on a paper form. If someone asks "what is 5 plus *(blank)*?", nobody can
+          > answer. `COALESCE` is the clerk who writes "n/a" on the empty line before the form is used.
+
+      - type: viz
+        viz: null-logic
+        title: Refresher - NULL in conditions
+        md: |
+          A quick look back before we go on. Click through the combinations and notice how often the
+          answer is the third value, **NULL** ("unknown"), instead of TRUE or FALSE.
+
+      - type: example
+        title: NULL spreads through calculations
+        md: |
+          Order 12 was cancelled, so it never shipped and its `shipped_date` is NULL. See what happens
+          to everything built from that date.
+        sql: |
+          SELECT
+              order_id,
+              shipped_date,
+              shipped_date - order_date AS days_to_ship,
+              'Shipped on ' || shipped_date AS note
+          FROM orders
+          WHERE order_id IN (11, 12, 13)
+          ORDER BY order_id;
+        after: |
+          For order 12 **every** result built from the NULL is NULL too: the subtraction *and* the text
+          glued with `||`. "Unknown minus a date" is unknown, "text plus unknown" is unknown.
+
+          > [!MISTAKE]
+          > Gluing columns with `||` when one of them can be NULL. The whole label silently becomes NULL.
+          > `CONCAT` and `CONCAT_WS` skip NULLs instead (but `CONCAT('Shipped on ', NULL)` leaves a
+          > dangling `Shipped on `), so the best fix is to give the blank a replacement, as follows.
+
+      - type: example
+        title: COALESCE - fill the blanks
+        md: |
+          `COALESCE(value, replacement)` returns the value, unless it is NULL, in which case it returns
+          the replacement.
+        sql: |
+          SELECT
+              customer_id,
+              first_name,
+              phone,
+              COALESCE(phone, 'no phone') AS phone_display
+          FROM customers
+          WHERE customer_id <= 8
+          ORDER BY customer_id;
+        after: |
+          Customers 1, 2 and 7 have no phone, so they show `no phone`. Everybody else keeps their real
+          number. The original `phone` column is untouched, only the result changes.
+
+          > [!NOTE]
+          > Both arguments must be the same kind of value. A text replacement for a text column is fine;
+          > a text replacement for a date or number column is an error (you will fix one soon).
+
+      - type: exercise
+        id: m04-l07-e1
+        title: Supplier contacts
+        prompt: |
+          Show `supplier_id`, `name` and `contact` for every supplier. `contact` is the `contact_email`,
+          or the text `'no email'` when it is missing. Sort by `supplier_id`.
+        starter: |
+          SELECT supplier_id, name,
+          FROM suppliers
+          ORDER BY supplier_id;
+        solution: |
+          SELECT
+              supplier_id,
+              name,
+              COALESCE(contact_email, 'no email') AS contact
+          FROM suppliers
+          ORDER BY supplier_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - You want a replacement for the blank emails, so you need the fill-the-blanks function.
+          - "COALESCE(contact_email, 'no email')"
+          - "SELECT supplier_id, name, COALESCE(___, '___') AS contact FROM suppliers ORDER BY supplier_id;"
+        explanation: |
+          Two of the eight suppliers (Tanuki Goods and Orchid & Oak) have no contact email and now show
+          `no email`. A report that says "no email" is far friendlier than an empty cell.
+        difficulty: 1
+
+      - type: example
+        title: COALESCE with several fallbacks
+        md: |
+          `COALESCE` can take **any number** of arguments and returns the first one that is not NULL.
+          Handy for "phone if we have it, otherwise email, otherwise a note".
+        sql: |
+          SELECT
+              customer_id,
+              COALESCE(phone, email, 'no contact') AS best_contact
+          FROM customers
+          WHERE customer_id <= 6
+          ORDER BY customer_id;
+        after: |
+          Customers 1 and 2 have no phone, so `COALESCE` moves on to the email. Everyone has an email
+          in this table, so `'no contact'` is never reached, but it is good practice to end the list
+          with a value that can never be NULL.
+
+      - type: exercise
+        id: m04-l07-e2
+        title: Fix the empty labels
+        prompt: |
+          For customers 1 to 6 build a `label` like `Ines Rodriguez - (213) 555-0100`: first name, a
+          space, last name, then ` - ` and the phone. If there is no phone, end the label with
+          `no phone` instead. Show `customer_id` and `label`, sorted by `customer_id`.
+
+          The query below gives an **empty** label for customers 1 and 2. Fix it.
+        starter: |
+          SELECT
+              customer_id,
+              first_name || ' ' || last_name || ' - ' || phone AS label
+          FROM customers
+          WHERE customer_id <= 6
+          ORDER BY customer_id;
+        solution: |
+          SELECT
+              customer_id,
+              first_name || ' ' || last_name || ' - '
+                  || COALESCE(phone, 'no phone') AS label
+          FROM customers
+          WHERE customer_id <= 6
+          ORDER BY customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "A NULL phone turns the whole text into NULL. The phone needs a replacement before it is glued on."
+          - "Wrap only the phone: COALESCE(phone, 'no phone')."
+          - "... || ' - ' || COALESCE(phone, '___') AS label"
+        explanation: |
+          `COALESCE` goes exactly where the NULL might appear, so the other parts of the label stay as
+          they are. Felix White now reads `Felix White - no phone`.
+        difficulty: 2
+
+      - type: exercise
+        id: m04-l07-e3
+        title: Fix the shipping status
+        prompt: |
+          For orders 10 to 15 show `order_id` and `shipped`: the `shipped_date`, or the text
+          `'not shipped yet'` when there is none. Sort by `order_id`.
+
+          The query below crashes. Can you see why and fix it?
+        starter: |
+          SELECT order_id,
+              COALESCE(shipped_date, 'not shipped yet') AS shipped
+          FROM orders
+          WHERE order_id BETWEEN 10 AND 15
+          ORDER BY order_id;
+        solution: |
+          SELECT order_id,
+              COALESCE(shipped_date::text, 'not shipped yet') AS shipped
+          FROM orders
+          WHERE order_id BETWEEN 10 AND 15
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The error says 'not shipped yet' is not a valid date. A column can't hold dates and sentences at once."
+          - "Convert the date to text first, so both arguments are text: shipped_date::text."
+          - "COALESCE(shipped_date::___, 'not shipped yet')"
+        explanation: |
+          `COALESCE` returns **one** column, so all its arguments must share a type. Casting the date to
+          text (lesson 5) makes both sides text. Orders 12 and 15 were cancelled, so they show
+          `not shipped yet`.
+        difficulty: 2
+
+      - type: predict
+        id: m04-l07-p1
+        question: |
+          Orders 1 to 20 contain 4 orders that used the code `WELCOME10`. All other orders in this range
+          have **no code at all** (NULL). How many rows does this query return?
+        sql: |
+          SELECT order_id
+          FROM orders
+          WHERE order_id <= 20
+              AND discount_code <> 'WELCOME10';
+        options: ["0", "4", "16", "20"]
+        answer: 0
+        explanation: |
+          A sneaky one! For the 16 orders without a code, `NULL <> 'WELCOME10'` is not true, it is NULL
+          ("unknown"), and `WHERE` only keeps rows where the condition is **true**. So those rows
+          vanish, and the 4 `WELCOME10` orders fail the test too. Result: 0 rows, even though 16 orders
+          did *not* use the code.
+
+          The fix: give the NULLs a value first, as in
+          `COALESCE(discount_code, 'none') <> 'WELCOME10'`, or use PostgreSQL's
+          `discount_code IS DISTINCT FROM 'WELCOME10'`, which treats NULL as a normal value.
+
+      - type: exercise
+        id: m04-l07-e4
+        title: Everything except Black Friday
+        prompt: |
+          Show `order_id` and `code` for orders 801 to 830 that did **not** use the discount code
+          `'BLACKFRIDAY'`. Orders without any code count as "did not use it" and must be included. In
+          the `code` column show the discount code, or `'none'` when there is no code. Sort by
+          `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              COALESCE(discount_code, 'none') AS code
+          FROM orders
+          WHERE order_id BETWEEN 801 AND 830
+              AND COALESCE(discount_code, 'none') <> 'BLACKFRIDAY'
+          ORDER BY order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "discount_code <> 'BLACKFRIDAY' would lose all the rows where the code is NULL."
+          - "Fill the NULLs first with COALESCE, in SELECT and in WHERE."
+          - "WHERE order_id BETWEEN 801 AND 830 AND COALESCE(discount_code, '___') <> 'BLACKFRIDAY'"
+        explanation: |
+          16 orders remain: 14 without a code, one `LOYALTY5` and one `FREESHIP`. Another correct way is
+          `WHERE discount_code IS NULL OR discount_code <> 'BLACKFRIDAY'`. Results are compared, not
+          your wording, so any version that gets the 16 rows is right.
+        difficulty: 2
+
+      - type: read
+        title: NULLIF and the division-by-zero crash
+        md: |
+          Dividing by zero is not allowed in SQL: the query **stops with an error**, even if only one
+          row out of thousands is zero. Say each product pays a **$120 monthly shelf fee**, shared by all
+          its units in stock. The fee per unit is `120.0 / stock_qty`, which is a disaster for the
+          products with 0 units.
+
+          `NULLIF(a, b)` returns NULL when `a` equals `b`, otherwise it returns `a`. So
+          `NULLIF(stock_qty, 0)` turns a zero into NULL, and **anything divided by NULL is simply NULL**,
+          not an error.
+
+          ```sql
+          120.0 / NULLIF(stock_qty, 0)
+          ```
+
+          > [!TIP]
+          > `NULLIF` is COALESCE's opposite twin. `COALESCE` turns NULL into a value; `NULLIF` turns a value
+          > into NULL. Data cleaners use it too, e.g. `NULLIF(city, 'N/A')` turns the placeholder
+          > `'N/A'` into a real NULL.
+
+      - type: example
+        title: Division by zero
+        md: |
+          Products 7 to 10 include the HD Webcam, which has 0 units in stock.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              120.0 / stock_qty AS fee_per_unit
+          FROM products
+          WHERE product_id BETWEEN 7 AND 10
+          ORDER BY product_id;
+        expectError: true
+        after: |
+          "division by zero". One bad row stops the whole query, and you get no results at all, not even
+          for the three healthy products. Let's protect the division.
+
+      - type: example
+        title: NULLIF to the rescue
+        md: Same query, with the zero turned into NULL before dividing.
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              ROUND(120.0 / NULLIF(stock_qty, 0), 2) AS fee_per_unit
+          FROM products
+          WHERE product_id BETWEEN 7 AND 10
+          ORDER BY product_id;
+        after: |
+          The webcam now shows an empty `fee_per_unit` (NULL) instead of crashing the query. To show
+          something friendlier, wrap everything in `COALESCE(..., 0)` or, for a text label, cast to
+          text first.
+
+          > [!REAL-WORLD]
+          > Ratios like "orders per visit" or "profit per unit sold" divide by counts that can be zero.
+          > Analysts write `x / NULLIF(y, 0)` almost by reflex.
+
+      - type: exercise
+        id: m04-l07-e5
+        title: The shelf fee per unit
+        prompt: |
+          For products 11 to 16 show `name`, `stock_qty` and `fee_per_unit`: the $120 shelf fee divided by
+          the stock, rounded to 2 decimals. Products with no stock must show **NULL** instead of
+          crashing. Sort by `product_id`.
+        solution: |
+          SELECT
+              name,
+              stock_qty,
+              ROUND(120.0 / NULLIF(stock_qty, 0), 2) AS fee_per_unit
+          FROM products
+          WHERE product_id BETWEEN 11 AND 16
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Protect the divisor: a stock of 0 must become NULL."
+          - "120.0 / NULLIF(stock_qty, 0), then ROUND(..., 2) around the whole division."
+          - "ROUND(120.0 / NULLIF(stock_qty, ___), 2) AS fee_per_unit"
+        explanation: |
+          The Desk Mat XL (product 13) has 0 units, so its fee is NULL instead of an error. The other five
+          products share the fee between their units: 273 USB-C hubs pay only 0.44 each, while the 13
+          Mini Desktop PCs pay 9.23 each.
+        difficulty: 2
+
+      - type: fill
+        id: m04-l07-f1
+        prompt: |
+          Complete the query so that products with 0 units in stock show NULL instead of crashing.
+        template: |
+          SELECT name,
+              ROUND(120.0 / ___(stock_qty, ___), 2) AS fee_per_unit
+          FROM products;
+        answers:
+          - ["NULLIF"]
+          - ["0"]
+        explanation: |
+          `NULLIF(stock_qty, 0)` returns NULL exactly when `stock_qty` is 0, and dividing by NULL gives
+          NULL. Over the whole table this query works for all 60 products.
+
+      - type: example
+        title: GREATEST and LEAST
+        md: |
+          `GREATEST` returns the biggest of several values in one row and `LEAST` the smallest. They are
+          perfect for **floors** ("never below zero") and **caps** ("never above 100").
+        sql: |
+          SELECT
+              name,
+              stock_qty,
+              GREATEST(stock_qty - 20, 0) AS above_safety_stock,
+              LEAST(stock_qty, 100) AS shown_on_website
+          FROM products
+          WHERE product_id IN (1, 6, 8, 9)
+          ORDER BY product_id;
+        after: |
+          The safety stock is 20 units, and `GREATEST(stock_qty - 20, 0)` never goes below 0: the laptop
+          with 15 units shows 0, not -5. The website shows at most 100 units, so the mouse (360) is
+          capped at 100 by `LEAST`.
+
+          > [!NOTE]
+          > Don't mix them up with the aggregate functions `MAX` and `MIN` of the next module, which look
+          > at **many rows** of one column. `GREATEST` and `LEAST` compare several values within **one row**.
+
+      - type: quiz
+        id: m04-l07-q1
+        question: |
+          What does `SELECT GREATEST(4, NULL, 7);` return in PostgreSQL?
+        options: ["7", "NULL", "4", "An error"]
+        answer: 0
+        explanation: |
+          `GREATEST` and `LEAST` **ignore NULLs**. They return NULL only if *every* argument is NULL.
+          This is different from `+`, where a single NULL makes the whole result NULL (`4 + NULL + 7`
+          is NULL).
+
+      - type: exercise
+        id: m04-l07-e6
+        title: The clearance floor
+        prompt: |
+          For clearance, products are sold at **30% off** (70% of the price), but never for less than
+          **20% above the cost** (120% of the cost). For products 1 to 10 show `name`, `price`, `cost`
+          and `clearance_price`: the larger of the two numbers, rounded to 2 decimals. Sort by
+          `product_id`.
+        solution: |
+          SELECT
+              name,
+              price,
+              cost,
+              ROUND(GREATEST(price * 0.70, cost * 1.20), 2)
+                  AS clearance_price
+          FROM products
+          WHERE product_id <= 10
+          ORDER BY product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Calculate two candidate prices and take the bigger one."
+          - "GREATEST(price * 0.70, cost * 1.20), wrapped in ROUND(..., 2)."
+          - "ROUND(GREATEST(price * ___, cost * ___), 2) AS clearance_price"
+        explanation: |
+          For the Aurora 14-inch laptop, 70% of the price is 629.99 but 120% of the cost is 733.31, so the
+          cost floor wins. For the Nimbus Ultrabook the discount (769.99) is higher than the floor (642.66).
+          `GREATEST` picks the right one row by row.
+        difficulty: 3
+
+      - type: parsons
+        id: m04-l07-o1
+        prompt: |
+          Arrange the lines to show the first ten reviews with their comment, or `(no comment)` when the
+          comment is missing, sorted by `review_id`. One line does not belong.
+        lines:
+          - SELECT review_id, rating,
+          - COALESCE(review_text, '(no comment)') AS review_note
+          - FROM reviews
+          - WHERE review_id <= 10
+          - ORDER BY review_id;
+        distractors:
+          - COALESCE('(no comment)', review_text) AS review_note
+        explanation: |
+          `COALESCE` returns its **first non-NULL argument**, so the column goes first and the fallback
+          last. The distractor has them swapped: it would always return `(no comment)`, because a text
+          literal is never NULL.
+
+      - type: exercise
+        id: m04-l07-e7
+        title: How long has it been waiting?
+        prompt: |
+          For orders 885 to 900 that are **not cancelled**, show `order_id`, `status`, `order_date` and
+          `days_waiting`: the days from `order_date` until the order shipped, or, if it has not shipped
+          yet, until `2024-12-31`. Sort by `days_waiting` (largest first), then by `order_id`.
+        solution: |
+          SELECT
+              order_id,
+              status,
+              order_date,
+              COALESCE(shipped_date, DATE '2024-12-31')
+                  - order_date AS days_waiting
+          FROM orders
+          WHERE order_id BETWEEN 885 AND 900
+              AND status <> 'cancelled'
+          ORDER BY days_waiting DESC, order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "A missing shipped_date should be replaced by a fixed end date, then subtract as usual."
+          - "COALESCE(shipped_date, DATE '2024-12-31') - order_date"
+          - "COALESCE(shipped_date, DATE '___') - order_date AS days_waiting ... AND status <> 'cancelled' ... ORDER BY days_waiting DESC, order_id;"
+        explanation: |
+          The two oldest processing orders (885 and 887, placed on 24 December) have been waiting
+          7 days. The cancelled order 888 is excluded on purpose: a cancelled order also has a NULL
+          `shipped_date`, but it is not "waiting". This is a typical analyst decision: first decide what
+          the blank *means*, then decide how to fill it.
+        difficulty: 3
+
+    cheatsheet:
+      - title: COALESCE - first non-NULL value
+        sql: |
+          SELECT COALESCE(phone, 'no phone'),
+                 COALESCE(phone, email, 'no contact')
+          FROM customers;
+          SELECT COALESCE(shipped_date::text, 'pending')
+          FROM orders;
+        note: "All arguments must have the same type (cast with ::text). COALESCE(x, 0) means 'missing counts as zero', so use it on purpose."
+      - title: NULLIF - safe division
+        sql: |
+          SELECT 120.0 / NULLIF(stock_qty, 0)
+          FROM products;
+          SELECT NULLIF(city, 'N/A')
+          FROM customers;
+        note: "NULLIF(a, b) gives NULL when a = b. Anything divided by NULL is NULL, so no 'division by zero' error."
+      - title: GREATEST and LEAST
+        sql: |
+          SELECT GREATEST(stock_qty - 20, 0),
+                 LEAST(stock_qty, 100)
+          FROM products;
+        note: "Biggest / smallest within one row. NULL arguments are ignored; the result is NULL only if all are NULL."
+      - title: NULL traps
+        sql: |
+          -- NULL spreads: 5 + NULL is NULL, 'a' || NULL is NULL
+          -- NULL <> 'x' is not true, so WHERE drops the row
+          WHERE COALESCE(discount_code, 'none') <> 'WELCOME10'
+          WHERE discount_code IS DISTINCT FROM 'WELCOME10'
+        note: "Fill the NULLs first (or use IS DISTINCT FROM) when you want rows with missing values to count as 'different'."
 testPool:
   - type: quiz
     id: m04-t01

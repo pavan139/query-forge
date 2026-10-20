@@ -3056,11 +3056,1041 @@ lessons:
           SELECT 1;
         note: "Silent bug: COUNT(column) skips NULLs. Use COUNT(*) to count rows."
 testPool:
-  - type: quiz
+  # ---------------------------------------------------------------- l01 COUNT
+  - type: exercise
     id: m05-t01
     lesson: m05-l01
     difficulty: 1
-    question: Placeholder?
-    options: ["a", "b"]
+    prompt: |
+      Some reviews were left with stars only, so their `review_text` is empty (`NULL`).
+      How many reviews **have** a written comment? Return one number in a column called `reviews_with_text`.
+    starter: |
+      SELECT COUNT(*) AS reviews_with_text
+      FROM reviews;
+    solution: |
+      SELECT COUNT(review_text) AS reviews_with_text
+      FROM reviews;
+    columnNames: true
+    hints:
+      - The starter counts every review. Is that what you want?
+      - "`COUNT(column)` counts only the rows where that column is not NULL."
+      - "SELECT COUNT(___) AS reviews_with_text FROM reviews;"
+    explanation: |
+      **227** of the 320 reviews have text. The other 93 are stars only, and `COUNT(review_text)` skipped them.
+      `SELECT COUNT(*) FROM reviews WHERE review_text IS NOT NULL;` gives the same answer.
+
+  - type: quiz
+    id: m05-t02
+    lesson: m05-l01
+    difficulty: 2
+    question: |
+      The shop has **60 products**. `product_id` is the primary key (never empty), while `supplier_id` is empty
+      for some products.
+
+      Which of these queries return **60**? (Pick all that apply.)
+    options:
+      - "SELECT COUNT(*) FROM products;"
+      - "SELECT COUNT(product_id) FROM products;"
+      - "SELECT COUNT(supplier_id) FROM products;"
+      - "SELECT COUNT(DISTINCT category_id) FROM products;"
+    answer: [0, 1]
+    explanation: |
+      `COUNT(*)` counts rows, and `COUNT(product_id)` counts the same rows because no `product_id` is empty.
+      `COUNT(supplier_id)` skips the 3 products without a supplier and returns 57. `COUNT(DISTINCT category_id)`
+      counts different categories, which is 11.
+
+  - type: predict
+    id: m05-t03
+    lesson: m05-l01
+    difficulty: 2
+    question: |
+      The 60 products come from 8 different suppliers, but 3 products have no supplier at all
+      (`supplier_id` is NULL). What does this query return?
+    sql: |
+      SELECT COUNT(DISTINCT supplier_id)
+      FROM products;
+    options: ["8", "9", "57", "60"]
     answer: 0
-    explanation: placeholder
+    explanation: |
+      `COUNT(DISTINCT ...)` counts different **values**, and NULL is not a value, so it is skipped. That leaves
+      the 8 real suppliers. (Careful: `GROUP BY supplier_id` would show 9 groups, because NULL gets a group of
+      its own.)
+
+  - type: exercise
+    id: m05-t04
+    lesson: m05-l01
+    difficulty: 3
+    prompt: |
+      Build a one-row summary of the reviews written in 2024 (`created_at` from `2024-01-01` onwards) with four
+      columns, in this order:
+
+      - `reviews`: how many reviews
+      - `with_text`: how many of them have a written comment (`review_text` is not empty)
+      - `products`: how many different products were reviewed
+      - `reviewers`: how many different customers wrote them
+    starter: |
+      SELECT
+      FROM reviews
+      WHERE created_at >= '2024-01-01';
+    solution: |
+      SELECT COUNT(*) AS reviews,
+             COUNT(review_text) AS with_text,
+             COUNT(DISTINCT product_id) AS products,
+             COUNT(DISTINCT customer_id) AS reviewers
+      FROM reviews
+      WHERE created_at >= '2024-01-01';
+    columnNames: true
+    hints:
+      - Four aggregates in one SELECT, all sharing the same WHERE.
+      - "Use COUNT(*), COUNT(review_text) and two COUNT(DISTINCT ...) aggregates."
+      - "SELECT COUNT(*) AS reviews, COUNT(___) AS with_text, COUNT(DISTINCT ___) AS products, COUNT(DISTINCT ___) AS reviewers FROM reviews WHERE created_at >= '2024-01-01';"
+    explanation: |
+      You get **212** reviews, **143** with text, covering **48** products and written by **104** customers.
+      Each count looks at the same filtered rows but answers a different question.
+
+  # ---------------------------------------------------------------- l02 SUM, AVG, MIN, MAX
+  - type: fill
+    id: m05-t05
+    lesson: m05-l02
+    difficulty: 1
+    prompt: |
+      Complete the query to find the total number of units sold and the highest unit price in `order_items`.
+    template: |
+      SELECT ___(quantity) AS total_units,
+             ___(unit_price) AS highest_price
+      FROM order_items;
+    answers:
+      - ["SUM"]
+      - ["MAX"]
+    explanation: |
+      `SUM(quantity)` adds up all the units: **3428**. `MAX(unit_price)` finds the largest price on any order
+      line: **1499.99**.
+
+  - type: exercise
+    id: m05-t06
+    lesson: m05-l02
+    difficulty: 2
+    prompt: |
+      Every product has a `price` (what customers pay) and a `cost` (what the shop pays). For the products that
+      are still for sale (`is_active = true`), what is the **average profit per unit** (`price - cost`)?
+      Round to 2 decimals and return one number called `avg_profit`.
+    starter: |
+      SELECT AVG(price) AS avg_profit
+      FROM products
+      WHERE is_active = true;
+    solution: |
+      SELECT ROUND(AVG(price - cost), 2) AS avg_profit
+      FROM products
+      WHERE is_active = true;
+    columnNames: true
+    hints:
+      - You can do a calculation inside an aggregate, row by row.
+      - "Average the difference: `AVG(price - cost)`, then wrap it in ROUND(..., 2)."
+      - "SELECT ROUND(AVG(price - ___), 2) AS avg_profit FROM products WHERE is_active = true;"
+    explanation: |
+      The average profit is **84.56** dollars per unit. `price - cost` is worked out for each product first, and
+      then `AVG` averages those 56 results.
+
+  - type: quiz
+    id: m05-t07
+    lesson: m05-l02
+    difficulty: 1
+    question: |
+      A column has four rows with the values **10, 20, NULL and 30**. What does `AVG()` of that column return?
+    options: ["15", "20", "30", "NULL"]
+    answer: 1
+    explanation: |
+      `AVG` ignores NULLs completely. It adds the real values (10 + 20 + 30 = 60) and divides by how many real
+      values there are (3), so the answer is **20**. The answer 15 would only be right if the NULL counted as 0.
+
+  - type: predict
+    id: m05-t08
+    lesson: m05-l02
+    difficulty: 3
+    question: |
+      In `order_items`, the values of `quantity` add up to 3,428 and the table has 2,296 rows. `SUM(quantity)` and
+      `COUNT(*)` are both whole numbers. What does this query return?
+    sql: |
+      SELECT SUM(quantity) / COUNT(*)
+      FROM order_items;
+    options: ["1", "1.49", "1.4930", "3428"]
+    answer: 0
+    explanation: |
+      Whole number divided by whole number is a **whole-number division** in PostgreSQL (like 7 / 2 = 3), so the
+      decimals are cut off: 3428 / 2296 = 1. To keep the decimals use `AVG(quantity)`, which gives 1.4930...,
+      or `SUM(quantity) * 1.0 / COUNT(*)`.
+
+  # ---------------------------------------------------------------- l03 GROUP BY
+  - type: exercise
+    id: m05-t09
+    lesson: m05-l03
+    difficulty: 1
+    prompt: |
+      Every row of `order_items` is one order line with a `quantity` (how many units were bought).
+      How many order lines are there for each `quantity` value? Show `quantity` and `lines` (the number of
+      lines), ordered by `quantity`, smallest first.
+    starter: |
+      SELECT quantity, COUNT(*) AS lines
+      FROM order_items
+      ORDER BY quantity;
+    solution: |
+      SELECT quantity, COUNT(*) AS lines
+      FROM order_items
+      GROUP BY quantity
+      ORDER BY quantity;
+    ordered: true
+    columnNames: true
+    hints:
+      - You want one row for each different quantity.
+      - Add a `GROUP BY` clause for the column you are showing.
+      - "SELECT quantity, COUNT(*) AS lines FROM order_items GROUP BY ___ ORDER BY quantity;"
+    explanation: |
+      Five rows. Most lines (**1,563**) are a single unit, and only 22 lines have 5 units. The five counts add up
+      to 2,296, the number of rows in `order_items`, which is a handy sanity check.
+
+  - type: quiz
+    id: m05-t10
+    lesson: m05-l03
+    difficulty: 1
+    question: |
+      Which query correctly shows **how many customers live in each city**?
+    options:
+      - "SELECT city, COUNT(*) FROM customers;"
+      - "SELECT city, COUNT(*) FROM customers GROUP BY city;"
+      - "SELECT COUNT(city) FROM customers GROUP BY customer_id;"
+      - "SELECT city FROM customers GROUP BY COUNT(*);"
+    answer: 1
+    explanation: |
+      You need one row per city, so the city goes into `GROUP BY`, and `COUNT(*)` counts each pile. The first
+      query has no `GROUP BY` (error). The third makes one group per customer (150 groups of 1). The fourth
+      tries to group by an aggregate, which is not allowed.
+
+  - type: exercise
+    id: m05-t11
+    lesson: m05-l03
+    difficulty: 2
+    prompt: |
+      Which cities do **returned** orders (status `'returned'`) go to? For each `ship_city` show the city and
+      `returned_orders` (how many of its orders were returned). Most returns first, and break ties by
+      `ship_city` alphabetically.
+    starter: |
+      SELECT ship_city, COUNT(*) AS returned_orders
+      FROM orders
+      WHERE status = 'returned'
+      ORDER BY returned_orders DESC, ship_city;
+    solution: |
+      SELECT ship_city, COUNT(*) AS returned_orders
+      FROM orders
+      WHERE status = 'returned'
+      GROUP BY ship_city
+      ORDER BY returned_orders DESC, ship_city;
+    ordered: true
+    columnNames: true
+    hints:
+      - First keep only the returned orders, then make one pile per city.
+      - "`WHERE` goes before `GROUP BY`, and the sort comes last."
+      - "SELECT ship_city, COUNT(*) AS returned_orders FROM orders WHERE status = 'returned' GROUP BY ___ ORDER BY returned_orders DESC, ship_city;"
+    explanation: |
+      14 cities, and **Austin** and **Los Angeles** are tied at the top with 14 returns each. The tie-breaker puts
+      Austin first. The order of work is `WHERE` (keep returned orders), `GROUP BY` (one pile per city),
+      `COUNT(*)` (size of each pile), then `ORDER BY`.
+
+  - type: exercise
+    id: m05-t12
+    lesson: m05-l03
+    difficulty: 3
+    prompt: |
+      Which 3 products earned the most money? The revenue of one order line is
+      `quantity * unit_price * (1 - discount)`. Add the revenue of every line (all orders, whatever their status)
+      for each product. Show `product_id` and `revenue` (rounded to 2 decimals), highest revenue first, and
+      return only the top 3.
+    starter: |
+      SELECT product_id, SUM(quantity) AS revenue
+      FROM order_items
+      GROUP BY product_id
+      ORDER BY revenue DESC
+      LIMIT 3;
+    solution: |
+      SELECT product_id,
+             ROUND(SUM(quantity * unit_price * (1 - discount)), 2)
+               AS revenue
+      FROM order_items
+      GROUP BY product_id
+      ORDER BY revenue DESC, product_id
+      LIMIT 3;
+    ordered: true
+    columnNames: true
+    hints:
+      - The SUM should add up a calculation, not just the quantity.
+      - "Put the whole formula inside SUM: `SUM(quantity * unit_price * (1 - discount))`."
+      - "SELECT product_id, ROUND(SUM(quantity * unit_price * (1 - ___)), 2) AS revenue FROM order_items GROUP BY product_id ORDER BY revenue DESC LIMIT 3;"
+    explanation: |
+      Product **17** leads with **38019.99**, then product 18 (24569.73) and product 14 (20344.69). The calculation
+      happens line by line inside `SUM`, then `GROUP BY` collects the lines of each product. The fourth place
+      (20249.87) is close behind, but there is no tie at the cut-off.
+
+  # ---------------------------------------------------------------- l04 Several columns and expressions
+  - type: parsons
+    id: m05-t13
+    lesson: m05-l04
+    difficulty: 2
+    prompt: |
+      Arrange the lines to count the orders for each day of the week (0 = Sunday up to 6 = Saturday), in weekday
+      order. One line is a decoy. Leave it out.
+    lines:
+      - SELECT EXTRACT(DOW FROM order_date) AS weekday,
+      - COUNT(*) AS orders
+      - FROM orders
+      - GROUP BY weekday
+      - ORDER BY weekday;
+    distractors:
+      - GROUP BY order_date
+    explanation: |
+      Grouping by `order_date` would make one group per calendar day (hundreds of groups). Grouping by the
+      calculated weekday makes 7. Saturday (6) is the busiest day with 149 orders.
+
+  - type: exercise
+    id: m05-t14
+    lesson: m05-l04
+    difficulty: 2
+    prompt: |
+      Build a monthly review report for 2024. Use the reviews written from `2024-01-01` onwards (`created_at`).
+      For each month show:
+
+      - `month`: the first day of the month, as a date
+      - `reviews`: how many reviews
+      - `avg_rating`: the average `rating`, rounded to 2 decimals
+
+      Order by `month`.
+    starter: |
+      SELECT COUNT(*) AS reviews
+      FROM reviews
+      WHERE created_at >= '2024-01-01';
+    solution: |
+      SELECT DATE_TRUNC('month', created_at)::date AS month,
+             COUNT(*) AS reviews,
+             ROUND(AVG(rating), 2) AS avg_rating
+      FROM reviews
+      WHERE created_at >= '2024-01-01'
+      GROUP BY month
+      ORDER BY month;
+    ordered: true
+    columnNames: true
+    hints:
+      - "`DATE_TRUNC('month', ...)` turns every date into the first day of its month."
+      - Group by that same calculation (or its alias) and add COUNT(*) and ROUND(AVG(rating), 2).
+      - "SELECT DATE_TRUNC('month', created_at)::date AS month, COUNT(*) AS reviews, ROUND(AVG(___), 2) AS avg_rating FROM reviews WHERE created_at >= '2024-01-01' GROUP BY ___ ORDER BY month;"
+    explanation: |
+      Twelve rows. Reviews are fairly steady (7 to 20 a month) until December, which jumps to **60** reviews. The
+      average rating moves between 3.64 (November) and 4.25 (October).
+
+  - type: fill
+    id: m05-t15
+    lesson: m05-l04
+    difficulty: 2
+    prompt: |
+      Complete the query to add up the money received in each calendar **quarter** (three-month block).
+    template: |
+      SELECT DATE_TRUNC('___', paid_at)::date AS quarter,
+             SUM(amount) AS received
+      FROM payments
+      GROUP BY ___
+      ORDER BY quarter;
+    answers:
+      - ["quarter"]
+      - ["quarter", "1"]
+    explanation: |
+      `DATE_TRUNC('quarter', ...)` rounds each date down to the first day of its quarter (January, April, July or
+      October). You get 8 rows, from 16098.97 in the first quarter of 2023 up to **63929.53** in the last quarter
+      of 2024. The `GROUP BY` can use the alias `quarter` (or the position `1`).
+
+  - type: quiz
+    id: m05-t16
+    lesson: m05-l04
+    difficulty: 2
+    question: |
+      You want **one row per calendar month** in the `orders` table, with March 2023 and March 2024 in
+      **different** groups. Which expressions can you use in `GROUP BY`? (Pick all that work.)
+    options:
+      - "EXTRACT(MONTH FROM order_date)"
+      - "DATE_TRUNC('month', order_date)"
+      - "TO_CHAR(order_date, 'YYYY-MM')"
+      - "TO_CHAR(order_date, 'Month')"
+    answer: [1, 2]
+    explanation: |
+      `DATE_TRUNC('month', ...)` and `TO_CHAR(..., 'YYYY-MM')` both include the **year**, so each month of each
+      year is its own group (24 groups). `EXTRACT(MONTH ...)` and the plain month name drop the year, so March 2023
+      and March 2024 would be mixed together (12 groups).
+
+  # ---------------------------------------------------------------- l05 HAVING
+  - type: quiz
+    id: m05-t17
+    lesson: m05-l05
+    difficulty: 1
+    question: |
+      Which of these requests **needs `HAVING`**, because it filters on a number that only exists after grouping?
+    options:
+      - "List the orders placed in 2024"
+      - "Show the customers who placed more than 20 orders"
+      - "Show the products that cost more than 100 dollars"
+      - "Count the reviews that have 5 stars"
+    answer: 1
+    explanation: |
+      "More than 20 orders" is a property of a whole **group** (all the orders of one customer), so you first
+      `GROUP BY customer_id`, count, and then filter with `HAVING COUNT(*) > 20`. The other three look at single rows,
+      so a plain `WHERE` is enough.
+
+  - type: parsons
+    id: m05-t18
+    lesson: m05-l05
+    difficulty: 2
+    prompt: |
+      Arrange the lines to list the days on which **at least 6 orders** were placed, busiest day first (ties:
+      earlier date first). One line is a decoy. Leave it out.
+    lines:
+      - SELECT order_date, COUNT(*) AS orders
+      - FROM orders
+      - GROUP BY order_date
+      - HAVING COUNT(*) >= 6
+      - ORDER BY orders DESC, order_date;
+    distractors:
+      - WHERE COUNT(*) >= 6
+    explanation: |
+      Four days qualify. Black Friday 2024 (**2024-11-29**) is the busiest with 11 orders. The decoy would fail:
+      aggregates are not allowed in `WHERE`, because `WHERE` runs before the groups exist.
+
+  - type: predict
+    id: m05-t19
+    lesson: m05-l05
+    difficulty: 2
+    question: |
+      The orders per status are: delivered 650, cancelled 127, returned 102, shipped 14 and processing 7.
+      How many rows does this query return?
+    sql: |
+      SELECT status, COUNT(*) AS orders
+      FROM orders
+      WHERE status <> 'delivered'
+      GROUP BY status
+      HAVING COUNT(*) > 100;
+    options: ["1 row", "2 rows", "3 rows", "5 rows"]
+    answer: 1
+    explanation: |
+      `WHERE` runs first and throws away the delivered orders. The four remaining groups are cancelled (127),
+      returned (102), shipped (14) and processing (7). `HAVING COUNT(*) > 100` then keeps only cancelled and
+      returned, so the answer is **2 rows**.
+
+  - type: exercise
+    id: m05-t20
+    lesson: m05-l05
+    difficulty: 3
+    prompt: |
+      Which products were really loved in 2024? Use only the reviews written from `2024-01-01` onwards
+      (`created_at`). For each product show:
+
+      - `product_id`
+      - `reviews`: how many 2024 reviews it has
+      - `avg_rating`: the average rating, rounded to 2 decimals
+
+      Keep only products with **at least 5** such reviews **and** an average rating of **at least 4.5**.
+      Best average first, ties by `product_id`.
+    starter: |
+      SELECT product_id,
+             COUNT(*) AS reviews,
+             ROUND(AVG(rating), 2) AS avg_rating
+      FROM reviews
+      WHERE created_at >= '2024-01-01'
+      GROUP BY product_id
+      ORDER BY avg_rating DESC, product_id;
+    solution: |
+      SELECT product_id,
+             COUNT(*) AS reviews,
+             ROUND(AVG(rating), 2) AS avg_rating
+      FROM reviews
+      WHERE created_at >= '2024-01-01'
+      GROUP BY product_id
+      HAVING COUNT(*) >= 5
+         AND AVG(rating) >= 4.5
+      ORDER BY avg_rating DESC, product_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - The date filter is about single rows, but the two other rules are about whole groups.
+      - "Keep the date rule in `WHERE`, and put both group rules in one `HAVING`, joined with AND."
+      - "... GROUP BY product_id HAVING COUNT(*) >= ___ AND AVG(rating) >= ___ ORDER BY avg_rating DESC, product_id;"
+    explanation: |
+      Five products pass: 28 (4.89 from 9 reviews), 50 (4.88), 51 (4.86), 17 (4.60) and 54 (4.50 from 12 reviews).
+      Rows are filtered by `WHERE` first, groups are filtered by `HAVING` second, and `HAVING` can combine several
+      aggregate tests with `AND`. (You can't use the alias `avg_rating` inside `HAVING`.)
+
+  # ---------------------------------------------------------------- l06 Conditional aggregation
+  - type: exercise
+    id: m05-t21
+    lesson: m05-l06
+    difficulty: 2
+    prompt: |
+      Build a one-row summary of all order lines in `order_items` with three columns, in this order:
+
+      - `lines`: how many order lines there are
+      - `big_lines`: how many lines have a `quantity` of 3 or more
+      - `discounted_lines`: how many lines have a `discount` above 0
+
+      Use `FILTER` (or `CASE`) for the last two.
+    starter: |
+      SELECT COUNT(*) AS lines
+      FROM order_items;
+    solution: |
+      SELECT COUNT(*) AS lines,
+             COUNT(*) FILTER (WHERE quantity >= 3)
+               AS big_lines,
+             COUNT(*) FILTER (WHERE discount > 0)
+               AS discounted_lines
+      FROM order_items;
+    columnNames: true
+    hints:
+      - You need three counts side by side, and two of them only count some of the rows.
+      - "`COUNT(*) FILTER (WHERE condition)` counts only the rows that meet the condition."
+      - "SELECT COUNT(*) AS lines, COUNT(*) FILTER (WHERE quantity >= ___) AS big_lines, COUNT(*) FILTER (WHERE discount ___ 0) AS discounted_lines FROM order_items;"
+    explanation: |
+      **2,296** lines in total, **277** with 3 or more units, and **408** with some kind of discount. Each `FILTER`
+      works on its own, so one trip through the table answers all three questions.
+
+  - type: exercise
+    id: m05-t22
+    lesson: m05-l06
+    difficulty: 3
+    prompt: |
+      Compare the two years of orders. For each year (`order_date`) show four columns, in this order:
+
+      - `order_year`
+      - `orders`: how many orders
+      - `delivered`: how many of them have status `'delivered'`
+      - `cancelled_pct`: the percentage of orders with status `'cancelled'`, rounded to 1 decimal
+
+      Order by `order_year`.
+    starter: |
+      SELECT EXTRACT(YEAR FROM order_date) AS order_year,
+             COUNT(*) AS orders
+      FROM orders
+      GROUP BY order_year
+      ORDER BY order_year;
+    solution: |
+      SELECT EXTRACT(YEAR FROM order_date) AS order_year,
+             COUNT(*) AS orders,
+             COUNT(*) FILTER (WHERE status = 'delivered')
+               AS delivered,
+             ROUND(100.0 *
+                   COUNT(*) FILTER (WHERE status = 'cancelled')
+                   / COUNT(*), 1) AS cancelled_pct
+      FROM orders
+      GROUP BY order_year
+      ORDER BY order_year;
+    ordered: true
+    columnNames: true
+    hints:
+      - Group by the year, then add one conditional count for each extra column.
+      - "For the percentage: `100.0 * COUNT(*) FILTER (WHERE status = 'cancelled') / COUNT(*)`, wrapped in ROUND(..., 1)."
+      - "SELECT EXTRACT(YEAR FROM order_date) AS order_year, COUNT(*) AS orders, COUNT(*) FILTER (WHERE status = 'delivered') AS delivered, ROUND(100.0 * COUNT(*) FILTER (WHERE ___) / COUNT(*), 1) AS cancelled_pct FROM orders GROUP BY order_year ORDER BY order_year;"
+    explanation: |
+      2023 had 328 orders (231 delivered, **16.2%** cancelled) and 2024 had 572 orders (419 delivered, **12.9%**
+      cancelled). The `100.0` (with the decimal point) avoids whole-number division, which would round the
+      percentage down to a whole number before `ROUND` could help.
+
+  - type: quiz
+    id: m05-t23
+    lesson: m05-l06
+    difficulty: 2
+    question: |
+      Which expression counts the number of 5-star reviews, exactly like `COUNT(*) FILTER (WHERE rating = 5)`?
+    options:
+      - "SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END)"
+      - "COUNT(CASE WHEN rating = 5 THEN 1 ELSE 0 END)"
+      - "COUNT(rating = 5)"
+      - "SUM(rating = 5)"
+    answer: 0
+    explanation: |
+      The `SUM(CASE ...)` version adds a 1 for every 5-star row and a 0 for the others. The `COUNT(CASE ... ELSE 0 END)`
+      version counts every row, because 0 is not NULL. `COUNT(rating = 5)` also counts every row (true and false are
+      both values). `SUM(rating = 5)` is an error, because you can't add up true/false values.
+
+  - type: parsons
+    id: m05-t24
+    lesson: m05-l06
+    difficulty: 1
+    prompt: |
+      Arrange the lines to count all payments received since 1 January 2024, and how many of those were paid by
+      card. One line is a decoy. Leave it out.
+    lines:
+      - SELECT COUNT(*) AS payments,
+      - COUNT(*) FILTER (WHERE method = 'card') AS by_card
+      - FROM payments
+      - WHERE paid_at >= '2024-01-01';
+    distractors:
+      - COUNT(*) WHERE method = 'card' AS by_card
+    explanation: |
+      The result is 491 payments, 285 of them by card. `FILTER (WHERE ...)` sits right after the aggregate it belongs
+      to. The outer `WHERE` at the end limits which rows reach *both* counts.
+
+  # ---------------------------------------------------------------- l07 STRING_AGG, ARRAY_AGG & friends
+  - type: exercise
+    id: m05-t25
+    lesson: m05-l07
+    difficulty: 3
+    prompt: |
+      A few orders were paid in **more than one payment** (for example a gift card plus a card). For those orders
+      only, show:
+
+      - `order_id`
+      - `payments`: how many payments the order has
+      - `methods`: the payment methods in alphabetical order, joined with `' + '` (space, plus, space)
+
+      Order by `order_id`.
+    starter: |
+      SELECT order_id, COUNT(*) AS payments
+      FROM payments
+      GROUP BY order_id
+      HAVING COUNT(*) > 1
+      ORDER BY order_id;
+    solution: |
+      SELECT order_id,
+             COUNT(*) AS payments,
+             STRING_AGG(method, ' + ' ORDER BY method) AS methods
+      FROM payments
+      GROUP BY order_id
+      HAVING COUNT(*) > 1
+      ORDER BY order_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Group the payments by order, then keep only the groups with more than one payment.
+      - "`STRING_AGG(method, ' + ' ORDER BY method)` glues the methods of one order into one piece of text."
+      - "SELECT order_id, COUNT(*) AS payments, STRING_AGG(method, ' + ' ORDER BY ___) AS methods FROM payments GROUP BY order_id HAVING COUNT(*) > 1 ORDER BY order_id;"
+    explanation: |
+      20 orders were split into two payments. Most are *card + gift_card* (12 of them), then *card + paypal*
+      (4) and *gift_card + paypal* (4). `HAVING` keeps the orders with at least two payments, and `STRING_AGG`
+      turns their methods into one readable cell. `method` is already text, so no `::text` cast is needed.
+
+  - type: quiz
+    id: m05-t26
+    lesson: m05-l07
+    difficulty: 2
+    question: |
+      Which of these statements about `STRING_AGG` and `ARRAY_AGG` are **true**? (Pick all that apply.)
+    options:
+      - "STRING_AGG(order_id, ', ') works directly on a number column"
+      - "ARRAY_AGG(product_id) keeps the values as numbers inside a list"
+      - "The ORDER BY that sorts the items goes inside the brackets of the aggregate"
+      - "STRING_AGG always adds the separator after the last item as well"
+    answer: [1, 2]
+    explanation: |
+      `ARRAY_AGG` collects values into an array without changing their type, and the sorting `ORDER BY` goes
+      inside the brackets, as in `STRING_AGG(name, ', ' ORDER BY name)`. `STRING_AGG` only accepts text (cast numbers
+      with `::text`), and the separator appears only *between* items, never after the last one.
+
+  - type: fill
+    id: m05-t27
+    lesson: m05-l07
+    difficulty: 2
+    prompt: |
+      For each category, is **every** product priced at 20 dollars or more? Complete the query.
+    template: |
+      SELECT category_id,
+             ___(price >= 20) AS all_over_20
+      FROM products
+      GROUP BY ___
+      ORDER BY category_id;
+    answers:
+      - ["BOOL_AND"]
+      - ["category_id"]
+    explanation: |
+      `BOOL_AND` is true only when **all** rows in the group pass the test. Categories 7, 9, 10, 11, 12 and 14
+      come out true, the other five are false. With `BOOL_OR` you would get "is *any* product 20 or more?" instead.
+
+  # ---------------------------------------------------------------- l08 GROUP BY mistakes
+  - type: quiz
+    id: m05-t28
+    lesson: m05-l08
+    difficulty: 2
+    question: |
+      This query fails with *column "payments.amount" must appear in the GROUP BY clause or be used in an aggregate
+      function*. Which changes would make the error **go away**? (Pick all that apply.)
+
+      ```sql
+      SELECT method, amount, SUM(amount) AS total
+      FROM payments
+      GROUP BY method;
+      ```
+    options:
+      - "Remove amount from the SELECT list"
+      - "Add amount to the GROUP BY clause"
+      - "Replace amount with MAX(amount) in the SELECT list"
+      - "Add ORDER BY amount at the end"
+    answer: [0, 1, 2]
+    explanation: |
+      The first three satisfy the golden rule: `amount` is either gone, grouped or aggregated. Be aware that adding
+      `amount` to `GROUP BY` changes the meaning, because you now get one row per method *and* amount. Adding
+      `ORDER BY amount` fixes nothing, since `ORDER BY` follows the same rule.
+
+  - type: predict
+    id: m05-t29
+    lesson: m05-l08
+    difficulty: 2
+    question: |
+      The orders per status are: delivered 650, cancelled 127, returned 102, shipped 14 and processing 7.
+      What does this query return?
+    sql: |
+      SELECT status
+      FROM orders
+      GROUP BY status
+      ORDER BY COUNT(*) DESC
+      LIMIT 1;
+    options:
+      - "delivered"
+      - "650"
+      - "processing"
+      - "An error, because COUNT(*) is not in the SELECT list"
+    answer: 0
+    explanation: |
+      `ORDER BY` may use an aggregate even if it is not in the `SELECT` list. The groups are sorted by size, biggest
+      first, and `LIMIT 1` keeps the top one: **delivered**. Only the status is shown, not the 650.
+
+  - type: exercise
+    id: m05-t30
+    lesson: m05-l08
+    difficulty: 3
+    prompt: |
+      This query should show, for each payment `method`, how many payments were **over 500 dollars**
+      (`amount > 500`), as `big_payments`. Most payments first, ties by `method`. It doesn't run. Fix it so it
+      returns `method` and `big_payments`.
+    starter: |
+      SELECT method, COUNT(*) AS big_payments
+      FROM payments
+      HAVING amount > 500
+      GROUP BY method
+      ORDER BY big_payments DESC, method;
+    solution: |
+      SELECT method, COUNT(*) AS big_payments
+      FROM payments
+      WHERE amount > 500
+      GROUP BY method
+      ORDER BY big_payments DESC, method;
+    ordered: true
+    columnNames: true
+    hints:
+      - "The first error is about clause order. Remember: FROM, WHERE, GROUP BY, HAVING, ORDER BY."
+      - "\"Over 500\" is a rule about single payments, not about whole groups. Which clause filters rows before grouping?"
+      - "SELECT method, COUNT(*) AS big_payments FROM payments ___ amount > 500 GROUP BY method ORDER BY big_payments DESC, method;"
+    explanation: |
+      There were two bugs. `HAVING` can't come before `GROUP BY`. And even if you move it, `HAVING amount > 500` fails
+      with the "must appear in the GROUP BY clause" error, because `amount` is a raw row value. A row-level rule
+      belongs in `WHERE`. Result: card 105, paypal 34, bank_transfer 23, gift_card 5.
+project:
+  id: m05-proj
+  title: Monthly Sales Report
+  icon: "📈"
+  dataset: shop
+  md: |
+    It's the first Monday of December 2024 and Mia, the ShopSmart manager, has a board meeting on Friday.
+
+    *"November was our busiest month ever, thanks to Black Friday. The board wants the monthly sales report,
+    and I need every number to be right. Can you build it?"*
+
+    You can. The report has two pages, and every number comes from one query:
+
+    - **Page 1, November at a glance** (tasks 1 to 4): orders, money, outcomes and payment methods.
+    - **Page 2, the year so far** (tasks 5 to 7): month-by-month trends for 2024.
+
+    **Ground rules**
+
+    - "November 2024" means dates from `2024-11-01` up to (but not including) `2024-12-01`. Use the same
+      pattern for other periods.
+    - Orders are placed on `order_date` (table `orders`). Money arrives on `paid_at` (table `payments`).
+    - Each query uses one table. Joining tables is the topic of module 6, so for now orders answer "how many?"
+      and payments answer "how much money?".
+
+    > [!TIP]
+    > Build each query in small steps: first the `WHERE` that picks the period, then the `GROUP BY`, then the
+    > aggregates. Run it after every step and look at the result.
+
+    Skills you will use: `COUNT`, `SUM`, `AVG`, `GROUP BY`, `HAVING`, `FILTER`, `DATE_TRUNC` and `STRING_AGG`.
+    Let's build the report!
+  tasks:
+    - type: exercise
+      id: m05-proj-1
+      title: "Page 1: the order headlines"
+      prompt: |
+        Start with the headline numbers for orders placed in **November 2024**. Return one row with three
+        columns, in this order:
+
+        - `orders`: how many orders were placed
+        - `customers`: how many different customers placed them
+        - `coded_orders`: how many of the orders used a promo code (`discount_code` is not empty)
+      starter: |
+        SELECT
+        FROM orders
+        WHERE order_date >= '2024-11-01'
+          AND order_date < '2024-12-01';
+      solution: |
+        SELECT COUNT(*) AS orders,
+               COUNT(DISTINCT customer_id) AS customers,
+               COUNT(discount_code) AS coded_orders
+        FROM orders
+        WHERE order_date >= '2024-11-01'
+          AND order_date < '2024-12-01';
+      columnNames: true
+      hints:
+        - Three different counts in one SELECT, all with the same WHERE.
+        - "`COUNT(*)` counts rows, `COUNT(DISTINCT customer_id)` counts different customers, and `COUNT(discount_code)` skips the NULLs."
+        - "SELECT COUNT(*) AS orders, COUNT(DISTINCT ___) AS customers, COUNT(___) AS coded_orders FROM orders WHERE ...;"
+      explanation: |
+        November had **91 orders** from **61 different customers**, and 15 of the orders used a promo code. Because
+        a customer can order more than once, the order count is higher than the customer count.
+      difficulty: 1
+
+    - type: exercise
+      id: m05-proj-2
+      title: "Page 1: money received"
+      prompt: |
+        Now the money. Looking at the `payments` received in **November 2024** (use `paid_at`), return one row
+        with four columns, in this order:
+
+        - `payments`: how many payments
+        - `total_received`: the sum of `amount`
+        - `avg_payment`: the average `amount`, rounded to 2 decimals
+        - `largest_payment`: the biggest single `amount`
+      starter: |
+        SELECT
+        FROM payments
+        WHERE paid_at >= '2024-11-01'
+          AND paid_at < '2024-12-01';
+      solution: |
+        SELECT COUNT(*) AS payments,
+               SUM(amount) AS total_received,
+               ROUND(AVG(amount), 2) AS avg_payment,
+               MAX(amount) AS largest_payment
+        FROM payments
+        WHERE paid_at >= '2024-11-01'
+          AND paid_at < '2024-12-01';
+      columnNames: true
+      hints:
+        - Four aggregates again. Think about which function gives each number.
+        - Use COUNT(*), SUM(amount), ROUND(AVG(amount), 2) and MAX(amount).
+        - "SELECT COUNT(*) AS payments, SUM(amount) AS total_received, ROUND(AVG(___), 2) AS avg_payment, ___(amount) AS largest_payment FROM payments WHERE ...;"
+      explanation: |
+        The shop received **19,893.45** dollars in 70 payments, an average of **284.19** per payment, and the largest
+        single payment was **1,024.05**. These are the "number tiles" at the top of Mia's report.
+      difficulty: 1
+
+    - type: exercise
+      id: m05-proj-3
+      title: "Page 1: how did the orders end up?"
+      prompt: |
+        Mia wants to know how the November 2024 orders (the ones from task 1) ended up. Show one row per order
+        `status` with two columns: `status` and `orders` (how many November orders have that status).
+        Most orders first, ties broken by `status` alphabetically.
+      starter: |
+        SELECT status, COUNT(*) AS orders
+        FROM orders
+        WHERE order_date >= '2024-11-01'
+          AND order_date < '2024-12-01';
+      solution: |
+        SELECT status, COUNT(*) AS orders
+        FROM orders
+        WHERE order_date >= '2024-11-01'
+          AND order_date < '2024-12-01'
+        GROUP BY status
+        ORDER BY orders DESC, status;
+      ordered: true
+      columnNames: true
+      hints:
+        - One row per status means one group per status.
+        - Add `GROUP BY status` after the WHERE, then sort by the count.
+        - "... GROUP BY ___ ORDER BY orders DESC, status;"
+      explanation: |
+        Of the 91 orders, **65 were delivered**, **18 cancelled** and 8 returned. Eighteen cancellations out of
+        91 is almost one in five, which makes Mia frown. You'll check whether that is unusual in task 6.
+      difficulty: 2
+
+    - type: exercise
+      id: m05-proj-4
+      title: "Page 1: who pays the bills?"
+      prompt: |
+        Which payment methods brought in the money in **November 2024** (the payments from task 2)? For each
+        `method` show:
+
+        - `method`
+        - `payments`: how many payments
+        - `received`: the sum of `amount`
+
+        Mia only wants methods that brought in **at least 500 dollars** in total. Highest `received` first.
+      starter: |
+        SELECT method,
+               COUNT(*) AS payments,
+               SUM(amount) AS received
+        FROM payments
+        WHERE paid_at >= '2024-11-01'
+          AND paid_at < '2024-12-01'
+        GROUP BY method
+        ORDER BY received DESC;
+      solution: |
+        SELECT method,
+               COUNT(*) AS payments,
+               SUM(amount) AS received
+        FROM payments
+        WHERE paid_at >= '2024-11-01'
+          AND paid_at < '2024-12-01'
+        GROUP BY method
+        HAVING SUM(amount) >= 500
+        ORDER BY received DESC;
+      ordered: true
+      columnNames: true
+      hints:
+        - The starter shows every method. You need to throw away the small ones *after* adding up.
+        - Filtering on a total is a job for `HAVING`, placed between GROUP BY and ORDER BY.
+        - "... GROUP BY method HAVING SUM(amount) >= ___ ORDER BY received DESC;"
+      explanation: |
+        Cards lead with **10,863.53** (40 payments), then PayPal with 8,193.10 (24 payments) and gift cards with
+        531.90 (just 2 payments). Bank transfers brought in only 304.92, so `HAVING` dropped them. Remember:
+        `WHERE` picks the November rows, `HAVING` picks the groups.
+      difficulty: 2
+
+    - type: exercise
+      id: m05-proj-5
+      title: "Page 2: money, month by month"
+      prompt: |
+        Page 2 zooms out to the whole of 2024. Using the `payments` received from `2024-01-01` up to (but not
+        including) `2025-01-01`, show one row per month with:
+
+        - `month`: the first day of the month, as a date
+        - `payments`: how many payments
+        - `received`: the sum of `amount`
+        - `card_pct`: the percentage of that month's money that was paid by card (`method = 'card'`),
+          rounded to 1 decimal
+
+        Order by `month`.
+      starter: |
+        SELECT DATE_TRUNC('month', paid_at)::date AS month,
+               COUNT(*) AS payments,
+               SUM(amount) AS received
+        FROM payments
+        WHERE paid_at >= '2024-01-01'
+          AND paid_at < '2025-01-01'
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', paid_at)::date AS month,
+               COUNT(*) AS payments,
+               SUM(amount) AS received,
+               ROUND(100.0 *
+                     SUM(amount) FILTER (WHERE method = 'card')
+                     / SUM(amount), 1) AS card_pct
+        FROM payments
+        WHERE paid_at >= '2024-01-01'
+          AND paid_at < '2025-01-01'
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - The starter already has three of the four columns. You need one more calculated column.
+        - "Card money is `SUM(amount) FILTER (WHERE method = 'card')`. Divide it by the month's `SUM(amount)` and multiply by 100.0."
+        - "ROUND(100.0 * SUM(amount) FILTER (WHERE ___) / SUM(amount), 1) AS card_pct"
+      explanation: |
+        The money tends to grow through the year, from 5,301.65 in February to **27,587.81 in December**, with November
+        (19,893.45) in second place. The card share bounces between 43.3% (June) and 89.9% (March), so people
+        mix payment methods a lot. `FILTER` made the percentage possible without a second query.
+      difficulty: 2
+
+    - type: exercise
+      id: m05-proj-6
+      title: "Page 2: the cancellation watch"
+      prompt: |
+        Is November's cancellation rate unusual? Using the orders placed in 2024 (from `2024-01-01` up to but not
+        including `2025-01-01`), show one row per month with:
+
+        - `month`: the first day of the month, as a date
+        - `orders`: how many orders
+        - `cancelled`: how many have status `'cancelled'`
+        - `cancelled_pct`: `cancelled` as a percentage of `orders`, rounded to 1 decimal
+
+        Only include **busy months** with at least 40 orders. Highest `cancelled_pct` first, ties by `month`.
+      starter: |
+        SELECT DATE_TRUNC('month', order_date)::date AS month,
+               COUNT(*) AS orders
+        FROM orders
+        WHERE order_date >= '2024-01-01'
+          AND order_date < '2025-01-01'
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', order_date)::date AS month,
+               COUNT(*) AS orders,
+               COUNT(*) FILTER (WHERE status = 'cancelled')
+                 AS cancelled,
+               ROUND(100.0 *
+                     COUNT(*) FILTER (WHERE status = 'cancelled')
+                     / COUNT(*), 1) AS cancelled_pct
+        FROM orders
+        WHERE order_date >= '2024-01-01'
+          AND order_date < '2025-01-01'
+        GROUP BY month
+        HAVING COUNT(*) >= 40
+        ORDER BY cancelled_pct DESC, month;
+      ordered: true
+      columnNames: true
+      hints:
+        - You need a conditional count (cancelled orders), a percentage and a filter on the size of each month.
+        - "`COUNT(*) FILTER (WHERE status = 'cancelled')` gives the cancelled orders. `HAVING COUNT(*) >= 40` keeps the busy months."
+        - "... COUNT(*) FILTER (WHERE ___) AS cancelled, ROUND(100.0 * COUNT(*) FILTER (WHERE ___) / COUNT(*), 1) AS cancelled_pct ... HAVING COUNT(*) >= 40 ORDER BY cancelled_pct DESC, month;"
+      explanation: |
+        Seven months qualify, and **November is the highest at 19.8%** (18 of 91 orders), ahead of July (17.0%)
+        and September (16.3%). So yes: Black Friday month had the most cancellations in rate as well as in number.
+        That is exactly the kind of finding that makes a report worth reading.
+      difficulty: 3
+
+    - type: exercise
+      id: m05-proj-7
+      title: "Page 2: the promo calendar"
+      prompt: |
+        For the last page, Mia wants a promo calendar for 2024 (orders from `2024-01-01` up to but not including
+        `2025-01-01`). For each month show:
+
+        - `month`: the first day of the month, as a date
+        - `orders`: how many orders
+        - `coded_orders`: how many used a promo code
+        - `codes`: the **different** promo codes used that month, in alphabetical order, separated by `', '`
+
+        Order by `month`.
+      starter: |
+        SELECT DATE_TRUNC('month', order_date)::date AS month,
+               COUNT(*) AS orders
+        FROM orders
+        WHERE order_date >= '2024-01-01'
+          AND order_date < '2025-01-01'
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', order_date)::date AS month,
+               COUNT(*) AS orders,
+               COUNT(discount_code) AS coded_orders,
+               STRING_AGG(DISTINCT discount_code, ', '
+                          ORDER BY discount_code) AS codes
+        FROM orders
+        WHERE order_date >= '2024-01-01'
+          AND order_date < '2025-01-01'
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - "`COUNT(discount_code)` counts the filled-in codes. For the list you need an aggregate that glues text."
+        - "Use `STRING_AGG(DISTINCT discount_code, ', ' ORDER BY discount_code)`. NULL codes are skipped automatically."
+        - "SELECT ..., COUNT(discount_code) AS coded_orders, STRING_AGG(DISTINCT discount_code, ', ' ORDER BY ___) AS codes FROM orders WHERE ... GROUP BY month ORDER BY month;"
+      explanation: |
+        The calendar tells a story. SUMMER15 appears only in June, July and August, and BLACKFRIDAY shows up in
+        November and December. November has the most coded orders (15 of 91), simply because it has the most orders
+        overall. Orders without a code have a NULL `discount_code`, which `STRING_AGG` and `COUNT(column)` quietly
+        ignore.
+
+        **Report complete!** You counted, summed, grouped, filtered groups, built a pivot-style percentage and glued
+        text together, in one realistic report. Mia sends it to the board with a smile.
+      difficulty: 3

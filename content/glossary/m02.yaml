@@ -1,0 +1,65 @@
+glossary:
+  - term: WHERE
+    definition: The clause that filters rows. It comes after FROM and keeps only the rows for which its condition is TRUE. Rows where the condition is FALSE or unknown (NULL) are left out.
+    example: "SELECT name, price FROM menu_items WHERE price < 3;  -- keeps 6 of the 32 items"
+    module: m02
+  - term: Condition
+    definition: A yes/no test that is checked on every row, for example price < 3 or city = 'Austin'. In SQL a condition can be true, false or unknown. Also called a predicate.
+    example: "price < 3 is true for the Espresso (2.50) and false for the Mocha (5.25)."
+    module: m02
+  - term: Comparison operator
+    definition: A symbol that compares two values and gives true or false. SQL has = (equal), <> or != (not equal), < (less than), > (greater than), <= (less than or equal) and >= (greater than or equal). A single = means "is equal to", it never changes data.
+    example: "WHERE price >= 5   -- keeps items that cost 5 or more"
+    module: m02
+  - term: Boolean
+    definition: A data type that holds only true or false (or NULL when unknown). A boolean column can be used straight in a WHERE clause.
+    example: "WHERE is_vegan = true   -- the same as WHERE is_vegan (14 items)"
+    module: m02
+  - term: Case-sensitive
+    definition: Treating capital and small letters as different. In PostgreSQL, text comparisons with = and LIKE are case-sensitive, so 'Tea' and 'tea' are not the same value.
+    example: "WHERE category = 'Tea' finds 5 items; WHERE category = 'tea' finds none."
+    module: m02
+  - term: Date literal
+    definition: A date (or date and time) written directly in a query as text inside single quotes, in the order year-month-day. A date with no time means midnight at the start of that day.
+    example: "WHERE joined_on < '2024-01-01'"
+    module: m02
+  - term: Timestamp
+    definition: A value that holds both a date and a time of day, such as 2024-12-31 18:02:00. Because of the time part, comparing a timestamp with a plain date needs care.
+    example: "order_time = '2024-12-31' finds nothing; order_time >= '2024-12-31' AND order_time < '2025-01-01' finds both orders of that day."
+    module: m02
+  - term: Date range (half-open)
+    definition: The safe way to filter a whole day, month or year in a timestamp column. Use >= the first moment and < the first moment AFTER the period, so nothing at the end is missed.
+    example: "WHERE order_time >= '2024-10-01' AND order_time < '2024-11-01'   -- all of October"
+    module: m02
+  - term: AND, OR, NOT
+    definition: Logical operators that combine conditions. AND needs both conditions to be true, OR needs at least one, and NOT flips true into false. AND is always worked out before OR, so use parentheses to say what you mean.
+    example: "WHERE (category = 'Coffee' OR category = 'Tea') AND is_vegan   -- 7 items"
+    module: m02
+  - term: Parentheses
+    definition: Round brackets that group conditions so they are worked out first, just like in school maths. They are the cure for the AND-before-OR trap.
+    example: "WHERE (city = 'Portland' OR city = 'Seattle') AND loyalty_points > 400"
+    module: m02
+  - term: IN
+    definition: A shortcut for several OR tests on the same column. x IN (a, b, c) is true when x equals any value in the list. NOT IN keeps the rows that match none of them.
+    example: "WHERE city IN ('Austin', 'Denver')   -- 7 customers"
+    module: m02
+  - term: BETWEEN
+    definition: Tests whether a value lies in a range, with both end values included. BETWEEN 400 AND 500 means >= 400 AND <= 500. With timestamps it can silently miss most of the last day, so prefer a half-open range there.
+    example: "WHERE loyalty_points BETWEEN 400 AND 500   -- 5 customers"
+    module: m02
+  - term: LIKE
+    definition: Compares text against a pattern instead of an exact value. In the pattern, % stands for any number of characters (including none) and _ stands for exactly one character. LIKE is case-sensitive; NOT LIKE finds the rows that do not match.
+    example: "WHERE name LIKE '%Latte%'   -- names containing Latte (4 items)"
+    module: m02
+  - term: ILIKE
+    definition: A PostgreSQL version of LIKE that ignores the difference between capital and small letters.
+    example: "WHERE last_name ILIKE '%SON%'   -- finds Robinson (LIKE would find nothing)"
+    module: m02
+  - term: IS NULL
+    definition: The only correct way to test for a missing value. IS NULL keeps rows where the value is missing and IS NOT NULL keeps rows where a value exists. Never write = NULL, because it never matches anything.
+    example: "WHERE email IS NULL   -- the 5 customers with no email on file"
+    module: m02
+  - term: Three-valued logic
+    definition: In SQL a condition has three possible answers - true, false or unknown (NULL). Anything compared with NULL is unknown, and WHERE keeps only the rows where the answer is true.
+    example: "SELECT NULL = NULL;  -- the answer is NULL, not true"
+    module: m02
