@@ -1,0 +1,906 @@
+challenges:
+  - id: ch-a-001
+    title: The full path of every category
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, recursive, hierarchy]
+    prompt: |
+      The catalog team wants a breadcrumb for every category, like `Electronics > Computers > Laptops`.
+
+      Show each category's `category_id` and its full `path`. The top-level category comes first and the category itself comes last. Put ` > ` (a space, a greater-than sign, a space) between the names.
+
+      Sort the result by `category_id`.
+    solution: |
+      WITH RECURSIVE tree AS (
+          SELECT category_id, name::text AS path
+          FROM categories
+          WHERE parent_id IS NULL
+          UNION ALL
+          SELECT c.category_id, t.path || ' > ' || c.name
+          FROM categories c
+          JOIN tree t ON c.parent_id = t.category_id
+      )
+      SELECT category_id, path
+      FROM tree
+      ORDER BY category_id;
+    ordered: true
+    hints:
+      - "A recursive CTE has two parts: the top-level rows first, then the child rows that are added again and again."
+      - "Start with the categories whose parent_id IS NULL. In the second part, join each category to the row above it through parent_id, and add its name to the end of the path."
+      - "WITH RECURSIVE tree AS (SELECT ... WHERE parent_id IS NULL UNION ALL SELECT ... JOIN tree ...) SELECT category_id, path FROM tree ORDER BY category_id;"
+    explanation: |
+      A **recursive CTE** calls itself. The first `SELECT` gives the starting rows (the six top-level departments). The second `SELECT` adds the children of the rows found so far, one level at a time, until nothing new appears.
+
+      Building the `path` while you go is the trick: each child takes its parent's path and adds ` > ` and its own name.
+
+  - id: ch-a-002
+    title: Everyone in the VP's organisation
+    difficulty: hard
+    dataset: company
+    module: m09
+    tags: [cte, recursive, hierarchy, depth]
+    prompt: |
+      The VP of Engineering (employee 3) wants a list of everyone in their organisation, including the VP. Include people who have left the company too.
+
+      Show `emp_id`, `full_name` (first name, a space, then last name), `job_title` and `depth`. The VP has depth `0`, the VP's direct reports have depth `1`, their reports have depth `2`, and so on.
+
+      Sort by `depth`, then by `emp_id`.
+    solution: |
+      WITH RECURSIVE org AS (
+          SELECT emp_id, first_name, last_name, job_title, 0 AS depth
+          FROM employees
+          WHERE emp_id = 3
+          UNION ALL
+          SELECT e.emp_id, e.first_name, e.last_name,
+                 e.job_title, o.depth + 1
+          FROM employees e
+          JOIN org o ON e.manager_id = o.emp_id
+      )
+      SELECT emp_id,
+             first_name || ' ' || last_name AS full_name,
+             job_title,
+             depth
+      FROM org
+      ORDER BY depth, emp_id;
+    ordered: true
+    hints:
+      - "Start with the VP's own row, then repeatedly add the people whose manager_id is already in the result."
+      - "Keep a depth column: the anchor row has 0, and each recursive step adds 1 to the depth of the manager row."
+      - "WITH RECURSIVE org AS (SELECT ... WHERE emp_id = 3 UNION ALL SELECT ... JOIN org o ON e.manager_id = o.emp_id) SELECT ... FROM org;"
+    explanation: |
+      This is the classic **org chart** query. Each employee points to a manager through `manager_id`, so walking "down" the chart means finding the rows whose `manager_id` is one of the people you already have.
+
+      Counting the depth on every step tells you how many levels below the VP each person sits. Recursive CTEs stop by themselves once no new rows are found, so there is no endless loop here.
+
+  - id: ch-a-003
+    title: Days with no orders
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, recursive, date, left-join]
+    prompt: |
+      The shop wants to find quiet days. Show every day from 1 March 2024 to 15 March 2024 (both days included), with the number of orders placed on that day.
+
+      Days with no orders must still appear, with `0` as the count.
+
+      Show `order_day` and `orders`, sorted by `order_day`.
+    solution: |
+      WITH RECURSIVE days AS (
+          SELECT DATE '2024-03-01' AS order_day
+          UNION ALL
+          SELECT order_day + 1
+          FROM days
+          WHERE order_day < DATE '2024-03-15'
+      )
+      SELECT d.order_day,
+             COUNT(o.order_id) AS orders
+      FROM days d
+      LEFT JOIN orders o ON o.order_date = d.order_day
+      GROUP BY d.order_day
+      ORDER BY d.order_day;
+    ordered: true
+    hints:
+      - "First build a list of dates. A recursive CTE can add one day at a time."
+      - "Then LEFT JOIN that list to orders. A LEFT JOIN keeps the days that have no orders."
+      - "Count the order_id column, not *, so that a day with no orders counts as 0."
+    explanation: |
+      A **date spine** is a list of every date in a period. It makes "no sales" visible. If you started from the `orders` table alone, the quiet days would simply be missing from the result.
+
+      `COUNT(o.order_id)` returns 0 for a day with no matching order, but `COUNT(*)` would return 1 for that day because the LEFT JOIN still produces one row.
+
+  - id: ch-a-004
+    title: High-value customers
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, join, aggregation, having]
+    prompt: |
+      Finance wants a list of high-value customers. Use only **delivered** orders. Find every customer whose total spending is more than $5,000.00.
+
+      Show `customer_id`, `full_name` (first name, a space, then last name) and `total_spent`, rounded to 2 decimals.
+
+      Sort by `total_spent` from highest to lowest, then by `customer_id`.
+    solution: |
+      WITH delivered_lines AS (
+          SELECT o.customer_id,
+                 i.quantity * i.unit_price * (1 - i.discount) AS line_total
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+      ),
+      customer_totals AS (
+          SELECT customer_id,
+                 ROUND(SUM(line_total), 2) AS total_spent
+          FROM delivered_lines
+          GROUP BY customer_id
+      )
+      SELECT c.customer_id,
+             c.first_name || ' ' || c.last_name AS full_name,
+             t.total_spent
+      FROM customer_totals t
+      JOIN customers c ON c.customer_id = t.customer_id
+      WHERE t.total_spent > 5000
+      ORDER BY t.total_spent DESC, c.customer_id;
+    ordered: true
+    hints:
+      - "Each order line costs quantity times unit_price, minus the discount. The discount is a fraction, so use (1 - discount)."
+      - "Use one CTE for the line totals, a second CTE to add them up per customer, and then filter and join to customers."
+      - "WITH lines AS (...), totals AS (SELECT customer_id, SUM(...) AS total_spent FROM lines GROUP BY customer_id) SELECT ... FROM totals WHERE total_spent > 5000;"
+    explanation: |
+      A **chain of CTEs** reads like a recipe: step one makes line totals, step two adds them up per customer, and step three filters and adds names. Each CTE can be tested on its own, which is why this style is easier to debug than one long nested query.
+
+      Notice that the filter `total_spent > 5000` happens after the grouping. A `WHERE` clause cannot test a total, because the total does not exist yet at that point.
+
+  - id: ch-a-005
+    title: Star product in each category
+    difficulty: hard
+    dataset: shop
+    module: m10
+    tags: [window, row-number, top-n]
+    prompt: |
+      Each category needs one star product for the homepage: its most expensive **active** product (`is_active` is TRUE). If two active products in the same category cost exactly the same, pick the one with the lower `product_id`.
+
+      Show `category_id`, `product_id`, `name` and `price` for every category that has at least one active product.
+
+      Sort by `category_id`.
+    solution: |
+      SELECT category_id, product_id, name, price
+      FROM (
+          SELECT category_id, product_id, name, price,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY category_id
+                     ORDER BY price DESC, product_id
+                 ) AS rn
+          FROM products
+          WHERE is_active
+      ) ranked
+      WHERE rn = 1
+      ORDER BY category_id;
+    ordered: true
+    hints:
+      - "Give each product a number inside its own category, starting from the most expensive."
+      - "Use ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY price DESC, product_id). The PARTITION BY restarts the numbering for each category."
+      - "Wrap the numbered rows in a subquery and keep only the rows where rn = 1."
+    explanation: |
+      `ROW_NUMBER()` gives every row a number inside its group. Putting the numbering in a subquery and then filtering on `rn = 1` is the standard **top-1 per group** pattern.
+
+      The second column in `ORDER BY` (`product_id`) is a **tie-breaker**. Without it, two products with the same price could swap places from one run to the next.
+
+  - id: ch-a-006
+    title: The second-highest salary
+    difficulty: hard
+    dataset: company
+    module: m10
+    tags: [window, dense-rank, interview]
+    prompt: |
+      HR is checking the pay bands. Look only at employees who are still with the company (their `terminated_on` is empty).
+
+      What is the second-highest **distinct** salary? If two people share the highest salary, that salary counts only once.
+
+      Show one row with one column, named `second_highest_salary`.
+    solution: |
+      SELECT DISTINCT salary AS second_highest_salary
+      FROM (
+          SELECT salary,
+                 DENSE_RANK() OVER (ORDER BY salary DESC) AS salary_rank
+          FROM employees
+          WHERE terminated_on IS NULL
+      ) ranked
+      WHERE salary_rank = 2;
+    columnNames: true
+    hints:
+      - "DENSE_RANK gives equal salaries the same number, and the next different salary the next number."
+      - "Number the salaries from the highest down, then keep the rows whose number is 2."
+      - "SELECT DISTINCT salary AS second_highest_salary FROM (SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS salary_rank FROM employees WHERE ___) ranked WHERE salary_rank = 2;"
+    explanation: |
+      This is one of the most asked SQL interview questions. `DENSE_RANK()` is the right tool because it does not skip numbers after a tie. With `RANK()`, two people tied for first would push the second-highest salary down to rank 3.
+
+      Using `DISTINCT` keeps the answer to one row if two people share the second-highest salary.
+
+  - id: ch-a-007
+    title: Running balance for one quarter
+    difficulty: hard
+    dataset: bank
+    module: m10
+    tags: [window, running-total, sum-over]
+    prompt: |
+      Account 46 is being reviewed for the first quarter of 2024. Show a running balance for every transaction on that account from 1 January 2024 up to, but not including, 1 April 2024.
+
+      Show `txn_time`, `txn_id`, `amount` and `balance`. The `balance` is the total of all amounts up to and including that row.
+
+      Sort by `txn_time`, then by `txn_id`.
+    solution: |
+      SELECT txn_time,
+             txn_id,
+             amount,
+             SUM(amount) OVER (
+                 ORDER BY txn_time, txn_id
+             ) AS balance
+      FROM transactions
+      WHERE account_id = 46
+        AND txn_time >= '2024-01-01'
+        AND txn_time < '2024-04-01'
+      ORDER BY txn_time, txn_id;
+    ordered: true
+    hints:
+      - "A running total adds up the rows in order, one row at a time. Put ORDER BY inside OVER to make it run."
+      - "Use SUM(amount) OVER (ORDER BY txn_time, txn_id). The txn_id breaks ties when two transactions share a time."
+      - "SELECT txn_time, txn_id, amount, SUM(amount) OVER (ORDER BY ___) AS balance FROM transactions WHERE account_id = 46 AND ___ ORDER BY ___;"
+    explanation: |
+      A **running total** uses `SUM(...) OVER (ORDER BY ...)`. Each row gets the sum of its own amount and every amount before it.
+
+      Accounts start 2024 at zero, so the balance on the last row of March is the balance at the end of the quarter. Adding `txn_id` to the `ORDER BY` makes the order certain even when two transactions share the same time.
+
+  - id: ch-a-008
+    title: Days between a customer's orders
+    difficulty: hard
+    dataset: shop
+    module: m10
+    tags: [window, lag, date]
+    prompt: |
+      Customer 6 (Noor Haddad) is one of the shop's best customers. Show the history of her orders, with the number of days since her previous order.
+
+      Show `order_id`, `order_date` and `days_since_previous`. For her first order, `days_since_previous` stays empty.
+
+      Include every order she placed, whatever its status. Sort by `order_date`, then by `order_id`.
+    solution: |
+      SELECT order_id,
+             order_date,
+             order_date - LAG(order_date) OVER (
+                 ORDER BY order_date, order_id
+             ) AS days_since_previous
+      FROM orders
+      WHERE customer_id = 6
+      ORDER BY order_date, order_id;
+    ordered: true
+    hints:
+      - "LAG() looks back at the row before the current one. Here, that means the customer's previous order."
+      - "Subtract the previous order_date from the current one. The result is a number of days."
+      - "SELECT order_id, order_date, order_date - LAG(order_date) OVER (ORDER BY ___) AS days_since_previous FROM orders WHERE ___;"
+    explanation: |
+      `LAG(column)` returns the value from the previous row in the window, and `NULL` for the very first row. Subtracting two dates in PostgreSQL gives the number of days between them.
+
+      The `WHERE customer_id = 6` filter runs before the window function, so `LAG` only looks at her orders. Filtering after the window would have mixed in other customers.
+
+  - id: ch-a-009
+    title: Smoothing the monthly revenue
+    difficulty: hard
+    dataset: shop
+    module: m11
+    tags: [window, moving-average, rows-frame]
+    prompt: |
+      Monthly sales go up and down, so the shop looks at a three-month moving average. Use **delivered** orders only, and decide each order's month from its `order_date`.
+
+      For every month from January 2023 to December 2024, show:
+
+      - `month`: the month as text, like `2024-03`
+      - `revenue`: that month's revenue, rounded to 2 decimals (an order line's revenue is quantity × unit_price × (1 - discount))
+      - `moving_avg_3`: the average of that month's revenue and the revenue of the month before and the month after, rounded to 2 decimals
+
+      For the first and last months, average only the months that exist. January 2023 averages January and February 2023. December 2024 averages November and December 2024.
+
+      Sort by `month`.
+    solution: |
+      WITH monthly AS (
+          SELECT to_char(o.order_date, 'YYYY-MM') AS month,
+                 ROUND(SUM(i.quantity * i.unit_price
+                           * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY 1
+      )
+      SELECT month,
+             revenue,
+             ROUND(AVG(revenue) OVER (
+                 ORDER BY month
+                 ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+             ), 2) AS moving_avg_3
+      FROM monthly
+      ORDER BY month;
+    ordered: true
+    hints:
+      - "First make one row per month with the month's revenue. Then look at neighbouring rows with a window function."
+      - "A frame of ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING covers the row before, the current row and the row after."
+      - "WITH monthly AS (SELECT to_char(order_date, 'YYYY-MM') AS month, ... GROUP BY 1) SELECT month, revenue, AVG(revenue) OVER (ORDER BY month ROWS BETWEEN ___ AND ___) FROM monthly;"
+    explanation: |
+      A **moving average** smooths out noise by averaging each value with its neighbours. The **frame** clause `ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING` says which rows are included for each row.
+
+      At the start and end of the series, the frame has fewer rows, so the average uses only the months that exist. That is what the prompt asks for, and it is worth stating clearly in any report.
+
+  - id: ch-a-010
+    title: Typical film length per genre
+    difficulty: hard
+    dataset: movies
+    module: m11
+    tags: [percentile, median, group-by, join]
+    prompt: |
+      FlickNest wants to know how long a typical film runs in each genre. For every genre, show:
+
+      - `genre`: the genre name
+      - `movies`: how many movies belong to the genre
+      - `median_minutes`: the median `duration_min` of those movies, rounded to 1 decimal
+
+      A film with two genres counts once for each of its genres.
+
+      Sort by `genre`.
+    solution: |
+      SELECT g.name AS genre,
+             COUNT(*) AS movies,
+             ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+                 ORDER BY m.duration_min
+             )::numeric, 1) AS median_minutes
+      FROM genres g
+      JOIN movie_genres mg ON mg.genre_id = g.genre_id
+      JOIN movies m ON m.movie_id = mg.movie_id
+      GROUP BY g.genre_id, g.name
+      ORDER BY g.name;
+    ordered: true
+    hints:
+      - "The median is the middle value. PostgreSQL has a function for it, called a percentile."
+      - "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_min) gives the median of each group."
+      - "SELECT g.name, COUNT(*), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY m.duration_min) FROM genres g JOIN ... GROUP BY ___;"
+    explanation: |
+      The **median** is the value in the middle when the numbers are sorted. An average can be pulled up by a few very long films, but the median is more typical.
+
+      `PERCENTILE_CONT(0.5)` interpolates between two middle values when the count is even, so the result can have a decimal part. The `::numeric` cast lets `ROUND` take a number of decimal places.
+
+  - id: ch-a-011
+    title: The last transaction of the year
+    difficulty: hard
+    dataset: bank
+    module: m11
+    tags: [window, frame, last-value]
+    prompt: |
+      Account 122 is being reconciled. For each of its transactions, show the `txn_id`, the `txn_time`, the `amount`, and `last_amount`. The `last_amount` is the amount of the account's **last** transaction of the year, ordered by `txn_time` and then `txn_id`.
+
+      Show every transaction of account 122. Sort by `txn_time`, then by `txn_id`.
+    solution: |
+      SELECT txn_id,
+             txn_time,
+             amount,
+             LAST_VALUE(amount) OVER (
+                 ORDER BY txn_time, txn_id
+                 ROWS BETWEEN UNBOUNDED PRECEDING
+                          AND UNBOUNDED FOLLOWING
+             ) AS last_amount
+      FROM transactions
+      WHERE account_id = 122
+      ORDER BY txn_time, txn_id;
+    ordered: true
+    hints:
+      - "Without a frame, LAST_VALUE only looks as far as the current row. That gives the wrong answer."
+      - "Make the frame cover every row of the account, from the first row to the last one."
+      - "LAST_VALUE(amount) OVER (ORDER BY txn_time, txn_id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+    explanation: |
+      This is the most common **LAST_VALUE trap**. When you give a window an `ORDER BY`, its default frame stops at the current row, so `LAST_VALUE` returns the current row's own value.
+
+      Writing the frame explicitly as `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` makes the window cover the whole account. Always check the frame when you use `FIRST_VALUE` or `LAST_VALUE`.
+
+  - id: ch-a-012
+    title: Where each engineer sits in the pay range
+    difficulty: hard
+    dataset: company
+    module: m11
+    tags: [window, percent-rank, distribution]
+    prompt: |
+      HR wants to see where each Engineering employee sits in the pay range. Use the current employees (`terminated_on` is empty) in department 2 (Engineering) only.
+
+      For each of them, show:
+
+      - `emp_id`
+      - `salary`
+      - `pay_percentile`: the `PERCENT_RANK` of the salary among these employees, rounded to 2 decimals
+
+      `PERCENT_RANK` is 0 for the lowest salary and 1 for the highest. Sort by `emp_id`.
+    solution: |
+      SELECT emp_id,
+             salary,
+             ROUND(PERCENT_RANK() OVER (
+                 ORDER BY salary
+             )::numeric, 2) AS pay_percentile
+      FROM employees
+      WHERE dept_id = 2
+        AND terminated_on IS NULL
+      ORDER BY emp_id;
+    ordered: true
+    hints:
+      - "PERCENT_RANK compares each row with the other rows in its window, as a fraction from 0 to 1."
+      - "Filter to the current Engineering employees first, then use PERCENT_RANK() OVER (ORDER BY salary)."
+      - "SELECT emp_id, salary, ROUND(PERCENT_RANK() OVER (ORDER BY ___)::numeric, 2) FROM employees WHERE ___ ORDER BY emp_id;"
+    explanation: |
+      `PERCENT_RANK()` is a **distribution** function. It gives the position of a row as a fraction: `(rank - 1) / (rows - 1)`. Equal salaries get the same value.
+
+      Filtering first matters. If you filtered after the window, the leavers would still be counted in the percentages.
+
+  - id: ch-a-013
+    title: Phone numbers with exactly ten digits
+    difficulty: hard
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, regex, string]
+    prompt: |
+      Messy Data Co. wants to call its customers, but the phone numbers were typed in many formats: brackets, dashes, dots, spaces and plus signs.
+
+      Keep only the rows of `raw_customers` whose phone number has exactly **10 digits** once you remove everything that is not a digit. For each of these rows, show:
+
+      - `row_id`
+      - `phone_digits`: the phone number with only the digits left
+
+      Show the first 10 rows, sorted by `row_id`.
+    solution: |
+      SELECT row_id,
+             REGEXP_REPLACE(phone, '\D', '', 'g') AS phone_digits
+      FROM raw_customers
+      WHERE LENGTH(REGEXP_REPLACE(phone, '\D', '', 'g')) = 10
+      ORDER BY row_id
+      LIMIT 10;
+    ordered: true
+    hints:
+      - 'REGEXP_REPLACE can remove every character that matches a pattern. The pattern \D means any character that is not a digit.'
+      - "Put the REGEXP_REPLACE in a WHERE clause with LENGTH(...) = 10 to keep only the 10-digit numbers."
+      - "SELECT row_id, REGEXP_REPLACE(phone, ___, '', 'g') AS phone_digits FROM raw_customers WHERE LENGTH(___) = 10 ORDER BY row_id LIMIT 10;"
+    explanation: |
+      Real data is rarely tidy. Removing everything except digits gives you one standard form that you can compare, count and join. The `'g'` flag means "global": replace every match, not just the first one.
+
+      Empty and missing phones end up with a length of 0 or NULL, so they are filtered out automatically.
+
+  - id: ch-a-014
+    title: Removing duplicate orders
+    difficulty: hard
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, row-number, deduplicate]
+    prompt: |
+      The order export has duplicate rows and different spellings of the same order number. Clean up orders 1001 to 1010.
+
+      An order number is the `order_ref` with dashes and spaces removed and all letters in capitals. So `ORD-1001`, `ord-1001` and `ORD1001` are all `ORD1001`.
+
+      For each order number from `ORD1001` to `ORD1010`, keep only the row with the **smallest `row_id`**. Show:
+
+      - `order_no`: the cleaned order number
+      - `row_id`
+      - `amount`: exactly as typed
+
+      Sort by `order_no`.
+    solution: |
+      SELECT order_no, row_id, amount
+      FROM (
+          SELECT UPPER(REPLACE(REPLACE(order_ref, '-', ''), ' ', ''))
+                     AS order_no,
+                 row_id,
+                 amount,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY UPPER(REPLACE(REPLACE(
+                         order_ref, '-', ''), ' ', ''))
+                     ORDER BY row_id
+                 ) AS rn
+          FROM raw_orders
+      ) cleaned
+      WHERE rn = 1
+        AND order_no BETWEEN 'ORD1001' AND 'ORD1010'
+      ORDER BY order_no;
+    ordered: true
+    hints:
+      - "First clean the order number, then number the rows that share the same cleaned number."
+      - "Use ROW_NUMBER() OVER (PARTITION BY cleaned_number ORDER BY row_id). Row 1 in each group is the one with the smallest row_id."
+      - "Wrap the numbered rows in a subquery, then keep rn = 1 and the order numbers in the range."
+    explanation: |
+      Duplicates that differ only in spelling are the hardest kind to remove. The trick is to **clean the key first**, then number the rows inside each cleaned group.
+
+      Ordering by `row_id` decides which copy survives, so the result is the same every time you run it. Always decide your tie-break rule before you delete anything.
+
+  - id: ch-a-015
+    title: Monthly sales in one row per product
+    difficulty: hard
+    dataset: messy
+    module: m18
+    tags: [pivot, case, aggregation]
+    prompt: |
+      The sales report is stored in long form, with one row per product and month. The finance team reads it in wide form, with one row per product and one column per month.
+
+      Build a wide table of the revenue for January, February and March from the `monthly_sales_long` table. The month names are stored in its `month` column as `Jan`, `Feb` and `Mar`.
+
+      Show `product`, `jan`, `feb` and `mar`. Sort by `product`.
+    solution: |
+      SELECT product,
+             SUM(CASE WHEN month = 'Jan' THEN revenue END) AS jan,
+             SUM(CASE WHEN month = 'Feb' THEN revenue END) AS feb,
+             SUM(CASE WHEN month = 'Mar' THEN revenue END) AS mar
+      FROM monthly_sales_long
+      GROUP BY product
+      ORDER BY product;
+    ordered: true
+    hints:
+      - "A pivot turns the values of one column into several columns. Each new column needs its own condition."
+      - "Inside SUM, use CASE WHEN month = 'Jan' THEN revenue END. The CASE gives NULL for the other months."
+      - "SELECT product, SUM(CASE WHEN month = 'Jan' THEN revenue END) AS jan, ... FROM monthly_sales_long GROUP BY ___;"
+    explanation: |
+      This is a **pivot** built with conditional aggregation. Each `CASE` keeps only the rows for one month, and `SUM` adds up the single value that is left for each product.
+
+      Because a `CASE` without an `ELSE` gives `NULL`, `SUM` ignores the rows it does not want. The `FILTER` clause is an alternative: `SUM(revenue) FILTER (WHERE month = 'Jan')`.
+
+  - id: ch-a-016
+    title: Ten percent rise for the phones
+    difficulty: hard
+    dataset: shop
+    module: m12
+    tags: [dml, update, check]
+    prompt: |
+      The phone category is getting a price rise. Raise the price of every **active** product in category 8 (Phones) by 10%.
+
+      Round each new price to 2 decimals. Leave the inactive products and the other categories unchanged.
+
+      Write only your `UPDATE` statement. The app then shows the products in category 8 with their prices, sorted by `product_id`, so you do not need a `SELECT`.
+    solution: |
+      UPDATE products
+      SET price = ROUND(price * 1.10, 2)
+      WHERE category_id = 8
+        AND is_active;
+    check: |
+      SELECT product_id, price
+      FROM products
+      WHERE category_id = 8
+      ORDER BY product_id;
+    ordered: true
+    hints:
+      - "An UPDATE changes existing rows. Write the column you want to change after SET."
+      - "Multiply the old price by 1.10, round it to 2 decimals and limit the change to active products in category 8."
+      - "UPDATE products SET price = ROUND(price * ___, 2) WHERE category_id = 8 AND ___;"
+    explanation: |
+      Always put a `WHERE` on an `UPDATE`. Without one, every row in the table would change. Test the rows you plan to change with a `SELECT ... WHERE` first, then turn it into an `UPDATE`.
+
+      The check query prints the category afterwards, so you can see that inactive products kept their old prices.
+
+  - id: ch-a-017
+    title: Remove duplicate cart lines
+    difficulty: hard
+    dataset: blank
+    module: m12
+    tags: [dml, delete, using, duplicates]
+    setup: |
+      CREATE TABLE cart_items (
+          id INTEGER PRIMARY KEY,
+          customer_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          qty INTEGER NOT NULL
+      );
+      INSERT INTO cart_items (id, customer_id, product_id, qty) VALUES
+          (1, 6, 10, 1),
+          (2, 6, 10, 1),
+          (3, 6, 11, 2),
+          (4, 7, 10, 1),
+          (5, 6, 10, 3),
+          (6, 7, 10, 1);
+    prompt: |
+      A bug in the cart import added the same item to a cart more than once. The table `cart_items` holds the copies.
+
+      Two rows are duplicates when they have the same `customer_id`, `product_id` and `qty`. Delete the duplicates, and keep only the row with the **smallest `id`** in each group.
+
+      Write only your `DELETE` statement. The app then shows the whole `cart_items` table sorted by `id`, so you do not need a `SELECT`.
+    solution: |
+      DELETE FROM cart_items a
+      USING cart_items b
+      WHERE a.customer_id = b.customer_id
+        AND a.product_id = b.product_id
+        AND a.qty = b.qty
+        AND a.id > b.id;
+    check: |
+      SELECT id, customer_id, product_id, qty
+      FROM cart_items
+      ORDER BY id;
+    ordered: true
+    hints:
+      - "Find a matching row with the same customer, product and quantity, but a smaller id."
+      - "DELETE ... USING lets you join the table to itself. Compare a.id > b.id so that the smallest id always survives."
+      - "DELETE FROM cart_items a USING cart_items b WHERE a.customer_id = b.customer_id AND ___ AND a.id > b.id;"
+    explanation: |
+      `DELETE ... USING` deletes rows from one copy of a table and matches them against another copy, which here is the same table. Comparing `a.id > b.id` means "delete me if an older copy exists".
+
+      This works the same way in every database that has a row id. Writing the same rule as a `SELECT` first is a good habit: check which rows would go before you run a `DELETE`.
+
+  - id: ch-a-018
+    title: The latest rating of each user
+    difficulty: hard
+    dataset: movies
+    module: m16
+    tags: [distinct-on, postgres, group-wise]
+    prompt: |
+      For users 1 to 10, show each user's most recent rating. Show `user_id`, `movie_id`, `stars` and `rated_at`, with one row per user.
+
+      "Most recent" means the largest `rated_at`. Users who have not rated anything do not appear.
+
+      Sort by `user_id`.
+    solution: |
+      SELECT DISTINCT ON (user_id)
+             user_id, movie_id, stars, rated_at
+      FROM ratings
+      WHERE user_id <= 10
+      ORDER BY user_id, rated_at DESC;
+    ordered: true
+    hints:
+      - "DISTINCT ON keeps only the first row for each value you list in brackets. The first row depends on the ORDER BY."
+      - "Sort the ratings so that the newest one comes first for each user, then use DISTINCT ON (user_id)."
+      - "SELECT DISTINCT ON (user_id) user_id, movie_id, stars, rated_at FROM ratings WHERE user_id <= 10 ORDER BY user_id, ___ DESC;"
+    explanation: |
+      `DISTINCT ON (column)` is a PostgreSQL feature that keeps one row per value. Which row you keep is decided by `ORDER BY`, which must begin with the same column.
+
+      The same result can be written with `ROW_NUMBER()`. `DISTINCT ON` is shorter, but it works only in PostgreSQL.
+
+  - id: ch-a-019
+    title: Films per age rating, with a grand total
+    difficulty: hard
+    dataset: movies
+    module: m16
+    tags: [grouping-sets, rollup, aggregation]
+    prompt: |
+      The catalog team wants the number of films for each age rating, plus one grand total line for the whole catalog.
+
+      Show `age_rating` and `films`. On the grand total line, `age_rating` shows the text `All`.
+
+      Sort the age ratings from A to Z, and put the grand total last.
+    solution: |
+      SELECT COALESCE(age_rating, 'All') AS age_rating,
+             COUNT(*) AS films
+      FROM movies
+      GROUP BY ROLLUP (age_rating)
+      ORDER BY GROUPING(age_rating), age_rating;
+    ordered: true
+    hints:
+      - "ROLLUP adds subtotal rows and a grand total row. The total row has NULL in the grouped column."
+      - "Use COALESCE(age_rating, 'All') to give the total row a label."
+      - "SELECT COALESCE(age_rating, 'All'), COUNT(*) FROM movies GROUP BY ___ (age_rating) ORDER BY GROUPING(age_rating), age_rating;"
+    explanation: |
+      `GROUP BY ROLLUP (age_rating)` runs the aggregation twice: once per age rating and once for everything together. `GROUPING(age_rating)` returns 1 on the grand total row and 0 on the others, which is a clean way to put the total last.
+
+      `GROUPING SETS` and `CUBE` are the more general versions of the same idea.
+
+  - id: ch-a-020
+    title: Subscribers who never started a workout
+    difficulty: hard
+    dataset: app
+    module: m07
+    tags: [exists, anti-join, subquery]
+    prompt: |
+      The growth team wants to find users who have a subscription but who have never started a workout.
+
+      Show each such user's `user_id` and `country`, one row per user. A user has a subscription if they have at least one row in `subscriptions`. They have never started a workout if they have no `workout_started` event at all.
+
+      Sort by `user_id`.
+    solution: |
+      SELECT u.user_id, u.country
+      FROM users u
+      WHERE EXISTS (
+          SELECT 1
+          FROM subscriptions s
+          WHERE s.user_id = u.user_id
+      )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM events e
+          WHERE e.user_id = u.user_id
+            AND e.event_name = 'workout_started'
+      )
+      ORDER BY u.user_id;
+    ordered: true
+    hints:
+      - "Use two conditions on users: one that finds a matching subscription, and one that finds no matching workout event."
+      - "EXISTS checks whether a matching row exists. NOT EXISTS checks that no matching row exists."
+      - "SELECT u.user_id, u.country FROM users u WHERE EXISTS (SELECT 1 FROM subscriptions s WHERE ___) AND NOT EXISTS (SELECT 1 FROM events e WHERE ___);"
+    explanation: |
+      This is an **anti-join**: keep the rows of one table that have no match in another. `NOT EXISTS` is the safest way to write it, because it still works when the other table contains NULLs.
+
+      Each `EXISTS` only has to find one matching row, so a user with a hundred workouts is no different from a user with one.
+
+  - id: ch-a-021
+    title: The richest account in each branch
+    difficulty: hard
+    dataset: bank
+    module: m10
+    tags: [window, top-n, join, aggregation]
+    prompt: |
+      Each Harbor Bank branch wants to know which of its accounts holds the most money at the end of 2024.
+
+      The balance of an account is the total of all its `transactions` amounts. Use only accounts that have at least one transaction.
+
+      For each branch, show the account with the highest balance. If two accounts have the same balance, show the one with the lower `account_id`.
+
+      Show `branch_id`, `branch_name` (the branch `name`), `account_id` and `balance`, rounded to 2 decimals. Sort by `branch_id`.
+    solution: |
+      WITH balances AS (
+          SELECT a.branch_id,
+                 a.account_id,
+                 SUM(t.amount) AS balance
+          FROM accounts a
+          JOIN transactions t ON t.account_id = a.account_id
+          GROUP BY a.branch_id, a.account_id
+      ),
+      ranked AS (
+          SELECT branch_id, account_id, balance,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY branch_id
+                     ORDER BY balance DESC, account_id
+                 ) AS rn
+          FROM balances
+      )
+      SELECT r.branch_id,
+             b.name AS branch_name,
+             r.account_id,
+             ROUND(r.balance, 2) AS balance
+      FROM ranked r
+      JOIN branches b ON b.branch_id = r.branch_id
+      WHERE r.rn = 1
+      ORDER BY r.branch_id;
+    ordered: true
+    hints:
+      - "First work out each account's balance and its branch. Then find the top account in each branch."
+      - "Use ROW_NUMBER() OVER (PARTITION BY branch_id ORDER BY balance DESC, account_id), and keep the rows where the number is 1."
+      - "WITH balances AS (SELECT branch_id, account_id, SUM(amount) ... GROUP BY ___), ranked AS (SELECT ..., ROW_NUMBER() OVER (...) AS rn FROM balances) SELECT ... FROM ranked WHERE rn = 1;"
+    explanation: |
+      This is a **top-N per group** problem with a twist: the value you rank by, the balance, is itself an aggregate. So the work is split into steps: one CTE for the balances, one for the ranks, and a final filter.
+
+      Joining the branch table at the very end keeps the ranking logic simple.
+
+  - id: ch-a-022
+    title: Employees two levels below the CEO
+    difficulty: hard
+    dataset: company
+    module: m06
+    tags: [self-join, join, hierarchy]
+    prompt: |
+      The CEO wants to know which teams report to the executive team. Find every employee whose manager reports directly to the CEO (the CEO is employee 1).
+
+      Show `emp_id`, `employee` (first name, a space, then last name), `manager` (the manager's name in the same format) and `manager_title` (the manager's `job_title`).
+
+      Sort by `emp_id`.
+    solution: |
+      SELECT e.emp_id,
+             e.first_name || ' ' || e.last_name AS employee,
+             m.first_name || ' ' || m.last_name AS manager,
+             m.job_title AS manager_title
+      FROM employees e
+      JOIN employees m ON m.emp_id = e.manager_id
+      WHERE m.manager_id = 1
+      ORDER BY e.emp_id;
+    ordered: true
+    hints:
+      - "Join the employees table to itself: one copy is the employee and the other copy is their manager."
+      - "The manager's own manager_id tells you who the manager reports to. Compare it with 1, the CEO."
+      - "SELECT e.emp_id, ... FROM employees e JOIN employees m ON m.emp_id = e.manager_id WHERE m.___ = 1 ORDER BY e.emp_id;"
+    explanation: |
+      A **self join** joins a table to itself. Give each copy a different alias (`e` and `m`) so you can say which one you mean.
+
+      Here the manager is also an employee, so the manager's row answers the question "who does my manager report to?". Two levels of a hierarchy can be checked with one self join. Deeper levels need a recursive CTE, which you met earlier.
+
+  - id: ch-a-023
+    title: Ratings in the last 30 days
+    difficulty: hard
+    dataset: movies
+    module: m11
+    tags: [window, range, interval, frame]
+    prompt: |
+      User 13 rates films at different times. For each of their ratings, show the `rated_at`, `movie_id`, `stars` and `ratings_last_30_days`.
+
+      `ratings_last_30_days` counts user 13's ratings, including this one, that were made in the 30 days before this rating or at the same moment. A rating made exactly 30 days earlier does count.
+
+      Sort by `rated_at`.
+    solution: |
+      SELECT rated_at, movie_id, stars,
+             COUNT(*) OVER (
+                 ORDER BY rated_at
+                 RANGE BETWEEN INTERVAL '30 days' PRECEDING
+                           AND CURRENT ROW
+             ) AS ratings_last_30_days
+      FROM ratings
+      WHERE user_id = 13
+      ORDER BY rated_at;
+    ordered: true
+    hints:
+      - "A ROWS frame counts a fixed number of rows. A RANGE frame counts rows by the value in the ORDER BY column."
+      - "Use RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW so the window follows the calendar."
+      - "COUNT(*) OVER (ORDER BY rated_at RANGE BETWEEN INTERVAL '30 days' PRECEDING AND CURRENT ROW)"
+    explanation: |
+      A **RANGE frame** with an interval is what you want when the rows are not evenly spaced in time. Two ratings on the same day and none for a month give very different numbers from ratings spread evenly.
+
+      `ROWS` would count the last 30 rows, which is a different question. Choose the frame based on the question you are asking.
+
+  - id: ch-a-024
+    title: Second-highest salary in each department
+    difficulty: hard
+    dataset: company
+    module: m10
+    tags: [window, dense-rank, ties]
+    prompt: |
+      Each department wants to know its second-highest salary among the people who are still with the company. Use only current employees (their `terminated_on` is empty) who have a department (`dept_id` is not empty).
+
+      Show every person whose salary is the department's second-highest **distinct** salary. If two people share that salary, show both of them.
+
+      Show `dept_id`, `emp_id` and `salary`. Sort by `dept_id`, then by `emp_id`.
+    solution: |
+      SELECT dept_id, emp_id, salary
+      FROM (
+          SELECT dept_id, emp_id, salary,
+                 DENSE_RANK() OVER (
+                     PARTITION BY dept_id
+                     ORDER BY salary DESC
+                 ) AS salary_rank
+          FROM employees
+          WHERE terminated_on IS NULL
+            AND dept_id IS NOT NULL
+      ) ranked
+      WHERE salary_rank = 2
+      ORDER BY dept_id, emp_id;
+    ordered: true
+    hints:
+      - "Rank the salaries inside each department, from the highest down. Keep the rows whose rank is 2."
+      - "DENSE_RANK() gives equal salaries the same number. ROW_NUMBER() would pick only one of two tied people, so do not use it here."
+      - "SELECT dept_id, emp_id, salary FROM (SELECT ..., DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS salary_rank FROM employees WHERE ___) ranked WHERE salary_rank = 2;"
+    explanation: |
+      `DENSE_RANK()` gives tied salaries the same number and does not skip the next number. That is what you want for "the second-highest salary": everyone tied for second appears together.
+
+      `RANK()` skips a number after each tie. If two people tied for first, both would be rank 1, and the next salary would be rank 3, so a filter on rank 2 would find nobody. Always check which kind of ranking your question needs.
+
+  - id: ch-a-025
+    title: Products that out-earn the average product
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, aggregation, cross-join, filter]
+    prompt: |
+      Which products earn more than the average product? Use **delivered** orders only. For each product, the revenue is the total of quantity × unit_price × (1 - discount) over its order lines.
+
+      Compare each product's revenue with the **average revenue of all the products that appear in delivered orders**. Keep only the products whose revenue is above that average.
+
+      Show `product_id`, `name` and `revenue`, with `revenue` rounded to 2 decimals. Sort by `revenue` from highest to lowest, then by `product_id`.
+    solution: |
+      WITH product_revenue AS (
+          SELECT i.product_id,
+                 SUM(i.quantity * i.unit_price
+                     * (1 - i.discount)) AS revenue
+          FROM order_items i
+          JOIN orders o ON o.order_id = i.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY i.product_id
+      ),
+      average_revenue AS (
+          SELECT AVG(revenue) AS avg_revenue
+          FROM product_revenue
+      )
+      SELECT p.product_id,
+             p.name,
+             ROUND(r.revenue, 2) AS revenue
+      FROM product_revenue r
+      CROSS JOIN average_revenue a
+      JOIN products p ON p.product_id = r.product_id
+      WHERE r.revenue > a.avg_revenue
+      ORDER BY revenue DESC, p.product_id;
+    ordered: true
+    hints:
+      - "Use one CTE for the revenue of each product, and a second CTE with one row holding the average of those revenues."
+      - "CROSS JOIN joins every row to the single average row, so each product can be compared with it."
+      - "WITH product_revenue AS (SELECT product_id, SUM(...) AS revenue FROM ... GROUP BY ___), average_revenue AS (SELECT AVG(revenue) AS avg_revenue FROM product_revenue) SELECT ... WHERE revenue > avg_revenue;"
+    explanation: |
+      Comparing each row with a single overall number is a common pattern. A CTE that returns one row can be joined with `CROSS JOIN` to give that number to every row.
+
+      Doing the same thing with a subquery in `WHERE` works too: `WHERE revenue > (SELECT AVG(revenue) FROM product_revenue)`. The CTE version is easier to read and to test.

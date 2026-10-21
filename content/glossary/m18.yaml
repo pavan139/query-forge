@@ -1,0 +1,70 @@
+glossary:
+  - term: Duplicate row
+    definition: "A row that repeats another row. An exact copy matches on every business column. A conflicting copy has the same key but disagrees on a value such as the amount or status."
+    example: "Two rows for order ORD-1013 that both say 'Delivered' but show different order dates."
+    module: m18
+
+  - term: Deduplicate
+    definition: "To keep one row for each key and remove the rest. A common way is to number the copies with ROW_NUMBER() and keep number 1."
+    example: "WITH n AS (SELECT row_id, ROW_NUMBER() OVER (PARTITION BY order_ref ORDER BY row_id DESC) AS rn FROM raw_orders) SELECT row_id FROM n WHERE rn = 1;"
+    module: m18
+
+  - term: Empty string
+    definition: "A text value with no characters, written as two quotes ''. It is not NULL. Compare it with = '' and clean it with NULLIF(column, '') when it means 'missing'."
+    example: "NULLIF(email, '') returns NULL when email is an empty string."
+    module: m18
+
+  - term: Standardize
+    definition: "To make different spellings of the same thing identical, using one agreed form. Usually this means trimming spaces, changing capitals and mapping variants to one value."
+    example: "lower(btrim(' Ana@Example.COM ')) gives 'ana@example.com'."
+    module: m18
+
+  - term: Regular expression
+    definition: "A short pattern that describes the shape of a text, such as digits or a date layout. The ~ operator tests a value against it; the ^ and $ marks mean start and end of the text."
+    example: "order_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' is true for ISO dates like 2024-03-15."
+    module: m18
+
+  - term: Guard
+    definition: "A test that runs before a risky step, such as a cast, so that only safe values reach it. In a CASE expression the guard is the WHEN test; rows that fail it get NULL instead of an error."
+    example: "CASE WHEN amount ~ '^[0-9.]+$' THEN amount::numeric END"
+    module: m18
+
+  - term: Data quality check
+    definition: "A query that counts the rows that break a rule. A healthy table returns zero for every check. Checks are usually grouped as uniqueness, completeness, validity and referential integrity."
+    example: "SELECT count(*) FILTER (WHERE amount IS NULL) AS missing_amounts FROM raw_orders;"
+    module: m18
+
+  - term: Referential integrity
+    definition: "The rule that every reference points to a real record. A check for it finds rows whose value has no match in the other table, usually with NOT EXISTS."
+    example: "A row in raw_orders whose customer_email matches no email in raw_customers."
+    module: m18
+
+  - term: Outlier
+    definition: "A value that sits far away from most of the others. An outlier may be a typo, a test record or a real but unusual value, so flag it and check it rather than deleting it."
+    example: "An order of 999999.99 among orders that are mostly below 250."
+    module: m18
+
+  - term: IQR (interquartile range)
+    definition: "The width of the middle half of the data: the 75th percentile minus the 25th percentile. Values more than 1.5 times the IQR beyond the quartiles are common outlier flags."
+    example: "percentile_cont(0.75) WITHIN GROUP (ORDER BY amt) - percentile_cont(0.25) WITHIN GROUP (ORDER BY amt)"
+    module: m18
+
+  - term: Pivot
+    definition: "To turn the values of one column into separate columns, so that long rows become a wide table. In PostgreSQL it is written with SUM(...) FILTER (WHERE ...) or CASE inside an aggregate."
+    example: "SUM(revenue) FILTER (WHERE month = 'Jan') AS jan"
+    module: m18
+
+  - term: Unpivot
+    definition: "To turn several columns into rows, so that a wide table becomes a long one. A common way is CROSS JOIN LATERAL with a VALUES list, or unnest with arrays."
+    example: "CROSS JOIN LATERAL (VALUES ('Jan', p.jan), ('Feb', p.feb)) AS v (month, revenue)"
+    module: m18
+
+  - term: Crosstab
+    definition: "A pivot function from the tablefunc extension. You give it a sorted query with row, column and value, plus a list of column names, and it returns a wide table."
+    example: "SELECT * FROM crosstab('SELECT product, month, revenue FROM monthly_sales_long ORDER BY 1, 2', '...') AS ct (product text, jan numeric);"
+    module: m18
+
+  - term: Wide and long format
+    definition: "Two ways to lay out the same data. Long format has one row per item and period (product and month). Wide format has one row per item, with one column per period."
+    example: "monthly_sales_long (product, month, revenue) is long; product_sales_wide (product, jan, feb, ...) is wide."
+    module: m18

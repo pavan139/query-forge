@@ -1,0 +1,61 @@
+glossary:
+  - term: JSON and jsonb
+    definition: "JSON is a text format for named values in curly brackets. jsonb is PostgreSQL's tidied, fast version of JSON, which reorders the keys into its own fixed order and can be searched inside."
+    example: "'{\"plan\": \"annual\", \"price\": 79.99}'::jsonb"
+    module: m16
+  - term: "-> and ->> (JSON arrows)"
+    definition: "The arrow -> takes a key out of a jsonb value and keeps it as JSON. The double arrow ->> takes it out as plain text."
+    example: "properties->>'workout_type'"
+    module: m16
+  - term: "@> (containment)"
+    definition: "Checks whether the left JSON (or array) contains everything on the right. Extra keys on the left are allowed."
+    example: "properties @> '{\"goal\": \"lose_weight\"}'"
+    module: m16
+  - term: Array
+    definition: "A list of values of the same type stored in one cell. Positions start at 1, and a position that does not exist returns NULL."
+    example: "SELECT (ARRAY['Drama', 'Comedy'])[2];  -- Comedy"
+    module: m16
+  - term: unnest
+    definition: "Turns an array into one row per item. Add WITH ORDINALITY to get the position of each item."
+    example: "SELECT g FROM unnest(ARRAY['Drama', 'Comedy']) AS g;"
+    module: m16
+  - term: generate_series
+    definition: "Makes a list of numbers, dates or timestamps from a start value to a stop value, moving by a step. Both ends are included."
+    example: "SELECT d::date FROM generate_series('2024-03-01'::date, '2024-03-03'::date, '1 day') AS d;"
+    module: m16
+  - term: Date spine
+    definition: "A list of every day in a period, used as the left side of a LEFT JOIN so that days without data still appear in a report."
+    example: "FROM generate_series('2024-03-01'::date, '2024-03-31'::date, '1 day') AS d LEFT JOIN daily_steps s ON s.day = d::date"
+    module: m16
+  - term: LATERAL
+    definition: "Lets a subquery in FROM use the columns of the tables to its left, so it runs once for each row. Useful for the top N rows per group."
+    example: "CROSS JOIN LATERAL (SELECT name FROM products p WHERE p.category_id = c.category_id ORDER BY price DESC LIMIT 2) AS top"
+    module: m16
+  - term: ROLLUP
+    definition: "A GROUP BY option that adds subtotals and a grand total. ROLLUP (a, b) makes groups for (a, b), then (a), then the grand total."
+    example: "GROUP BY ROLLUP (year, status)"
+    module: m16
+  - term: CUBE and GROUPING SETS
+    definition: "CUBE makes every combination of the columns you list. GROUPING SETS lets you list exactly the groupings you want, and () is the grand total."
+    example: "GROUP BY GROUPING SETS ((status), (year), ())"
+    module: m16
+  - term: GROUPING()
+    definition: "Returns 1 on a subtotal or grand total row where that column was rolled up, and 0 on a normal row. Use it to label total rows instead of relying on NULL."
+    example: "CASE WHEN GROUPING(c.name) = 1 THEN 'All categories' ELSE c.name END"
+    module: m16
+  - term: DISTINCT ON
+    definition: "A PostgreSQL feature that keeps the first row of each group. The ORDER BY must start with the same columns, and the rest of the sort decides which row is first."
+    example: "SELECT DISTINCT ON (user_id) * FROM subscriptions ORDER BY user_id, started_at DESC;"
+    module: m16
+  - term: Regular expression
+    definition: "A pattern language for describing the shape of text, such as 'starts with a digit'. Operators like ~ and ~* test a column against a pattern."
+    example: "SELECT name FROM products WHERE name ~ '^[0-9]';"
+    module: m16
+  - term: Full-text search
+    definition: "Searches text by words instead of letters. Text is turned into a tsvector of stemmed words, a tsquery describes what to find, and @@ checks for a match."
+    example: "WHERE to_tsvector('english', review_text) @@ plainto_tsquery('english', 'recommended')"
+    module: m16
+  - term: Stem (lexeme)
+    definition: "The base form of a word that full-text search stores, so that 'recommended' and 'recommend' are treated as the same word. Common words such as 'this' are dropped."
+    example: "to_tsvector('english', 'Cannot recommend this enough.')  -- 'recommend':2"
+    module: m16

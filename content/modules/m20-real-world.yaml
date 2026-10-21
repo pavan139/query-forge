@@ -1,0 +1,487 @@
+id: m20
+order: 20
+title: "SQL in the Real World"
+subtitle: Dialects, professional habits, debugging, warehouses and interviews
+icon: "🌍"
+level: expert
+description: |
+  You can write SQL now. This last module is about using it at work, where the
+  hard parts are rarely the keywords. The database is not the one in the
+  tutorial, a total is a few dollars off, and a report is needed by Monday.
+
+  You will learn how the big databases differ, how professionals write and
+  debug queries, how to test a result before anyone trusts it, how a data
+  warehouse is built as a star schema, and how to approach an interview problem
+  calmly. The module ends with a capstone project for ShopSmart, where you build
+  an executive report from scratch.
+
+  Everything runs on **PostgreSQL 18**. Where another database works differently,
+  you will see it in a table and in short, labelled notes.
+dataset: shop
+lessons:
+  - id: m20-l01
+    title: "One language, many accents: SQL dialects"
+    summary: Learn which parts of SQL are standard, which belong to PostgreSQL, and how to translate a query from another database.
+    minutes: 30
+    steps:
+      - type: read
+        title: The query that would not run
+        md: |
+          Your friend Sam is excited. He found a query online that shows the five
+          most expensive products, and he pastes it into SQL Quest:
+
+          ```sql
+          SELECT TOP 5 name, price
+          FROM products
+          ORDER BY price DESC;
+          ```
+
+          A red error appears. Sam's idea was fine. The query was written for a
+          different database, **Microsoft SQL Server**. The language is almost the
+          same, but every database has small extras that the others do not share.
+
+          > [!ANALOGY]
+          > It is like British and American English. You understand each other, yet
+          > "lift" and "elevator" mean the same thing. You only need to know which
+          > word belongs to which place.
+
+      - type: read
+        title: One standard, many dialects
+        md: |
+          SQL is a standard, so the core is the same almost everywhere: `SELECT`,
+          `FROM`, `WHERE`, `GROUP BY`, `JOIN` and `ORDER BY`. You already use them.
+
+          Each product then adds its own **dialect**: extra keywords and functions.
+          The differences show up in a few predictable places:
+
+          - how you limit the number of rows (`LIMIT`, `TOP`, `FETCH FIRST`)
+          - how you join text, and how you match text while ignoring capitals
+          - date functions
+          - automatic numbers for new rows, and true and false values
+          - shortcuts that only one product has
+
+          You will learn the PostgreSQL version of each one, and the matching words
+          in other databases. The last step of this lesson is a translation table
+          you can keep.
+
+          > [!REAL-WORLD]
+          > Analysts copy queries from forums and AI tools all the time. Before you
+          > run one, check which database it was written for.
+
+      - type: example
+        title: "LIMIT: the PostgreSQL way"
+        md: Ask for the five most expensive products. `LIMIT 5` goes at the very end of the query.
+        sql: |
+          SELECT name, price
+          FROM products
+          ORDER BY price DESC, name
+          LIMIT 5;
+        after: |
+          You get five rows, the most expensive first. The `name` after `price DESC`
+          is a **tie-breaker**: if two products cost the same, the one with the
+          earlier name comes first. Without it, two products with the same price
+          could swap places from one run to the next.
+
+      - type: example
+        title: TOP does not exist in PostgreSQL
+        md: This is the query Sam pasted. PostgreSQL does not know the word `TOP`.
+        sql: |
+          SELECT TOP 5 name, price
+          FROM products
+          ORDER BY price DESC;
+        expectError: true
+        after: |
+          PostgreSQL stops at the number `5` and reports a **syntax error**. That
+          means the words are arranged in a way the database does not understand.
+
+          The fix is to remove `TOP 5` and write `LIMIT 5` at the end of the query.
+
+          > [!TIP]
+          > Error messages point at the problem. "at or near "5"" tells you exactly
+          > where PostgreSQL got confused.
+
+      - type: read
+        title: "The standard way: FETCH FIRST"
+        md: |
+          The SQL standard describes the same idea as `FETCH FIRST 5 ROWS ONLY`,
+          placed at the end of the query. PostgreSQL understands it, and so does
+          Oracle (version 12c and newer).
+
+          `LIMIT` is shorter and very common in PostgreSQL, MySQL and SQLite. Pick
+          one style for your team and stick to it. Never mix both in one query.
+
+      - type: example
+        title: The same query, standard style
+        md: Here is Sam's query again, this time written with `FETCH FIRST`.
+        sql: |
+          SELECT name, price
+          FROM products
+          ORDER BY price DESC, name
+          FETCH FIRST 5 ROWS ONLY;
+        after: |
+          The same five rows as before. Two spellings, one result.
+
+      - type: read
+        title: Joining text and matching capitals
+        md: |
+          To glue text pieces together, PostgreSQL uses two vertical bars, `||`.
+          MySQL uses a function called `CONCAT()`, and SQL Server accepts `+` or
+          `CONCAT()`.
+
+          Watch out for `NULL`. In PostgreSQL, joining a text value with a `NULL`
+          piece gives `NULL` for the whole result. You met `COALESCE` in the
+          functions module, and it protects you from this.
+
+          Matching text is another place where dialects differ. In PostgreSQL,
+          `LIKE` is **case-sensitive**: `'desk'` and `'Desk'` are different. `ILIKE`
+          ignores capitals. `ILIKE` is a PostgreSQL word, so other databases use a
+          different spelling, as the translation table shows.
+
+      - type: example
+        title: LIKE is case-sensitive
+        md: Look for products with the word "desk" in their name. Look closely at the lowercase pattern.
+        sql: |
+          SELECT name
+          FROM products
+          WHERE name LIKE '%desk%'
+          ORDER BY name;
+        after: |
+          **Zero rows.** Every product name with "Desk" in it has a capital D, and
+          `LIKE` does not match a lowercase `d` against a capital `D`. Change `LIKE`
+          to `ILIKE` and three products appear.
+
+          > [!MISTAKE]
+          > Zero rows does not always mean "the data is empty". Check the capitals in
+          > your pattern before you decide that nothing matches.
+
+      - type: example
+        title: "DISTINCT ON: the top row of each group"
+        md: |
+          Standard SQL has `DISTINCT`, which removes duplicate rows. PostgreSQL also
+          has `DISTINCT ON (column)`, which keeps **one row for each value** of that
+          column: the first row after your `ORDER BY`.
+
+          Here it shows the most expensive product in every category.
+        sql: |
+          SELECT DISTINCT ON (category_id)
+                 category_id, name, price
+          FROM products
+          ORDER BY category_id, price DESC, name;
+        after: |
+          You get one product for each category. The rows are sorted by
+          `category_id`, then by price from highest to lowest, so the first row of
+          each category is the most expensive one.
+
+          Other databases do the same job with a window function such as
+          `ROW_NUMBER()`, which you met in the window functions modules.
+
+          > [!MISTAKE]
+          > The first column in `ORDER BY` must be the same column as in
+          > `DISTINCT ON`. If it is not, PostgreSQL reports an error.
+
+      - type: example
+        title: Auto-numbers and true/false
+        md: |
+          Two more differences you will meet often. This example creates its own
+          small table on an empty database, so you can run it on its own.
+        dataset: blank
+        sql: |
+          CREATE TABLE tags (
+              tag_id    INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              tag_name  TEXT NOT NULL,
+              is_public BOOLEAN NOT NULL DEFAULT TRUE
+          );
+
+          INSERT INTO tags (tag_name, is_public)
+          VALUES ('sql', TRUE), ('excel', FALSE), ('python', TRUE);
+
+          SELECT tag_id, tag_name, is_public
+          FROM tags
+          ORDER BY tag_id;
+        after: |
+          `GENERATED ALWAYS AS IDENTITY` makes PostgreSQL number the rows 1, 2, 3
+          for you, so you never type an id yourself. The older `SERIAL` spelling
+          still works. MySQL calls the same idea `AUTO_INCREMENT`, and SQL Server
+          uses `IDENTITY`.
+
+          `BOOLEAN` holds `TRUE` or `FALSE`. MySQL stores booleans as small
+          numbers, and SQLite stores them as 0 or 1.
+
+      - type: read
+        title: Your translation guide
+        md: |
+          When you translate a query, follow three steps:
+
+          1. Find the word that looks foreign (`TOP`, `ROWNUM`, `+` for text, `GETDATE`).
+          2. Look it up in the tables below.
+          3. Run the result and read any error message. It points at the problem.
+
+          **Limits, text and dates**
+
+          | Task | PostgreSQL | MySQL | SQL Server | SQLite |
+          |---|---|---|---|---|
+          | First 5 rows | `LIMIT 5` at the end | `LIMIT 5` | `SELECT TOP 5 ...` | `LIMIT 5` |
+          | Skip 10, then take 5 | `LIMIT 5 OFFSET 10` | `LIMIT 10, 5` | `ORDER BY ... OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY` | `LIMIT 5 OFFSET 10` |
+          | Join text | `a \|\| b` | `CONCAT(a, b)` | `a + b` or `CONCAT(a, b)` | `a \|\| b` |
+          | Match ignoring capitals | `ILIKE` | `LIKE` (usually ignores case) | `LIKE` (depends on collation) | `LIKE` (ignores case for English letters) |
+          | Join text per group | `string_agg(x, ', ')` | `GROUP_CONCAT(x SEPARATOR ', ')` | `STRING_AGG(x, ', ')` (2017 and newer) | `group_concat(x, ', ')` |
+          | Days between two dates | `date2 - date1` | `DATEDIFF(date2, date1)` | `DATEDIFF(day, date1, date2)` | `julianday(date2) - julianday(date1)` |
+
+          **Numbers, ids and changes**
+
+          | Task | PostgreSQL | MySQL | SQL Server | SQLite |
+          |---|---|---|---|---|
+          | Today's date | `CURRENT_DATE` | `CURDATE()` | `CAST(GETDATE() AS date)` | `date('now')` |
+          | Auto-numbered id | `GENERATED ALWAYS AS IDENTITY` | `AUTO_INCREMENT` | `IDENTITY(1,1)` | `INTEGER PRIMARY KEY` |
+          | True / false | `TRUE` / `FALSE` | `TRUE` / `FALSE` (stored as 1 / 0) | `BIT` (1 / 0) | stored as 1 / 0 |
+          | Insert, or update if the key exists | `INSERT ... ON CONFLICT (id) DO UPDATE` | `INSERT ... ON DUPLICATE KEY UPDATE` | `MERGE` | `INSERT ... ON CONFLICT (id) DO UPDATE` |
+          | First row per group | `DISTINCT ON (col)` | `ROW_NUMBER()` in a subquery | `ROW_NUMBER()` in a subquery | `ROW_NUMBER()` in a subquery |
+
+          Some features belong to one product only. `QUALIFY` (filter on a window
+          function result directly) exists in BigQuery and Snowflake, but not in
+          PostgreSQL. In PostgreSQL you wrap the window function in a subquery or a
+          CTE instead.
+
+          > [!NOTE]
+          > Syntax changes between versions, and the tables describe common cases.
+          > When in doubt, check the documentation for the exact version you use.
+
+      - type: quiz
+        id: m20-l01-q1
+        question: "Sam's query starts with SELECT TOP 5. Which PostgreSQL change gives the same five rows?"
+        options:
+          - "Replace TOP 5 with FETCH TOP 5"
+          - "Remove TOP 5 and add LIMIT 5 at the end of the query"
+          - "Replace TOP 5 with ROWNUM <= 5"
+          - "Add SELECT FIRST 5 before FROM"
+        answer: 1
+        explanation: |
+          `LIMIT 5` goes at the end of the query. `ROWNUM` is Oracle's older way of
+          counting rows, and `FETCH TOP` and `SELECT FIRST` are not PostgreSQL.
+
+      - type: quiz
+        id: m20-l01-q2
+        question: "Which of these queries run in PostgreSQL without any changes? Choose every correct one."
+        options:
+          - "SELECT name FROM products ORDER BY name LIMIT 3;"
+          - "SELECT TOP 3 name FROM products ORDER BY name;"
+          - "SELECT name FROM products ORDER BY name FETCH FIRST 3 ROWS ONLY;"
+          - "SELECT name FROM products WHERE name ILIKE 'desk%' ORDER BY name;"
+        answer: [0, 2, 3]
+        explanation: |
+          `TOP` is a SQL Server word. The other three use `LIMIT`, `FETCH FIRST`
+          or `ILIKE`, which PostgreSQL understands.
+
+      - type: predict
+        id: m20-l01-p1
+        question: "How many rows will this query return in PostgreSQL?"
+        sql: |
+          SELECT name
+          FROM products
+          WHERE name LIKE 'desk%';
+        options: ["0", "1", "3", "An error"]
+        answer: 0
+        explanation: |
+          `LIKE` is case-sensitive in PostgreSQL. Every product name that contains
+          "desk" has a capital D, so a lowercase `desk%` matches nothing. With
+          `ILIKE` the answer would be 1.
+
+      - type: predict
+        id: m20-l01-p2
+        question: "What does this PostgreSQL query return?"
+        sql: |
+          SELECT 'Coffee' || NULL AS result;
+        options: ["Coffee", "NULL", "Coffee NULL", "An error"]
+        answer: 1
+        explanation: |
+          Joining text with `NULL` using `||` gives `NULL`. PostgreSQL's `concat()`
+          function skips `NULL` pieces instead, so `concat('Coffee', NULL)` returns
+          `Coffee`.
+
+      - type: fill
+        id: m20-l01-f1
+        prompt: "Complete this PostgreSQL query so it returns the three most expensive products."
+        template: |
+          SELECT name, price
+          FROM products
+          ORDER BY price DESC
+          ___ 3;
+        answers:
+          - ["LIMIT"]
+        explanation: "PostgreSQL uses `LIMIT` at the end of the query. `TOP` would cause a syntax error here."
+
+      - type: parsons
+        id: m20-l01-o1
+        prompt: "Put the lines in the right order to get the three most expensive products in PostgreSQL."
+        lines:
+          - SELECT name, price
+          - FROM products
+          - ORDER BY price DESC
+          - LIMIT 3;
+        distractors:
+          - SELECT TOP 3 name, price
+
+      - type: exercise
+        id: m20-l01-e1
+        title: The four cheapest
+        prompt: |
+          Show the `name` and `price` of the **4 cheapest** products. Sort them from
+          cheapest to most expensive. If two products cost the same, sort them by
+          `name`. Use `LIMIT`.
+        starter: |
+          SELECT name, price
+          FROM products
+          ORDER BY price, name;
+        solution: |
+          SELECT name, price
+          FROM products
+          ORDER BY price, name
+          LIMIT 4;
+        ordered: true
+        hints:
+          - Sort the products first, then keep only the first few rows.
+          - LIMIT goes at the very end of the query.
+          - "SELECT name, price FROM products ORDER BY price, ___ LIMIT ___;"
+        explanation: |
+          The starter sorts correctly but returns every product. Adding `LIMIT 4`
+          keeps the first four rows. The name tie-breaker makes the order complete,
+          so the same four rows appear every time.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l01-e2
+        title: Full names, ignoring capitals
+        prompt: |
+          Show the **full name** of every customer whose `last_name` starts with the
+          letter **M**, whether it is written as a capital or a lowercase letter.
+
+          Give the result one column called `full_name`. Build it from the
+          `first_name`, a single space, and the `last_name`. Sort the rows by
+          `full_name`.
+        solution: |
+          SELECT first_name || ' ' || last_name AS full_name
+          FROM customers
+          WHERE last_name ILIKE 'm%'
+          ORDER BY full_name;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need two things, joining text with `||` and matching the start of `last_name` while ignoring capitals.
+          - Use `ILIKE` with a pattern that ends in `%`.
+          - "SELECT first_name || ___ || last_name AS full_name FROM customers WHERE last_name ILIKE ___ ORDER BY ___;"
+        explanation: |
+          `ILIKE 'm%'` matches any last name that begins with M, whatever the
+          capital letter. Do not forget the space inside `' '`. Without it, the first
+          and last names run together.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l01-e3
+        title: The cheapest active product per category
+        prompt: |
+          For each category, show the **cheapest active product**. Use only products
+          where `is_active` is true.
+
+          Show `category_id`, `name` and `price`, sorted by `category_id`. If two
+          products in one category cost the same, choose the one whose `name` comes
+          first alphabetically.
+        solution: |
+          SELECT DISTINCT ON (category_id)
+                 category_id, name, price
+          FROM products
+          WHERE is_active
+          ORDER BY category_id, price, name;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use DISTINCT ON (category_id) to keep one row for each category.
+          - Sort by price from lowest to highest, then by name, so the first row is the cheapest.
+          - "SELECT DISTINCT ON (___) category_id, name, price FROM products WHERE ___ ORDER BY ___, price, name;"
+        explanation: |
+          `DISTINCT ON` keeps the first row of each group, so the `ORDER BY` decides
+          the winner. The first `ORDER BY` column has to match the `DISTINCT ON`
+          column, or PostgreSQL reports an error.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l01-e4
+        title: The three newest orders, as one line each
+        prompt: |
+          Show the **3 newest orders**. Newest means the latest `order_date`. If two
+          orders share a date, the one with the higher `order_id` is newer.
+
+          For each order, show `order_id`, `order_date` and `items`. `items` is all of
+          the order's product names joined into one text, separated by `', '` and
+          sorted alphabetically by product name.
+
+          Sort the result with the newest order first.
+        solution: |
+          SELECT o.order_id,
+                 o.order_date,
+                 string_agg(p.name, ', ' ORDER BY p.name) AS items
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          JOIN products p ON p.product_id = i.product_id
+          GROUP BY o.order_id, o.order_date
+          ORDER BY o.order_date DESC, o.order_id DESC
+          LIMIT 3;
+        ordered: true
+        columnNames: true
+        hints:
+          - Join the orders to their order lines, and then to the products.
+          - "string_agg(name, ', ' ORDER BY name) joins one group's names into one text."
+          - "...GROUP BY o.order_id, o.order_date ORDER BY o.order_date ___, o.order_id ___ LIMIT ___;"
+        explanation: |
+          `string_agg` is PostgreSQL's way to join the values of a group into one
+          text. The `ORDER BY` inside it sorts the names. MySQL's `GROUP_CONCAT` and
+          SQL Server's `STRING_AGG` do the same job with small changes, as the
+          translation table showed.
+        difficulty: 3
+
+      - type: read
+        title: Summary
+        md: |
+          - PostgreSQL uses `LIMIT`, `ILIKE`, `||`, `DISTINCT ON` and `string_agg`.
+          - Other databases use `TOP`, `CONCAT`, `GROUP_CONCAT` and `DATEDIFF`, among others.
+          - Translate one word at a time, and run the result. The error message tells you where to look.
+
+    cheatsheet:
+      - title: The first N rows (PostgreSQL)
+        sql: |
+          SELECT name, price
+          FROM products
+          ORDER BY price DESC, name
+          LIMIT 5;
+        note: "LIMIT goes at the end. FETCH FIRST 5 ROWS ONLY also works."
+      - title: Match text, ignoring capitals
+        sql: "WHERE name ILIKE '%desk%';"
+        note: "LIKE is case-sensitive in PostgreSQL. ILIKE is not."
+      - title: Join text
+        sql: "SELECT first_name || ' ' || last_name AS full_name FROM customers;"
+        note: "A NULL piece makes the whole result NULL. Use COALESCE to protect it."
+      - title: Top row of each group
+        sql: |
+          SELECT DISTINCT ON (category_id) category_id, name, price
+          FROM products
+          ORDER BY category_id, price DESC, name;
+        note: "The first ORDER BY column must match the DISTINCT ON column."
+
+  # @@NEXT_LESSON@@
+
+testPool:
+  - type: quiz
+    id: m20-t01
+    lesson: m20-l01
+    difficulty: 1
+    question: "Which PostgreSQL function joins the values of a group into one text, separated by a comma?"
+    options:
+      - "GROUP_CONCAT()"
+      - "string_agg()"
+      - "CONCAT_GROUP()"
+      - "TEXTJOIN()"
+    answer: 1
+    explanation: |
+      `string_agg(value, ', ')` is PostgreSQL's group text join. `GROUP_CONCAT` is MySQL,
+      `TEXTJOIN` is an Excel function, and `CONCAT_GROUP` does not exist.
+
+  # @@NEXT_TEST@@

@@ -1,0 +1,1731 @@
+challenges:
+  - id: ch-f-001
+    title: Customer contact list
+    difficulty: easy
+    dataset: cafe
+    module: m01
+    tags: [select, columns]
+    prompt: |
+      The café manager wants a quick contact list for the loyalty program.
+
+      Show each customer's `first_name`, `last_name` and `city`.
+    solution: |
+      SELECT first_name, last_name, city
+      FROM customers;
+    hints:
+      - "List the column names you want after SELECT, separated by commas."
+      - "The table is called customers. Every customer should appear."
+      - "SELECT first_name, last_name, ___ FROM ___;"
+    explanation: |
+      Listing the columns you want, instead of using `SELECT *`, keeps the result short and easy to read. The rows come back in no guaranteed order, which is fine because this prompt does not ask for one.
+
+  - id: ch-f-002
+    title: Friendlier column names
+    difficulty: easy
+    dataset: cafe
+    module: m01
+    tags: [select, alias]
+    columnNames: true
+    prompt: |
+      The rota board needs shorter labels.
+
+      Show each staff member's `name` as `staff_name` and their `role` as `job_title`.
+    solution: |
+      SELECT name AS staff_name,
+             role AS job_title
+      FROM staff;
+    hints:
+      - "Use AS to give a column a new name: name AS staff_name."
+      - "Write the old column, then AS, then the new name, then a comma."
+      - "SELECT name AS ___, role AS ___ FROM staff;"
+    explanation: |
+      An alias is a temporary name for a column in the result. The table itself does not change. Writing `AS` makes the rename easy to spot, even though PostgreSQL also accepts it without `AS`.
+
+  - id: ch-f-003
+    title: Weekly pay
+    difficulty: easy
+    dataset: cafe
+    module: m01
+    tags: [select, arithmetic]
+    columnNames: true
+    prompt: |
+      Payroll wants each staff member's weekly pay.
+
+      Show each `name` and their weekly pay as `weekly_pay`. Weekly pay is `hourly_rate` multiplied by 40 hours.
+    solution: |
+      SELECT name,
+             hourly_rate * 40 AS weekly_pay
+      FROM staff;
+    hints:
+      - "You can do maths right inside SELECT: hourly_rate * 40."
+      - "Give the new column a name with AS weekly_pay."
+      - "SELECT name, hourly_rate * ___ AS ___ FROM staff;"
+    explanation: |
+      SQL can calculate new values for each row. `hourly_rate * 40` is computed for every staff member, and the result is shown in a new column called `weekly_pay`. The table itself is never changed.
+
+  - id: ch-f-004
+    title: Name badges
+    difficulty: easy
+    dataset: cafe
+    module: m01
+    tags: [select, text, concat]
+    columnNames: true
+    prompt: |
+      Make a label for each staff member that shows their role, then a colon, a space and their name.
+
+      Name the column `label`.
+    solution: |
+      SELECT role || ': ' || name AS label
+      FROM staff;
+    hints:
+      - "The || operator joins pieces of text together."
+      - "Text in single quotes, such as ': ', is added as it is."
+      - "SELECT role || ___ || name AS label FROM staff;"
+    explanation: |
+      `||` glues text together. Text in single quotes, like `': '`, is a fixed piece of text added between the other parts. Remember the space inside the quotes, or the words will run together.
+
+  - id: ch-f-005
+    title: Which payment methods?
+    difficulty: easy
+    dataset: shop
+    module: m01
+    tags: [distinct]
+    prompt: |
+      The finance team wants to know which payment methods customers have used. Each method should appear only once.
+
+      Show the `method` column from `payments`, with no duplicates.
+    solution: |
+      SELECT DISTINCT method
+      FROM payments;
+    hints:
+      - "DISTINCT removes repeated values from the result."
+      - "Put DISTINCT straight after SELECT."
+      - "SELECT DISTINCT ___ FROM payments;"
+    explanation: |
+      `DISTINCT` keeps one copy of each value. Without it, you would see one row for each of the 778 payments. With it there are only 4 rows: card, paypal, bank_transfer and gift_card.
+
+  - id: ch-f-006
+    title: Menu types
+    difficulty: easy
+    dataset: cafe
+    module: m01
+    tags: [distinct, multiple-columns]
+    prompt: |
+      The café wants to see which kinds of menu items it sells: each category together with whether it is vegan.
+
+      Show each distinct combination of `category` and `is_vegan`. Each combination should appear once.
+    solution: |
+      SELECT DISTINCT category, is_vegan
+      FROM menu_items;
+    hints:
+      - "DISTINCT looks at all the columns you list together."
+      - "Two rows are duplicates only when both columns match."
+      - "SELECT DISTINCT ___, ___ FROM menu_items;"
+    explanation: |
+      When you list several columns after DISTINCT, SQL removes rows only when the whole combination is the same. Pastry appears twice because it has both vegan and non-vegan items. The result has 10 rows.
+
+  - id: ch-f-007
+    title: Course labels for the catalog
+    difficulty: easy
+    dataset: school
+    module: m01
+    tags: [text, concat, alias]
+    columnNames: true
+    prompt: |
+      The printed course catalog needs one label per course.
+
+      Show each course's `title`, then a space, an opening bracket, its `credits` number, the letters ` cr` and a closing bracket. Name the column `course_label`.
+
+      For example: Algebra I (3 cr)
+    solution: |
+      SELECT title || ' (' || credits || ' cr)' AS course_label
+      FROM courses;
+    hints:
+      - "Use || to join text. Text in quotes is added exactly as written."
+      - "Build it from parts: the title, then ' (', then the credits, then ' cr)'."
+      - "SELECT title || ' (' || ___ || ' cr)' AS course_label FROM ___;"
+    explanation: |
+      The `||` operator joins text. `credits` is a number, but PostgreSQL turns it into text automatically when it is joined to other text. Check the spaces inside the quotes: `' ('` starts with a space.
+
+  - id: ch-f-008
+    title: Raise for the teachers
+    difficulty: easy
+    dataset: school
+    module: m01
+    tags: [arithmetic, alias]
+    columnNames: true
+    prompt: |
+      The school board approved a flat raise of $2,000 for every teacher.
+
+      Show each teacher's `full_name` and their `salary` plus 2000. Name the new column `new_salary`.
+    solution: |
+      SELECT full_name,
+             salary + 2000 AS new_salary
+      FROM teachers;
+    hints:
+      - "Addition works like a calculator: salary + 2000."
+      - "Give the result a name with AS new_salary."
+      - "SELECT full_name, salary + ___ AS new_salary FROM teachers;"
+    explanation: |
+      Arithmetic in SELECT does not change the table. The new column is calculated for each row when you run the query. Salaries are money with two decimals, so the results also show `.00`.
+
+  - id: ch-f-009
+    title: Premium menu items
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, comparison]
+    prompt: |
+      The café wants to highlight its more expensive items on a board.
+
+      Show the `name` and `price` of every menu item that costs more than $6.00.
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      WHERE price > 6.00;
+    hints:
+      - "WHERE keeps only the rows that pass a test."
+      - "Use > for 'greater than'. Compare price with 6.00."
+      - "SELECT name, price FROM menu_items WHERE price ___ 6.00;"
+    explanation: |
+      `WHERE` filters rows before they are shown. `>` means "greater than", so an item priced at exactly $6.00 would not appear. Nine items cost more than $6.00.
+
+  - id: ch-f-010
+    title: Portland regulars
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, text]
+    prompt: |
+      The Portland branch wants a list of its local regulars.
+
+      Show the `first_name` and `last_name` of every customer who lives in Portland.
+    solution: |
+      SELECT first_name, last_name
+      FROM customers
+      WHERE city = 'Portland';
+    hints:
+      - "Text values must be written in single quotes."
+      - "Use = to test whether two values are equal."
+      - "SELECT first_name, last_name FROM customers WHERE city = ___;"
+    explanation: |
+      Text in SQL goes in single quotes, like 'Portland'. Text comparisons are case-sensitive, so 'portland' would match no rows. Eight customers live in Portland.
+
+  - id: ch-f-011
+    title: Vegan menu
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, boolean]
+    prompt: |
+      A customer asks for something vegan. Show the `name` of every menu item where `is_vegan` is true.
+    solution: |
+      SELECT name
+      FROM menu_items
+      WHERE is_vegan = true;
+    hints:
+      - "is_vegan is a column that holds only true or false (a boolean)."
+      - "Compare it with true, like is_vegan = true."
+      - "SELECT name FROM menu_items WHERE is_vegan = ___;"
+    explanation: |
+      A boolean column holds true or false. `WHERE is_vegan = true` keeps the rows where it is true. You can also write `WHERE is_vegan` on its own. Fourteen items are vegan.
+
+  - id: ch-f-012
+    title: Cheap and vegan
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, and]
+    prompt: |
+      A student wants a budget-friendly vegan snack or drink.
+
+      Show the `name` and `price` of every vegan menu item that costs less than $5.00.
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      WHERE is_vegan = true
+        AND price < 5.00;
+    hints:
+      - "Two tests must BOTH be true: vegan, and cheaper than $5.00."
+      - "Join the two tests with AND."
+      - "WHERE is_vegan = true ___ price < ___;"
+    explanation: |
+      `AND` keeps a row only when both sides are true. Nine items are vegan and cost less than $5.00. With `OR` instead, a row would only need one of the two tests, so far more items would appear.
+
+  - id: ch-f-013
+    title: Customers in two cities
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, in]
+    prompt: |
+      The café is planning a delivery trial in Denver and Austin.
+
+      Show the `first_name`, `last_name` and `city` of every customer who lives in Denver or Austin.
+    solution: |
+      SELECT first_name, last_name, city
+      FROM customers
+      WHERE city IN ('Denver', 'Austin');
+    hints:
+      - "IN checks whether a value is in a list."
+      - "Put the list in round brackets, with each item in single quotes."
+      - "WHERE city IN ('Denver', ___);"
+    explanation: |
+      `IN ('Denver', 'Austin')` is shorter than writing `city = 'Denver' OR city = 'Austin'`, and both give the same result. Seven customers live in these two cities.
+
+  - id: ch-f-014
+    title: Films from 2015 and 2016
+    difficulty: easy
+    dataset: movies
+    module: m02
+    tags: [where, between]
+    prompt: |
+      The streaming team is reviewing its catalog from the mid-2010s.
+
+      Show the `title` and `release_year` of every movie released in 2015 or 2016, including both of those years.
+    solution: |
+      SELECT title, release_year
+      FROM movies
+      WHERE release_year BETWEEN 2015 AND 2016;
+    hints:
+      - "BETWEEN checks whether a value is inside a range."
+      - "The range includes both of its end values."
+      - "WHERE release_year BETWEEN ___ AND ___;"
+    explanation: |
+      `BETWEEN 2015 AND 2016` includes 2015 and 2016 themselves. It is the same as `release_year >= 2015 AND release_year <= 2016`. The query returns 10 movies.
+
+  - id: ch-f-015
+    title: Names that start with Ch
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, like, pattern]
+    prompt: |
+      The café's chalkboard only has room for a few names. Find the menu items whose name starts with the letters Ch.
+
+      Show the `name` of each matching item.
+    solution: |
+      SELECT name
+      FROM menu_items
+      WHERE name LIKE 'Ch%';
+    hints:
+      - "LIKE compares text with a pattern."
+      - "The % sign means any number of characters, so 'Ch%' means starts with Ch."
+      - "WHERE name LIKE '___%';"
+    explanation: |
+      `%` matches any number of characters, and `_` matches exactly one. `LIKE` is case-sensitive, so 'ch%' would match none of these names. Four items match: Chai Latte, Chocolate Chip Cookie, Cheesecake Slice and Chocolate Brownie.
+
+  - id: ch-f-016
+    title: Missing email addresses
+    difficulty: easy
+    dataset: cafe
+    module: m02
+    tags: [where, nulls, is-null]
+    prompt: |
+      Some loyalty members did not share an email address. The café needs them for a paper mailing list.
+
+      Show the `first_name` and `last_name` of every customer whose `email` is missing.
+    solution: |
+      SELECT first_name, last_name
+      FROM customers
+      WHERE email IS NULL;
+    hints:
+      - "A missing value is called NULL in SQL."
+      - "You cannot test NULL with =. Use IS NULL instead."
+      - "WHERE email ___ NULL;"
+    explanation: |
+      `NULL` means no value was recorded. Writing `email = NULL` never matches anything, because NULL is not equal to anything, not even NULL. Use `IS NULL` to find missing values. Five customers have no email.
+
+  - id: ch-f-017
+    title: Dessert and juice picks
+    difficulty: medium
+    dataset: cafe
+    module: m02
+    tags: [where, and, or, precedence]
+    prompt: |
+      The café's weekend special offers desserts and juices that cost more than $5.00. Only items that are available today may be shown.
+
+      Show the `name` and `price` of every item that is in the Dessert or Juice category, costs more than $5.00, and has `is_available` set to true.
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      WHERE (category = 'Dessert' OR category = 'Juice')
+        AND price > 5.00
+        AND is_available = true;
+    hints:
+      - "AND is handled before OR, which is the trap in this question."
+      - "Put the two category tests in round brackets."
+      - "WHERE (category = 'Dessert' ___ category = 'Juice') AND ..."
+    explanation: |
+      Without brackets, `category = 'Dessert' OR category = 'Juice' AND price > 5.00 AND is_available = true` means "every dessert, OR a juice that is over $5 and available". That returns 7 rows, including cheap or unavailable desserts. With the brackets the query returns the 4 items you want.
+
+  - id: ch-f-018
+    title: Orders that need attention in December
+    difficulty: medium
+    dataset: shop
+    module: m02
+    tags: [where, in, date]
+    ordered: true
+    prompt: |
+      The operations team reviews problem orders at the end of the year. They want every order from December 2024 that was either `cancelled` or still `processing`.
+
+      Show `order_id`, `customer_id`, `status` and `order_date` for those orders, sorted by `order_id`.
+    solution: |
+      SELECT order_id, customer_id, status, order_date
+      FROM orders
+      WHERE status IN ('cancelled', 'processing')
+        AND order_date >= '2024-12-01'
+        AND order_date < '2025-01-01'
+      ORDER BY order_id;
+    hints:
+      - "Combine three tests with AND: the status, the start date and the end date."
+      - "Use IN for the two statuses."
+      - "A whole month runs from its first day up to, but not including, the first day of the next month."
+    explanation: |
+      Using `order_date < '2025-01-01'` for the end of December is a safe pattern: it works for dates and timestamps alike. Seventeen orders match.
+
+  - id: ch-f-019
+    title: Loyalty leaderboard
+    difficulty: easy
+    dataset: cafe
+    module: m03
+    tags: [order-by, desc, multiple-columns]
+    ordered: true
+    prompt: |
+      The café is handing out prizes to its most loyal members. Rank the customers by loyalty points, highest first.
+
+      Show `first_name`, `last_name` and `loyalty_points`. Sort by `loyalty_points` from highest to lowest. If two customers have the same points, sort them by `last_name`, then by `first_name`.
+    solution: |
+      SELECT first_name, last_name, loyalty_points
+      FROM customers
+      ORDER BY loyalty_points DESC, last_name, first_name;
+    hints:
+      - "ORDER BY puts the rows into a sorted order."
+      - "Add DESC after a column to sort from highest to lowest."
+      - "ORDER BY loyalty_points ___, last_name, first_name;"
+    explanation: |
+      `ORDER BY` sorts the result. `DESC` means descending (highest first), and the default is `ASC` (lowest first). The second and third sort keys are tie-breakers, so the order is always the same when two members have equal points.
+
+  - id: ch-f-020
+    title: Who has not shared an email?
+    difficulty: easy
+    dataset: cafe
+    module: m03
+    tags: [order-by, nulls]
+    ordered: true
+    prompt: |
+      Sort the customer list by email address, A to Z. Customers without an email should appear first, before everyone else.
+
+      Show `first_name`, `last_name` and `email`. Sort by `email` with the missing emails first, then by `last_name` and `first_name`.
+    solution: |
+      SELECT first_name, last_name, email
+      FROM customers
+      ORDER BY email NULLS FIRST, last_name, first_name;
+    hints:
+      - "NULL is the name SQL uses for a missing value."
+      - "NULLS FIRST moves the missing values to the top of an ascending sort."
+      - "ORDER BY email ___ FIRST, last_name, first_name;"
+    explanation: |
+      By default PostgreSQL puts NULL values last in an ascending sort. `NULLS FIRST` changes that. The five customers without an email now appear at the top, and `last_name` and `first_name` decide their order.
+
+  - id: ch-f-021
+    title: Newest films first
+    difficulty: easy
+    dataset: movies
+    module: m03
+    tags: [order-by, limit]
+    ordered: true
+    prompt: |
+      The streaming home page shows the ten newest films.
+
+      Show the `title` and `release_year` of the 10 movies with the latest release years. Sort by `release_year` from newest to oldest, then by `title` A to Z.
+    solution: |
+      SELECT title, release_year
+      FROM movies
+      ORDER BY release_year DESC, title
+      LIMIT 10;
+    hints:
+      - "Sort first, then LIMIT 10 keeps only the first ten rows."
+      - "DESC puts the largest year first."
+      - "ORDER BY release_year ___, title LIMIT ___;"
+    explanation: |
+      `LIMIT` keeps only the first rows after the sort. The title is a tie-breaker, so the ten rows are always the same. Four films share the year 2023, so without the title the ten rows could change between runs.
+
+  - id: ch-f-022
+    title: Top five most expensive products
+    difficulty: easy
+    dataset: shop
+    module: m03
+    tags: [order-by, limit, top-n]
+    ordered: true
+    prompt: |
+      The shop wants a "top five" banner on its homepage, showing the five most expensive products.
+
+      Show the `name` and `price` of the five products with the highest `price`. If two products have the same price, sort them by `name` A to Z.
+    solution: |
+      SELECT name, price
+      FROM products
+      ORDER BY price DESC, name
+      LIMIT 5;
+    hints:
+      - "Sort by price from highest to lowest, then keep only the first five rows."
+      - "LIMIT must come after ORDER BY."
+      - "ORDER BY price ___, name LIMIT ___;"
+    explanation: |
+      Sorting first and then using `LIMIT` gives you the top rows, often called top-N. The name tie-breaker decides between the two products that both cost $899.99, so the banner is always the same.
+
+  - id: ch-f-023
+    title: The next three on the menu board
+    difficulty: medium
+    dataset: cafe
+    module: m03
+    tags: [order-by, offset, limit]
+    ordered: true
+    prompt: |
+      The café already shows its three most expensive items on the wall. Next, show the 4th, 5th and 6th most expensive menu items.
+
+      Show the `name` and `price` of those three items, most expensive first. If two items have the same price, sort them by `name` A to Z.
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      ORDER BY price DESC, name
+      OFFSET 3
+      LIMIT 3;
+    hints:
+      - "OFFSET skips rows before LIMIT starts counting."
+      - "Skip the first 3 rows, then take the next 3."
+      - "ORDER BY price DESC, name OFFSET ___ LIMIT 3;"
+    explanation: |
+      `OFFSET 3` skips the three most expensive items, and `LIMIT 3` keeps the next three. This is how pagination works: with three items per page, page 2 is `OFFSET 3 LIMIT 3`. The results are Veggie Hummus Wrap ($8.95), Avocado Toast ($8.50) and Tiramisu Cup ($6.95).
+
+  - id: ch-f-024
+    title: Class roll, page three
+    difficulty: medium
+    dataset: school
+    module: m03
+    tags: [offset, limit, pagination]
+    ordered: true
+    prompt: |
+      The school office prints the student roll in pages of five, sorted by surname. Page 3 shows students 11 to 15 in that list.
+
+      Show `first_name`, `last_name` and `grade_level` for students 11 to 15. Sort by `last_name`, then `first_name`, then `student_id`.
+    solution: |
+      SELECT first_name, last_name, grade_level
+      FROM students
+      ORDER BY last_name, first_name, student_id
+      OFFSET 10
+      LIMIT 5;
+    hints:
+      - "Page 3 with five rows per page skips the first 10 rows."
+      - "Sort first, then skip and take."
+      - "ORDER BY last_name, first_name, student_id OFFSET ___ LIMIT ___;"
+    explanation: |
+      Pagination uses `OFFSET` (rows to skip) and `LIMIT` (rows to take). The sort must give a single fixed order, so `student_id` is the final tie-breaker. Page 3 starts with Kaito Choi and ends with Miles Cooper.
+
+  - id: ch-f-025
+    title: Top four, including ties
+    difficulty: medium
+    dataset: shop
+    module: m03
+    tags: [fetch, with-ties, limit]
+    prompt: |
+      The shop wants the four most expensive products on its homepage. If the fourth product is tied on price with others, include all of the tied products too.
+
+      Show the `name` and `price` of these products.
+    solution: |
+      SELECT name, price
+      FROM products
+      ORDER BY price DESC
+      FETCH FIRST 4 ROWS WITH TIES;
+    hints:
+      - "FETCH FIRST 4 ROWS ONLY would stop at exactly four rows."
+      - "WITH TIES keeps any extra rows that have the same price as the last row."
+      - "ORDER BY price DESC FETCH FIRST ___ ROWS WITH ___;"
+    explanation: |
+      `FETCH FIRST n ROWS WITH TIES` is the standard SQL way to write top-N when ties matter. Two products cost $899.99, so the list has five rows instead of four. The `ORDER BY` decides which rows count as the top, and the ties come along with the last one.
+
+  - id: ch-f-026
+    title: Supplier name lengths
+    difficulty: easy
+    dataset: shop
+    module: m04
+    tags: [text, length]
+    columnNames: true
+    prompt: |
+      The purchasing team checks how long supplier names are, so they fit on labels.
+
+      Show each supplier's `name` and the number of characters in it, named `name_length`.
+    solution: |
+      SELECT name,
+             LENGTH(name) AS name_length
+      FROM suppliers;
+    hints:
+      - "LENGTH counts the characters in a piece of text."
+      - "Wrap the column name in LENGTH( ) and give the result an alias."
+      - "SELECT name, LENGTH(___) AS name_length FROM suppliers;"
+    explanation: |
+      Text functions take a value and return a new value. `LENGTH` counts every character, including spaces and punctuation. For example, 'Jade River Manufacturing' has 24 characters.
+
+  - id: ch-f-027
+    title: Year each teacher was hired
+    difficulty: easy
+    dataset: school
+    module: m04
+    tags: [date, extract]
+    columnNames: true
+    prompt: |
+      The principal wants to know the year each teacher was hired.
+
+      Show each teacher's `full_name` and the year of their `hire_date`, named `hire_year`.
+    solution: |
+      SELECT full_name,
+             EXTRACT(YEAR FROM hire_date) AS hire_year
+      FROM teachers;
+    hints:
+      - "EXTRACT pulls one part out of a date."
+      - "The pattern is EXTRACT(part FROM a_date_column)."
+      - "SELECT full_name, EXTRACT(___ FROM hire_date) AS hire_year FROM teachers;"
+    explanation: |
+      `EXTRACT(YEAR FROM hire_date)` returns only the year. The same pattern works with `MONTH`, `DAY` and `DOW` (day of the week). The stored dates are not changed.
+
+  - id: ch-f-028
+    title: A friendly placeholder
+    difficulty: easy
+    dataset: cafe
+    module: m04
+    tags: [nulls, coalesce]
+    columnNames: true
+    prompt: |
+      The mailing team needs a contact column for every customer. If a customer has no email, show the text `no email` instead of leaving the cell blank.
+
+      Show `first_name`, `last_name`, and the `email` column named `contact`, with `no email` in place of missing emails.
+    solution: |
+      SELECT first_name,
+             last_name,
+             COALESCE(email, 'no email') AS contact
+      FROM customers;
+    hints:
+      - "COALESCE returns the first value that is not NULL."
+      - "COALESCE(email, ...) means: use the email, or else the text in quotes."
+      - "COALESCE(___, 'no email') AS contact"
+    explanation: |
+      `COALESCE(a, b)` gives `a` when it has a value, and `b` when `a` is NULL. Use it to show a friendly default instead of an empty cell. Five customers have no email, so five rows show `no email`.
+
+  - id: ch-f-029
+    title: Salaries in thousands
+    difficulty: easy
+    dataset: school
+    module: m04
+    tags: [round, arithmetic]
+    columnNames: true
+    prompt: |
+      The budget report shows salaries in thousands of dollars, rounded to the nearest whole thousand. Halves round up.
+
+      Show each teacher's `full_name` and their `salary` divided by 1000, rounded to a whole number. Name the column `salary_k`.
+    solution: |
+      SELECT full_name,
+             ROUND(salary / 1000) AS salary_k
+      FROM teachers;
+    hints:
+      - "Divide the salary by 1000 first to get thousands."
+      - "ROUND with no second number rounds to a whole number."
+      - "SELECT full_name, ROUND(salary / ___) AS salary_k FROM teachers;"
+    explanation: |
+      `ROUND(x)` rounds to the nearest whole number. A value such as 71.5 becomes 72, because halves round away from zero. `ROUND(x, 1)` would keep one decimal place instead.
+
+  - id: ch-f-030
+    title: Team leader or team member?
+    difficulty: easy
+    dataset: cafe
+    module: m04
+    tags: [case, conditional]
+    prompt: |
+      The café wants a simple label on each staff badge: Leader for the manager, and Team member for everyone else.
+
+      Show each staff member's `name` and a column named `team_role` that follows that rule.
+    solution: |
+      SELECT name,
+             CASE
+                 WHEN role = 'Manager' THEN 'Leader'
+                 ELSE 'Team member'
+             END AS team_role
+      FROM staff;
+    hints:
+      - "CASE works like if-then-else: WHEN a test THEN an answer."
+      - "ELSE gives the answer for every row that did not match."
+      - "CASE WHEN role = 'Manager' THEN ___ ELSE ___ END"
+    explanation: |
+      A `CASE` expression picks a value for each row. It checks the WHEN tests in order and uses the first one that is true, otherwise the ELSE value. Only the Manager gets `Leader`; the other nine staff members get `Team member`.
+
+  - id: ch-f-031
+    title: Loyalty anniversaries
+    difficulty: medium
+    dataset: cafe
+    module: m04
+    tags: [date, interval]
+    columnNames: true
+    prompt: |
+      The café sends each loyalty member a card on the first anniversary of joining. The anniversary is exactly one calendar year after `joined_on`.
+
+      Show each customer's `first_name`, `last_name` and their anniversary, named `first_anniversary`. Use an interval of one year, not a number of days.
+    solution: |
+      SELECT first_name,
+             last_name,
+             joined_on + INTERVAL '1 year' AS first_anniversary
+      FROM customers;
+    hints:
+      - "A year is not always 365 days, because some years have a leap day."
+      - "INTERVAL '1 year' means exactly one calendar year."
+      - "joined_on + INTERVAL '___ year' AS first_anniversary"
+    explanation: |
+      Adding `INTERVAL '1 year'` moves a date forward by one calendar year, so 2023-02-28 becomes 2024-02-28. Adding 365 days can land one day early when a leap day falls in between. The result is a timestamp at midnight, which looks like a plain date.
+
+  - id: ch-f-032
+    title: How many days to ship?
+    difficulty: medium
+    dataset: shop
+    module: m04
+    tags: [date, arithmetic]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The warehouse looks at its first 12 orders (order numbers 1 to 12) and asks how many days each shipped order took to leave the warehouse.
+
+      Show `order_id` and the number of days from `order_date` to `shipped_date`, named `days_to_ship`. Include only orders that have a `shipped_date`. Sort by `order_id`.
+    solution: |
+      SELECT order_id,
+             shipped_date - order_date AS days_to_ship
+      FROM orders
+      WHERE order_id <= 12
+        AND shipped_date IS NOT NULL
+      ORDER BY order_id;
+    hints:
+      - "Subtracting one date from another gives a number of days."
+      - "An order with no shipped_date has no value to subtract, so test IS NOT NULL."
+      - "SELECT order_id, shipped_date - ___ AS days_to_ship FROM orders WHERE ___"
+    explanation: |
+      `date - date` returns a whole number of days. An order with no `shipped_date` would give NULL, so the `IS NOT NULL` test leaves those orders out. Of orders 1 to 12, eleven have shipped, and each took 1 to 3 days.
+
+  - id: ch-f-033
+    title: Calories per dollar for juices
+    difficulty: medium
+    dataset: cafe
+    module: m04
+    tags: [round, coalesce, division]
+    columnNames: true
+    prompt: |
+      A health-minded customer wants to compare the juices by calories per dollar. Two juices have no calorie figure yet, so their result should show 0.
+
+      For each juice (category `Juice`), show the `name`, and `calories` divided by `price`, rounded to one decimal place. Name that column `kcal_per_dollar`. If the result is missing, show 0.
+    solution: |
+      SELECT name,
+             COALESCE(ROUND(calories / price, 1), 0)
+                 AS kcal_per_dollar
+      FROM menu_items
+      WHERE category = 'Juice';
+    hints:
+      - "Use ROUND(calories / price, 1) for the division."
+      - "A missing calorie count makes the whole division NULL."
+      - "Wrap the rounded result in COALESCE(..., 0)."
+    explanation: |
+      Dividing by a NULL gives NULL, so the two juices without calorie data would show an empty cell. `COALESCE` turns that NULL into 0. The other two juices give 22.2 (Fresh Orange Juice) and 17.3 (Carrot Ginger Juice).
+
+  - id: ch-f-034
+    title: Price bands for the top products
+    difficulty: medium
+    dataset: shop
+    module: m04
+    tags: [case, order-by, limit]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The shop groups products into price bands for its catalog:
+
+      - Premium: 500 or more
+      - Mid-range: 100 up to 499.99
+      - Budget: under 100
+
+      Show the 12 most expensive products. Show `name`, `price` and the band, named `band`. Sort by `price` from highest to lowest, then by `name`.
+    solution: |
+      SELECT name, price,
+             CASE
+                 WHEN price >= 500 THEN 'Premium'
+                 WHEN price >= 100 THEN 'Mid-range'
+                 ELSE 'Budget'
+             END AS band
+      FROM products
+      ORDER BY price DESC, name
+      LIMIT 12;
+    hints:
+      - "Write the CASE tests from the highest band down to the lowest."
+      - "The first WHEN that is true decides the band."
+      - "CASE WHEN price >= 500 THEN ___ WHEN ___ THEN ___ ELSE ___ END"
+    explanation: |
+      `CASE` checks its WHEN lines from top to bottom and stops at the first one that is true. The 12 most expensive products fall into two bands: eight Premium and four Mid-range. The order of the tests matters, because a price of 900 also satisfies `price >= 100`, so the Premium test must come first.
+
+  - id: ch-f-035
+    title: How many menu items?
+    difficulty: easy
+    dataset: cafe
+    module: m05
+    tags: [aggregation, count]
+    columnNames: true
+    prompt: |
+      The café owner wants one number: how many items are on the menu.
+
+      Show one row with a column named `item_count`.
+    solution: |
+      SELECT COUNT(*) AS item_count
+      FROM menu_items;
+    hints:
+      - "COUNT counts rows."
+      - "COUNT(*) counts every row in the table."
+      - "SELECT COUNT(___) AS item_count FROM menu_items;"
+    explanation: |
+      An aggregate function such as `COUNT` reads many rows and returns one summary value. `COUNT(*)` counts every row, so the answer is 32 menu items.
+
+  - id: ch-f-036
+    title: Customers with an email
+    difficulty: easy
+    dataset: cafe
+    module: m05
+    tags: [aggregation, count, nulls]
+    columnNames: true
+    prompt: |
+      The café wants to know how many loyalty members it can email.
+
+      Show two columns in one row: `total_customers` (every customer) and `with_email` (customers who have an email address).
+    solution: |
+      SELECT COUNT(*) AS total_customers,
+             COUNT(email) AS with_email
+      FROM customers;
+    hints:
+      - "COUNT(*) counts all rows. COUNT(column) skips NULL values."
+      - "Use two COUNT calls in the same SELECT."
+      - "SELECT COUNT(*) AS total_customers, COUNT(___) AS with_email FROM customers;"
+    explanation: |
+      `COUNT(email)` skips the rows where `email` is NULL, while `COUNT(*)` counts every row. The gap between the two numbers (28 minus 23) is how many customers have no email. This is a classic NULL trap.
+
+  - id: ch-f-037
+    title: Menu price summary
+    difficulty: easy
+    dataset: cafe
+    module: m05
+    tags: [aggregation, min, max, avg]
+    columnNames: true
+    prompt: |
+      The owner wants a quick price summary for the menu.
+
+      Show one row with three columns: `cheapest` (the lowest price), `most_expensive` (the highest price) and `avg_price` (the average price, rounded to 2 decimal places).
+    solution: |
+      SELECT MIN(price) AS cheapest,
+             MAX(price) AS most_expensive,
+             ROUND(AVG(price), 2) AS avg_price
+      FROM menu_items;
+    hints:
+      - "MIN returns the smallest value. MAX returns the largest."
+      - "AVG returns the average of a column."
+      - "Wrap AVG(price) in ROUND(..., 2) to get two decimals."
+    explanation: |
+      `MIN`, `MAX` and `AVG` each read the whole `price` column and return one value. `ROUND(..., 2)` keeps two decimal places. The cheapest item costs $1.50 and the most expensive costs $12.50.
+
+  - id: ch-f-038
+    title: Orders by status
+    difficulty: easy
+    dataset: shop
+    module: m05
+    tags: [group-by, count]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The shop manager wants a quick health check of all orders by status.
+
+      Show each `status` and how many orders have it, named `order_count`. Sort by `order_count` from highest to lowest, then by `status` A to Z.
+    solution: |
+      SELECT status, COUNT(*) AS order_count
+      FROM orders
+      GROUP BY status
+      ORDER BY order_count DESC, status;
+    hints:
+      - "GROUP BY makes one row for each status."
+      - "COUNT(*) inside each group counts the orders in that group."
+      - "SELECT status, COUNT(*) FROM orders GROUP BY ___;"
+    explanation: |
+      `GROUP BY` splits the rows into groups, one per distinct status, and the aggregate runs once for each group. Five statuses appear. `delivered` is the largest group with 650 orders.
+
+  - id: ch-f-039
+    title: Enrollments and scores per term
+    difficulty: easy
+    dataset: school
+    module: m05
+    tags: [group-by, count, nulls]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The head teacher wants to see how many course enrollments each term has, and how many of them already have a final score.
+
+      For each `term`, show `enrollments` (all enrollments) and `scored` (enrollments with a `final_score`). Sort by `term`.
+    solution: |
+      SELECT term,
+             COUNT(*) AS enrollments,
+             COUNT(final_score) AS scored
+      FROM enrollments
+      GROUP BY term
+      ORDER BY term;
+    hints:
+      - "GROUP BY term gives one row for each term."
+      - "COUNT(*) counts all rows, but COUNT(final_score) skips the NULL scores."
+      - "SELECT term, COUNT(*) AS enrollments, COUNT(___) AS scored ..."
+    explanation: |
+      The 2025-Spring term is still running, so most of its final scores are missing. `COUNT(final_score)` counts only the rows that have a value, so 2025-Spring shows 248 enrollments but only 3 scored ones. 2024-Fall is finished: 378 enrollments, 375 scored.
+
+  - id: ch-f-040
+    title: How many different customers ordered?
+    difficulty: easy
+    dataset: shop
+    module: m05
+    tags: [aggregation, count-distinct]
+    columnNames: true
+    prompt: |
+      The marketing team wants the number of different customers who have placed at least one order. A customer with ten orders should be counted only once.
+
+      Show one row with a column named `customers_who_ordered`.
+    solution: |
+      SELECT COUNT(DISTINCT customer_id) AS customers_who_ordered
+      FROM orders;
+    hints:
+      - "A plain COUNT would count every order, not every customer."
+      - "DISTINCT inside COUNT removes repeated values before counting."
+      - "SELECT COUNT(___ customer_id) AS customers_who_ordered FROM orders;"
+    explanation: |
+      `COUNT(DISTINCT customer_id)` counts each customer once, however many orders they placed. The answer is 140. The shop has 150 customers, so the other 10 never ordered.
+
+  - id: ch-f-041
+    title: Loyal shop customers
+    difficulty: medium
+    dataset: shop
+    module: m05
+    tags: [group-by, having]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The shop wants to reward customers who order often. Find the customers who have placed at least 15 orders.
+
+      Show `customer_id` and the number of orders, named `order_count`. Show the customers with the most orders first, and break ties by `customer_id`, smallest first.
+    solution: |
+      SELECT customer_id, COUNT(*) AS order_count
+      FROM orders
+      GROUP BY customer_id
+      HAVING COUNT(*) >= 15
+      ORDER BY order_count DESC, customer_id;
+    hints:
+      - "Count the orders for each customer with GROUP BY customer_id."
+      - "WHERE cannot test a count. Use HAVING for conditions on groups."
+      - "... GROUP BY customer_id HAVING COUNT(*) ___ 15"
+    explanation: |
+      `WHERE` filters single rows, but `HAVING` filters groups after they have been counted. Eleven customers have 15 or more orders. Customers 6, 14, 39, 44 and 64 each placed 23 orders, the most of anyone.
+
+  - id: ch-f-042
+    title: Courses with strong exam results
+    difficulty: medium
+    dataset: school
+    module: m05
+    tags: [group-by, having, average]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The school wants to celebrate the courses whose exam results average at least 80.
+
+      Using the `exam_scores` table, show each `course_id` and the average exam `score` for that course, rounded to 2 decimal places and named `avg_score`. Keep only the courses with an average of 80 or more. Show the highest average first, and break ties by `course_id`.
+    solution: |
+      SELECT course_id,
+             ROUND(AVG(score), 2) AS avg_score
+      FROM exam_scores
+      GROUP BY course_id
+      HAVING AVG(score) >= 80
+      ORDER BY avg_score DESC, course_id;
+    hints:
+      - "Group the exam rows by course_id, then average each group."
+      - "Filter the averages with HAVING, not WHERE."
+      - "HAVING AVG(score) >= ___"
+    explanation: |
+      An aggregate function can be used in `HAVING`, but not in `WHERE`. Eight courses have an average of 80 or more, and course 10 comes first with 85.83. The average uses every exam type in the course: quizzes, midterms and finals.
+
+  - id: ch-f-043
+    title: Orders per month in 2024
+    difficulty: medium
+    dataset: shop
+    module: m05
+    tags: [group-by, extract, date]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The shop's board wants to see how busy each month of 2024 was.
+
+      For orders placed in 2024, show the month number as `month_no` (1 for January, 12 for December) and the number of orders as `orders`. Sort by `month_no`.
+    solution: |
+      SELECT EXTRACT(MONTH FROM order_date) AS month_no,
+             COUNT(*) AS orders
+      FROM orders
+      WHERE order_date >= '2024-01-01'
+        AND order_date < '2025-01-01'
+      GROUP BY EXTRACT(MONTH FROM order_date)
+      ORDER BY month_no;
+    hints:
+      - "Group by the month, which you can get with EXTRACT."
+      - "The GROUP BY must use the same expression as the grouped month."
+      - "GROUP BY EXTRACT(MONTH FROM ___)"
+    explanation: |
+      You can group by an expression, not only by a column name. Here `EXTRACT(MONTH FROM order_date)` creates one group per month. November (91 orders) and December (86) are the busiest months of 2024, and February (23) is the quietest.
+
+  - id: ch-f-044
+    title: Orders with and without a discount code
+    difficulty: medium
+    dataset: shop
+    module: m05
+    tags: [filter, conditional-aggregation]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The promotions team wants to know how many 2024 orders used a discount code in each status.
+
+      For orders placed in 2024, show each `status`, the total number of orders named `orders`, and the number of those orders that used a discount code (`discount_code` is not missing), named `with_code`. Sort by `status` A to Z.
+    solution: |
+      SELECT status,
+             COUNT(*) AS orders,
+             COUNT(*) FILTER (WHERE discount_code IS NOT NULL)
+                 AS with_code
+      FROM orders
+      WHERE order_date >= '2024-01-01'
+        AND order_date < '2025-01-01'
+      GROUP BY status
+      ORDER BY status;
+    hints:
+      - "FILTER (WHERE ...) counts only the rows that pass the test."
+      - "A missing discount code is NULL, so test it with IS NOT NULL."
+      - "COUNT(*) FILTER (WHERE discount_code ___ NULL)"
+    explanation: |
+      `COUNT(*) FILTER (WHERE ...)` counts only the rows that match the condition, in the same query as the plain count. Among the 2024 delivered orders, 44 of 419 used a code.
+
+  - id: ch-f-045
+    title: Who lives where?
+    difficulty: medium
+    dataset: cafe
+    module: m05
+    tags: [string-agg, group-by]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café's local deliveries team wants a list of customers for each city.
+
+      For each `city`, show the city and one text value named `names`. It lists the customers' `first_name` values separated by commas and a space, in alphabetical order. Sort the cities A to Z.
+    solution: |
+      SELECT city,
+             STRING_AGG(first_name, ', ' ORDER BY first_name)
+                 AS names
+      FROM customers
+      GROUP BY city
+      ORDER BY city;
+    hints:
+      - "STRING_AGG joins the values of one group into a single piece of text."
+      - "STRING_AGG(column, ', ' ORDER BY column) puts the names in order."
+      - "STRING_AGG(first_name, ___ ORDER BY first_name)"
+    explanation: |
+      `STRING_AGG(value, separator ORDER BY ...)` combines the text values of one group. The `ORDER BY` inside the function controls the order of the joined names. Austin has five customers: Ava, Camila, Gabriela, Nathan and Rami.
+
+  - id: ch-f-046
+    title: Best-rated films with plenty of votes
+    difficulty: medium
+    dataset: movies
+    module: m05
+    tags: [group-by, having, average]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The recommendations team only trusts an average rating when a film has at least 40 ratings.
+
+      From the `ratings` table, show each `movie_id`, its average `stars` rounded to 2 decimal places and named `avg_stars`, and the number of ratings named `ratings`. Keep only movies with at least 40 ratings. Show the highest average first, and break ties by `movie_id`.
+    solution: |
+      SELECT movie_id,
+             ROUND(AVG(stars), 2) AS avg_stars,
+             COUNT(*) AS ratings
+      FROM ratings
+      GROUP BY movie_id
+      HAVING COUNT(*) >= 40
+      ORDER BY avg_stars DESC, movie_id;
+    hints:
+      - "Group the ratings by movie_id, then summarise each group."
+      - "Use HAVING to keep only the groups with enough ratings."
+      - "HAVING COUNT(*) >= ___"
+    explanation: |
+      `HAVING` runs after the grouping, so it can test `COUNT(*)` for each movie. Eleven films have at least 40 ratings. Movie 84 comes first with an average of 4.38 from 47 ratings.
+
+  - id: ch-f-047
+    title: Laptops in the catalog
+    difficulty: easy
+    dataset: shop
+    module: m06
+    tags: [join, inner-join]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The category manager wants a list of laptop products. Each product's category is stored in a separate table, so you will need to join the two tables.
+
+      Show each product's `name` as `product` and the category's `name` as `category`, for products in the Laptops category. Sort by `product`.
+    solution: |
+      SELECT p.name AS product,
+             cat.name AS category
+      FROM products p
+      JOIN categories cat
+        ON cat.category_id = p.category_id
+      WHERE cat.name = 'Laptops'
+      ORDER BY p.name;
+    hints:
+      - "JOIN connects products to categories through category_id."
+      - "ON says which columns must match."
+      - "FROM products p JOIN categories cat ON cat.___ = p.___"
+    explanation: |
+      `JOIN ... ON` pairs each product with the category whose `category_id` matches. Table aliases such as `p` and `cat` keep the query short. Five products are in the Laptops category.
+
+  - id: ch-f-048
+    title: Who teaches what?
+    difficulty: easy
+    dataset: school
+    module: m06
+    tags: [join, inner-join]
+    ordered: true
+    columnNames: true
+    prompt: |
+      Parents want to know who teaches each course.
+
+      Show each course's `title` and the `full_name` of the teacher who teaches it. Sort by `title`.
+    solution: |
+      SELECT c.title, t.full_name
+      FROM courses c
+      JOIN teachers t
+        ON t.teacher_id = c.teacher_id
+      ORDER BY c.title;
+    hints:
+      - "courses has a teacher_id column that points at teachers."
+      - "Join the two tables on that shared column."
+      - "FROM courses c JOIN teachers t ON t.teacher_id = c.___"
+    explanation: |
+      An inner join keeps only the rows that have a match on both sides. The course Spanish I has no teacher assigned (its `teacher_id` is NULL), so it does not appear here. The result has 17 rows instead of 18.
+
+  - id: ch-f-049
+    title: What did customer 1 order?
+    difficulty: easy
+    dataset: cafe
+    module: m06
+    tags: [join, where]
+    ordered: true
+    columnNames: true
+    prompt: |
+      Customer 1, Dmitri Schmidt, has the most loyalty points in the café. The owner wants to see what he has ordered.
+
+      Show each `order_id`, the menu item's `name` as `item`, and the `quantity`, for all orders placed by customer 1. Sort by `order_id`.
+    solution: |
+      SELECT o.order_id, m.name AS item, o.quantity
+      FROM orders o
+      JOIN menu_items m
+        ON m.item_id = o.item_id
+      WHERE o.customer_id = 1
+      ORDER BY o.order_id;
+    hints:
+      - "orders has an item_id column that matches menu_items.item_id."
+      - "Add a WHERE on customer_id after the join."
+      - "FROM orders o JOIN menu_items m ON m.item_id = o.___"
+    explanation: |
+      Each row of `orders` is one item bought with a quantity. Joining it to `menu_items` adds the item's name. Customer 1 has 6 orders, and Matcha Latte appears with a quantity of 3.
+
+  - id: ch-f-050
+    title: Customers who never bought anything
+    difficulty: medium
+    dataset: shop
+    module: m06
+    tags: [left-join, anti-join, nulls]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The shop wants to send a welcome offer to customers who have never placed an order.
+
+      Show `first_name`, `last_name` and `email` for every customer who has no orders. Sort by `customer_id`.
+    solution: |
+      SELECT c.first_name, c.last_name, c.email
+      FROM customers c
+      LEFT JOIN orders o
+        ON o.customer_id = c.customer_id
+      WHERE o.order_id IS NULL
+      ORDER BY c.customer_id;
+    hints:
+      - "A LEFT JOIN keeps every customer, even one without an order."
+      - "A customer with no order gets NULL in the order columns."
+      - "Keep only the rows where the order's id IS NULL."
+    explanation: |
+      A `LEFT JOIN` keeps every row from the left table. Customers without orders get NULL where the order columns would be. Filtering with `WHERE o.order_id IS NULL` keeps only those customers. Ten customers have never ordered: customers 141 to 150.
+
+  - id: ch-f-051
+    title: Animation and horror picks
+    difficulty: medium
+    dataset: movies
+    module: m06
+    tags: [join, many-to-many]
+    ordered: true
+    columnNames: true
+    prompt: |
+      A family movie-night planner wants titles from two genres. A movie can belong to several genres, so the link between movies and genres is stored in its own table, `movie_genres`.
+
+      Show each movie's `title` and the genre `name` as `genre`, for movies in the genres Animation or Horror. Sort by `genre`, then by `title`.
+    solution: |
+      SELECT m.title, g.name AS genre
+      FROM movies m
+      JOIN movie_genres mg
+        ON mg.movie_id = m.movie_id
+      JOIN genres g
+        ON g.genre_id = mg.genre_id
+      WHERE g.name IN ('Animation', 'Horror')
+      ORDER BY g.name, m.title;
+    hints:
+      - "Join movies to movie_genres, then movie_genres to genres."
+      - "Each JOIN needs its own ON condition."
+      - "FROM movies m JOIN movie_genres mg ON ___ JOIN genres g ON ___"
+    explanation: |
+      This is a three-table join: `movies` links to `movie_genres` through `movie_id`, and `movie_genres` links to `genres` through `genre_id`. Each join adds one more table to the chain. The result has 19 rows: 13 Animation titles and 6 Horror titles.
+
+  - id: ch-f-052
+    title: Who reports to whom?
+    difficulty: medium
+    dataset: cafe
+    module: m06
+    tags: [self-join, left-join]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café team wants a reporting chart. Each staff member should appear with the name of their manager.
+
+      Show each staff member's `name` as `staff_name` and their manager's `name` as `manager_name`. The top manager has no manager, so show NULL for them. Sort by the staff member's `staff_id`.
+    solution: |
+      SELECT s.name AS staff_name,
+             m.name AS manager_name
+      FROM staff s
+      LEFT JOIN staff m
+        ON m.staff_id = s.manager_id
+      ORDER BY s.staff_id;
+    hints:
+      - "The staff table joins to itself: s is the employee, m is the manager."
+      - "An employee's manager id is stored in manager_id."
+      - "Use LEFT JOIN so the top manager is still listed."
+    explanation: |
+      A self join links a table to itself, using two different aliases. The manager's `staff_id` matches the employee's `manager_id`. The top manager has no `manager_id`, so a LEFT JOIN keeps that row with NULL in `manager_name`.
+
+  - id: ch-f-053
+    title: Pay gap pairs
+    difficulty: medium
+    dataset: school
+    module: m06
+    tags: [join, non-equi-join]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The teachers' union wants to see pay gaps. List every pair of teachers where the first teacher earns at least $15,000 more than the second.
+
+      Show `higher_paid` (the first teacher's `full_name`) and `lower_paid` (the second teacher's `full_name`). Sort by `higher_paid`, then by `lower_paid`.
+    solution: |
+      SELECT a.full_name AS higher_paid,
+             b.full_name AS lower_paid
+      FROM teachers a
+      JOIN teachers b
+        ON a.salary >= b.salary + 15000
+      ORDER BY higher_paid, lower_paid;
+    hints:
+      - "Join the teachers table to itself, using two different aliases."
+      - "The ON condition does not have to be an equals test. Use >= here."
+      - "ON a.salary >= b.salary + ___"
+    explanation: |
+      Most joins match equal values, but an `ON` condition can use any test, such as `>=`. Each pair here is checked for a salary difference of at least $15,000. The result has 17 pairs.
+
+  - id: ch-f-054
+    title: Subjects on either side
+    difficulty: medium
+    dataset: school
+    module: m06
+    tags: [full-outer-join, group-by]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The timetable team is comparing the teachers' subjects with the subjects of the courses.
+
+      Show each `subject` that appears in the `teachers` table or in the `courses` table. Show the number of teachers (`teachers`) and the number of courses (`courses`) for each subject. Keep every subject, even when one side has none. Sort by `subject`.
+    solution: |
+      SELECT COALESCE(t.subject, c.subject) AS subject,
+             COUNT(DISTINCT t.teacher_id) AS teachers,
+             COUNT(DISTINCT c.course_id) AS courses
+      FROM teachers t
+      FULL OUTER JOIN courses c
+        ON c.subject = t.subject
+      GROUP BY COALESCE(t.subject, c.subject)
+      ORDER BY subject;
+    hints:
+      - "A FULL OUTER JOIN keeps unmatched rows from both tables."
+      - "COALESCE(t.subject, c.subject) fills in the subject from whichever side has it."
+      - "Use COUNT(DISTINCT ...) so repeated rows are counted only once."
+    explanation: |
+      `FULL OUTER JOIN` keeps rows from both tables even when nothing matches on the other side. Drama has a teacher but no course, and Spanish has a course but no teacher. The join makes one row for each teacher-course pair, so `COUNT(DISTINCT ...)` is needed to count each teacher and each course only once.
+
+  - id: ch-f-055
+    title: Counting orders, not payments
+    difficulty: medium
+    dataset: shop
+    module: m06
+    tags: [join, aggregation, fan-out]
+    ordered: true
+    columnNames: true
+    prompt: |
+      Finance wants to know how many paid orders each customer segment has. Some orders are paid in two payments, so the joined rows must not be counted twice.
+
+      Show each `segment` and the number of distinct orders that have at least one payment, named `paid_orders`. Sort by `segment`.
+    solution: |
+      SELECT c.segment,
+             COUNT(DISTINCT o.order_id) AS paid_orders
+      FROM customers c
+      JOIN orders o
+        ON o.customer_id = c.customer_id
+      JOIN payments p
+        ON p.order_id = o.order_id
+      GROUP BY c.segment
+      ORDER BY c.segment;
+    hints:
+      - "An order with two payments appears twice after the join."
+      - "COUNT(DISTINCT o.order_id) counts each order once."
+      - "A plain COUNT(o.order_id) would count the repeated rows too."
+    explanation: |
+      Joining orders to payments makes one row for each payment, so an order paid twice appears twice. This is the fan-out trap. `COUNT(DISTINCT o.order_id)` gives 465 Consumer, 139 Corporate and 154 Home Office orders, while a plain `COUNT(o.order_id)` would give 476, 142 and 160.
+
+  - id: ch-f-056
+    title: Delivered revenue by category
+    difficulty: medium
+    dataset: shop
+    module: m06
+    tags: [join, aggregation, revenue]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The board wants to know which product categories earn the most from delivered orders.
+
+      The revenue of one order line is `quantity * unit_price * (1 - discount)`. Only orders with status `delivered` count.
+
+      Show each category's `name` as `category` and its total revenue, rounded to 2 decimal places and named `revenue`. Show the highest revenue first, and break ties by `category`.
+    solution: |
+      SELECT cat.name AS category,
+             ROUND(SUM(i.quantity * i.unit_price
+                 * (1 - i.discount)), 2) AS revenue
+      FROM order_items i
+      JOIN orders o
+        ON o.order_id = i.order_id
+      JOIN products p
+        ON p.product_id = i.product_id
+      JOIN categories cat
+        ON cat.category_id = p.category_id
+      WHERE o.status = 'delivered'
+      GROUP BY cat.name
+      ORDER BY revenue DESC, category;
+    hints:
+      - "Start at order_items and follow the links to orders, products and categories."
+      - "Only delivered orders count, so filter on orders.status."
+      - "Multiply quantity, unit_price and (1 - discount), then SUM the result."
+    explanation: |
+      Revenue is not stored in one column, so you calculate it for each order line and then add the lines up for each category. Three joins connect `order_items` to `orders`, `products` and `categories`. Phones earns the most, at $60,548.25, and Beauty the least, at $3,829.08.
+
+  - id: ch-f-057
+    title: Teachers above the average salary
+    difficulty: easy
+    dataset: school
+    module: m07
+    tags: [subquery, scalar, where]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The school board compares each teacher with the average. Show the teachers who earn more than the average teacher salary.
+
+      Show each teacher's `full_name` and `salary`. Sort by `salary` from highest to lowest.
+    solution: |
+      SELECT full_name, salary
+      FROM teachers
+      WHERE salary > (
+          SELECT AVG(salary)
+          FROM teachers
+      )
+      ORDER BY salary DESC;
+    hints:
+      - "First work out the average salary with a query of its own."
+      - "Put that query in round brackets inside WHERE."
+      - "WHERE salary > (SELECT ___(salary) FROM teachers)"
+    explanation: |
+      A subquery in brackets runs first and returns a single value: here the average salary, $65,125. The outer query then compares each teacher's salary with that value. Six teachers earn more than the average.
+
+  - id: ch-f-058
+    title: Chess Club members
+    difficulty: easy
+    dataset: school
+    module: m07
+    tags: [subquery, in]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The Chess Club wants to invite its members to a tournament. Find the students who belong to the club named Chess Club.
+
+      Show each student's `first_name` and `last_name`. Sort by `last_name`, then by `first_name`.
+    solution: |
+      SELECT first_name, last_name
+      FROM students
+      WHERE student_id IN (
+          SELECT m.student_id
+          FROM club_members m
+          JOIN clubs c
+            ON c.club_id = m.club_id
+          WHERE c.name = 'Chess Club'
+      )
+      ORDER BY last_name, first_name;
+    hints:
+      - "The members are listed in club_members, but the club name is in clubs."
+      - "The inner query finds the student_id values for that club."
+      - "WHERE student_id IN (SELECT ___ FROM club_members ...)"
+    explanation: |
+      `IN (...)` checks whether a value appears in the list that the subquery returns. The inner query finds the Chess Club's members, and the outer query shows their names. Fourteen students are members.
+
+  - id: ch-f-059
+    title: Regulars who never ordered
+    difficulty: medium
+    dataset: cafe
+    module: m07
+    tags: [subquery, not-exists, null-trap]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café wants to invite loyalty members who have never placed an order to a tasting event. Some orders were placed by walk-in customers with no loyalty card, so `customer_id` is empty for those orders.
+
+      Show the `first_name` and `last_name` of every customer who has never placed an order. Sort by `customer_id`.
+    solution: |
+      SELECT c.first_name, c.last_name
+      FROM customers c
+      WHERE NOT EXISTS (
+          SELECT 1
+          FROM orders o
+          WHERE o.customer_id = c.customer_id
+      )
+      ORDER BY c.customer_id;
+    hints:
+      - "NOT EXISTS keeps a customer only when the inner query finds nothing."
+      - "The inner query matches orders to this customer using customer_id."
+      - "WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.___)"
+    explanation: |
+      `NOT EXISTS` is the safe way to find customers with no orders. The alternative `customer_id NOT IN (SELECT customer_id FROM orders)` returns 0 rows here. The walk-in orders have a NULL `customer_id`, and `x NOT IN (..., NULL)` is never true when `x` is not in the list. The three customers are Sophia Clark, Rami Hernandez and Gabriela Torres.
+
+  - id: ch-f-060
+    title: Above their own category average
+    difficulty: medium
+    dataset: cafe
+    module: m07
+    tags: [subquery, correlated]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café's menu board highlights items that cost more than the typical price in their own section. For each menu item, compare its price with the average price of the items in the same `category`.
+
+      Show the `name`, `category` and `price` of every item priced above the average of its own category. Sort by `name` A to Z.
+    solution: |
+      SELECT m.name, m.category, m.price
+      FROM menu_items m
+      WHERE m.price > (
+          SELECT AVG(x.price)
+          FROM menu_items x
+          WHERE x.category = m.category
+      )
+      ORDER BY m.name;
+    hints:
+      - "The inner query must use the category of the outer row."
+      - "Give the inner copy of the table a different alias from the outer one."
+      - "WHERE m.price > (SELECT AVG(x.price) FROM menu_items x WHERE x.category = m.___)"
+    explanation: |
+      A correlated subquery refers to the outer row, so it runs once for each menu item. Each item is compared with the average of its own category. Coffee's average is $3.71, so Cappuccino at $4.25 qualifies. Fifteen items are above their category average.
+
+  - id: ch-f-061
+    title: Busiest shipping cities
+    difficulty: medium
+    dataset: shop
+    module: m07
+    tags: [subquery, derived-table, aggregate]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The logistics team asks which cities receive more orders than the average city.
+
+      First count the orders for each `ship_city`. Then keep only the cities with more orders than the average number of orders per city. Show `ship_city` and the number of orders, named `orders`. Sort by `orders` from highest to lowest, then by `ship_city`.
+    solution: |
+      SELECT ship_city, n_orders AS orders
+      FROM (
+          SELECT ship_city, COUNT(*) AS n_orders
+          FROM orders
+          GROUP BY ship_city
+      ) AS city_counts
+      WHERE n_orders > (
+          SELECT AVG(n_orders)
+          FROM (
+              SELECT COUNT(*) AS n_orders
+              FROM orders
+              GROUP BY ship_city
+          ) AS t
+      )
+      ORDER BY orders DESC, ship_city;
+    hints:
+      - "A subquery in FROM works like a temporary table, and it needs an alias."
+      - "Count the orders for each city in the innermost query first."
+      - "The average needs a second subquery that averages the city counts."
+    explanation: |
+      A subquery in `FROM` is a derived table: it works like a temporary table, and you give it an alias. The average is worked out from the same kind of counts. Across 14 cities, the average is 64.29 orders (900 orders in total). Six cities are above it, with New York first at 114 orders.
+
+  - id: ch-f-062
+    title: Pricier than every juice
+    difficulty: medium
+    dataset: cafe
+    module: m07
+    tags: [subquery, any-all]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café wants a 'premium only' section listing items that cost more than every juice on the menu.
+
+      Show the `name` and `price` of each menu item that is more expensive than ALL juice items (category `Juice`). Sort by `price` from highest to lowest, then by `name`.
+    solution: |
+      SELECT name, price
+      FROM menu_items
+      WHERE price > ALL (
+          SELECT price
+          FROM menu_items
+          WHERE category = 'Juice'
+      )
+      ORDER BY price DESC, name;
+    hints:
+      - "ALL means the price must beat every value the subquery returns."
+      - "The subquery returns the juice prices."
+      - "WHERE price > ALL (SELECT price FROM menu_items WHERE ___ = 'Juice')"
+    explanation: |
+      `> ALL (...)` is true only when the value is greater than every value in the list. The most expensive juice costs $6.50, so an item must cost more than $6.50. Six items do, starting with Smoked Salmon Bagel at $12.50. Cheesecake Slice costs exactly $6.50, so it is not included.
+
+  - id: ch-f-063
+    title: Advisors who teach nothing
+    difficulty: medium
+    dataset: school
+    module: m07
+    tags: [subquery, exists, not-exists]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The student council is looking for teachers who give their time to a club but do not teach a course. Find the teachers who advise at least one club and teach no course.
+
+      Show each teacher's `full_name`. Sort by `full_name`.
+    solution: |
+      SELECT t.full_name
+      FROM teachers t
+      WHERE EXISTS (
+          SELECT 1
+          FROM clubs c
+          WHERE c.advisor_id = t.teacher_id
+      )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM courses co
+          WHERE co.teacher_id = t.teacher_id
+      )
+      ORDER BY t.full_name;
+    hints:
+      - "EXISTS keeps a teacher when the inner query finds at least one row."
+      - "Use a second subquery with NOT EXISTS to check the teaching side."
+      - "WHERE EXISTS (SELECT 1 FROM clubs c WHERE c.advisor_id = t.___)"
+    explanation: |
+      `EXISTS` checks whether a matching row is there, without returning its values. Combining `EXISTS` with `NOT EXISTS` gives a precise filter. Only Jonas Lindqvist advises a club (the Drama Society) and teaches no course.
+
+  - id: ch-f-064
+    title: Top five customers by orders
+    difficulty: medium
+    dataset: shop
+    module: m07
+    tags: [subquery, scalar, select-list]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The loyalty team wants the five customers who have placed the most orders.
+
+      Show each customer's `first_name`, `last_name` and their number of orders, named `order_count`. Use a subquery in the SELECT list to count the orders. Show the most orders first, and break ties by `customer_id`, smallest first.
+    solution: |
+      SELECT c.first_name, c.last_name,
+             (SELECT COUNT(*)
+              FROM orders o
+              WHERE o.customer_id = c.customer_id)
+                 AS order_count
+      FROM customers c
+      ORDER BY order_count DESC, c.customer_id
+      LIMIT 5;
+    hints:
+      - "A subquery in SELECT returns one value for each customer row."
+      - "Sort by the new column, then keep the first five rows with LIMIT."
+      - "(SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.___)"
+    explanation: |
+      A scalar subquery in the SELECT list runs once for each customer and returns one number. Five customers tie on 23 orders: Noor Haddad, Jia Tran, Ingrid Cooper, Ella Cooper and Ethan Johnson. The `customer_id` tie-breaker decides their order.
+
+  - id: ch-f-065
+    title: Every subject, repeats included
+    difficulty: easy
+    dataset: school
+    module: m08
+    tags: [union-all, set-operations]
+    columnNames: true
+    prompt: |
+      The school's subject list is built from two sources: the subject of each teacher, and the subject of each course. The planning team wants every value from both lists, even repeats.
+
+      Show a single column named `subject` that contains every `subject` from `teachers`, followed by every `subject` from `courses`. Keep the repeats.
+    solution: |
+      SELECT subject FROM teachers
+      UNION ALL
+      SELECT subject FROM courses;
+    hints:
+      - "UNION ALL stacks two result sets one below the other."
+      - "Both queries must return the same number of columns of compatible types."
+      - "SELECT subject FROM teachers ___ SELECT subject FROM courses;"
+    explanation: |
+      `UNION ALL` stacks the rows from both queries and keeps every copy. The result has 30 rows: 12 from teachers and 18 from courses. Plain `UNION` would remove the repeated subjects.
+
+  - id: ch-f-066
+    title: Menu categories and staff roles
+    difficulty: easy
+    dataset: cafe
+    module: m08
+    tags: [union, set-operations]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The café manager wants one alphabetical list of every menu category and every staff role, with no repeats.
+
+      Show a single column named `label`, sorted A to Z.
+    solution: |
+      SELECT category AS label
+      FROM menu_items
+      UNION
+      SELECT role
+      FROM staff
+      ORDER BY label;
+    hints:
+      - "UNION combines two queries and removes duplicates."
+      - "The column name comes from the first query, so call its column label."
+      - "Put the single ORDER BY at the very end, after both queries."
+    explanation: |
+      `UNION` joins the results of two queries into one list and removes duplicates. The column name comes from the first query. A single `ORDER BY` at the end sorts the combined result. Ten labels appear: six categories and four roles.
+
+  - id: ch-f-067
+    title: Products nobody has bought
+    difficulty: easy
+    dataset: shop
+    module: m08
+    tags: [except, set-operations]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The buyers want to find products that have never appeared in any order.
+
+      Show the `product_id` of every product that is not in the `order_items` table. Sort by `product_id`.
+    solution: |
+      SELECT product_id FROM products
+      EXCEPT
+      SELECT product_id FROM order_items
+      ORDER BY product_id;
+    hints:
+      - "EXCEPT keeps the rows in the first query that are not in the second."
+      - "Compare the product_id lists from products and order_items."
+      - "SELECT product_id FROM products ___ SELECT product_id FROM order_items;"
+    explanation: |
+      `EXCEPT` returns the rows from the first query that do not appear in the second. Five products have never been ordered: 5, 34, 46, 56 and 60. A `NOT EXISTS` query gives the same answer.
+
+  - id: ch-f-068
+    title: Subjects taught and offered
+    difficulty: easy
+    dataset: school
+    module: m08
+    tags: [intersect, set-operations]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The school wants to know which subjects have both a teacher in that subject and a course in that subject.
+
+      Show each `subject` that appears in both the `teachers` table and the `courses` table. Sort by `subject`.
+    solution: |
+      SELECT subject FROM teachers
+      INTERSECT
+      SELECT subject FROM courses
+      ORDER BY subject;
+    hints:
+      - "INTERSECT keeps only the values that appear in both queries."
+      - "Each value is listed once, even if it appears several times."
+      - "SELECT subject FROM teachers ___ SELECT subject FROM courses"
+    explanation: |
+      `INTERSECT` keeps the values that appear in both results. Eight subjects are in both lists. Drama, which has a teacher but no course, and Spanish, which has a course but no teacher, are left out.
+
+  - id: ch-f-069
+    title: Customers who stopped ordering
+    difficulty: medium
+    dataset: shop
+    module: m08
+    tags: [except, set-operations, date]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The retention team wants the customers who ordered in 2023 but did not order at all in 2024.
+
+      Show each such customer's `customer_id`. Sort by `customer_id`.
+    solution: |
+      SELECT customer_id
+      FROM orders
+      WHERE order_date >= '2023-01-01'
+        AND order_date < '2024-01-01'
+      EXCEPT
+      SELECT customer_id
+      FROM orders
+      WHERE order_date >= '2024-01-01'
+        AND order_date < '2025-01-01'
+      ORDER BY customer_id;
+    hints:
+      - "Write one query for 2023 and one for 2024, then join them with EXCEPT."
+      - "EXCEPT keeps the rows from the first query that are missing from the second."
+      - "Each year needs both a start date and an end date."
+    explanation: |
+      Each query picks one year of orders. `EXCEPT` then removes every customer who ordered in 2024 from the 2023 list. Six customers (8, 20, 48, 50, 71 and 72) ordered in 2023 but not in 2024.
+
+  - id: ch-f-070
+    title: Everyone and every club on one list
+    difficulty: medium
+    dataset: school
+    module: m08
+    tags: [union, order-by, labels]
+    ordered: true
+    columnNames: true
+    prompt: |
+      The school directory needs one list containing every teacher and every club. Each row needs a label saying which kind of entry it is.
+
+      Show two columns, `name` and `kind`. For teachers, `name` is the teacher's `full_name` and `kind` is Teacher. For clubs, `name` is the club's `name` and `kind` is Club.
+
+      Sort by `kind` A to Z, then by `name` A to Z.
+    solution: |
+      SELECT full_name AS name,
+             'Teacher' AS kind
+      FROM teachers
+      UNION
+      SELECT name,
+             'Club'
+      FROM clubs
+      ORDER BY kind, name;
+    hints:
+      - "Each half of a UNION needs the same number of columns."
+      - "A text value in quotes can be a column: 'Teacher' AS kind."
+      - "Put one ORDER BY at the end, sorting by kind, then by name."
+    explanation: |
+      Both halves of the `UNION` return two columns: a name and a fixed label, `'Teacher'` or `'Club'`. `UNION` removes duplicates, and the final `ORDER BY` puts the Club rows before the Teacher rows. There are 20 rows: 8 clubs and 12 teachers.
+

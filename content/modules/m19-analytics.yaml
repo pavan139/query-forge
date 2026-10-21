@@ -4811,6 +4811,508 @@ lessons:
         sql: "HAVING COUNT(DISTINCT oi.product_id) >= 2"
         note: "Use >= for at least N of the items instead of every item."
 
+  - id: m19-l10
+    title: "Anomaly detection: bursts and outliers at the bank"
+    summary: Flag bursts of transactions in a short time, and amounts that are far above an account's normal size.
+    minutes: 35
+    dataset: bank
+    steps:
+      - type: read
+        title: "An alert at 2:40 in the morning"
+        md: |
+          Noor works in the fraud team at Harbor Bank. Her alert list shows account 10 with five card payments between 02:40 and 02:46 on 14 March 2024. Is that a problem?
+
+          SQL cannot prove fraud. What it can do is **flag** unusual patterns, so that a person checks them quickly. There are two common signals:
+
+          - **Bursts:** many transactions on one account in a short time.
+          - **Outliers:** one amount that is far bigger than the account's normal amounts.
+
+          > [!REAL-WORLD]
+          > Banks run rules like these every day, on millions of transactions. A rule that flags 50 cases gets a human to look at them, and the human decides what is real.
+
+      - type: example
+        title: The gaps inside the burst
+        md: |
+          Start with account 10 on 14 March. `LAG` gives the time of the previous transaction on the same account, and the difference is the gap in minutes.
+        sql: |
+          SELECT txn_id,
+                 txn_time,
+                 amount,
+                 ROUND(EXTRACT(EPOCH FROM (txn_time - LAG(txn_time) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time
+                 ))) / 60, 1) AS gap_min
+          FROM transactions
+          WHERE account_id = 10
+            AND txn_time >= '2024-03-14'
+            AND txn_time < '2024-03-15'
+          ORDER BY txn_time;
+        after: |
+          The five payments came about one to two minutes apart, and each one is between about 930 and 1,515 dollars. Five payments in just over five minutes, in the middle of the night, is a pattern worth checking.
+
+      - type: read
+        title: "A sliding window of 10 minutes"
+        md: |
+          For each transaction we want to ask: "how many debits happened in the 10 minutes up to and including this one?" That is a **sliding window** defined by time.
+
+          `COUNT(*) OVER (PARTITION BY account_id ORDER BY txn_time RANGE BETWEEN INTERVAL '10 minutes' PRECEDING AND CURRENT ROW)` does that. `RANGE` looks at the **time** of each row, not at a number of rows.
+
+          > [!MISTAKE]
+          > Using `ROWS BETWEEN 4 PRECEDING` looks similar, but it counts the last four **rows**, however far apart they are in time. Two debits a week apart would look like a burst. Use `RANGE` with an interval whenever the window is a length of time.
+
+      - type: example
+        title: The burst rows
+        md: |
+          First keep the debits (`amount < 0`), then count the debits in each 10-minute window, and only then keep the windows with at least four. The filter comes last, so the window always sees the whole history.
+        sql: |
+          WITH debits AS (
+              SELECT txn_id,
+                     account_id,
+                     txn_time,
+                     amount
+              FROM transactions
+              WHERE amount < 0
+          ),
+          windowed AS (
+              SELECT txn_id,
+                     account_id,
+                     txn_time,
+                     amount,
+                     COUNT(*) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                         RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                                   AND CURRENT ROW
+                     ) AS debits_10min
+              FROM debits
+          )
+          SELECT txn_id,
+                 account_id,
+                 txn_time,
+                 amount,
+                 debits_10min
+          FROM windowed
+          WHERE debits_10min >= 4
+          ORDER BY account_id, txn_time;
+        after: |
+          Six rows are flagged: the last two payments of account 10 on 14 March, three late-night debits on account 46 on 5 October, and one payment on account 76 on 27 July. Each row shows how many debits were in its 10-minute window, so you can see how the burst grew.
+
+      - type: example
+        title: Summary of the flagged accounts
+        md: |
+          Group the flagged rows by account to see which accounts need a look, and how big the busiest burst was.
+        sql: |
+          WITH debits AS (
+              SELECT account_id,
+                     txn_time,
+                     amount
+              FROM transactions
+              WHERE amount < 0
+          ),
+          windowed AS (
+              SELECT account_id,
+                     COUNT(*) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                         RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                                   AND CURRENT ROW
+                     ) AS debits_10min
+              FROM debits
+          )
+          SELECT account_id,
+                 COUNT(*) AS flagged_rows,
+                 MAX(debits_10min) AS max_in_10min
+          FROM windowed
+          WHERE debits_10min >= 4
+          GROUP BY account_id
+          ORDER BY account_id;
+        after: |
+          Three accounts are flagged. Account 46 has the biggest burst: six debits within 10 minutes. Account 10 reached five, and account 76 reached four.
+
+      - type: read
+        title: "Outliers: far above the normal amount"
+        md: |
+          An **outlier** is a value far away from the rest. For an account, we compare each debit with the account's own average debit. The **ratio** is the debit divided by that average.
+
+          `AVG(-amount) OVER (PARTITION BY account_id)` gives the average debit for each account, on every row. Dividing one debit by it gives the ratio. A ratio of 10 means the debit is ten times the usual size for that account.
+
+          Notice that the average includes the outlier itself. That is fine for a first rule, and a stricter analysis could leave it out.
+
+      - type: example
+        title: The biggest debits compared with each account's average
+        md: |
+          Keep the debits whose size is more than four times the account's average, and sort them by ratio. The `txn_id` breaks ties, because two identical debits on the same account have the same ratio.
+        sql: |
+          WITH debits AS (
+              SELECT txn_id,
+                     account_id,
+                     amount,
+                     AVG(-amount) OVER (PARTITION BY account_id) AS avg_debit
+              FROM transactions
+              WHERE amount < 0
+          )
+          SELECT txn_id,
+                 account_id,
+                 amount,
+                 ROUND(-amount / avg_debit, 1) AS times_avg
+          FROM debits
+          WHERE -amount > 4 * avg_debit
+          ORDER BY times_avg DESC, txn_id
+          LIMIT 5;
+        after: |
+          Transaction 3203 on account 1 (a 2,250 dollar card purchase) is 20.7 times the account's average debit. Transaction 2731 (a 22,450 dollar cash withdrawal) is 17.7 times. The top five also include two identical 1,080 dollar debits on account 45, which tie at 9.9. The `txn_id` decides their order.
+
+      - type: quiz
+        id: m19-l10-q1
+        question: |
+          What does `RANGE BETWEEN INTERVAL '10 minutes' PRECEDING AND CURRENT ROW` include in a window count?
+        options:
+          - The last ten rows of the account, however far apart in time they are.
+          - Every row of the account within the ten minutes before the current row, and the current row itself.
+          - Every row of the account from the start of the year.
+          - Only the rows that have an amount below zero.
+        answer: 1
+        explanation: |
+          `RANGE` uses the time of each row. The window covers all rows whose `txn_time` is within ten minutes before the current row's time, plus the current row. It only sees the rows in the same partition, which is the same account here.
+
+      - type: predict
+        id: m19-l10-p1
+        question: |
+          This query counts the debits of account 10 in each 10-minute window. What is `debits_10min` on the **last** row?
+        sql: |
+          SELECT txn_id,
+                 txn_time,
+                 COUNT(*) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time
+                     RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                               AND CURRENT ROW
+                 ) AS debits_10min
+          FROM transactions
+          WHERE account_id = 10
+            AND amount < 0
+            AND txn_time >= '2024-03-14'
+            AND txn_time < '2024-03-15'
+          ORDER BY txn_time;
+        options: ["3", "4", "5", "1"]
+        answer: 2
+        explanation: |
+          The five debits are all within the same ten minutes, so each row counts everything from the first debit up to itself. The last row (02:45:57) therefore counts all five.
+
+      - type: stepper
+        title: Building the burst detector
+        md: |
+          Let's build the burst detector one stage at a time. Each stage adds one idea.
+        stages:
+          - label: The debits
+            md: Keep only the money going out.
+            sql: |
+              SELECT txn_id, account_id, txn_time, amount
+              FROM transactions
+              WHERE amount < 0
+              ORDER BY txn_time, txn_id
+              LIMIT 8;
+          - label: The gap to the last debit
+            md: How many minutes since the previous debit on the same account?
+            sql: |
+              SELECT txn_id,
+                     account_id,
+                     txn_time,
+                     ROUND(EXTRACT(EPOCH FROM (txn_time - LAG(txn_time) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                     ))) / 60, 1) AS gap_min
+              FROM transactions
+              WHERE amount < 0
+              ORDER BY account_id, txn_time
+              LIMIT 8;
+          - label: The 10-minute count
+            md: Count the debits in the 10 minutes up to each row.
+            sql: |
+              SELECT txn_id,
+                     account_id,
+                     txn_time,
+                     COUNT(*) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                         RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                                   AND CURRENT ROW
+                     ) AS debits_10min
+              FROM transactions
+              WHERE amount < 0
+              ORDER BY account_id, txn_time
+              LIMIT 8;
+          - label: The alert list
+            md: Keep the windows with four or more debits.
+            sql: |
+              WITH windowed AS (
+                  SELECT txn_id,
+                         account_id,
+                         txn_time,
+                         COUNT(*) OVER (
+                             PARTITION BY account_id
+                             ORDER BY txn_time
+                             RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                                       AND CURRENT ROW
+                         ) AS debits_10min
+                  FROM transactions
+                  WHERE amount < 0
+              )
+              SELECT txn_id, account_id, txn_time, debits_10min
+              FROM windowed
+              WHERE debits_10min >= 4
+              ORDER BY account_id, txn_time;
+
+      - type: read
+        title: "A rule starts the conversation"
+        md: |
+          A rule such as "four debits in ten minutes" is not proof of fraud. Customers who shop several times in a row online, or who pay a bill in parts, can trigger it. The output is a list for a person to check.
+
+          Combine the signals. An account with both a burst and an outlier deserves a faster look than one with only one of them.
+
+      - type: fill
+        id: m19-l10-f1
+        prompt: Complete the window so that it counts the debits in the last ten minutes.
+        template: |
+          SELECT txn_id,
+                 txn_time,
+                 COUNT(*) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time
+                     RANGE BETWEEN INTERVAL '___ minutes' PRECEDING
+                               AND CURRENT ROW
+                 ) AS debits_10min
+          FROM transactions
+          WHERE account_id = 10
+            AND amount < 0
+            AND txn_time >= '2024-03-14'
+            AND txn_time < '2024-03-15'
+          ORDER BY txn_time;
+        answers:
+          - ["10"]
+        explanation: "`INTERVAL '10 minutes'` is a length of time. Change the number to make the window wider or narrower, for example `60` for an hour-long window."
+
+      - type: parsons
+        id: m19-l10-o1
+        prompt: |
+          Put the lines in the right order to find debits that are more than ten times the account's average debit.
+        lines:
+          - WITH x AS (
+          - SELECT txn_id, account_id, amount,
+          - AVG(-amount) OVER (PARTITION BY account_id) AS avg_debit
+          - FROM transactions
+          - WHERE amount < 0
+          - )
+          - SELECT txn_id, account_id, amount,
+          - ROUND(-amount / avg_debit, 1) AS times_avg
+          - FROM x
+          - WHERE -amount > 10 * avg_debit
+          - ORDER BY times_avg DESC, txn_id;
+        distractors:
+          - GROUP BY account_id;
+
+      - type: exercise
+        id: m19-l10-e1
+        title: The night of the burst
+        prompt: |
+          List the **debits** of account 10 on 14 March 2024. Show `txn_id`, `txn_time` and `amount`, oldest first.
+        starter: |
+          SELECT txn_id, txn_time, amount
+          FROM transactions
+          WHERE account_id = 10;
+        solution: |
+          SELECT txn_id,
+                 txn_time,
+                 amount
+          FROM transactions
+          WHERE account_id = 10
+            AND amount < 0
+            AND txn_time >= '2024-03-14'
+            AND txn_time < '2024-03-15'
+          ORDER BY txn_time;
+        ordered: true
+        columnNames: true
+        hints:
+          - Start from the first example, and keep only the three columns asked for.
+          - Filter the account, the debits (`amount < 0`) and the day of 14 March.
+          - "WHERE account_id = 10 AND amount < 0 AND txn_time >= '2024-03-14' AND txn_time < ___"
+        explanation: |
+          The five payments are 02:40:35, 02:41:49, 02:43:11, 02:45:01 and 02:45:57. All of them are card payments and all are debits. Shown as a list, the burst is much easier to notice.
+        difficulty: 1
+
+      - type: exercise
+        id: m19-l10-e2
+        title: Which accounts burst?
+        prompt: |
+          Find the accounts that had **at least four debits within any 10-minute window**. Show `account_id` and `max_in_10min`, the largest number of debits in any such window for that account.
+
+          Order by `account_id`.
+        starter: |
+          SELECT account_id, COUNT(*) AS max_in_10min
+          FROM transactions
+          WHERE amount < 0
+          GROUP BY account_id
+          HAVING COUNT(*) >= 4;
+        solution: |
+          WITH debits AS (
+              SELECT account_id,
+                     txn_time,
+                     amount
+              FROM transactions
+              WHERE amount < 0
+          ),
+          windowed AS (
+              SELECT account_id,
+                     COUNT(*) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                         RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                                   AND CURRENT ROW
+                     ) AS debits_10min
+              FROM debits
+          )
+          SELECT account_id,
+                 MAX(debits_10min) AS max_in_10min
+          FROM windowed
+          GROUP BY account_id
+          HAVING MAX(debits_10min) >= 4
+          ORDER BY account_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Build the 10-minute window count for each debit, as in the example.
+          - Take the maximum per account, then keep the accounts with at least 4.
+          - "... GROUP BY account_id HAVING MAX(debits_10min) >= ___ ORDER BY account_id;"
+        explanation: |
+          Three accounts burst: 10 (five debits within ten minutes), 46 (six) and 76 (four). Taking the maximum of the window counts means each account appears once, even though its flagged rows are several.
+        difficulty: 2
+
+      - type: exercise
+        id: m19-l10-e3
+        title: The debits that are far too big
+        prompt: |
+          Find every debit that is **more than 10 times** the average debit of its own account. Show `txn_id`, `account_id`, `amount` and `times_avg` (the debit divided by the account's average debit, rounded to 1 decimal place).
+
+          Order by `times_avg` from highest to lowest, then by `txn_id`.
+        starter: |
+          SELECT txn_id, account_id, amount
+          FROM transactions
+          WHERE amount < -2000;
+        solution: |
+          WITH debits AS (
+              SELECT txn_id,
+                     account_id,
+                     amount,
+                     AVG(-amount) OVER (PARTITION BY account_id) AS avg_debit
+              FROM transactions
+              WHERE amount < 0
+          )
+          SELECT txn_id,
+                 account_id,
+                 amount,
+                 ROUND(-amount / avg_debit, 1) AS times_avg
+          FROM debits
+          WHERE -amount > 10 * avg_debit
+          ORDER BY times_avg DESC, txn_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use the average-per-account window from the outlier example.
+          - Keep the rows where the debit is more than ten times that average.
+          - "WHERE -amount > 10 * ___ ORDER BY times_avg DESC, txn_id;"
+        explanation: |
+          Exactly two debits pass the 10-times test: 3203 on account 1 (20.7 times) and 2731 on account 94 (17.7 times). Both are very large relative to their own history, not just large in dollars.
+        difficulty: 2
+
+      - type: exercise
+        id: m19-l10-e4
+        title: Big debits in one hour
+        prompt: |
+          For each account, count the **big debits** (amounts of 500 or more going out, that is `amount <= -500`) in the 60 minutes up to and including each one. Then show, for each account, the largest of those counts as `max_big_60`, but only for accounts where it is at least 3.
+
+          Show `account_id` and `max_big_60`, with the largest first, then by `account_id`.
+        starter: |
+          SELECT account_id, COUNT(*) AS max_big_60
+          FROM transactions
+          WHERE amount <= -500
+          GROUP BY account_id
+          HAVING COUNT(*) >= 3;
+        solution: |
+          WITH big AS (
+              SELECT account_id,
+                     txn_time
+              FROM transactions
+              WHERE amount <= -500
+          ),
+          windowed AS (
+              SELECT account_id,
+                     COUNT(*) OVER (
+                         PARTITION BY account_id
+                         ORDER BY txn_time
+                         RANGE BETWEEN INTERVAL '60 minutes' PRECEDING
+                                   AND CURRENT ROW
+                     ) AS big_60
+              FROM big
+          )
+          SELECT account_id,
+                 MAX(big_60) AS max_big_60
+          FROM windowed
+          GROUP BY account_id
+          HAVING MAX(big_60) >= 3
+          ORDER BY max_big_60 DESC, account_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - It is the same burst detector as before, but with `60 minutes` and only the big debits.
+          - Use `MAX(...)` per account, then `HAVING MAX(...) >= 3`.
+          - "RANGE BETWEEN INTERVAL '___ minutes' PRECEDING AND CURRENT ROW"
+        explanation: |
+          Account 46 has at least six big debits within an hour, account 10 has five, and account 76 has four. Changing the window from ten minutes to sixty catches slower bursts, and it is a useful second rule.
+        difficulty: 3
+
+      - type: exercise
+        id: m19-l10-e5
+        title: The strongest outliers by account (stretch)
+        prompt: |
+          For accounts with **at least 10 debits**, find the largest debit as a multiple of the account's average debit. Show `account_id` and `ratio`: the largest debit divided by the average debit, rounded to 1 decimal place.
+
+          Show only the top three accounts, with the highest `ratio` first, then by `account_id`.
+        starter: |
+          SELECT account_id, COUNT(*) AS debits
+          FROM transactions
+          WHERE amount < 0
+          GROUP BY account_id
+          HAVING COUNT(*) >= 10;
+        solution: |
+          SELECT account_id,
+                 ROUND(MAX(-amount) / AVG(-amount), 1) AS ratio
+          FROM transactions
+          WHERE amount < 0
+          GROUP BY account_id
+          HAVING COUNT(*) >= 10
+          ORDER BY ratio DESC, account_id
+          LIMIT 3;
+        ordered: true
+        columnNames: true
+        hints:
+          - Group by account, and compare the largest debit with the average debit in the same group.
+          - Use `HAVING COUNT(*) >= 10` to keep accounts with enough debits.
+          - "ROUND(MAX(-amount) / AVG(-amount), 1) ... ORDER BY ratio DESC, account_id LIMIT 3"
+        explanation: |
+          Account 1 has the highest ratio at 20.7, then account 94 at 17.7, and account 45 at 9.9. The grouped version is shorter than the window version, because it needs only one row per account.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Sliding time window
+        sql: "COUNT(*) OVER (PARTITION BY account_id ORDER BY txn_time RANGE BETWEEN INTERVAL '10 minutes' PRECEDING AND CURRENT ROW)"
+        note: "Counts rows by time, not by position. Use RANGE with an interval for time windows."
+      - title: Gap since the previous row
+        sql: "txn_time - LAG(txn_time) OVER (PARTITION BY account_id ORDER BY txn_time)"
+        note: "A short gap between two transactions on one account is a burst signal."
+      - title: Ratio to the account average
+        sql: "-amount / AVG(-amount) OVER (PARTITION BY account_id)"
+        note: "A ratio of 10 means ten times the account's usual debit."
+
 testPool:
   # ---------------------------------------------------------- l01 Growth
   - type: exercise
@@ -4976,7 +5478,7 @@ testPool:
   - type: exercise
     id: m19-t07
     lesson: m19-l03
-    difficulty: 2
+    difficulty: 3
     prompt: |
       How many visits **started** in March 2024, across all users? A visit starts at its first event.
 
@@ -5031,7 +5533,7 @@ testPool:
   - type: quiz
     id: m19-t08
     lesson: m19-l03
-    difficulty: 2
+    difficulty: 1
     question: |
       User 3's first two events are 1 minute 50 seconds apart, so today they form one visit. Which change would split them into **two** visits?
     options:
@@ -5043,42 +5545,32 @@ testPool:
     explanation: |
       The visit rule is "a gap bigger than the threshold starts a new visit". A 1-minute threshold is smaller than the 1 minute 50 seconds between the two events, so they are split. A 3-hour threshold would join more events, and the other two changes do not affect the gap rule at all.
   # ---------------------------------------------------------- l03 Sessions
-  - type: predict
+  - type: parsons
     id: m19-t09
     lesson: m19-l03
     difficulty: 3
-    question: |
-      This query numbers the new visits, but it **leaves out** `PARTITION BY user_id`. What is `session_no` on the very last event (the one with the latest `event_time`)?
-    sql: |
-      WITH gaps AS (
-          SELECT user_id,
-                 event_time,
-                 event_time - LAG(event_time) OVER (
-                     PARTITION BY user_id
-                     ORDER BY event_time
-                 ) AS gap
-          FROM events
-      ),
-      flagged AS (
-          SELECT event_time,
-                 CASE WHEN gap IS NULL OR gap > INTERVAL '30 minutes'
-                      THEN 1 ELSE 0 END AS new_session
-          FROM gaps
-      )
-      SELECT event_time,
-             SUM(new_session) OVER (ORDER BY event_time) AS session_no
-      FROM flagged
-      ORDER BY event_time DESC
-      LIMIT 1;
-    options: ["4122", "280", "7010", "1"]
-    answer: 0
+    prompt: |
+      Put the lines in the right order to flag the start of each visit for user 94, one row per event.
+    lines:
+      - WITH gaps AS (
+      - SELECT user_id, event_time,
+      - event_time - LAG(event_time) OVER (PARTITION BY user_id ORDER BY event_time) AS gap
+      - FROM events
+      - WHERE user_id = 94
+      - )
+      - SELECT event_time,
+      - CASE WHEN gap IS NULL OR gap > INTERVAL '30 minutes' THEN 1 ELSE 0 END AS new_visit
+      - FROM gaps
+      - ORDER BY event_time;
+    distractors:
+      - GROUP BY event_time;
     explanation: |
-      Without a partition, the running total counts every new visit of every user, in one long line. The last event therefore carries the total of all 4,122 visits. The correct version restarts the count for each user, which is why it is the one you should write.
+      The flag is 1 at the start of every visit. User 94 has twelve visits, so exactly twelve rows show a 1. The first event of the user is always flagged, because its gap is NULL.
   # ---------------------------------------------------------- l04 Funnels
   - type: exercise
     id: m19-t10
     lesson: m19-l04
-    difficulty: 2
+    difficulty: 1
     prompt: |
       How many **different** users on the `web` platform ever did a `share` event? Count each user once.
 
@@ -5119,28 +5611,27 @@ testPool:
     explanation: |
       `FIRST_VALUE` returns the value from the first row of the window on every row. With `ORDER BY step_no`, the first row is the opening step, so each row can show its percentage of that starting number.
   # ---------------------------------------------------------- l04 Funnels
-  - type: predict
+  - type: fill
     id: m19-t12
     lesson: m19-l04
-    difficulty: 2
-    question: |
-      This query counts `app_open` events for users on the `web` platform. What number does it return?
-    sql: |
-      SELECT COUNT(*) AS web_opens
+    difficulty: 1
+    prompt: |
+      Complete the query so that it counts every `app_open` **tap** made on the web platform, not the users.
+    template: |
+      SELECT COUNT(___) AS web_opens
       FROM events AS e
       JOIN users AS u
         ON u.user_id = e.user_id
       WHERE u.platform = 'web'
         AND e.event_name = 'app_open';
-    options: ["53", "730", "5", "100"]
-    answer: 1
-    explanation: |
-      `COUNT(*)` counts every `app_open` tap, and web users opened the app 730 times. The number of different web users who opened it is 53, which is what you would get with `COUNT(DISTINCT e.user_id)`. Check which one a question is asking for.
+    answers:
+      - ["*"]
+    explanation: "`COUNT(*)` counts every row, and each row is one tap, so the answer is 730. The 53 different web users are counted only with `COUNT(DISTINCT e.user_id)`."
   # ---------------------------------------------------------- l05 Retention
   - type: exercise
     id: m19-t13
     lesson: m19-l05
-    difficulty: 2
+    difficulty: 3
     prompt: |
       How many **different** users who signed up in **March 2024** had an event in **week 2** after their signup (days 14 to 20 after signup)?
 
@@ -5204,7 +5695,7 @@ testPool:
   - type: exercise
     id: m19-t16
     lesson: m19-l06
-    difficulty: 2
+    difficulty: 3
     prompt: |
       How many days in the first quarter of 2024 (from 1 January to 31 March, both included) had **no sales**? Cancelled orders do not count as sales.
 
@@ -5252,40 +5743,25 @@ testPool:
     explanation: |
       The frame starts two rows before the current row and ends one row after it, so each window has four rows: two before, the current row and one after. `UNBOUNDED PRECEDING` is the option that means "from the very start".
   # ---------------------------------------------------------- l06 Moving & Pareto
-  - type: predict
+  - type: parsons
     id: m19-t18
     lesson: m19-l06
     difficulty: 3
-    question: |
-      The query counts the products whose **running total, including themselves,** is below 80% of revenue. How many products does it count?
-    sql: |
-      WITH rev AS (
-          SELECT p.product_id,
-                 SUM(i.quantity * i.unit_price * (1 - i.discount)) AS revenue
-          FROM order_items AS i
-          JOIN orders AS o
-            ON o.order_id = i.order_id
-          JOIN products AS p
-            ON p.product_id = i.product_id
-          WHERE o.status <> 'cancelled'
-          GROUP BY p.product_id
-      ),
-      ranked AS (
-          SELECT product_id,
-                 SUM(revenue) OVER (
-                     ORDER BY revenue DESC, product_id
-                     ROWS UNBOUNDED PRECEDING
-                 ) AS running,
-                 SUM(revenue) OVER () AS total
-          FROM rev
-      )
-      SELECT COUNT(*) AS below_80pct
-      FROM ranked
-      WHERE running < 0.8 * total;
-    options: ["22", "23", "55", "0"]
-    answer: 0
+    prompt: |
+      Put the lines in the right order to compute the running share of revenue for three products, biggest seller first.
+    lines:
+      - WITH sales(product, amount) AS (VALUES
+      - ('A', 50), ('B', 30), ('C', 20)
+      - )
+      - SELECT product, amount,
+      - ROUND(100.0 * SUM(amount) OVER (ORDER BY amount DESC ROWS UNBOUNDED PRECEDING)
+      - / SUM(amount) OVER (), 1) AS cum_pct
+      - FROM sales
+      - ORDER BY amount DESC;
+    distractors:
+      - ORDER BY product;
     explanation: |
-      Product 23 is the first one whose running total goes above 80%, so the 22 products before it are below the line. The version in the lesson subtracts the product's own revenue to find the products needed to reach 80%, and that count is 23. The difference is one product, which is why the question wording matters.
+      Product A is 50% of the total, A and B together are 80%, and all three make 100%. The running total goes from the biggest seller down, and the `ORDER BY product` line would give the wrong running totals.
   # ---------------------------------------------------------- l07 Percentiles
   - type: exercise
     id: m19-t19
@@ -5366,39 +5842,53 @@ testPool:
     explanation: |
       48 valid orders contain product 17. The question asks for orders, not lines, so `COUNT(DISTINCT order_id)` counts each order once, however many lines of product 17 it has. Cancelled orders are removed by the join's `WHERE`.
   # ---------------------------------------------------------- l08 Market basket
-  - type: quiz
+  - type: exercise
     id: m19-t23
     lesson: m19-l08
     difficulty: 2
-    question: |
-      In a market basket query, why do we write `b.product_id > a.product_id` in the join?
-    options:
-      - It makes the query faster by using an index.
-      - It keeps each pair of products once and removes a product paired with itself.
-      - It removes orders that contain only one product.
-      - It sorts the pairs from highest to lowest.
-    answer: 1
-    explanation: |
-      Without the condition, `(9, 11)` and `(11, 9)` would both be counted, and every product would also pair with itself. Requiring the second id to be bigger keeps one copy of each pair.
-  # ---------------------------------------------------------- l08 Market basket
-  - type: predict
-    id: m19-t24
-    lesson: m19-l08
-    difficulty: 3
-    question: |
-      Order 2 has four products. This query uses `<>` instead of `>`. How many rows does it return for order 2?
-    sql: |
-      SELECT a.product_id AS product_a,
-             b.product_id AS product_b
+    prompt: |
+      How many different pairs of products are in **order 5**, with each pair counted once? Show the answer as one value named `order5_pairs`.
+    starter: |
+      SELECT COUNT(*) AS order5_pairs
       FROM order_items AS a
       JOIN order_items AS b
         ON b.order_id = a.order_id
        AND b.product_id <> a.product_id
-      WHERE a.order_id = 2;
-    options: ["6", "8", "12", "16"]
-    answer: 2
+      WHERE a.order_id = 5;
+    solution: |
+      SELECT COUNT(*) AS order5_pairs
+      FROM order_items AS a
+      JOIN order_items AS b
+        ON b.order_id = a.order_id
+       AND b.product_id > a.product_id
+      WHERE a.order_id = 5;
+    columnNames: true
+    hints:
+      - Use the self-join with `>`, and restrict it to order 5.
+      - Count the rows of the join, not the lines of the order.
+      - "SELECT COUNT(*) AS order5_pairs FROM order_items AS a JOIN order_items AS b ON ... WHERE a.order_id = ___;"
     explanation: |
-      Each of the four products pairs with the other three, which gives 4 times 3 = 12 rows. Each pair appears twice, once in each direction. The `>` version gives six rows, one per pair, which is why it is the right choice for counting pairs.
+      Order 5 has three products, so there are three pairs. The starter counts the three lines, which happens to be the same number here, but it is a different quantity: a pair needs two products, so the self-join is the right tool when the question is about pairs.
+  # ---------------------------------------------------------- l08 Market basket
+  - type: parsons
+    id: m19-t24
+    lesson: m19-l08
+    difficulty: 3
+    prompt: |
+      Put the lines in the right order to list each pair of products that appear together in **order 5**, with each pair listed once.
+    lines:
+      - SELECT a.product_id AS product_a,
+      - b.product_id AS product_b
+      - FROM order_items AS a
+      - JOIN order_items AS b
+      -   ON b.order_id = a.order_id
+      -   AND b.product_id > a.product_id
+      - WHERE a.order_id = 5
+      - ORDER BY product_a, product_b;
+    distractors:
+      - GROUP BY a.product_id;
+    explanation: |
+      Order 5 has three products, which give three pairs. The `>` in the join keeps one copy of each pair, and the `WHERE` restricts both copies of `order_items` to the same order.
   # ---------------------------------------------------------- l09 Division
   - type: exercise
     id: m19-t25
@@ -5477,4 +5967,401 @@ testPool:
     answers:
       - ["product_id"]
     explanation: "`DISTINCT oi.product_id` counts each product once per customer. The top three customers here each bought all three Outdoor products, so ties are broken by `customer_id`."
-  # @@NEXT_TEST@@
+  # ---------------------------------------------------------- l10 Anomalies
+  - type: exercise
+    id: m19-t28
+    lesson: m19-l10
+    difficulty: 3
+    prompt: |
+      A transaction is **in a heavy burst** when it is the fifth or later debit within the 10 minutes up to and including it, for the same account.
+
+      How many debits are in a heavy burst? Count the transactions, and show the answer as one value named `heavy_burst_debits`.
+    starter: |
+      SELECT COUNT(*) AS heavy_burst_debits
+      FROM transactions
+      WHERE amount < 0;
+    solution: |
+      WITH windowed AS (
+          SELECT txn_id,
+                 COUNT(*) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time
+                     RANGE BETWEEN INTERVAL '10 minutes' PRECEDING
+                               AND CURRENT ROW
+                 ) AS debits_10min
+          FROM transactions
+          WHERE amount < 0
+      )
+      SELECT COUNT(*) AS heavy_burst_debits
+      FROM windowed
+      WHERE debits_10min >= 5;
+    columnNames: true
+    hints:
+      - Use the sliding window from the burst detector, but with a higher threshold.
+      - Filter with `debits_10min >= 5` in an outer query, after the window has been computed.
+      - "... FROM windowed WHERE debits_10min >= ___;"
+    explanation: |
+      Three debits qualify: the fifth payment of account 10 on 14 March, and the fifth and sixth debits of account 46 on 5 October. Counting the transactions after the window (not before) is what makes the number correct.
+  # ---------------------------------------------------------- l10 Anomalies
+  - type: quiz
+    id: m19-t29
+    lesson: m19-l10
+    difficulty: 1
+    question: |
+      Which pattern is the **burst** signal described in this lesson?
+    options:
+      - One large debit in a whole year.
+      - Many debits on one account within a few minutes.
+      - A deposit that is much bigger than usual.
+      - A transaction with no description.
+    answer: 1
+    explanation: |
+      A burst is several transactions on the same account in a short time. Outliers are the other signal: one amount far above the account's usual size.
+  # ---------------------------------------------------------- l10 Anomalies
+  - type: predict
+    id: m19-t30
+    lesson: m19-l10
+    difficulty: 3
+    question: |
+      This query flags debits that are more than **four** times their account's average debit. How many rows does it return?
+    sql: |
+      WITH x AS (
+          SELECT txn_id,
+                 account_id,
+                 amount,
+                 AVG(-amount) OVER (PARTITION BY account_id) AS avg_debit
+          FROM transactions
+          WHERE amount < 0
+      )
+      SELECT COUNT(*) AS flagged
+      FROM x
+      WHERE -amount > 4 * avg_debit;
+    options: ["2", "8", "73", "150"]
+    answer: 2
+    explanation: |
+      Seventy-three debits are more than four times their account's average. Only two pass the stricter ten-times rule. Setting the threshold is a trade-off: a lower one catches more cases, but also sends more of them to a person to check.
+project:
+  id: m19-proj
+  title: "FitTrack Growth Review"
+  icon: "📈"
+  dataset: app
+  md: |
+    Priya leads growth at FitTrack. Before the quarterly review, she wants a single table that tells the story of the first seven months of 2024: how many people use the app, how many come back, how much subscription money comes in, and how long each visit lasts.
+
+    You will answer her questions in eight tasks. They get harder as you go:
+
+    1. How much does the event log grow each month?
+    2. How many users are active each month?
+    3. Is the active base growing? (uses the table from task 2, already saved as the view `monthly_active`)
+    4. Which referral source brings users who come back?
+    5. How many subscriptions start each month, and how much do they bring in?
+    6. How long is a typical visit?
+    7. How many users have a long streak of step data?
+    8. Put it all together in one review table.
+
+    Each task starts from the database as it is. When a task says a view already exists, it is created for you in the background, with the answer to an earlier task. You only write the new part.
+  tasks:
+    - type: exercise
+      id: m19-proj-1
+      title: How much does the log grow?
+      prompt: |
+        For each month of 2024, show the `month`, the number of `events` in it, and `open_pct`: the share of those events that are `app_open`, as a percentage rounded to 1 decimal place.
+
+        Show the oldest month first.
+      starter: |
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(*) AS events
+        FROM events
+        GROUP BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(*) AS events,
+               ROUND(100.0 * COUNT(*) FILTER (WHERE event_name = 'app_open')
+                     / COUNT(*), 1) AS open_pct
+        FROM events
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - Group the events by month, as in the first CTE examples of the module.
+        - Use `COUNT(*) FILTER (WHERE event_name = 'app_open')` for the share.
+        - "ROUND(100.0 * COUNT(*) FILTER (WHERE ___) / COUNT(*), 1) AS open_pct"
+      explanation: |
+        The log grows from 543 events in January to a peak of 1,230 in May, then falls to 824 in July. The share of `app_open` events rises from 50.5% in January to 63.0% in July, so workouts, goals and sharing make up a smaller part of the log over time.
+
+    - type: exercise
+      id: m19-proj-2
+      title: Monthly active users
+      prompt: |
+        A **monthly active user** (MAU) is a user with at least one event in the month. For each month of 2024, show the `month` and the number of distinct `active_users`.
+
+        Show the oldest month first. This answer becomes the view `monthly_active` for the next task, so keep the column names.
+      starter: |
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(*) AS active_users
+        FROM events
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(DISTINCT user_id) AS active_users
+        FROM events
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - Count each user once, not each tap.
+        - Use `COUNT(DISTINCT user_id)`, which is the same tool as in the funnel lesson.
+        - "SELECT DATE_TRUNC('month', event_time)::date AS month, COUNT(___) AS active_users FROM events GROUP BY month ORDER BY month;"
+      explanation: |
+        The number rises from 54 active users in January to 133 in May, then falls to 89 in July. Counting taps instead of users would make May look more than nine times bigger (1,230 taps against 133 users).
+
+    - type: exercise
+      id: m19-proj-3
+      title: Is the base growing?
+      setup: |
+        CREATE VIEW monthly_active AS
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(DISTINCT user_id) AS active_users
+        FROM events
+        GROUP BY month;
+      prompt: |
+        The view `monthly_active` already exists. It has the columns `month` and `active_users`, one row per month.
+
+        For each month from **February 2024** onwards, show `month`, `active_users` and `growth_pct`: the percentage change from the month before, rounded to 1 decimal place. February must be compared with January.
+      starter: |
+        SELECT month, active_users
+        FROM monthly_active
+        WHERE month >= '2024-02-01'
+        ORDER BY month;
+      solution: |
+        WITH with_prev AS (
+            SELECT month,
+                   active_users,
+                   LAG(active_users) OVER (ORDER BY month) AS prev_users
+            FROM monthly_active
+        )
+        SELECT month,
+               active_users,
+               ROUND(100.0 * (active_users - prev_users) / prev_users, 1)
+                   AS growth_pct
+        FROM with_prev
+        WHERE month >= '2024-02-01'
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - Put `LAG(active_users) OVER (ORDER BY month)` in a CTE, so that January is still there for February.
+        - Filter from February in the last query, after the window.
+        - "ROUND(100.0 * (active_users - prev_users) / ___, 1) AS growth_pct"
+      explanation: |
+        Growth was strong in February (+48.1%) and March (+35.0%), then slowed to 13.0% and 9.0%. The base shrank in June (-2.3%) and July (-31.5%). A growth question about the base is only correct if the window sees January, which is why the filter comes last.
+
+    - type: exercise
+      id: m19-proj-4
+      title: Which referral source comes back?
+      prompt: |
+        For each `referral_source`, show the number of `users` who signed up (including users with no events), and `week1_pct`: the percentage who had an event **7 to 13 days** after their signup date, rounded to 1 decimal place.
+
+        Order by `week1_pct` from highest to lowest, then by `referral_source` A to Z.
+      starter: |
+        SELECT referral_source, COUNT(*) AS users
+        FROM users
+        GROUP BY referral_source;
+      solution: |
+        WITH came_back AS (
+            SELECT DISTINCT e.user_id
+            FROM events AS e
+            JOIN users AS u
+              ON u.user_id = e.user_id
+            WHERE e.event_time::date - u.signup_date BETWEEN 7 AND 13
+        )
+        SELECT u.referral_source,
+               COUNT(*) AS users,
+               ROUND(100.0 * COUNT(c.user_id) / COUNT(*), 1) AS week1_pct
+        FROM users AS u
+        LEFT JOIN came_back AS c
+          ON c.user_id = u.user_id
+        GROUP BY u.referral_source
+        ORDER BY week1_pct DESC, u.referral_source;
+      ordered: true
+      columnNames: true
+      hints:
+        - Find the users who came back in that range of days, then `LEFT JOIN` them to all the users.
+        - "`COUNT(c.user_id)` counts the matches, while `COUNT(*)` counts every user in the group."
+        - "... ROUND(100.0 * COUNT(c.user_id) / ___, 1) ... GROUP BY u.referral_source ORDER BY week1_pct DESC, ___;"
+      explanation: |
+        Organic users (64.2%) and friend referrals (64.0%) come back the most in week 1. Ads bring the most users (77) but the lowest share returning: 33.8%. Paid traffic is worth checking before it is scaled up.
+
+    - type: exercise
+      id: m19-proj-5
+      title: Subscriptions each month
+      prompt: |
+        For each month, show the `month`, the number of subscriptions that **started** in that month as `new_subs`, and the total of their prices as `revenue`, rounded to 2 decimal places.
+
+        Show the oldest month first. This answer becomes the view `sub_revenue` for the last task.
+      starter: |
+        SELECT DATE_TRUNC('month', started_at)::date AS month,
+               COUNT(*) AS new_subs
+        FROM subscriptions
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        SELECT DATE_TRUNC('month', started_at)::date AS month,
+               COUNT(*) AS new_subs,
+               ROUND(SUM(price), 2) AS revenue
+        FROM subscriptions
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - The month comes from `started_at`, not from the signup date.
+        - "`SUM(price)` adds the prices of the subscriptions in each month."
+        - "SELECT DATE_TRUNC('month', started_at)::date AS month, COUNT(*) AS new_subs, ROUND(SUM(___), 2) AS revenue FROM subscriptions GROUP BY month ORDER BY month;"
+      explanation: |
+        January brings the most subscriptions (27) and the most money ($899.73), while June and July have only 8 and 4. A monthly subscription costs $9.99 and an annual one $79.99, so the revenue per month depends on the mix of plans.
+
+    - type: exercise
+      id: m19-proj-6
+      title: How long is a visit?
+      prompt: |
+        A **visit** starts with an event, and a new visit starts when a user's event comes **more than 30 minutes** after their previous event. Use that rule to find each visit.
+
+        For each month, show the `month` in which the visits **started**, the number of `visits`, and `avg_minutes`: the average length of those visits, from the first event to the last, rounded to 1 decimal place.
+
+        Show the oldest month first.
+      starter: |
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(*) AS visits
+        FROM events
+        GROUP BY month
+        ORDER BY month;
+      solution: |
+        WITH gaps AS (
+            SELECT user_id,
+                   event_time,
+                   event_time - LAG(event_time) OVER (
+                       PARTITION BY user_id
+                       ORDER BY event_time
+                   ) AS gap
+            FROM events
+        ),
+        flagged AS (
+            SELECT user_id,
+                   event_time,
+                   CASE WHEN gap IS NULL OR gap > INTERVAL '30 minutes'
+                        THEN 1 ELSE 0 END AS new_visit
+            FROM gaps
+        ),
+        numbered AS (
+            SELECT user_id,
+                   event_time,
+                   SUM(new_visit) OVER (
+                       PARTITION BY user_id
+                       ORDER BY event_time
+                   ) AS visit_no
+            FROM flagged
+        ),
+        visits AS (
+            SELECT MIN(event_time) AS started,
+                   MAX(event_time) AS ended
+            FROM numbered
+            GROUP BY user_id, visit_no
+        )
+        SELECT DATE_TRUNC('month', started)::date AS month,
+               COUNT(*) AS visits,
+               ROUND(AVG(EXTRACT(EPOCH FROM (ended - started)) / 60), 1)
+                   AS avg_minutes
+        FROM visits
+        GROUP BY month
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - Build the visits one step at a time, as in the sessionization lesson.
+        - Group the visits by the month of their **start**, which is `MIN(event_time)`.
+        - "... FROM visits GROUP BY month ORDER BY month;"
+      explanation: |
+        Visits average between 4.8 and 7.8 minutes. January's 7.8 minutes is the longest, and July's 4.8 minutes is the shortest. Each visit counts in the month it started, even if it ends later.
+
+    - type: exercise
+      id: m19-proj-7
+      title: Long streaks of steps
+      prompt: |
+        A streak is a run of consecutive days with step data in `daily_steps`. How many **different users** have at least one streak of **30 days or more**?
+
+        Show one row, with the value named `users_30_days`.
+      starter: |
+        SELECT COUNT(*) AS users_30_days
+        FROM daily_steps;
+      solution: |
+        WITH numbered AS (
+            SELECT user_id,
+                   day,
+                   ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS rn
+            FROM daily_steps
+        ),
+        streaks AS (
+            SELECT user_id,
+                   COUNT(*) AS days
+            FROM numbered
+            GROUP BY user_id, day - rn::int
+        )
+        SELECT COUNT(DISTINCT user_id) AS users_30_days
+        FROM streaks
+        WHERE days >= 30;
+      columnNames: true
+      hints:
+        - This is the gaps and islands pattern. Subtract the row number from the day to label each streak.
+        - Count the days of each streak, then keep the streaks with 30 or more days.
+        - Use `COUNT(DISTINCT user_id)` so that a user with two long streaks is counted once.
+      explanation: |
+        Twenty-two users have at least one streak of 30 days or more. Counting the streaks instead would give 23, because one user has two long streaks. The question asks about people, so the distinct count is the right answer.
+
+    - type: exercise
+      id: m19-proj-8
+      title: The review table (capstone)
+      setup: |
+        CREATE VIEW monthly_active AS
+        SELECT DATE_TRUNC('month', event_time)::date AS month,
+               COUNT(DISTINCT user_id) AS active_users
+        FROM events
+        GROUP BY month;
+        CREATE VIEW sub_revenue AS
+        SELECT DATE_TRUNC('month', started_at)::date AS month,
+               COUNT(*) AS new_subs,
+               ROUND(SUM(price), 2) AS revenue
+        FROM subscriptions
+        GROUP BY month;
+      prompt: |
+        Build Priya's review table from two views that already exist:
+
+        - `monthly_active` with `month` and `active_users`
+        - `sub_revenue` with `month`, `new_subs` and `revenue`
+
+        For each month, show `month`, `active_users`, `new_subs` and `cumulative_revenue`: the running total of `revenue` up to and including that month, rounded to 2 decimal places. Show the oldest month first.
+      starter: |
+        SELECT m.month, m.active_users
+        FROM monthly_active AS m
+        ORDER BY m.month;
+      solution: |
+        SELECT m.month,
+               m.active_users,
+               s.new_subs,
+               ROUND(SUM(s.revenue) OVER (ORDER BY s.month), 2)
+                   AS cumulative_revenue
+        FROM monthly_active AS m
+        JOIN sub_revenue AS s
+          ON s.month = m.month
+        ORDER BY m.month;
+      ordered: true
+      columnNames: true
+      hints:
+        - Join the two views on `month`, as the two tables in one query.
+        - A running total is `SUM(...) OVER (ORDER BY month)`. It works on the joined rows.
+        - "... FROM monthly_active AS m JOIN sub_revenue AS s ON s.month = m.month ORDER BY m.month;"
+      explanation: |
+        By the end of July, subscriptions have brought in $3,358.95, which is the sum of every subscription in the data. The table shows the active base and the revenue side by side, so Priya can read the two stories together. This is the same skill as the whole module: one question, several steps, each one checked.

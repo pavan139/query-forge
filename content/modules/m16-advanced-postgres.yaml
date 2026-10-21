@@ -155,7 +155,7 @@ lessons:
           PostgreSQL has two JSON types.
 
           - `json` stores the text exactly as you typed it.
-          - `jsonb` stores a tidied copy. It sorts the keys, removes extra spaces and is much faster to search.
+          - `jsonb` stores a tidied copy. It reorders the keys into its own fixed order (shorter keys first), removes extra spaces and is much faster to search.
 
           For nearly all work, use `jsonb`. FitTrack stores `properties` as `jsonb`, and you should too.
 
@@ -179,22 +179,6 @@ lessons:
         answer: 0
         explanation: |
           `#>>` follows the path `device` then `os`, and returns the value as text, which is `ios`. Use `#>` instead to get the JSON `{"os": "ios"}`.
-
-      - type: predict
-        id: m16-l01-p2
-        question: Event 1 is an `app_open`. What will this query show?
-        sql: |
-          SELECT properties->>'plan'
-          FROM events
-          WHERE event_id = 1;
-        options:
-          - "app_open"
-          - "An empty string"
-          - "NULL"
-          - "An error"
-        answer: 2
-        explanation: |
-          The `app_open` details have no `plan` key. A missing key is not an error. The arrow returns NULL, which means "nothing here".
 
       - type: fill
         id: m16-l01-f1
@@ -630,7 +614,7 @@ lessons:
           - "`jsonb_object_agg(key, value)` needs a key first, then a value."
           - "SELECT platform, jsonb_object_agg(referral_source, n) AS sources FROM (...) AS per_source GROUP BY ___ ORDER BY ___;"
         explanation: |
-          There are three platforms, so three rows. The subquery makes one row per platform and source. `jsonb_object_agg` then gathers those rows into one object per platform. Objects are stored in jsonb's sorted key order.
+          There are three platforms, so three rows. The subquery makes one row per platform and source. `jsonb_object_agg` then gathers those rows into one object per platform. jsonb stores the keys in its own order, shorter keys first, so the printed object may not match the order of the rows you expect.
         ordered: true
         columnNames: true
 
@@ -2623,7 +2607,347 @@ lessons:
           regexp_replace(phone, '[^0-9]', '', 'g')
         note: "The 'g' flag replaces all matches"
 
-# @@LESSONS_END@@
+  - id: m16-l09
+    title: "Full-text search: finding words the smart way"
+    summary: Search text by words, not letters, with to_tsvector, to_tsquery, ts_rank and ts_headline.
+    minutes: 25
+    dataset: shop
+    steps:
+      - type: read
+        title: Why LIKE is not enough
+        md: |
+          ShopSmart's customers search the reviews for words like "recommend". A search with `LIKE '%recommended%'` only finds the letters `recommended`. It misses `Cannot recommend this enough.`, and it treats `buy` and `buyer` as the same kind of match.
+
+          **Full-text search** works on **words**. PostgreSQL breaks the text into words, ignores common words such as `this` and `the`, and reduces each word to its stem, so `recommended` and `recommend` become the same word. The result is a special kind of value called a **tsvector**.
+
+          > [!ANALOGY]
+          > A library catalogue does not search every page of every book. It keeps an index of the important words, each one linked to the books that use it. Full-text search does the same for your text.
+
+      - type: example
+        title: Turn a sentence into words
+        md: Press **Run**. `to_tsvector` shows the words PostgreSQL keeps, and the number after each word is its position.
+        sql: |
+          SELECT to_tsvector(
+                     'english',
+                     'Cannot recommend this enough.'
+                 ) AS document;
+        after: |
+          The word `this` is gone, because it is a common word. `recommend` is stored in its stem form, and `enough` is at position 4. The `'english'` part tells PostgreSQL which language rules to use, so always pass it.
+
+      - type: read
+        title: Matching with @@
+        md: |
+          A **tsquery** describes the words you are looking for. The operator `@@` asks whether a tsvector matches a tsquery.
+
+          - `plainto_tsquery('english', 'fast charging')` takes plain words and requires **all** of them.
+          - `websearch_to_tsquery` understands the way people type into a search box, with quotes for phrases and a minus sign for words to leave out.
+          - `to_tsquery` needs special operators such as `&` and `|`. It is the strictest of the three.
+
+      - type: example
+        title: Search the reviews by word
+        md: Press **Run**. The search finds the stem `recommend`, so it matches both `recommend` and `recommended`.
+        sql: |
+          SELECT review_id,
+                 rating,
+                 review_text
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ plainto_tsquery('english', 'recommended')
+          ORDER BY review_id;
+        after: |
+          Nine reviews. Five say `highly recommended`, and four say `Cannot recommend this enough.`. A `LIKE '%recommended%'` search would find only the first five, because it cannot see that the two words are forms of the same word.
+
+      - type: read
+        title: "Ranking: which match is best?"
+        md: |
+          `ts_rank` gives each match a score. A higher score means the words appear more often or closer together. Sort by the score from highest to lowest. When several rows have the same score, add a second sort key, such as `review_id`, so that the order is always the same.
+
+      - type: example
+        title: The best matches for quality
+        md: Press **Run**. Each row gets a score rounded to 3 decimal places. The score is the same for all of these, so `review_id` decides the order.
+        sql: |
+          SELECT review_id,
+                 ROUND(
+                     ts_rank(
+                         to_tsvector('english', review_text),
+                         websearch_to_tsquery('english', 'quality')
+                     )::numeric,
+                     3
+                 ) AS score,
+                 rating
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'quality')
+          ORDER BY score DESC,
+                   review_id
+          LIMIT 5;
+        after: |
+          Five reviews, all with a score of 0.061. Because the scores tie, the lowest `review_id` comes first. That tie-breaker is why the list never changes between runs.
+
+      - type: read
+        title: Phrases and words to leave out
+        md: |
+          `websearch_to_tsquery` reads a search the way people write it:
+
+          - Put words in double quotes to find an exact phrase, such as `"would buy"`.
+          - Put a minus sign in front of a word to leave out reviews that contain it, such as `-design`.
+
+          > [!MISTAKE]
+          > Mixing `OR` with a minus sign can surprise you. For `'instructions OR arrived -confusing'`, PostgreSQL builds `'instruct' | 'arriv' & !'confus'`, where `&` is worked out before `|`. The minus sign then applies only to the `arrived` part. Test a query like this, and look at its results.
+
+      - type: example
+        title: Great, but not design
+        md: Press **Run**. The search keeps reviews with the word `great` and leaves out the ones that mention `design`.
+        sql: |
+          SELECT review_id,
+                 rating,
+                 review_text
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'great -design')
+          ORDER BY review_id;
+        after: |
+          Ten reviews. `Solid build and great design.` is left out, because it contains `design`. Every other review that contains `great` is included.
+
+      - type: read
+        title: Highlighting the matching words
+        md: |
+          `ts_headline` gives you a short piece of the text around the match, with the matching words wrapped in tags. You can choose the tags, such as `<b>` and `</b>` for bold. A snippet is much easier to read than a whole review.
+
+      - type: example
+        title: Show the matching words in bold
+        md: Press **Run**. Each snippet shows the words that matched, wrapped in `<b>` tags.
+        sql: |
+          SELECT review_id,
+                 ts_headline(
+                     'english',
+                     review_text,
+                     websearch_to_tsquery('english', 'instructions -confusing'),
+                     'StartSel=<b>, StopSel=</b>'
+                 ) AS snippet
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'instructions -confusing')
+          ORDER BY review_id
+          LIMIT 4;
+        after: |
+          Four reviews, each showing `<b>instructions</b>` in bold. The review `Instructions were confusing and parts were missing` is not in the list, because it contains `confusing`.
+
+      - type: read
+        title: "to_tsquery is strict"
+        md: |
+          > [!MISTAKE]
+          > `to_tsquery` expects operators between the words, not spaces. Plain words with a space in between cause a syntax error. When in doubt, use `plainto_tsquery` for plain words.
+
+      - type: example
+        title: Plain words in to_tsquery
+        md: Press **Run**. The two words are separated by a space, not by an operator.
+        sql: |
+          SELECT to_tsquery('english', 'great quality');
+        expectError: true
+        after: |
+          The error is `syntax error in tsquery`. The fix is `to_tsquery('english', 'great & quality')`, or better, `plainto_tsquery('english', 'great quality')`, which does this for you.
+
+      - type: quiz
+        id: m16-l09-q1
+        question: Which function turns plain words, such as `fast charging`, into a search that requires all the words?
+        options:
+          - "to_tsquery"
+          - "plainto_tsquery"
+          - "to_tsvector"
+          - "ts_headline"
+        answer: 1
+        explanation: |
+          `plainto_tsquery` takes plain text and joins the words with AND. `to_tsquery` needs explicit operators, `to_tsvector` builds the document, and `ts_headline` builds the snippet.
+
+      - type: predict
+        id: m16-l09-p1
+        question: What does this query return?
+        sql: |
+          SELECT to_tsvector('english', 'Works perfectly')
+                 @@ plainto_tsquery('english', 'work') AS result;
+        options:
+          - "true"
+          - "false"
+          - "NULL"
+          - "An error"
+        answer: 0
+        explanation: |
+          `Works` is stored as the stem `work`, and the query word `work` is also a stem. The two match, so the answer is `true`.
+
+      - type: fill
+        id: m16-l09-f1
+        prompt: Complete the query so that it finds reviews that match the words `instructions`.
+        template: |
+          SELECT review_id
+          FROM reviews
+          WHERE to_tsvector('english', review_text) ___ plainto_tsquery('english', 'instructions')
+          ORDER BY review_id;
+        answers:
+          - ["@@"]
+        explanation: |
+          `@@` checks whether a tsvector matches a tsquery. Without it, the query compares two different types and fails.
+
+      - type: parsons
+        id: m16-l09-o1
+        prompt: Put the lines in the right order to show the three best reviews for `quality`, highest score first.
+        lines:
+          - SELECT review_id,
+          - ROUND(ts_rank(to_tsvector('english', review_text), websearch_to_tsquery('english', 'quality'))::numeric, 3) AS score
+          - FROM reviews
+          - WHERE to_tsvector('english', review_text) @@ websearch_to_tsquery('english', 'quality')
+          - ORDER BY score DESC, review_id
+          - LIMIT 3;
+        distractors:
+          - ORDER BY score ASC
+        explanation: |
+          The `ORDER BY` puts the highest score first, and `review_id` breaks ties. `ORDER BY score ASC` would show the weakest matches first, which is the opposite of what the task asks for.
+
+      - type: exercise
+        id: m16-l09-e1
+        title: Five-star arrivals
+        difficulty: 1
+        prompt: |
+          Show `review_id` and `rating` for every 5-star review (`rating = 5`) that mentions the word `arrive` in any form, such as `arrived`. Sort by `review_id`.
+        starter: |
+          SELECT review_id,
+                 rating
+          FROM reviews
+          WHERE rating = 5;
+        solution: |
+          SELECT review_id,
+                 rating
+          FROM reviews
+          WHERE rating = 5
+            AND to_tsvector('english', review_text)
+                @@ plainto_tsquery('english', 'arrive')
+          ORDER BY review_id;
+        hints:
+          - Start from the first example, and add the `rating = 5` condition.
+          - "Full-text search matches the stem, so `arrive` also finds `arrived`."
+          - "... WHERE rating = 5 AND to_tsvector('english', review_text) @@ plainto_tsquery('english', '___') ORDER BY review_id;"
+        explanation: |
+          Three reviews: 165, 176 and 288. Each one says the product `arrived earlier than expected`. Full-text search found them, because the stem of `arrive` and `arrived` is the same word.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l09-e2
+        title: Best three reviews for works
+        difficulty: 2
+        prompt: |
+          Find the three reviews with the highest ranking for the search `works`. Show `review_id` and `score`, where `score` is `ts_rank` rounded to 3 decimal places. Sort by `score` from highest to lowest, then by `review_id`.
+        starter: |
+          SELECT review_id
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'works');
+        solution: |
+          SELECT review_id,
+                 ROUND(
+                     ts_rank(
+                         to_tsvector('english', review_text),
+                         websearch_to_tsquery('english', 'works')
+                     )::numeric,
+                     3
+                 ) AS score
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'works')
+          ORDER BY score DESC,
+                   review_id
+          LIMIT 3;
+        hints:
+          - Use the ranking example, and change the search word to `works`.
+          - "Keep `ORDER BY score DESC, review_id` so that ties are sorted by `review_id`."
+          - "... websearch_to_tsquery('english', '___') ... ORDER BY score DESC, review_id LIMIT ___;"
+        explanation: |
+          The three best are reviews 2, 4 and 5, all scoring 0.061. The `review_id` tie-breaker decides their order, and `LIMIT 3` keeps only the top three.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l09-e3
+        title: The exact phrase would buy
+        difficulty: 2
+        prompt: |
+          Show `review_id` and `rating` for every review that contains the exact phrase `would buy`, with the words next to each other in that order. Sort by `review_id`.
+        starter: |
+          SELECT review_id,
+                 rating
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', 'buy');
+        solution: |
+          SELECT review_id,
+                 rating
+          FROM reviews
+          WHERE to_tsvector('english', review_text)
+                @@ websearch_to_tsquery('english', '"would buy"')
+          ORDER BY review_id;
+        hints:
+          - Put the words in double quotes inside the search text.
+          - "The quotes make the search match the words together, in order."
+          - "... websearch_to_tsquery('english', '\"would ___\"') ORDER BY review_id;"
+        explanation: |
+          Seven reviews, all 5-star: 4, 67, 91, 113, 122, 177 and 277. The phrase search does not match `Would not buy again`, because `not` sits between the two words.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l09-e4
+        title: Arrival complaints with a snippet
+        difficulty: 3
+        prompt: |
+          For every review with a rating of 3 or lower that mentions the word `arrive` in any form, show three columns: `review_id`, `rating` and `snippet`. The `snippet` is a `ts_headline` of the review text using `plainto_tsquery('english', 'arrive')`, with matches wrapped in `<b>` and `</b>` tags.
+
+          Sort by `review_id`.
+        starter: |
+          SELECT review_id,
+                 rating
+          FROM reviews
+          WHERE rating <= 3;
+        solution: |
+          SELECT review_id,
+                 rating,
+                 ts_headline(
+                     'english',
+                     review_text,
+                     plainto_tsquery('english', 'arrive'),
+                     'StartSel=<b>, StopSel=</b>'
+                 ) AS snippet
+          FROM reviews
+          WHERE rating <= 3
+            AND to_tsvector('english', review_text)
+                @@ plainto_tsquery('english', 'arrive')
+          ORDER BY review_id;
+        hints:
+          - Filter with `rating <= 3`, and with the full-text match, as in the earlier exercise.
+          - "`ts_headline` takes the text, the query and an options string, in that order."
+          - "ts_headline('english', review_text, plainto_tsquery('english', '___'), 'StartSel=<b>, StopSel=</b>')"
+        explanation: |
+          Six reviews, from 38 to 212 in `review_id` order. Each snippet shows `<b>arrive</b>` in bold, which makes the complaint easy to spot in a list of reviews.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Make a searchable document
+        sql: |
+          to_tsvector('english', review_text)
+        note: "Always pass the language, such as 'english'"
+      - title: Search for words
+        sql: |
+          WHERE to_tsvector('english', review_text) @@ plainto_tsquery('english', 'recommended')
+        note: "@@ matches a document against a query"
+      - title: Rank by relevance
+        sql: |
+          ORDER BY ts_rank(to_tsvector('english', review_text), websearch_to_tsquery('english', 'quality')) DESC
+        note: "Add review_id as a tie-breaker"
+      - title: Highlight matches
+        sql: |
+          ts_headline('english', review_text, plainto_tsquery('english', 'arrive'), 'StartSel=<b>, StopSel=</b>')
+        note: "Shows a snippet with the matches in tags"
+
 testPool:
   # ------------------------------------------------ l01 JSON basics
   - type: quiz
@@ -2977,4 +3301,496 @@ testPool:
       - WHERE o.status = 'delivered'
     explanation: |
       The `WHERE` line would keep only delivered orders, so the statuses other than delivered would disappear. It does not belong in this report.
-# @@TESTPOOL_END@@
+  # ------------------------------------------------ l07 DISTINCT ON
+  - type: exercise
+    id: m16-t19
+    lesson: m16-l07
+    difficulty: 2
+    prompt: |
+      Among users 1 to 25, look only at **annual** subscriptions. For each user, show the newest annual subscription. Show three columns: `user_id`, `subscription_id` and `started_at`. Sort by `user_id`.
+    starter: |
+      SELECT user_id,
+             subscription_id,
+             started_at
+      FROM subscriptions
+      WHERE user_id <= 25;
+    solution: |
+      SELECT DISTINCT ON (user_id)
+             user_id,
+             subscription_id,
+             started_at
+      FROM subscriptions
+      WHERE plan = 'annual'
+        AND user_id <= 25
+      ORDER BY user_id,
+               started_at DESC,
+               subscription_id DESC;
+    hints:
+      - Filter for the annual plan in `WHERE`, before the `DISTINCT ON` picks the rows.
+      - "`started_at DESC` puts the newest subscription first inside each user's group."
+      - "SELECT DISTINCT ON (user_id) user_id, subscription_id, started_at FROM subscriptions WHERE plan = '___' AND user_id <= 25 ORDER BY user_id, started_at ___, subscription_id ___;"
+    ordered: true
+  - type: predict
+    id: m16-t20
+    lesson: m16-l07
+    difficulty: 2
+    question: |
+      What is the **last** row this query returns?
+    sql: |
+      SELECT DISTINCT ON (n % 4) n
+      FROM generate_series(1, 10) AS n
+      ORDER BY n % 4, n;
+    options:
+      - "10"
+      - "3"
+      - "7"
+      - "4"
+    answer: 1
+    explanation: |
+      The groups are the remainders 0, 1, 2 and 3. The rows come out in that order: 4, 1, 2, 3. The last one is 3, the smallest number with remainder 3.
+  - type: parsons
+    id: m16-t21
+    lesson: m16-l07
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show the first event of each user from 1 to 5. Use the earliest `event_time`, and `event_id` to break ties.
+    lines:
+      - SELECT DISTINCT ON (user_id) user_id, event_id, event_time
+      - FROM events
+      - WHERE user_id <= 5
+      - ORDER BY user_id, event_time, event_id;
+    distractors:
+      - GROUP BY user_id
+    explanation: |
+      `DISTINCT ON` keeps one row per user, and the `ORDER BY` decides which row is first. `GROUP BY user_id` would not give the event columns for one row per user, so it does not belong here.
+  # ------------------------------------------------ l08 regular expressions
+  - type: exercise
+    id: m16-t22
+    lesson: m16-l08
+    difficulty: 2
+    prompt: |
+      Show `product_id` and `name` for every product whose name contains **two digits in a row**, such as `14` in `14-inch`. Sort by `product_id`.
+    starter: |
+      SELECT product_id,
+             name
+      FROM products
+      WHERE name ~ '[0-9]';
+    solution: |
+      SELECT product_id,
+             name
+      FROM products
+      WHERE name ~ '[0-9]{2}'
+      ORDER BY product_id;
+    hints:
+      - The starter finds any single digit. You need the pattern to match two digits side by side.
+      - "`[0-9]{2}` means exactly two digits in a row."
+      - "WHERE name ~ '[0-9]___' ORDER BY product_id;"
+    ordered: true
+    columnNames: true
+  - type: quiz
+    id: m16-t23
+    lesson: m16-l08
+    difficulty: 1
+    question: |
+      In a regular expression, what does the `$` sign mean?
+    options:
+      - "The start of the text"
+      - "The end of the text"
+      - "Any single character"
+      - "Zero or more characters"
+    answer: 1
+    explanation: |
+      `$` anchors the pattern to the end of the text, so `'Laptop$'` matches names that finish with `Laptop`. `^` is the start.
+  - type: fill
+    id: m16-t24
+    lesson: m16-l08
+    difficulty: 2
+    prompt: |
+      Complete the query so that it finds every product name that contains `pro`, in **any** capitals.
+    template: |
+      SELECT name
+      FROM products
+      WHERE name ___ 'pro'
+      ORDER BY name;
+    answers:
+      - ["~*"]
+    explanation: |
+      `~*` ignores the case, so `Pro` and `pro` both match. The plain `~` would find nothing, because every product spells it with a capital P.
+  # ------------------------------------------------ l09 full-text search
+  - type: exercise
+    id: m16-t25
+    lesson: m16-l09
+    difficulty: 2
+    prompt: |
+      Show `review_id` and `rating` for every review with a rating of 4 or more that mentions the word `instructions` in any form. Sort by `review_id`.
+    starter: |
+      SELECT review_id,
+             rating
+      FROM reviews
+      WHERE rating >= 4;
+    solution: |
+      SELECT review_id,
+             rating
+      FROM reviews
+      WHERE rating >= 4
+        AND to_tsvector('english', review_text)
+            @@ plainto_tsquery('english', 'instructions')
+      ORDER BY review_id;
+    hints:
+      - Start from the example "Search the reviews by word", and add the rating condition.
+      - "Full-text search matches the stem, so `instructions` finds `instructions` in any form."
+      - "... WHERE rating >= 4 AND to_tsvector('english', review_text) @@ plainto_tsquery('english', '___') ORDER BY review_id;"
+    ordered: true
+    columnNames: true
+  - type: predict
+    id: m16-t26
+    lesson: m16-l09
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT to_tsvector('english', 'Recommended by many')
+             @@ plainto_tsquery('english', 'recommending') AS result;
+    options:
+      - "true"
+      - "false"
+      - "NULL"
+      - "An error"
+    answer: 0
+    explanation: |
+      `Recommended` and `recommending` both reduce to the stem `recommend`, so the full-text match succeeds and the answer is `true`.
+  - type: parsons
+    id: m16-t27
+    lesson: m16-l09
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show the reviews that mention `great` but not `design`. Sort by `review_id`.
+    lines:
+      - SELECT review_id, rating
+      - FROM reviews
+      - WHERE to_tsvector('english', review_text)
+      - "@@ websearch_to_tsquery('english', 'great -design')"
+      - ORDER BY review_id;
+    distractors:
+      - LIMIT 5
+    explanation: |
+      The search returns ten reviews, so a `LIMIT 5` would cut the list short. `websearch_to_tsquery` handles the minus sign, and the `WHERE` line checks each review against it.
+  # ------------------------------------------------ l03 arrays (stretch)
+  - type: exercise
+    id: m16-t28
+    lesson: m16-l03
+    difficulty: 3
+    prompt: |
+      For movies 1 to 10 that have at least two genres, show `movie_id` and `genres`. `genres` is one text value with the genre names sorted A to Z and joined by ` / ` (space, slash, space). Sort by `movie_id`.
+    starter: |
+      SELECT movie_id
+      FROM movies
+      WHERE movie_id <= 10;
+    solution: |
+      SELECT m.movie_id,
+             array_to_string(
+                 ARRAY_AGG(g.name ORDER BY g.name),
+                 ' / '
+             ) AS genres
+      FROM movies m
+      JOIN movie_genres mg ON mg.movie_id = m.movie_id
+      JOIN genres g ON g.genre_id = mg.genre_id
+      WHERE m.movie_id <= 10
+      GROUP BY m.movie_id
+      HAVING COUNT(*) >= 2
+      ORDER BY m.movie_id;
+    hints:
+      - Use `ARRAY_AGG` to build the list, then `array_to_string` to join it with the separator.
+      - "`HAVING COUNT(*) >= 2` keeps only the films with at least two genres."
+      - "array_to_string(ARRAY_AGG(g.name ORDER BY g.name), '___')"
+    ordered: true
+    columnNames: true
+  # ------------------------------------------------ l01 JSON (extra)
+  - type: quiz
+    id: m16-t29
+    lesson: m16-l01
+    difficulty: 2
+    question: |
+      Why does `SELECT properties->>'calories' + 1 ...` fail with an error about the word `calories`?
+    options:
+      - "The + sign is worked out before ->>, so PostgreSQL tries to add 1 to the word 'calories'."
+      - "The calories key does not exist in the table."
+      - "jsonb cannot be used with the + sign, so every query with a number fails."
+      - "The query is missing a semicolon."
+    answer: 0
+    explanation: |
+      `+` binds more tightly than the `->>` arrow, so PostgreSQL works out `'calories' + 1` first. The fix is to put the arrow in brackets and cast it: `(properties->>'calories')::int + 1`.
+  # ------------------------------------------------ l06 rollup (extra)
+  - type: exercise
+    id: m16-t30
+    lesson: m16-l06
+    difficulty: 2
+    prompt: |
+      Count the orders that have a `discount_code`, per year, with one grand total row. Show two columns: `year` and `discounted_orders`. Leave `year` as `NULL` on the grand total row. Sort by `year`, with the total row last.
+    starter: |
+      SELECT EXTRACT(YEAR FROM order_date)::int AS year
+      FROM orders
+      WHERE discount_code IS NOT NULL
+      GROUP BY 1;
+    solution: |
+      SELECT x.yr AS year,
+             COUNT(*) AS discounted_orders
+      FROM (
+          SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr
+          FROM orders o
+          WHERE o.discount_code IS NOT NULL
+      ) AS x
+      GROUP BY ROLLUP (x.yr)
+      ORDER BY x.yr;
+    hints:
+      - Use the same yearly `ROLLUP` as the exercise "Delivered revenue by year", but filter on `discount_code`.
+      - "Put `WHERE o.discount_code IS NOT NULL` inside the subquery."
+      - "GROUP BY ___ (x.yr) ORDER BY x.yr;"
+    ordered: true
+    columnNames: true
+project:
+  id: m16-proj
+  title: App Event Explorer
+  icon: "🔍"
+  dataset: app
+  md: |
+    Priya is preparing FitTrack's quarterly product review. The leadership team has three questions: which features people use, whether the new app version has reached every platform, and what the workouts look like.
+
+    The answers live in the event log. Every event has a `properties` column with its details, so you will use everything from this module: JSON, date series, LATERAL, grouping sets and more.
+
+    The seven tasks build on each other. First you count events, then you read the JSON details, then you follow the days, then you break the results down by platform, and finally you answer the version question. Each task says exactly which columns to show and in which order, so read them carefully.
+  tasks:
+    - type: exercise
+      id: m16-proj-1
+      title: Which events happen most?
+      difficulty: 1
+      prompt: |
+        Count how many events there are of each `event_name`. Show `event_name` and `events`. Sort by `events` from highest to lowest, then by `event_name` from A to Z.
+      starter: |
+        SELECT event_name
+        FROM events
+        GROUP BY event_name
+        ORDER BY event_name;
+      solution: |
+        SELECT event_name,
+               COUNT(*) AS events
+        FROM events
+        GROUP BY event_name
+        ORDER BY events DESC,
+                 event_name;
+      hints:
+        - Group the events by `event_name` and count them with `COUNT(*)`.
+        - "Sort by the count with `DESC` first, then by the name."
+        - "SELECT event_name, COUNT(*) AS events FROM events GROUP BY ___ ORDER BY events ___, event_name;"
+      explanation: |
+        Seven event names. `app_open` is by far the most common, with 4,122 events. The workout events come next, and `share` is the rarest with 85.
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-2
+      title: Which app versions are people opening?
+      difficulty: 1
+      prompt: |
+        Count the `app_open` events for each `app_version`. The version is stored in `properties`, so use `->>` to get it as text. Show `app_version` and `opens`. Sort by `opens` from highest to lowest.
+      starter: |
+        SELECT properties->>'app_version' AS app_version
+        FROM events
+        WHERE event_name = 'app_open'
+        GROUP BY 1;
+      solution: |
+        SELECT properties->>'app_version' AS app_version,
+               COUNT(*) AS opens
+        FROM events
+        WHERE event_name = 'app_open'
+        GROUP BY 1
+        ORDER BY opens DESC,
+                 app_version;
+      hints:
+        - Filter to `app_open` events in `WHERE`, then group by the version text.
+        - "`properties->>'app_version'` gives the version as text."
+        - "SELECT properties->>'___' AS app_version, COUNT(*) AS opens FROM events WHERE event_name = '___' GROUP BY 1 ORDER BY opens DESC;"
+      explanation: |
+        Version 2.4.0 has the most opens (1,977), then 2.3.1 (1,315), and 2.5.0 has 830. The new version is still catching up, so the team will check it again at the end.
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-3
+      title: How big is each workout?
+      difficulty: 2
+      prompt: |
+        For each `workout_type` of the `workout_completed` events, show four columns: `workout_type`, `workouts` (how many workouts), `avg_minutes` (the average `duration_min`, rounded to 1 decimal place) and `avg_calories` (the average `calories`, rounded to 1 decimal place).
+
+        Sort by `workouts` from highest to lowest, then by `workout_type` from A to Z.
+      starter: |
+        SELECT properties->>'workout_type' AS workout_type
+        FROM events
+        WHERE event_name = 'workout_completed'
+        GROUP BY 1;
+      solution: |
+        SELECT properties->>'workout_type' AS workout_type,
+               COUNT(*) AS workouts,
+               ROUND(AVG((properties->>'duration_min')::int), 1) AS avg_minutes,
+               ROUND(AVG((properties->>'calories')::int), 1) AS avg_calories
+        FROM events
+        WHERE event_name = 'workout_completed'
+        GROUP BY 1
+        ORDER BY workouts DESC,
+                 workout_type;
+      hints:
+        - Group the completed workouts by the type, as in the first lesson.
+        - "Cast `duration_min` and `calories` with `::int` before you average them."
+        - "... ROUND(AVG((properties->>'___')::int), 1) AS avg_minutes ..."
+      explanation: |
+        Strength is the most common workout with 222 sessions. Run burns the most calories per session on average (196.7), while yoga burns the fewest (77.0).
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-4
+      title: Was the app busy in early June?
+      difficulty: 2
+      prompt: |
+        For every day from 2024-06-01 to 2024-06-14, count the different users who opened the app that day (`app_open` events). Show `day` (as a date) and `active_users`. A day with no opens must show 0. Sort by `day`.
+      starter: |
+        SELECT d::date AS day
+        FROM generate_series(
+                 '2024-06-01'::date,
+                 '2024-06-14'::date,
+                 '1 day'
+             ) AS d;
+      solution: |
+        SELECT d::date AS day,
+               COUNT(DISTINCT e.user_id) AS active_users
+        FROM generate_series(
+                 '2024-06-01'::date,
+                 '2024-06-14'::date,
+                 '1 day'
+             ) AS d
+        LEFT JOIN events e
+               ON e.event_time::date = d::date
+              AND e.event_name = 'app_open'
+        GROUP BY 1
+        ORDER BY day;
+      hints:
+        - Start with a date spine and join the events with `LEFT JOIN`, as in the date-spine lesson.
+        - "`COUNT(DISTINCT e.user_id)` counts each user once per day, and gives 0 for a day with no matches."
+        - "... LEFT JOIN events e ON e.event_time::date = d::date AND e.event_name = '___' GROUP BY 1 ORDER BY day;"
+      explanation: |
+        Fourteen days. The busiest day is 5 June with 28 active users, and the quietest is 14 June with 14. Every day has at least one opener, so no zeros appear in this period.
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-5
+      title: The two biggest calorie burns per workout
+      difficulty: 3
+      prompt: |
+        For each `workout_type` of the `workout_completed` events, show the two workouts with the most calories. Show three columns: `workout_type`, `event_id` and `calories`. If two workouts have the same calories, the lower `event_id` comes first.
+
+        Use a `LATERAL` subquery. Sort by `workout_type` from A to Z, then by `calories` from highest to lowest, then by `event_id`.
+      starter: |
+        SELECT DISTINCT properties->>'workout_type' AS workout_type
+        FROM events
+        WHERE event_name = 'workout_completed';
+      solution: |
+        SELECT t.workout_type,
+               top.event_id,
+               top.calories
+        FROM (
+            SELECT DISTINCT properties->>'workout_type' AS workout_type
+            FROM events
+            WHERE event_name = 'workout_completed'
+        ) AS t
+        CROSS JOIN LATERAL (
+            SELECT e.event_id,
+                   (e.properties->>'calories')::int AS calories
+            FROM events e
+            WHERE e.event_name = 'workout_completed'
+              AND e.properties->>'workout_type' = t.workout_type
+            ORDER BY calories DESC,
+                     e.event_id
+            LIMIT 2
+        ) AS top
+        ORDER BY t.workout_type,
+                 top.calories DESC,
+                 top.event_id;
+      hints:
+        - The outer query lists the workout types. The `LATERAL` subquery picks the top two for each type.
+        - "Inside the subquery, sort by calories from highest to lowest, then by `event_id`, and use `LIMIT 2`."
+        - "... CROSS JOIN LATERAL (SELECT e.event_id, (e.properties->>'calories')::int AS calories FROM events e WHERE ... = t.workout_type ORDER BY calories DESC, e.event_id LIMIT ___) AS top ..."
+      explanation: |
+        Ten rows, two for each of the five types. Cycling's best burn is 269 calories, and yoga's best is 127. The `event_id` tie-breaker keeps the answer fixed even when two workouts burn the same calories.
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-6
+      title: Events by platform, with subtotals
+      difficulty: 3
+      prompt: |
+        Count the events for each platform and event name. Get each event's platform from the `users` table, with a `JOIN` on `user_id`.
+
+        Use one `ROLLUP` query to add a subtotal for each platform and one grand total. Show three columns: `platform`, `event_name` and `events`. On a platform subtotal row, `event_name` is `NULL`. On the grand total row, both `platform` and `event_name` are `NULL`.
+
+        Sort by `platform`, then by `event_name`, and keep the `NULL` rows last.
+      starter: |
+        SELECT u.platform,
+               e.event_name
+        FROM events e
+        JOIN users u ON u.user_id = e.user_id
+        GROUP BY u.platform, e.event_name;
+      solution: |
+        SELECT u.platform,
+               e.event_name,
+               COUNT(*) AS events
+        FROM events e
+        JOIN users u ON u.user_id = e.user_id
+        GROUP BY ROLLUP (u.platform, e.event_name)
+        ORDER BY u.platform,
+                 e.event_name;
+      hints:
+        - Start with the join from the starter, then replace `GROUP BY` with `GROUP BY ROLLUP (...)`.
+        - "`ROLLUP (u.platform, e.event_name)` makes the platform subtotals and the grand total."
+        - "Keep the `ORDER BY` as written. In PostgreSQL, `NULL` sorts last in ascending order by default."
+      explanation: |
+        Twenty-five rows: seven events for each of the three platforms, a subtotal per platform, and the grand total of 7,010 events. The subtotals are 2,201 for Android, 3,550 for iOS and 1,259 for web.
+      ordered: true
+      columnNames: true
+
+    - type: exercise
+      id: m16-proj-7
+      title: Who has the new version?
+      difficulty: 3
+      prompt: |
+        For each `platform` in `users`, show three numbers and a percentage. `total_users` is the number of users on that platform. `users_on_2_5` is the number of those users who opened the app at least once with an `app_version` that starts with `2.5.`. `share_pct` is `users_on_2_5` as a percentage of `total_users`, rounded to 1 decimal place.
+
+        Show the columns `platform`, `total_users`, `users_on_2_5` and `share_pct`. Sort by `platform`.
+      starter: |
+        SELECT platform,
+               COUNT(*) AS total_users
+        FROM users
+        GROUP BY platform;
+      solution: |
+        SELECT u.platform,
+               COUNT(*) AS total_users,
+               COUNT(v.user_id) AS users_on_2_5,
+               ROUND(100.0 * COUNT(v.user_id) / COUNT(*), 1) AS share_pct
+        FROM users u
+        LEFT JOIN (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_name = 'app_open'
+              AND properties->>'app_version' ~ '^2\.5\.'
+        ) AS v ON v.user_id = u.user_id
+        GROUP BY u.platform
+        ORDER BY u.platform;
+      hints:
+        - Make a list of the users who opened the app on version 2.5, then `LEFT JOIN` it to `users`.
+        - "The regex `'^2\\.5\\.'` matches text that starts with `2.5.`. `COUNT(v.user_id)` skips the users who are not in the list."
+        - "Compute the share as `100.0 * COUNT(v.user_id) / COUNT(*)`, so the division keeps its decimals."
+      explanation: |
+        Web has the largest share (42.1%), then iOS (39.8%), then Android (34.5%). Web users update right away, so they move to a new version first. The `100.0` in the formula makes the division keep its decimals.
+      ordered: true
+      columnNames: true

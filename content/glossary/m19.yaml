@@ -1,0 +1,75 @@
+glossary:
+  - term: Cohort
+    definition: "A group of users who share a starting point, such as everyone who signed up in the same month. Cohorts let you compare groups over time."
+    example: "SELECT DATE_TRUNC('month', signup_date)::date AS cohort_month, COUNT(*) FROM users GROUP BY cohort_month;"
+    module: m19
+
+  - term: Retention
+    definition: "The share of a cohort that is still active in a given week after signing up. Divide by the whole cohort, not only by the users who were active."
+    example: "ROUND(100.0 * COUNT(DISTINCT w.user_id) FILTER (WHERE w.week_no = 1) / COUNT(DISTINCT u.user_id), 1)"
+    module: m19
+
+  - term: Funnel
+    definition: "A list of steps that users should take in order, with the number of users who reach each step and the share who drop off between steps."
+    example: "app_open (280 users) -> workout_started (156 users) -> ... so 55.7% continue from opening to a workout"
+    module: m19
+
+  - term: Drop-off
+    definition: "The users who reach one step of a funnel but not the next one. It is the part of the funnel that you lose."
+    example: "280 users opened the app and 156 started a workout, so 124 dropped off at step 2."
+    module: m19
+
+  - term: Session (visit)
+    definition: "A group of events from one user that happen close together. A new session starts when the gap since the previous event is longer than a rule, such as 30 minutes."
+    example: "CASE WHEN gap IS NULL OR gap > INTERVAL '30 minutes' THEN 1 ELSE 0 END"
+    module: m19
+
+  - term: Island (streak)
+    definition: "An unbroken run of consecutive values, such as days in a row with step data. Subtracting a row number from a date gives every day in one island the same label."
+    example: "day - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day))::int"
+    module: m19
+
+  - term: Moving average
+    definition: "The average of the last few rows, recalculated for each row. It smooths out day-to-day noise so the trend is easier to see. Each day needs its own row, so missing days must be filled with 0."
+    example: "AVG(revenue) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)"
+    module: m19
+
+  - term: Running total
+    definition: "The total of all rows up to and including the current one, in a given order. Also called a cumulative total."
+    example: "SUM(revenue) OVER (ORDER BY month)"
+    module: m19
+
+  - term: Median and percentile
+    definition: "The median is the middle value, half the values are below it. A percentile such as the 90th is the value that that share of the values stays below. Percentiles describe typical values better than an average that can be pulled by a few extremes."
+    example: "percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes_watched)"
+    module: m19
+
+  - term: Histogram (bin)
+    definition: "A count of values in ranges of equal width. Each range is a bin, and the histogram shows the shape of the data."
+    example: "SELECT FLOOR(minutes_watched / 15) * 15 AS bin_start, COUNT(*) FROM watch_history GROUP BY bin_start;"
+    module: m19
+
+  - term: Pareto principle
+    definition: "The idea that a small share of items often brings most of the result, such as about 20% of products making about 80% of revenue. Find it with a running total sorted from largest to smallest."
+    example: "SUM(revenue) OVER (ORDER BY revenue DESC ROWS UNBOUNDED PRECEDING) / SUM(revenue) OVER ()"
+    module: m19
+
+  - term: Market basket analysis
+    definition: "Finding which products appear in the same order. Each order is a basket, and every pair of products in it is counted with a self-join."
+    example: "JOIN order_items AS b ON b.order_id = a.order_id AND b.product_id > a.product_id"
+    module: m19
+
+  - term: Lift
+    definition: "How much more often two products are bought together than chance would predict. A lift of 1.0 means no link, and above 1.0 means the products are bought together more often than chance."
+    example: "lift = (pair orders / total orders) / ((product A orders / total) * (product B orders / total))"
+    module: m19
+
+  - term: Relational division
+    definition: "A question with the word 'every', such as customers who bought every product in a category. It is answered by counting the matches or with a double NOT EXISTS, which means there is no missing item."
+    example: "HAVING COUNT(DISTINCT oi.product_id) = (SELECT COUNT(*) FROM products WHERE category_id = 11)"
+    module: m19
+
+  - term: Outlier
+    definition: "A value far away from the rest of its group. For example, a debit many times bigger than an account's usual debits. An outlier is a signal to check, not proof of a problem."
+    example: "-amount > 10 * AVG(-amount) OVER (PARTITION BY account_id)"
+    module: m19

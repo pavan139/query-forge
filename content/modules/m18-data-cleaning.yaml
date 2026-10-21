@@ -1651,8 +1651,8 @@ lessons:
           The fence is calculated **from the data**, so it moves when the data
           changes. That is why it is better than a fixed rule such as "over $1000".
 
-          `percentile_cont` returns a decimal value that PostgreSQL computes between
-          two sorted amounts, so it needs a `::numeric` cast before `round` works.
+          `percentile_cont` returns a floating-point number, so it needs a `::numeric`
+          cast before `round` works.
 
       - type: example
         title: Look at the extremes first
@@ -2001,7 +2001,7 @@ lessons:
       - type: read
         title: The CASE version of the same pivot
         md: |
-          Older code and some other databases do not support `FILTER`. The same result
+          Some other databases do not support `FILTER`. The same result
           comes from a `CASE` inside the aggregate:
 
           `SUM(CASE WHEN month = 'Jan' THEN revenue END) AS jan`
@@ -2016,7 +2016,7 @@ lessons:
 
       - type: example
         title: A pivot with crosstab
-        md: "`crosstab` is a built-in function from the tablefunc extension. It builds the pivot for you, but needs two queries and a list of the column names."
+        md: "`crosstab` is a function from the tablefunc extension. It builds the pivot for you, but needs two queries and a list of the column names."
         sql: |
           CREATE EXTENSION IF NOT EXISTS tablefunc;
 
@@ -2091,12 +2091,11 @@ lessons:
           WHERE p.product = 'Cleaning Kit';
         after: |
           The same six rows for `Cleaning Kit`: Jan 1772.65, Feb 1492.55, Mar 1618.51,
-          Apr 1118.79, May 1277.93 and Jun 1172.70. Both arrays must have the same
-          number of items, or PostgreSQL stops with an error.
+          Apr 1118.79, May 1277.93 and Jun 1172.70.
 
-          Notice that the rows come out in the order of the arrays, not sorted. This
-          method needs no month number, but if you want calendar order you still
-          have to add a sort.
+          If the two arrays have different lengths, PostgreSQL fills the shorter one
+          with NULL, so keep them the same length to avoid silent gaps. The rows have
+          no guaranteed order, so add an `ORDER BY` when you need calendar order.
 
       - type: example
         title: Check that a round trip changes nothing
@@ -2446,3 +2445,1435 @@ lessons:
           FROM product_sales_wide AS p,
                unnest(ARRAY['Jan', 'Feb'], ARRAY[p.jan, p.feb]) AS u (month, revenue);
         note: Both arrays must be the same length.
+  - id: m18-l06
+    title: "Data quality checks and building a clean table"
+    summary: Write checks that count the broken rows, prove the data is fit to use, and save the cleaned result as a new table.
+    minutes: 35
+    steps:
+      - type: read
+        title: Prove it before you trust it
+        md: |
+          Dana is ready to load the cleaned orders into the reporting warehouse. "Before
+          anything goes in, I want proof. Give me a list of checks, and every one must
+          show zero broken rows."
+
+          A **data quality check** is a query that counts the rows that break a rule.
+          Zero means the rule holds. Any other number tells you where to look.
+
+          > [!REAL-WORLD]
+          > Many analytics teams run dozens of these checks every night, and stop the
+          > reporting job when one fails. A check that fails loudly beats a report that
+          > is quietly wrong.
+
+      - type: read
+        title: Four kinds of rule
+        md: |
+          Most checks fall into four families. Each one has an example in this export:
+
+          | family | the question it asks | example here |
+          |---|---|---|
+          | **uniqueness** | does each key appear only once? | 16 extra copies of an order |
+          | **completeness** | is every required value present? | 24 orders with no amount |
+          | **validity** | does every value follow the rule? | 22 survey answers that are not 1 to 5 |
+          | **referential integrity** | does every reference point to a real record? | 31 orders from unknown customers |
+
+          Each family has the same shape: count the rows that break the rule.
+
+      - type: example
+        title: "Uniqueness: rows minus distinct keys"
+        md: If every order appeared once, the number of rows and the number of distinct order refs would match.
+        sql: |
+          SELECT count(*) AS rows_in_table,
+                 count(DISTINCT upper(replace(order_ref, '-', '')))
+                     AS distinct_orders,
+                 count(*)
+                     - count(DISTINCT upper(replace(order_ref, '-', '')))
+                     AS failing_rows
+          FROM raw_orders;
+        after: |
+          300 rows, 284 distinct orders, and **16 failing rows**: the extra copies from
+          the first lesson. The failing count is zero only when each key appears once.
+
+      - type: read
+        title: "Completeness: count the missing values"
+        md: |
+          For completeness you count rows where a value is missing. Use the missing
+          value rules from the previous lesson: NULL, empty text and `N/A` all count.
+
+          `count(*) FILTER (WHERE ...)` counts only the rows that match a condition, so
+          you can run several checks in one query.
+
+      - type: example
+        title: "Completeness: three checks at once"
+        md: Count the missing amounts, emails and currencies in one pass over the table.
+        sql: |
+          SELECT count(*) FILTER (
+                     WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL
+                 ) AS amount_missing,
+                 count(*) FILTER (
+                     WHERE NULLIF(btrim(customer_email), '') IS NULL
+                 ) AS email_missing,
+                 count(*) FILTER (
+                     WHERE NULLIF(btrim(currency), '') IS NULL
+                 ) AS currency_missing
+          FROM raw_orders;
+        after: |
+          The three failing counts are **24**, **14** and **6**. Each column is a separate
+          check, and each one should be zero for a complete table. Some are unavoidable
+          here, so the report records them rather than hiding them.
+
+      - type: read
+        title: "Validity: a value must follow the rule"
+        md: |
+          A **validity** rule says what a good value looks like. Two kinds are common:
+
+          - a **pattern**, such as an email, tested with `~` or `~*` (case-insensitive);
+          - a **list** of allowed values, such as the five order statuses, tested with `IN`.
+
+          > [!MISTAKE]
+          > A pattern test with `!~` returns NULL when the value is NULL, and a row with
+          > NULL is left out of the count. Always count missing values as failures on
+          > their own: `WHERE x IS NULL OR x !~ '...'`.
+
+      - type: example
+        title: "Validity: the survey and email rules"
+        md: Two validity counts, side by side, using subqueries.
+        sql: |
+          SELECT (
+                     SELECT count(*)
+                     FROM survey_responses
+                     WHERE btrim(q1_satisfaction) IS NULL
+                        OR btrim(q1_satisfaction) !~ '^[1-5]$'
+                 ) AS bad_q1,
+                 (
+                     SELECT count(*)
+                     FROM raw_customers
+                     WHERE NULLIF(btrim(email), '') IS NOT NULL
+                       AND btrim(email) !~* '^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$'
+                 ) AS bad_emails;
+        after: |
+          **22** survey answers fail the rule that an answer is one digit from 1 to 5.
+          That includes 9 that are NULL or empty, plus words such as `five`, `4/5`, and
+          the out-of-range `0` and `11`.
+
+          **4** non-empty customer emails are not valid addresses, such as
+          `not-an-email`. You flag them, and you do not guess what they should be.
+
+      - type: read
+        title: "Referential integrity: does the reference exist?"
+        md: |
+          Every order should point to a customer. A check for that is called
+          **referential integrity**. You test it with `NOT EXISTS`, which keeps the rows
+          with no match in the other table. That is an **anti-join**, from the subqueries
+          module.
+
+          Match the cleaned values on both sides, or you will report false problems.
+          Missing emails are a separate check, so skip them here.
+
+      - type: example
+        title: Orders from customers we cannot find
+        md: Find the first five orders whose cleaned email does not match any cleaned customer email.
+        sql: |
+          SELECT o.row_id,
+                 o.order_ref,
+                 o.customer_email
+          FROM raw_orders AS o
+          WHERE NULLIF(btrim(o.customer_email), '') IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM raw_customers AS c
+                WHERE NULLIF(lower(btrim(c.email)), '')
+                      = lower(btrim(o.customer_email))
+            )
+          ORDER BY o.row_id
+          LIMIT 5;
+        after: |
+          Some are guest checkouts such as `guest.459@example.com`, which is expected.
+          Others, such as `sophia.foster@example.com`, probably belong to a customer whose
+          email is missing or misspelled in the customer list. Each one needs a decision,
+          not a delete.
+
+      - type: read
+        title: Build the clean table, and keep the raw one
+        md: |
+          When every check is understood, save the cleaned result as a **new table** with
+          `CREATE TABLE ... AS SELECT`. The query is run once, and its result is stored
+          under a name you choose.
+
+          > [!MISTAKE]
+          > Never clean the raw table in place. If you overwrite the only copy, you
+          > cannot check the cleaning again, or explain a number to Dana. Keep the raw
+          > tables as they are, and build a clean table next to them.
+
+      - type: example
+        title: Create clean_orders
+        md: One row per order, using the latest copy, with cleaned text, a real date and a number for the amount.
+        sql: |
+          CREATE TABLE clean_orders AS
+          WITH numbered AS (
+              SELECT row_id,
+                     order_ref,
+                     customer_email,
+                     order_date,
+                     amount,
+                     status,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+          )
+          SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean,
+                 NULLIF(lower(btrim(customer_email)), '') AS customer_email_clean,
+                 CASE
+                     WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN to_date(order_date, 'YYYY-MM-DD')
+                     WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                         THEN to_date(order_date, 'MM/DD/YYYY')
+                     WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                         THEN to_date(order_date, 'DD-Mon-YYYY')
+                     WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                         THEN to_date(order_date, 'YYYY/MM/DD')
+                     WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                         THEN to_date(order_date, 'FMMonth DD, YYYY')
+                 END AS order_day,
+                 COALESCE(
+                     replace(lower(btrim(status)), 'canceled', 'cancelled'),
+                     'unknown'
+                 ) AS status_clean,
+                 CASE
+                     WHEN btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+                         THEN replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                 END AS amount_num
+          FROM numbered
+          WHERE copy_number = 1;
+
+          SELECT count(*) AS clean_rows,
+                 count(DISTINCT order_ref_clean) AS distinct_refs,
+                 count(*) FILTER (WHERE status_clean = 'delivered') AS delivered,
+                 count(amount_num) AS with_amount
+          FROM clean_orders;
+        after: |
+          The new table has **284 rows**, one per order, and 284 distinct references.
+          Of those rows, **169** are delivered and **257** have a usable positive amount.
+          Negative refunds and bracketed amounts are left as NULL on purpose, so you can
+          decide how to report them.
+
+          The raw tables are untouched. You can always go back to them.
+
+      - type: stepper
+        title: Building clean_orders one stage at a time
+        md: The table is built from four small ideas. Each stage adds one of them.
+        stages:
+          - label: Number the copies
+            md: "`ROW_NUMBER` ranks the copies of each order. Number 1 is the latest row."
+            sql: |
+              SELECT row_id,
+                     upper(replace(order_ref, '-', '')) AS order_ref_clean,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+              WHERE upper(replace(order_ref, '-', '')) IN ('ORD1013', 'ORD1049')
+              ORDER BY order_ref_clean, copy_number;
+          - label: Keep the latest copy
+            md: "A `WHERE copy_number = 1` in an outer query keeps one row per order."
+            sql: |
+              WITH numbered AS (
+                  SELECT row_id,
+                         upper(replace(order_ref, '-', '')) AS order_ref_clean,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY upper(replace(order_ref, '-', ''))
+                             ORDER BY row_id DESC
+                         ) AS copy_number
+                  FROM raw_orders
+              )
+              SELECT row_id, order_ref_clean
+              FROM numbered
+              WHERE copy_number = 1
+                AND order_ref_clean IN ('ORD1013', 'ORD1049')
+              ORDER BY order_ref_clean;
+          - label: Clean the status
+            md: "Lowercase, trim, merge the two spellings of cancelled, and mark a missing status as unknown."
+            sql: |
+              SELECT row_id,
+                     COALESCE(
+                         replace(lower(btrim(status)), 'canceled', 'cancelled'),
+                         'unknown'
+                     ) AS status_clean
+              FROM raw_orders
+              WHERE row_id IN (7, 14, 15)
+              ORDER BY row_id;
+          - label: Turn the amount into a number
+            md: "Only plain amounts are cast. Anything else is left as NULL, not guessed."
+            sql: |
+              SELECT row_id,
+                     amount,
+                     CASE
+                         WHEN btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+                             THEN replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                     END AS amount_num
+              FROM raw_orders
+              WHERE row_id IN (7, 153, 265)
+              ORDER BY row_id;
+
+      - type: example
+        title: One quality report
+        md: One query lists every check with its number of failing rows. Zero is the goal for each one.
+        sql: |
+          SELECT check_name, failing_rows
+          FROM (
+              SELECT 'orders: extra copies of an order' AS check_name,
+                     count(*) - count(DISTINCT upper(replace(order_ref, '-', '')))
+                         AS failing_rows
+              FROM raw_orders
+              UNION ALL
+              SELECT 'orders: amount missing',
+                     count(*) FILTER (
+                         WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL
+                     )
+              FROM raw_orders
+              UNION ALL
+              SELECT 'orders: customer email missing',
+                     count(*) FILTER (
+                         WHERE NULLIF(btrim(customer_email), '') IS NULL
+                     )
+              FROM raw_orders
+              UNION ALL
+              SELECT 'customers: extra copies of an email',
+                     count(NULLIF(btrim(email), ''))
+                         - count(DISTINCT NULLIF(lower(btrim(email)), ''))
+              FROM raw_customers
+              UNION ALL
+              SELECT 'customers: invalid email',
+                     count(*) FILTER (
+                         WHERE NULLIF(btrim(email), '') IS NOT NULL
+                           AND btrim(email) !~* '^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]+$'
+                     )
+              FROM raw_customers
+              UNION ALL
+              SELECT 'survey: q1 not a number from 1 to 5',
+                     count(*) FILTER (
+                         WHERE btrim(q1_satisfaction) IS NULL
+                            OR btrim(q1_satisfaction) !~ '^[1-5]$'
+                     )
+              FROM survey_responses
+          ) AS report
+          ORDER BY check_name;
+        after: |
+          Six rows, one per check, with the failing counts: **16** extra order copies,
+          **24** missing amounts, **14** missing order emails, **8** duplicated customer
+          emails, **4** invalid customer emails and **22** bad survey answers. None of
+          these is zero, so the export is **not** ready to load yet. Now Dana knows
+          exactly what to fix, and which problems you can fix in code.
+
+          Keep the report with the data. It is the proof that the clean table was checked.
+
+      - type: exercise
+        id: m18-l06-e1
+        title: How many extra copies?
+        prompt: |
+          Count how many order rows are extra copies of an order that already has a row.
+          Compare the normalized references, with `upper(replace(order_ref, '-', ''))`.
+          Show one number, called `extra_rows`.
+        starter: |
+          SELECT count(*) AS extra_rows
+          FROM raw_orders;
+        solution: |
+          SELECT count(*)
+                 - count(DISTINCT upper(replace(order_ref, '-', '')))
+                     AS extra_rows
+          FROM raw_orders;
+        columnNames: true
+        hints:
+          - The starter counts every row. You need the rows minus the number of distinct orders.
+          - Use `count(DISTINCT ...)` on the normalized reference.
+          - "SELECT count(*) - count(DISTINCT upper(replace(order_ref, '-', ''))) AS extra_rows FROM raw_orders;"
+        explanation: |
+          There are 300 rows and 284 distinct orders, so 16 rows are extra copies. This is
+          the uniqueness check in one line. Zero would mean each order appears once.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l06-e2
+        title: Orders with any missing field
+        prompt: |
+          Count the orders that are missing **at least one** of these: `amount`,
+          `customer_email` or `currency`. Use the rules for NULL, empty text and `N/A`
+          (spaces around a value do not count). Show one number, called
+          `incomplete_orders`.
+        starter: |
+          SELECT count(*) AS incomplete_orders
+          FROM raw_orders
+          WHERE amount IS NULL
+             OR customer_email IS NULL
+             OR currency IS NULL;
+        solution: |
+          SELECT count(*) AS incomplete_orders
+          FROM raw_orders
+          WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL
+             OR NULLIF(btrim(customer_email), '') IS NULL
+             OR NULLIF(btrim(currency), '') IS NULL;
+        columnNames: true
+        hints:
+          - The starter misses the empty and `N/A` values. Use `NULLIF` on each column first.
+          - "Each column needs its own `IS NULL` test, joined with `OR`."
+          - "WHERE NULLIF(NULLIF(btrim(amount), ''), '___') IS NULL OR NULLIF(btrim(customer_email), '') IS NULL OR ___;"
+        explanation: |
+          44 orders fail the completeness check. That is exactly the three separate
+          totals added together (24 + 14 + 6), so no order is missing two of these fields
+          at once. An `OR` still counts each row only once, so the result is safe even when
+          a row fails for two reasons.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l06-e3
+        title: Survey answers outside the rule
+        prompt: |
+          Count the answers to `q1_satisfaction` that are **not** a single digit from 1 to
+          5, after removing spaces at the ends. A missing answer (NULL or empty) also fails
+          the check. Show one number, called `bad_answers`.
+        starter: |
+          SELECT count(*) AS bad_answers
+          FROM survey_responses
+          WHERE btrim(q1_satisfaction) !~ '^[1-5]$';
+        solution: |
+          SELECT count(*) AS bad_answers
+          FROM survey_responses
+          WHERE btrim(q1_satisfaction) IS NULL
+             OR btrim(q1_satisfaction) !~ '^[1-5]$';
+        columnNames: true
+        hints:
+          - The starter skips NULL answers, because a NULL does not match the pattern.
+          - Add an `IS NULL` test with `OR`, so missing answers are counted too.
+          - "WHERE btrim(q1_satisfaction) IS ___ OR btrim(q1_satisfaction) !~ '___';"
+        explanation: |
+          22 answers fail. The starter reports fewer, because a NULL answer makes the
+          pattern test return NULL, and a NULL row is not counted. Testing for missing
+          values explicitly closes that gap.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l06-e4
+        title: Fix the orphan-order check
+        prompt: |
+          The starter counts orders whose customer email does not match any customer. It
+          reports the wrong number, because it compares the raw text and counts missing
+          emails as problems. Fix it so that:
+
+          - orders with a missing or empty customer email are **not** counted, and
+          - emails are compared after removing spaces and making them lowercase on
+            both sides.
+
+          Show one number, called `orphan_orders`.
+        starter: |
+          SELECT count(*) AS orphan_orders
+          FROM raw_orders AS o
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM raw_customers AS c
+              WHERE c.email = o.customer_email
+          );
+        solution: |
+          SELECT count(*) AS orphan_orders
+          FROM raw_orders AS o
+          WHERE NULLIF(btrim(o.customer_email), '') IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM raw_customers AS c
+                WHERE NULLIF(lower(btrim(c.email)), '')
+                      = lower(btrim(o.customer_email))
+            );
+        columnNames: true
+        hints:
+          - Add a condition that keeps only orders with a non-empty email.
+          - Clean both sides of the match with `lower(btrim(...))`, as in the example.
+          - "WHERE NULLIF(btrim(o.customer_email), '') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM raw_customers AS c WHERE ___ = ___)"
+        explanation: |
+          31 orders really have no matching customer. The starter counted 189 because
+          it treated every missing email as an orphan and missed matches that differed
+          only by capital letters or spaces. Clean both sides before you compare.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l06-e5
+        title: Build the clean orders table (stretch)
+        prompt: |
+          Create a table called `clean_orders` with one row per order. Keep the **latest**
+          copy of each order, meaning the copy with the highest `row_id`. Use these
+          columns, in this order:
+
+          - `order_ref_clean`: the reference with capitals and no dashes, as
+            `upper(replace(order_ref, '-', ''))`
+          - `status_clean`: the status in lowercase with spaces removed, `canceled`
+            written as `cancelled`, and a missing status shown as `unknown`
+          - `amount_num`: the amount as a number when it is a plain amount (optional `$`,
+            digits, commas and a decimal part). Otherwise it is NULL.
+
+          The check counts the rows in `clean_orders` and the number of delivered orders.
+        starter: |
+          CREATE TABLE clean_orders AS
+          SELECT order_ref AS order_ref_clean
+          FROM raw_orders;
+        solution: |
+          CREATE TABLE clean_orders AS
+          WITH numbered AS (
+              SELECT order_ref, status, amount, row_id,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+          )
+          SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean,
+                 COALESCE(replace(lower(btrim(status)), 'canceled', 'cancelled'),
+                          'unknown') AS status_clean,
+                 CASE
+                     WHEN btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+                         THEN replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                 END AS amount_num
+          FROM numbered
+          WHERE copy_number = 1;
+        check: |
+          SELECT count(*) AS orders,
+                 count(*) FILTER (WHERE status_clean = 'delivered') AS delivered
+          FROM clean_orders;
+        hints:
+          - Build the latest-copy numbering first, as in the example, then select the three columns from the rows with `copy_number = 1`.
+          - Use `COALESCE` and `replace` for the status, and a `CASE` with a guard for the amount.
+          - "CREATE TABLE clean_orders AS WITH numbered AS (SELECT ..., ROW_NUMBER() OVER (...) AS copy_number FROM raw_orders) SELECT ... FROM numbered WHERE copy_number = 1;"
+        explanation: |
+          The table has 284 orders, and 169 of them are delivered. Each rule has its own
+          expression, so you can read and test each one separately. When someone asks why
+          a number changed, you can point to the exact rule.
+        difficulty: 3
+
+      - type: predict
+        id: m18-l06-p1
+        question: What does this query return?
+        sql: |
+          SELECT count(*) - count(DISTINCT upper(replace(order_ref, '-', '')))
+                 AS extra
+          FROM raw_orders;
+        options: ["0", "8", "16", "284"]
+        answer: 2
+        explanation: |
+          The table has 300 rows and 284 distinct orders, so 300 minus 284 gives 16. The 284
+          is the distinct count itself, not the difference. A result of 0 would mean every
+          order appears once.
+
+      - type: quiz
+        id: m18-l06-q1
+        question: Which kind of data quality check asks whether every `customer_email` in the orders has a matching customer?
+        options:
+          - Uniqueness
+          - Completeness
+          - Validity
+          - Referential integrity
+        answer: 3
+        explanation: |
+          Referential integrity tests whether a reference points to a real record in
+          another table. The other three families test one table on its own: whether keys
+          repeat, whether values are missing, or whether values follow a rule.
+
+      - type: fill
+        id: m18-l06-f1
+        prompt: Complete the query so that it finds the orders with no matching customer.
+        template: |
+          SELECT row_id
+          FROM raw_orders AS o
+          WHERE NOT ___ (
+              SELECT 1
+              FROM raw_customers AS c
+              WHERE lower(btrim(c.email)) = lower(btrim(o.customer_email))
+          );
+        answers:
+          - ["EXISTS"]
+        explanation: |
+          `NOT EXISTS` keeps the rows where the subquery finds nothing. This is the
+          anti-join pattern for referential checks.
+
+      - type: parsons
+        id: m18-l06-o1
+        prompt: Put the lines in the correct order to build a table of distinct cleaned customer emails, and count them.
+        lines:
+          - "CREATE TABLE clean_customers AS"
+          - "SELECT DISTINCT"
+          - "       lower(btrim(email)) AS email_clean"
+          - "FROM raw_customers"
+          - "WHERE NULLIF(btrim(email), '') IS NOT NULL;"
+          - "SELECT count(*) AS customers"
+          - "FROM clean_customers;"
+        distractors:
+          - "WHERE email IS NOT NULL;"
+        explanation: |
+          The `CREATE TABLE ... AS` comes first, then the `SELECT DISTINCT` that cleans the
+          emails. The `WHERE` must remove the empty emails too, not only the NULLs. The
+          final `SELECT` counts the 100 distinct emails.
+    cheatsheet:
+      - title: Count the failing rows
+        sql: |
+          SELECT count(*) FILTER (WHERE amount IS NULL) AS failing
+          FROM raw_orders;
+        note: Each check returns a number. Zero means the rule holds.
+      - title: Validity with missing values
+        sql: |
+          SELECT count(*)
+          FROM survey_responses
+          WHERE btrim(q1_satisfaction) IS NULL
+             OR btrim(q1_satisfaction) !~ '^[1-5]$';
+        note: A NULL row is never counted by a pattern test, so count missing values explicitly.
+      - title: Referential check with NOT EXISTS
+        sql: |
+          SELECT o.row_id
+          FROM raw_orders AS o
+          WHERE NOT EXISTS (
+              SELECT 1 FROM raw_customers AS c
+              WHERE lower(btrim(c.email)) = lower(btrim(o.customer_email))
+          );
+        note: Keeps the orders that have no matching customer. Clean both sides first.
+      - title: Save a clean table
+        sql: |
+          CREATE TABLE clean_orders AS
+          SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean
+          FROM raw_orders;
+        note: Build a new table and keep the raw one untouched.
+testPool:
+  - type: exercise
+    id: m18-t01
+    lesson: m18-l01
+    difficulty: 1
+    prompt: |
+      Count the **cleaned** customer emails that appear on more than one row of
+      `raw_customers`. Clean each email with lowercase and no spaces at the ends.
+      Ignore missing emails (NULL and empty). Show one number called
+      `repeated_emails`.
+    starter: |
+      SELECT 0 AS repeated_emails;
+    solution: |
+      SELECT count(*) AS repeated_emails
+      FROM (
+          SELECT NULLIF(lower(btrim(email)), '') AS clean_email
+          FROM raw_customers
+          GROUP BY 1
+          HAVING count(*) > 1
+      ) AS repeated
+      WHERE clean_email IS NOT NULL;
+    columnNames: true
+    hints:
+      - Clean the email first, so that capitals and spaces do not hide the matches.
+      - Group by the cleaned email and keep only the groups with more than one row.
+      - "SELECT count(*) FROM (SELECT NULLIF(lower(btrim(email)), '') AS clean_email FROM raw_customers GROUP BY 1 HAVING ___) AS repeated WHERE ___;"
+  - type: exercise
+    id: m18-t02
+    lesson: m18-l01
+    difficulty: 2
+    prompt: |
+      Find the customers who placed **at least 10 orders**. Count every row of
+      `raw_orders`, including duplicate rows. Identify each customer by the cleaned
+      email, `lower(btrim(customer_email))`, and ignore orders with a missing email.
+
+      Show `clean_email` and `orders`. Sort by `orders` from highest to lowest, then
+      by `clean_email` from A to Z.
+    starter: |
+      SELECT customer_email AS clean_email,
+             count(*) AS orders
+      FROM raw_orders
+      GROUP BY customer_email
+      ORDER BY orders DESC;
+    solution: |
+      SELECT lower(btrim(customer_email)) AS clean_email,
+             count(*) AS orders
+      FROM raw_orders
+      WHERE NULLIF(btrim(customer_email), '') IS NOT NULL
+      GROUP BY 1
+      HAVING count(*) >= 10
+      ORDER BY orders DESC, clean_email;
+    ordered: true
+    columnNames: true
+    hints:
+      - The starter groups the raw text, so capitals and spaces split one customer into several groups.
+      - Clean the email in the `SELECT` and in the `GROUP BY`, then keep the groups with at least 10 rows.
+      - "SELECT lower(btrim(customer_email)) AS clean_email, count(*) AS orders FROM raw_orders WHERE ___ GROUP BY 1 HAVING ___ ORDER BY orders DESC, clean_email;"
+    explanation: |
+      Two customers reach 10 orders. The second sort key keeps the order fully
+      defined, so the result is the same every time you run it.
+  - type: exercise
+    id: m18-t03
+    lesson: m18-l02
+    difficulty: 1
+    prompt: |
+      How many orders have the status `pending`, whatever the capitals or spaces
+      around it? Show one number called `pending_orders`.
+    starter: |
+      SELECT count(*) AS pending_orders
+      FROM raw_orders
+      WHERE status = 'pending';
+    solution: |
+      SELECT count(*) AS pending_orders
+      FROM raw_orders
+      WHERE lower(btrim(status)) = 'pending';
+    columnNames: true
+    hints:
+      - The starter only counts the lowercase spelling with no spaces.
+      - Clean the status with `lower` and `btrim` in the `WHERE` clause.
+      - "SELECT count(*) AS pending_orders FROM raw_orders WHERE ___(___(status)) = 'pending';"
+  - type: exercise
+    id: m18-t04
+    lesson: m18-l02
+    difficulty: 2
+    prompt: |
+      Count the customers in `raw_customers` whose country is Canada. Accept `CA`,
+      `Canada` and `canada`, with any capitals or spaces around them. Show one
+      number called `canadian_customers`.
+    starter: |
+      SELECT count(*) AS canadian_customers
+      FROM raw_customers
+      WHERE country = 'Canada';
+    solution: |
+      SELECT count(*) AS canadian_customers
+      FROM raw_customers
+      WHERE lower(btrim(country)) IN ('ca', 'canada');
+    columnNames: true
+    hints:
+      - The starter misses `CA` and `canada`, because it compares exact text.
+      - Clean the country with `lower(btrim(...))` and then check it against a list of two values.
+      - "WHERE lower(btrim(country)) IN (___, ___)"
+  - type: exercise
+    id: m18-t05
+    lesson: m18-l03
+    difficulty: 2
+    prompt: |
+      Some amounts are written in accounting style: the value is in brackets, such as
+      `(2760.95)`, and means a negative number. Show `row_id` and the amount as a
+      negative number called `amount_num`, for those bracketed amounts only.
+    starter: |
+      SELECT row_id,
+             amount AS amount_num
+      FROM raw_orders
+      WHERE amount LIKE '(%';
+    solution: |
+      SELECT row_id,
+             -replace(replace(replace(btrim(amount), '(', ''), ')', ''), ',', '')::numeric
+                 AS amount_num
+      FROM raw_orders
+      WHERE btrim(amount) LIKE '(%)';
+    columnNames: true
+    hints:
+      - Remove the brackets, then turn the value into a number and make it negative.
+      - "The first two `replace` calls remove `(` and `)`. A minus sign in front makes it negative."
+      - "SELECT row_id, -replace(replace(replace(btrim(amount), '___', ''), '___', ''), ',', '')::numeric AS amount_num FROM raw_orders WHERE btrim(amount) LIKE '(%)';"
+    explanation: |
+      Only one order uses the bracket style, and it is row 265 with `-2760.95`. The
+      starter returned the text with brackets, because it does not change the value.
+  - type: exercise
+    id: m18-t06
+    lesson: m18-l03
+    difficulty: 2
+    prompt: |
+      Count the orders placed in **June 2024**. Read the order dates in all five
+      styles, and leave out any date that cannot be read. Show one number called
+      `june_orders`.
+    starter: |
+      SELECT count(*) AS june_orders
+      FROM raw_orders
+      WHERE order_date LIKE '2024-06%';
+    solution: |
+      WITH parsed AS (
+          SELECT CASE
+                     WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN to_date(order_date, 'YYYY-MM-DD')
+                     WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                         THEN to_date(order_date, 'MM/DD/YYYY')
+                     WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                         THEN to_date(order_date, 'DD-Mon-YYYY')
+                     WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                         THEN to_date(order_date, 'YYYY/MM/DD')
+                     WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                         THEN to_date(order_date, 'FMMonth DD, YYYY')
+                 END AS order_day
+          FROM raw_orders
+      )
+      SELECT count(*) AS june_orders
+      FROM parsed
+      WHERE order_day >= DATE '2024-06-01'
+        AND order_day < DATE '2024-07-01';
+    columnNames: true
+    hints:
+      - The starter only finds the ISO dates. Parse all five styles first, in a CTE.
+      - Compare the parsed date with a range, from the first of June up to the first of July.
+      - "WITH parsed AS (SELECT CASE WHEN order_date ~ '___' THEN to_date(order_date, '___') ... END AS order_day FROM raw_orders) SELECT count(*) FROM parsed WHERE ___;"
+    explanation: |
+      18 orders were placed in June 2024. The starter counts only the rows whose date
+      is already in ISO format, so it finds fewer. Parsing first gives the full count.
+  - type: exercise
+    id: m18-t07
+    lesson: m18-l04
+    difficulty: 1
+    prompt: |
+      Count the orders whose amount is a **negative** number, written with a minus
+      sign at the start (after any spaces). Show one number called `negative_orders`.
+    starter: |
+      SELECT count(*) AS negative_orders
+      FROM raw_orders
+      WHERE amount < '0';
+    solution: |
+      SELECT count(*) AS negative_orders
+      FROM raw_orders
+      WHERE btrim(amount) LIKE '-%';
+    columnNames: true
+    hints:
+      - The starter compares text. A dollar sign also sorts before the digit zero.
+      - Clean the spaces with `btrim`, then check whether the text starts with a minus sign.
+      - "WHERE btrim(amount) LIKE '___';"
+    explanation: |
+      There are 3 negative amounts: `-10.04`, `-70` and `-$40.75`. The starter returns
+      115, because text comparison counts every value that sorts before `'0'`, such as
+      the dollar amounts and the blank cells.
+
+  - type: exercise
+    id: m18-t08
+    lesson: m18-l04
+    difficulty: 3
+    prompt: |
+      Find the **median** amount of the plain money orders. A plain money value is an
+      optional `$`, then digits, optional commas and an optional decimal part. Ignore
+      negatives, brackets, N/A and blanks.
+
+      Use `percentile_cont(0.5)` on the numbers, and round the result to 2 decimals.
+      Show one number called `median_amount`.
+    starter: |
+      SELECT 0 AS median_amount;
+    solution: |
+      SELECT round(
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY amt)::numeric,
+                 2
+             ) AS median_amount
+      FROM (
+          SELECT replace(replace(btrim(amount), '$', ''), ',', '')::numeric AS amt
+          FROM raw_orders
+          WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+      ) AS plain;
+    columnNames: true
+    hints:
+      - First build the list of plain money values as numbers, in a subquery or CTE.
+      - "`percentile_cont(0.5) WITHIN GROUP (ORDER BY amt)` gives the median. Cast it to `numeric` before rounding."
+      - "SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ___)::numeric, 2) AS median_amount FROM (SELECT ___ AS amt FROM raw_orders WHERE ___) AS plain;"
+    explanation: |
+      The median is 61.69. The subquery filters first, so the percentile only sees the
+      plain values. Filtering inside the same query as the percentile is the usual way
+      to keep a rule in one place.
+  - type: exercise
+    id: m18-t09
+    lesson: m18-l05
+    difficulty: 2
+    prompt: |
+      For each product in `monthly_sales_long`, count the months in which revenue was
+      **over 10000**. Show `product` and `months_over_10k`. Sort by
+      `months_over_10k` from highest to lowest, then by `product` from A to Z.
+    starter: |
+      SELECT product,
+             0 AS months_over_10k
+      FROM monthly_sales_long
+      GROUP BY product
+      ORDER BY product;
+    solution: |
+      SELECT product,
+             count(*) FILTER (WHERE revenue > 10000) AS months_over_10k
+      FROM monthly_sales_long
+      GROUP BY product
+      ORDER BY months_over_10k DESC, product;
+    ordered: true
+    columnNames: true
+    hints:
+      - Count only the rows that match the condition, with `FILTER`.
+      - "`count(*) FILTER (WHERE revenue > 10000)` counts the months over the limit for one product."
+      - "SELECT product, count(*) FILTER (WHERE ___) AS months_over_10k FROM monthly_sales_long GROUP BY product ORDER BY months_over_10k DESC, product;"
+    explanation: |
+      Espresso Machine is over 10000 in six months, and seven products are never over
+      it. The second sort key puts those seven in alphabetical order.
+  - type: exercise
+    id: m18-t10
+    lesson: m18-l06
+    difficulty: 3
+    prompt: |
+      Count the orders from **guest checkouts** that have no matching customer. A guest
+      checkout has a cleaned customer email that starts with `guest.`. Match each order
+      to a customer on the cleaned email, with spaces removed and lowercase on both
+      sides. Show one number called `guest_orphans`.
+    starter: |
+      SELECT count(*) AS guest_orphans
+      FROM raw_orders
+      WHERE customer_email LIKE 'guest.%';
+    solution: |
+      SELECT count(*) AS guest_orphans
+      FROM raw_orders AS o
+      WHERE lower(btrim(o.customer_email)) LIKE 'guest.%'
+        AND NOT EXISTS (
+            SELECT 1
+            FROM raw_customers AS c
+            WHERE NULLIF(lower(btrim(c.email)), '')
+                  = lower(btrim(o.customer_email))
+        );
+    columnNames: true
+    hints:
+      - The starter misses guest emails with capital letters, and it does not check for a matching customer.
+      - Combine a `LIKE` test on the cleaned email with a `NOT EXISTS` check against the customers.
+      - "WHERE lower(btrim(o.customer_email)) LIKE '___' AND NOT EXISTS (SELECT 1 FROM raw_customers AS c WHERE ___);"
+    explanation: |
+      15 guest orders have no matching customer. Two conditions must hold at the same
+      time, so they are joined with `AND`.
+  - type: quiz
+    id: m18-t11
+    lesson: m18-l01
+    difficulty: 1
+    question: Two rows in `raw_orders` both have NULL in `customer_email`. Does `GROUP BY customer_email` put them in the same group?
+    options:
+      - Yes, GROUP BY treats two NULLs as the same value.
+      - No, every NULL is always its own group.
+      - Only if the two rows sit next to each other in the table.
+      - No, GROUP BY raises an error on NULL values.
+    answer: 0
+    explanation: |
+      `GROUP BY` treats NULLs as equal, so the rows form one group. The `=` operator is
+      different, because `NULL = NULL` is not true. That is why duplicate checks work
+      even when a key is NULL.
+  - type: quiz
+    id: m18-t12
+    lesson: m18-l02
+    difficulty: 1
+    question: What does `btrim('  Ana  ')` return?
+    options:
+      - "'  Ana  '"
+      - "'Ana  '"
+      - "'Ana'"
+      - "'ana'"
+    answer: 2
+    explanation: |
+      `btrim` removes spaces from both ends of the text and leaves the middle alone. It
+      does not change capital letters, so `'Ana'` keeps its capital A.
+  - type: quiz
+    id: m18-t13
+    lesson: m18-l03
+    difficulty: 2
+    question: Which regular expression matches a date written as `15-Mar-2024`?
+    options:
+      - '^\d{4}-\d{2}-\d{2}$'
+      - '^\d{2}-[A-Za-z]{3}-\d{4}$'
+      - '^\d{2}/\d{2}/\d{4}$'
+      - '^[A-Za-z]+ \d{1,2}, \d{4}$'
+    answer: 1
+    explanation: |
+      Two digits, a dash, three letters for the month name, a dash and four digits.
+      The `[A-Za-z]{3}` part matches `Mar`, and the anchors `^` and `$` stop extra text
+      from slipping through.
+  - type: quiz
+    id: m18-t14
+    lesson: m18-l04
+    difficulty: 2
+    question: What makes the upper fence of the IQR method move when the data changes?
+    options:
+      - It is a fixed number, always 1000.
+      - It is calculated from the quartiles of the data itself.
+      - It is the average plus three standard deviations.
+      - The business sets a new value every month.
+    answer: 1
+    explanation: |
+      The upper fence is `q3 + 1.5 * (q3 - q1)`, so it is calculated from the middle
+      half of the data. Because it depends on the data, it adapts to new values. The
+      average-plus-three-standard-deviations rule is a different method, and outliers
+      can distort it.
+  - type: quiz
+    id: m18-t15
+    lesson: m18-l05
+    difficulty: 1
+    question: Which function, from the tablefunc extension, builds a pivot table for you?
+    options:
+      - crosstab
+      - unnest
+      - FILTER
+      - LATERAL
+    answer: 0
+    explanation: |
+      `crosstab` is provided by the tablefunc extension, which you must enable with
+      `CREATE EXTENSION IF NOT EXISTS tablefunc;`. `unnest`, `FILTER` and `LATERAL` are
+      all useful for reshaping, but they are built in and do not need an extension.
+  - type: quiz
+    id: m18-t16
+    lesson: m18-l06
+    difficulty: 2
+    question: Which order is the safest way to clean a messy export?
+    options:
+      - Overwrite the raw table with the cleaned values.
+      - Delete every row that has a missing value.
+      - Keep the raw tables unchanged and build a clean table next to them.
+      - Replace every outlier with the average amount.
+    answer: 2
+    explanation: |
+      Keeping the raw tables lets you check every cleaning rule and explain any number
+      later. The other three choices throw away evidence or hide problems, so they make
+      it harder to trust the result.
+  - type: predict
+    id: m18-t17
+    lesson: m18-l01
+    difficulty: 2
+    question: Each order's copies are numbered with the latest row first. How many rows have copy number 2?
+    sql: |
+      WITH n AS (
+          SELECT ROW_NUMBER() OVER (
+                     PARTITION BY upper(replace(order_ref, '-', ''))
+                     ORDER BY row_id DESC
+                 ) AS copy_number
+          FROM raw_orders
+      )
+      SELECT count(*)
+      FROM n
+      WHERE copy_number = 2;
+    options: ["10", "16", "6", "284"]
+    answer: 1
+    explanation: |
+      Every order with copies has exactly one row numbered 2 for each extra copy. There
+      are 16 extra copies, so 16 rows are numbered 2. The 284 is the number of orders, and
+      the 10 and 6 are only the exact-copy and conflicting-copy groups separately.
+  - type: predict
+    id: m18-t18
+    lesson: m18-l04
+    difficulty: 1
+    question: What does this query return?
+    sql: |
+      SELECT COALESCE(NULLIF('', ''), 'blank') AS value;
+    options: ["''", "'blank'", "NULL", "An error"]
+    answer: 1
+    explanation: |
+      `NULLIF('', '')` returns NULL, because the two values are equal. `COALESCE` then
+      returns the first value that is not NULL, which is the default `'blank'`.
+  - type: predict
+    id: m18-t19
+    lesson: m18-l03
+    difficulty: 1
+    question: What does this query return?
+    sql: |
+      SELECT to_date('2024/3/5', 'YYYY/MM/DD') AS day_value;
+    options: ["2024-03-05", "2024-05-03", "2024-3-5", "An error"]
+    answer: 0
+    explanation: |
+      `YYYY` is the year, `MM` the month and `DD` the day, so the month is 3 and the day
+      is 5. PostgreSQL shows dates in the `YYYY-MM-DD` form, with the month and day
+      padded to two digits.
+  - type: predict
+    id: m18-t20
+    lesson: m18-l05
+    difficulty: 2
+    question: How many rows does this query return?
+    sql: |
+      SELECT count(*)
+      FROM product_sales_wide AS p
+      CROSS JOIN LATERAL (VALUES (1), (2), (3)) AS v (n);
+    options: ["10", "3", "30", "60"]
+    answer: 2
+    explanation: |
+      `product_sales_wide` has 10 rows. Each row is paired with the three values in the
+      `VALUES` list, so there are 10 times 3 rows, which is 30.
+  - type: fill
+    id: m18-t21
+    lesson: m18-l01
+    difficulty: 2
+    prompt: Complete the window function so it numbers the copies of each order, with the latest row first. Use the plain `order_ref` column.
+    template: |
+      SELECT row_id,
+             order_ref,
+             ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY row_id ___) AS copy_number
+      FROM raw_orders;
+    answers:
+      - ["order_ref"]
+      - ["DESC"]
+    explanation: |
+      `PARTITION BY order_ref` starts the numbering again for each order. `ORDER BY
+      row_id DESC` puts the highest row id first, so the latest copy gets number 1.
+  - type: fill
+    id: m18-t22
+    lesson: m18-l04
+    difficulty: 1
+    prompt: Complete the query so it counts the customers whose email is missing, either NULL or empty.
+    template: |
+      SELECT count(*)
+      FROM raw_customers
+      WHERE ___(email, '') IS NULL;
+    answers:
+      - ["NULLIF"]
+    explanation: |
+      `NULLIF(email, '')` turns the empty email into NULL. After that, `IS NULL` catches
+      both the NULL emails and the empty ones.
+  - type: fill
+    id: m18-t23
+    lesson: m18-l05
+    difficulty: 2
+    prompt: Complete the unpivot so that each month of the wide table becomes its own row.
+    template: |
+      SELECT p.product, v.month, v.revenue
+      FROM product_sales_wide AS p
+      CROSS ___ LATERAL (VALUES ('Jan', p.jan), ('Feb', p.feb)) AS v (month, revenue);
+    answers:
+      - ["JOIN"]
+    explanation: |
+      `CROSS JOIN LATERAL` pairs each product row with every entry in its `VALUES` list,
+      which turns one row into one row per month.
+  - type: parsons
+    id: m18-t24
+    lesson: m18-l02
+    difficulty: 2
+    prompt: Put the lines in the correct order to count the orders for each cleaned status, with the most orders first.
+    lines:
+      - "SELECT lower(btrim(status)) AS status_clean,"
+      - "       count(*) AS orders"
+      - "FROM raw_orders"
+      - "WHERE status IS NOT NULL"
+      - "GROUP BY 1"
+      - "ORDER BY orders DESC, status_clean;"
+    distractors:
+      - "HAVING count(*) > 100;"
+    explanation: |
+      The `SELECT` names the columns, then the `FROM` and `WHERE` choose the rows. `GROUP BY`
+      makes one group per status, and the `ORDER BY` puts the most orders first. The
+      distractor would remove most statuses, so it does not belong.
+  - type: parsons
+    id: m18-t25
+    lesson: m18-l06
+    difficulty: 3
+    prompt: Put the lines in the correct order to count the orders whose customer email does not match any customer.
+    lines:
+      - "SELECT count(*) AS orphan_orders"
+      - "FROM raw_orders AS o"
+      - "WHERE NULLIF(btrim(o.customer_email), '') IS NOT NULL"
+      - "  AND NOT EXISTS ("
+      - "      SELECT 1"
+      - "      FROM raw_customers AS c"
+      - "      WHERE NULLIF(lower(btrim(c.email)), '')"
+      - "            = lower(btrim(o.customer_email))"
+      - "  );"
+    distractors:
+      - "GROUP BY o.customer_email;"
+    explanation: |
+      The `WHERE` first removes the orders without an email, then `NOT EXISTS` keeps the
+      orders with no matching customer. The matching uses the same cleaning on both sides.
+      A `GROUP BY` would turn the single count into many rows, so it is the wrong line.
+project:
+  id: m18-proj
+  title: Clean the CRM Export
+  icon: "📇"
+  dataset: messy
+  md: |
+    Messy Data Co. is moving its customers and orders into a new CRM (customer
+    relationship management) system. The new system accepts only clean data, and
+    the export you were given is anything but clean.
+
+    Dana, the operations manager, has given you the job. "Work through these seven
+    steps in order. Each one builds on the one before, and at the end I want a
+    report that proves the export is ready, or shows exactly what is still wrong."
+
+    Use the raw tables `raw_orders` and `raw_customers` for every step. Never change
+    the raw tables: your answers are queries, and they only show the results.
+
+    > [!TIP]
+    > Keep a note of each cleaning rule as you write it. In a real project, those
+    > rules are what your manager will ask about later.
+  tasks:
+    - type: exercise
+      id: m18-proj-1
+      title: Size of the export
+      difficulty: 1
+      prompt: |
+        Measure the export before you clean it. Show two numbers in one row:
+
+        - `raw_rows`: the number of rows in `raw_orders`.
+        - `distinct_orders`: the number of different orders, where the reference is
+          cleaned with `upper(replace(order_ref, '-', ''))`.
+      starter: |
+        SELECT count(*) AS raw_rows
+        FROM raw_orders;
+      solution: |
+        SELECT count(*) AS raw_rows,
+               count(DISTINCT upper(replace(order_ref, '-', '')))
+                   AS distinct_orders
+        FROM raw_orders;
+      columnNames: true
+      hints:
+        - The starter counts rows only. You also need the number of different orders.
+        - Use `count(DISTINCT ...)` on the cleaned reference.
+        - "SELECT count(*) AS raw_rows, count(DISTINCT upper(replace(___, '-', ''))) AS distinct_orders FROM raw_orders;"
+      explanation: |
+        There are 300 rows for 284 orders, so 16 rows are repeats. Every later step
+        must end with 284 orders, or you have made a mistake.
+    - type: exercise
+      id: m18-proj-2
+      title: The copy to keep
+      difficulty: 2
+      prompt: |
+        For every order that has **more than one row**, show the cleaned reference
+        `order_ref_clean` (capitals, no dashes) and `kept_row_id`. The rule is that the
+        kept row has the highest `row_id`, which is the latest import.
+
+        Sort by `order_ref_clean` from A to Z.
+      starter: |
+        SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean,
+               row_id AS kept_row_id
+        FROM raw_orders
+        WHERE row_id > 0
+        ORDER BY order_ref_clean;
+      solution: |
+        SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean,
+               max(row_id) AS kept_row_id
+        FROM raw_orders
+        GROUP BY upper(replace(order_ref, '-', ''))
+        HAVING count(*) > 1
+        ORDER BY order_ref_clean;
+      ordered: true
+      columnNames: true
+      hints:
+        - Group by the cleaned reference, then keep only the groups with more than one row.
+        - "`max(row_id)` gives the highest row id in each group, which is the latest import."
+        - "SELECT upper(replace(order_ref, '-', '')) AS order_ref_clean, max(row_id) AS kept_row_id FROM raw_orders GROUP BY ___ HAVING ___ ORDER BY order_ref_clean;"
+      explanation: |
+        Sixteen orders had repeats. This list is the rule you will apply in the next
+        steps: for each order, keep the row with the highest `row_id`.
+    - type: exercise
+      id: m18-proj-3
+      title: Clean statuses, latest copies only
+      difficulty: 2
+      prompt: |
+        Using only the **latest copy** of each order (the copy with the highest
+        `row_id` for its cleaned reference), count the orders for each cleaned status.
+
+        A cleaned status is the status in lowercase with spaces at the ends removed,
+        with `canceled` written as `cancelled`. A missing status becomes `unknown`.
+
+        Show `status_clean` and `orders`. Sort by `orders` from highest to lowest,
+        then by `status_clean` from A to Z.
+      starter: |
+        SELECT status AS status_clean,
+               count(*) AS orders
+        FROM raw_orders
+        GROUP BY status
+        ORDER BY orders DESC;
+      solution: |
+        WITH numbered AS (
+            SELECT status,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY upper(replace(order_ref, '-', ''))
+                       ORDER BY row_id DESC
+                   ) AS copy_number
+            FROM raw_orders
+        )
+        SELECT COALESCE(replace(lower(btrim(status)), 'canceled', 'cancelled'),
+                        'unknown') AS status_clean,
+               count(*) AS orders
+        FROM numbered
+        WHERE copy_number = 1
+        GROUP BY 1
+        ORDER BY orders DESC, status_clean;
+      ordered: true
+      columnNames: true
+      hints:
+        - Number the copies of each order, then keep only number 1 before you count.
+        - Clean the status with `lower`, `btrim` and `replace`, and use `COALESCE` for the missing ones.
+        - "WITH numbered AS (SELECT status, ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY row_id DESC) AS copy_number FROM raw_orders) SELECT ___ AS status_clean, count(*) AS orders FROM numbered WHERE ___ GROUP BY 1 ORDER BY orders DESC, status_clean;"
+      explanation: |
+        The six cleaned statuses add up to 284 orders, one per order. Pending and
+        returned both have 16 orders, so the second sort key decides their order.
+    - type: exercise
+      id: m18-proj-4
+      title: Orders per year
+      difficulty: 2
+      prompt: |
+        Using only the latest copy of each order, count the orders for each year of
+        the order date. Read the dates in all five styles, and show a row with NULL for
+        the year when a date cannot be read.
+
+        Show `yr` and `orders`. Sort by `yr` from oldest to newest, with the NULL row last.
+      starter: |
+        SELECT EXTRACT(YEAR FROM order_date::date)::int AS yr,
+               count(*) AS orders
+        FROM raw_orders
+        GROUP BY 1
+        ORDER BY 1;
+      solution: |
+        WITH numbered AS (
+            SELECT order_date,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY upper(replace(order_ref, '-', ''))
+                       ORDER BY row_id DESC
+                   ) AS copy_number
+            FROM raw_orders
+        ),
+        dated AS (
+            SELECT CASE
+                       WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                           THEN to_date(order_date, 'YYYY-MM-DD')
+                       WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                           THEN to_date(order_date, 'MM/DD/YYYY')
+                       WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                           THEN to_date(order_date, 'DD-Mon-YYYY')
+                       WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                           THEN to_date(order_date, 'YYYY/MM/DD')
+                       WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                           THEN to_date(order_date, 'FMMonth DD, YYYY')
+                   END AS order_day
+            FROM numbered
+            WHERE copy_number = 1
+        )
+        SELECT EXTRACT(YEAR FROM order_day)::int AS yr,
+               count(*) AS orders
+        FROM dated
+        GROUP BY 1
+        ORDER BY 1;
+      ordered: true
+      columnNames: true
+      hints:
+        - The starter casts the raw text, which fails on the empty dates. Parse with a `CASE` first.
+        - Keep only the latest copy, as in the previous step, before you parse and count.
+        - "WITH numbered AS (...), dated AS (SELECT CASE WHEN order_date ~ '___' THEN to_date(order_date, '___') ... END AS order_day FROM numbered WHERE copy_number = 1) SELECT EXTRACT(YEAR FROM order_day)::int AS yr, count(*) AS orders FROM dated GROUP BY 1 ORDER BY 1;"
+      explanation: |
+        There are 75 orders in 2023, 192 in 2024 and 17 with no readable date. The
+        total is 284, so every order is accounted for, and the NULL row is kept on
+        purpose instead of being dropped.
+    - type: exercise
+      id: m18-proj-5
+      title: Total the plain amounts
+      difficulty: 3
+      prompt: |
+        Using only the **latest copy** of each order, add up the amounts that are plain
+        money values under 10000. A plain money value is an optional `$`, then digits,
+        optional commas and an optional decimal part. Ignore negatives, brackets, N/A
+        and blanks.
+
+        Show one number, `total_amount`, rounded to 2 decimals.
+      starter: |
+        SELECT sum(amount::numeric) AS total_amount
+        FROM raw_orders;
+      solution: |
+        WITH numbered AS (
+            SELECT amount,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY upper(replace(order_ref, '-', ''))
+                       ORDER BY row_id DESC
+                   ) AS copy_number
+            FROM raw_orders
+        ),
+        plain AS (
+            SELECT replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                       AS amt
+            FROM numbered
+            WHERE copy_number = 1
+              AND btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+        )
+        SELECT round(sum(amt), 2) AS total_amount
+        FROM plain
+        WHERE amt < 10000;
+      columnNames: true
+      hints:
+        - Keep the latest copy, then keep the plain money values, then cast and sum them.
+        - The `WHERE` on the plain-money pattern must run before the cast, or the cast fails on `N/A`.
+        - "Add a `WHERE amt < 10000` after the plain values, then `round(sum(amt), 2)`."
+      explanation: |
+        The total is 52,387.58 across 255 orders. The two outliers above 10000 are
+        left out on purpose, and the report should say so. Without that rule, the two
+        typed amounts of about one million dollars would push the total above two
+        million dollars.
+    - type: exercise
+      id: m18-proj-6
+      title: Customers who appear twice
+      difficulty: 2
+      prompt: |
+        Find each customer email that appears on **more than one** row of `raw_customers`,
+        after cleaning it with `lower(btrim(...))`. Ignore missing emails (NULL and
+        empty).
+
+        Show `clean_email` and `customer_rows` (the number of rows for that email).
+        Sort by `clean_email` from A to Z.
+      starter: |
+        SELECT lower(btrim(email)) AS clean_email,
+               count(*) AS customer_rows
+        FROM raw_customers
+        GROUP BY lower(btrim(email))
+        HAVING count(*) > 1
+        ORDER BY clean_email;
+      solution: |
+        SELECT lower(btrim(email)) AS clean_email,
+               count(*) AS customer_rows
+        FROM raw_customers
+        WHERE NULLIF(btrim(email), '') IS NOT NULL
+        GROUP BY lower(btrim(email))
+        HAVING count(*) > 1
+        ORDER BY clean_email;
+      ordered: true
+      columnNames: true
+      hints:
+        - The starter groups the empty and NULL emails too. Leave them out with a `WHERE`.
+        - Keep the `GROUP BY` on the cleaned email, and filter with `HAVING count(*) > 1`.
+        - "WHERE NULLIF(btrim(email), '') IS ___ GROUP BY lower(btrim(email)) HAVING count(*) > 1 ORDER BY clean_email;"
+      explanation: |
+        Eight emails appear twice, with different capitals or spaces in each copy. The
+        starter also returns a group for the 5 empty emails and one for the 7 NULL emails.
+        Neither is a real customer, so the `WHERE` removes both.
+    - type: exercise
+      id: m18-proj-7
+      title: The quality report
+      difficulty: 3
+      prompt: |
+        Write the final report. For each of the four checks below, count the rows that
+        fail. Show `check_name` and `failing_rows`, one row per check, sorted by
+        `check_name` from A to Z.
+
+        - `orders: extra copies`: rows of `raw_orders` beyond one per order (cleaned reference).
+        - `orders: amount missing`: rows whose amount is NULL, empty or `N/A` after trimming.
+        - `orders: customer not found`: rows with a non-empty customer email (cleaned)
+          that matches no cleaned email in `raw_customers`.
+        - `customers: duplicate emails`: rows beyond one per cleaned email, ignoring
+          missing emails.
+      starter: |
+        SELECT 'orders: extra copies' AS check_name,
+               0 AS failing_rows;
+      solution: |
+        SELECT check_name, failing_rows
+        FROM (
+            SELECT 'orders: extra copies' AS check_name,
+                   count(*) - count(DISTINCT upper(replace(order_ref, '-', '')))
+                       AS failing_rows
+            FROM raw_orders
+            UNION ALL
+            SELECT 'orders: amount missing',
+                   count(*) FILTER (
+                       WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL
+                   )
+            FROM raw_orders
+            UNION ALL
+            SELECT 'orders: customer not found',
+                   count(*) FILTER (
+                       WHERE NULLIF(btrim(customer_email), '') IS NOT NULL
+                         AND NOT EXISTS (
+                             SELECT 1
+                             FROM raw_customers AS c
+                             WHERE NULLIF(lower(btrim(c.email)), '')
+                                   = lower(btrim(o.customer_email))
+                         )
+                   )
+            FROM raw_orders AS o
+            UNION ALL
+            SELECT 'customers: duplicate emails',
+                   count(NULLIF(btrim(email), ''))
+                       - count(DISTINCT NULLIF(lower(btrim(email)), ''))
+            FROM raw_customers
+        ) AS report
+        ORDER BY check_name;
+      ordered: true
+      columnNames: true
+      hints:
+        - Use one `SELECT` per check, joined with `UNION ALL`, as in the lesson's quality report.
+        - "Each check is a count. `count(*) FILTER (WHERE ...)` counts only the failing rows."
+        - "SELECT check_name, failing_rows FROM (SELECT '___' AS check_name, count(*) FILTER (WHERE ___) AS failing_rows FROM raw_orders UNION ALL ...) AS report ORDER BY check_name;"
+      explanation: |
+        Sixteen extra copies, 24 missing amounts, 31 orders from unknown customers and
+        8 extra customer rows from duplicated emails. None of the checks is zero yet, so the export is
+        not ready. The report tells Dana exactly what to fix, which is the point of a
+        quality check.
