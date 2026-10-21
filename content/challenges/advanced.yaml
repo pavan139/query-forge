@@ -1098,3 +1098,794 @@ challenges:
       This is **market basket analysis**, the idea behind "frequently bought together". A **self join** pairs every row of a table with other rows of the same table.
 
       The `>` condition is the trick. Without it you would get every pair twice (A with B, and B with A), plus pairs of a product with itself. Each order holds a product at most once, so `COUNT(*)` counts orders correctly.
+
+  - id: ch-a-031
+    title: The longest run of step-tracking days
+    difficulty: expert
+    dataset: app
+    module: m19
+    tags: [gaps-and-islands, window, streak, date]
+    prompt: |
+      FitTrack's coaches reward users who track their steps every day. A **streak** is a run of days in a row that each have a row in `daily_steps`. A day with no row breaks the streak.
+
+      For each user, find their **longest** streak. If a user has two streaks of the same length, use the one that starts first.
+
+      Keep only the users whose longest streak is at least **30 days**. Show `user_id`, `streak_start`, `streak_end` and `days` (the number of days in the streak). Sort by `days` (longest first), then by `user_id`.
+    solution: |
+      WITH numbered AS (
+          SELECT user_id, day,
+                 day - (ROW_NUMBER() OVER (
+                            PARTITION BY user_id
+                            ORDER BY day))::int AS island
+          FROM daily_steps
+      ),
+      runs AS (
+          SELECT user_id,
+                 MIN(day) AS streak_start,
+                 MAX(day) AS streak_end,
+                 COUNT(*) AS days
+          FROM numbered
+          GROUP BY user_id, island
+      ),
+      best AS (
+          SELECT DISTINCT ON (user_id)
+                 user_id, streak_start, streak_end, days
+          FROM runs
+          ORDER BY user_id, days DESC, streak_start
+      )
+      SELECT user_id, streak_start, streak_end, days
+      FROM best
+      WHERE days >= 30
+      ORDER BY days DESC, user_id;
+    ordered: true
+    hints:
+      - "Consecutive days share the same 'island' value. Subtract the row number from the day: consecutive days give the same result."
+      - "day - (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day))::int stays the same while the days follow each other. Group by that value to get one row per streak."
+      - "After you have one row per streak, keep the longest one per user with DISTINCT ON (user_id) ... ORDER BY user_id, days DESC, streak_start, then filter days >= 30."
+    explanation: |
+      This is the **gaps and islands** pattern. The islands are the streaks of consecutive days; the gaps are the missing days between them.
+
+      The trick: if the day numbers go up by one each row, then `day` minus the row number is constant inside an island. Grouping on that constant value separates the islands. It works for any "one step at a time" sequence: days, ids, or event numbers.
+
+  - id: ch-a-032
+    title: Customers who used every card category
+    difficulty: expert
+    dataset: bank
+    module: m19
+    tags: [relational-division, not-exists, anti-join, subquery]
+    prompt: |
+      Harbor Bank wants to send a "Spending Champion" letter to customers who have paid by card in **every** spending category the bank records.
+
+      - The categories are the different `category` values of the `card_payment` transactions. Count the card payments on all of a customer's accounts together.
+      - A customer qualifies only if no category is missing from their card payments.
+
+      Show `customer_id` and `full_name`, sorted by `customer_id`.
+    solution: |
+      SELECT c.customer_id, c.full_name
+      FROM customers c
+      WHERE NOT EXISTS (
+          SELECT 1
+          FROM (
+              SELECT DISTINCT category
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+          ) cat
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM accounts a
+              JOIN transactions t ON t.account_id = a.account_id
+              WHERE a.customer_id = c.customer_id
+                AND t.txn_type = 'card_payment'
+                AND t.category = cat.category
+          )
+      )
+      ORDER BY c.customer_id;
+    ordered: true
+    hints:
+      - "Think of it as 'for all': a customer qualifies when there is no category for which they have no card payment."
+      - "Two NOT EXISTS work together. The inner one checks that the customer has a card payment in one category. The outer one checks that there is no category left out."
+      - "NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT category ...) cat WHERE NOT EXISTS (SELECT 1 FROM accounts a JOIN transactions t ... WHERE t.category = cat.category))"
+    explanation: |
+      Questions with the word "every" or "all" are called **relational division**. SQL has no `FOR ALL` keyword, so you rewrite "all" as "there is no ... that is missing". Reading it aloud helps: *there is no category for which there is no card payment*.
+
+      A shorter way is `GROUP BY customer_id HAVING COUNT(DISTINCT category) = 7`. It works here, but it hard-codes the number 7. The double `NOT EXISTS` version still works when the list of categories changes.
+
+  - id: ch-a-033
+    title: Week-one retention by signup month
+    difficulty: expert
+    dataset: app
+    module: m19
+    tags: [cohort, retention, date, filter]
+    prompt: |
+      The product team wants to know how many new users come back in their first full week. Group the users by the **month they signed up** (`signup_date`).
+
+      A user is **retained in week 1** when they have at least one event on the 7th to the 13th day after their signup date (the signup day itself is day 0). Use the day of `event_time`, not the exact time.
+
+      For each signup month, show:
+
+      - `cohort_month`: the month as `YYYY-MM`
+      - `signed_up`: how many users signed up that month (count all of them, including users with no events)
+      - `retained_week_1`: how many of them were retained in week 1
+      - `retention_pct`: `retained_week_1` divided by `signed_up`, times 100, rounded to 1 decimal place
+
+      Sort by `cohort_month`.
+    solution: |
+      WITH cohort AS (
+          SELECT user_id,
+                 to_char(signup_date, 'YYYY-MM') AS cohort_month,
+                 signup_date
+          FROM users
+      )
+      SELECT c.cohort_month,
+             COUNT(*) AS signed_up,
+             COUNT(*) FILTER (
+                 WHERE EXISTS (
+                     SELECT 1
+                     FROM events e
+                     WHERE e.user_id = c.user_id
+                       AND e.event_time::date - c.signup_date
+                           BETWEEN 7 AND 13
+                 )
+             ) AS retained_week_1,
+             ROUND(100.0 * COUNT(*) FILTER (
+                 WHERE EXISTS (
+                     SELECT 1
+                     FROM events e
+                     WHERE e.user_id = c.user_id
+                       AND e.event_time::date - c.signup_date
+                           BETWEEN 7 AND 13
+                 )
+             ) / COUNT(*), 1) AS retention_pct
+      FROM cohort c
+      GROUP BY c.cohort_month
+      ORDER BY c.cohort_month;
+    ordered: true
+    hints:
+      - "Start with one row per user that has the cohort month. Then decide for each user whether any of their events falls in days 7 to 13."
+      - "e.event_time::date - u.signup_date gives the number of days between the event and the signup. Compare that number with BETWEEN 7 AND 13."
+      - "Use EXISTS for the 'any event' test and COUNT(*) FILTER (WHERE EXISTS (...)) to count the retained users. Users without events must still be in signed_up."
+    explanation: |
+      A **cohort** is a group of users who share something, here the signup month. Retention asks: *of the people in this cohort, how many came back at a later point?* Because `signed_up` counts every user, a user with no events lowers the percentage, which is the honest answer.
+
+      `EXISTS` answers "is there at least one matching event?" without multiplying rows. Counting the users with `COUNT(*) FILTER (WHERE ...)` keeps one row per user. This is the building block for a full week-by-week retention table.
+
+  - id: ch-a-034
+    title: The in-order workout funnel by platform
+    difficulty: expert
+    dataset: app
+    module: m19
+    tags: [funnel, aggregation, filter, min]
+    prompt: |
+      The growth team wants a funnel per platform. A user moves through three steps, **in this order**:
+
+      1. the user opens the app (`app_open`)
+      2. the user starts a workout after that (`workout_started`)
+      3. the user completes a workout after the start (`workout_completed`)
+
+      Use each user's **first** event of each type. Users whose first `workout_started` happened before their first `app_open` do not count as step 2. Use the same rule for step 3.
+
+      Show `platform` (from `users`), `opened` (users who opened the app), `started_after_open` (users who passed step 2) and `completed_after_start` (users who passed step 3). Only users who opened the app are in the funnel. Sort by `platform`.
+    solution: |
+      WITH first_times AS (
+          SELECT u.user_id, u.platform,
+                 MIN(e.event_time) FILTER (
+                     WHERE e.event_name = 'app_open') AS t_open,
+                 MIN(e.event_time) FILTER (
+                     WHERE e.event_name = 'workout_started') AS t_start,
+                 MIN(e.event_time) FILTER (
+                     WHERE e.event_name = 'workout_completed') AS t_done
+          FROM users u
+          LEFT JOIN events e ON e.user_id = u.user_id
+          GROUP BY u.user_id, u.platform
+      )
+      SELECT platform,
+             COUNT(t_open) AS opened,
+             COUNT(*) FILTER (WHERE t_start > t_open) AS started_after_open,
+             COUNT(*) FILTER (
+                 WHERE t_done > t_start AND t_start > t_open
+             ) AS completed_after_start
+      FROM first_times
+      WHERE t_open IS NOT NULL
+      GROUP BY platform
+      ORDER BY platform;
+    ordered: true
+    hints:
+      - "Find each user's first time for each event type. MIN(event_time) FILTER (WHERE event_name = '...') does this in one pass."
+      - "Compare the times: a step counts only when its time is later than the previous step's time. Put those comparisons in WHERE inside COUNT(*) FILTER."
+      - "Group the users by platform at the end. Only users with an app_open are in the funnel, so filter with t_open IS NOT NULL."
+    explanation: |
+      A **funnel** shows how many people reach each step. The important word is "in order": a user who started a workout *before* opening the app is a data quirk, not a successful funnel step.
+
+      `MIN(...) FILTER (WHERE ...)` picks the first time of one event type per user, and the comparisons `t_start > t_open` enforce the order. Real funnel tools also limit how long a user has to finish a step, which you can add as one more condition.
+
+  - id: ch-a-035
+    title: Family-night films with two genres
+    difficulty: expert
+    dataset: movies
+    module: m16
+    tags: [array, many-to-many, aggregation, string]
+    prompt: |
+      A family-night playlist needs films from 2000 onwards that are tagged **both** `Animation` and `Family`. A film can have other genres too.
+
+      Show these columns:
+
+      - `title`
+      - `release_year`
+      - `genre_list`: all the film's genres in alphabetical order, separated by `, ` (a comma and a space). Example: `Animation, Comedy, Family`
+
+      Sort by `release_year`, then by `title`.
+    solution: |
+      WITH film_genres AS (
+          SELECT mg.movie_id,
+                 ARRAY_AGG(g.name ORDER BY g.name) AS genres
+          FROM movie_genres mg
+          JOIN genres g ON g.genre_id = mg.genre_id
+          GROUP BY mg.movie_id
+      )
+      SELECT m.title,
+             m.release_year,
+             ARRAY_TO_STRING(fg.genres, ', ') AS genre_list
+      FROM movies m
+      JOIN film_genres fg ON fg.movie_id = m.movie_id
+      WHERE fg.genres @> ARRAY['Animation', 'Family']
+        AND m.release_year >= 2000
+      ORDER BY m.release_year, m.title;
+    ordered: true
+    hints:
+      - "Each film has one row per genre in movie_genres. First gather the genre names of each film into one list."
+      - "ARRAY_AGG(g.name ORDER BY g.name) builds a sorted list per film. The @> operator checks that an array contains all the values of another array."
+      - "WHERE genres @> ARRAY['Animation', 'Family'] AND release_year >= 2000, and ARRAY_TO_STRING(genres, ', ') for the text."
+    explanation: |
+      An **array** is a list stored in one column. `ARRAY_AGG` collapses many rows into one list, which lets you test a film's genres as a single value.
+
+      `@>` means "contains all of". `ARRAY['Animation', 'Family']` asks for films whose genre list has both names, while a join would need two copies of the genre table. `ARRAY_TO_STRING` turns the list back into text for the report.
+
+  - id: ch-a-036
+    title: A reusable payroll function
+    difficulty: expert
+    dataset: company
+    module: m17
+    tags: [plpgsql, function, aggregation, variables]
+    prompt: |
+      The finance team asks the same question about different departments all the time: "What does this department pay per year?" Instead of rewriting the query, write a **PL/pgSQL function** that answers it.
+
+      Write one statement: `CREATE FUNCTION dept_payroll(...)`.
+
+      - It takes one argument, an integer department id, named `p_dept_id`.
+      - It returns `numeric`: the total yearly `salary` of the **current** employees (`terminated_on` is empty) in that department.
+      - If the department has no current employees, it returns `0`, not NULL.
+      - Write the body in `LANGUAGE plpgsql`, with a `DECLARE` section for a variable named `total`.
+
+      The app then runs a query that calls your function for every department.
+    solution: |
+      CREATE FUNCTION dept_payroll(p_dept_id integer)
+      RETURNS numeric
+      LANGUAGE plpgsql
+      AS $$
+      DECLARE
+          total numeric;
+      BEGIN
+          SELECT COALESCE(SUM(salary), 0)
+          INTO total
+          FROM employees
+          WHERE dept_id = p_dept_id
+            AND terminated_on IS NULL;
+          RETURN total;
+      END;
+      $$;
+    check: |
+      SELECT d.dept_id,
+             dept_payroll(d.dept_id) AS payroll
+      FROM departments d
+      ORDER BY d.dept_id;
+    ordered: true
+    hints:
+      - "A function is a named piece of code you can call like a built-in function. Its body sits between $$ and $$."
+      - "Inside the body, SELECT ... INTO total FROM employees ... stores a query result in a variable. COALESCE(SUM(salary), 0) turns an empty department into 0."
+      - "CREATE FUNCTION dept_payroll(p_dept_id integer) RETURNS numeric LANGUAGE plpgsql AS $$ DECLARE total numeric; BEGIN ... RETURN total; END; $$;"
+    explanation: |
+      **PL/pgSQL** is PostgreSQL's own programming language. It lets you store logic in the database: variables, `IF` and loops around SQL queries. A function written once can be used in every query, report and app that connects to the database.
+
+      Two details matter. The `p_` prefix keeps the parameter name apart from the column `dept_id`, so the database never has to guess which one you mean. And `COALESCE` gives `0` for a department with nobody on the payroll, instead of NULL.
+
+  - id: ch-a-037
+    title: The longest silent period per account
+    difficulty: expert
+    dataset: bank
+    module: m19
+    tags: [gaps, lag, window, date]
+    prompt: |
+      The bank's dormant-account review looks for accounts that go quiet for a long time. For each account, find the **longest gap** between two consecutive transactions. The gap is measured in **days** between the dates of the two transactions (use the date part of `txn_time`).
+
+      Keep only accounts whose longest gap is at least **90 days**. Show `account_id`, `transactions` (how many transactions the account has in total) and `longest_gap_days`.
+
+      Sort by `longest_gap_days` (longest first), then by `account_id`.
+    solution: |
+      WITH gaps AS (
+          SELECT account_id,
+                 txn_time::date AS txn_day,
+                 LAG(txn_time::date) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time, txn_id
+                 ) AS prev_day
+          FROM transactions
+      )
+      SELECT account_id,
+             COUNT(*) + 1 AS transactions,
+             MAX(txn_day - prev_day) AS longest_gap_days
+      FROM gaps
+      WHERE prev_day IS NOT NULL
+      GROUP BY account_id
+      HAVING MAX(txn_day - prev_day) >= 90
+      ORDER BY longest_gap_days DESC, account_id;
+    ordered: true
+    hints:
+      - "Compare each transaction with the one before it on the same account. LAG(...) OVER (PARTITION BY account_id ORDER BY txn_time) gives you that previous row."
+      - "Subtracting two dates gives the number of days between them. Take the maximum of those differences for each account."
+      - "Count the transactions in the same query. The first row of an account has no previous row, so COUNT(*) on the filtered rows is one less than the total. Use COUNT(*) + 1, or count the rows before filtering."
+    explanation: |
+      A **gap** is a silence between two events. `LAG` looks back one row inside a window (here, one account's history) so you can compare each row with the one before it.
+
+      Ordering by `txn_time, txn_id` makes the order fixed even when two transactions share the same timestamp. Without a second sort key, the database could pick either order and the gap would change between runs.
+
+  - id: ch-a-038
+    title: Large debits in quick succession
+    difficulty: expert
+    dataset: bank
+    module: m19
+    tags: [fraud, lag, window, filter]
+    prompt: |
+      The fraud team flags a possible account takeover when several **large debits** happen one after another, very quickly. In this task:
+
+      - A **large debit** is a transaction with an `amount` of `-500` or less.
+      - A large debit is a **quick repeat** when it happens no more than **10 minutes** after the previous large debit on the same account. Use only the large debits to find the previous one.
+
+      For each account with at least one quick repeat, show `account_id`, `quick_repeats` (how many quick repeats it has) and `first_quick_repeat` (the `txn_time` of its earliest quick repeat).
+
+      Sort by `quick_repeats` (highest first), then by `account_id`.
+    solution: |
+      WITH large_debits AS (
+          SELECT account_id, txn_id, txn_time,
+                 LAG(txn_time) OVER (
+                     PARTITION BY account_id
+                     ORDER BY txn_time, txn_id
+                 ) AS prev_time
+          FROM transactions
+          WHERE amount <= -500
+      )
+      SELECT account_id,
+             COUNT(*) AS quick_repeats,
+             MIN(txn_time) AS first_quick_repeat
+      FROM large_debits
+      WHERE txn_time - prev_time <= INTERVAL '10 minutes'
+      GROUP BY account_id
+      ORDER BY quick_repeats DESC, account_id;
+    ordered: true
+    hints:
+      - "Filter to the large debits first (amount <= -500). Then look at the previous large debit of the same account."
+      - "LAG(txn_time) OVER (PARTITION BY account_id ORDER BY txn_time, txn_id) gives the previous time. Subtracting two timestamps gives an interval you can compare with INTERVAL '10 minutes'."
+      - "Put the LAG in a CTE, keep rows where txn_time - prev_time <= INTERVAL '10 minutes', then GROUP BY account_id with COUNT(*) and MIN(txn_time)."
+    explanation: |
+      Fraud checks are often **velocity rules**: "too many of the same thing in too short a time". The key is to decide the rows *before* you look back. Filtering to large debits first makes `LAG` compare only those debits, so small purchases between them do not hide the pattern.
+
+      Accounts 46 and 10 look like this in the data. Real fraud teams use the same idea with more signals (location, merchant, device), but the window function is the core of it.
+
+  - id: ch-a-039
+    title: Satisfaction scores from messy survey answers
+    difficulty: expert
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, case, aggregation, regex]
+    prompt: |
+      The survey team needs the average satisfaction score for each kind of respondent. The data is messy, so you must clean two columns first.
+
+      **Respondent kind** (from the `respondent` column):
+
+      - contains an `@` sign: `email`
+      - starts with `cust-`: `customer code`
+      - is exactly `anonymous`: `anonymous`
+      - is NULL: `no name`
+      - anything else: `first name`
+
+      **Score** (from the `q1_satisfaction` column). Remove spaces at the start and end first. A digit `1` to `5` is its own score. The lowercase words `one` to `five` count as `1` to `5`. Every other answer (for example `0`, `11`, `4/5` or NULL) is not a valid score and is skipped.
+
+      For each respondent kind, show `respondent_kind`, `valid_answers` (how many valid scores it has) and `avg_score` (the average score, rounded to 2 decimals). Sort by `respondent_kind`.
+    solution: |
+      WITH answers AS (
+          SELECT CASE
+                     WHEN respondent LIKE '%@%' THEN 'email'
+                     WHEN respondent LIKE 'cust-%' THEN 'customer code'
+                     WHEN respondent = 'anonymous' THEN 'anonymous'
+                     WHEN respondent IS NULL THEN 'no name'
+                     ELSE 'first name'
+                 END AS respondent_kind,
+                 CASE
+                     WHEN btrim(q1_satisfaction) ~ '^[1-5]$'
+                         THEN btrim(q1_satisfaction)::int
+                     WHEN btrim(q1_satisfaction) = 'one' THEN 1
+                     WHEN btrim(q1_satisfaction) = 'two' THEN 2
+                     WHEN btrim(q1_satisfaction) = 'three' THEN 3
+                     WHEN btrim(q1_satisfaction) = 'four' THEN 4
+                     WHEN btrim(q1_satisfaction) = 'five' THEN 5
+                 END AS score
+          FROM survey_responses
+      )
+      SELECT respondent_kind,
+             COUNT(score) AS valid_answers,
+             ROUND(AVG(score), 2) AS avg_score
+      FROM answers
+      GROUP BY respondent_kind
+      ORDER BY respondent_kind;
+    ordered: true
+    hints:
+      - "Build the respondent kind and the score in two CASE expressions inside one CTE. Then group by the kind."
+      - "For the score, first remove the spaces with btrim(...). Then test the text with ~ '^[1-5]$' for digits, or compare it with 'one' ... 'five' for words."
+      - "COUNT(score) counts only the rows where the score is not NULL. ROUND(AVG(score), 2) gives the average to 2 decimals."
+    explanation: |
+      Real survey data arrives as text, with several spellings for the same answer. A cleaning step should **turn every spelling into one standard value** before you calculate anything. Writing the rules as `CASE` branches keeps each rule visible.
+
+      `COUNT(score)` ignores the rows that became NULL, which is exactly how the invalid answers are skipped. `COUNT(*)` would have counted them too. Always check how many rows the average is based on.
+
+  - id: ch-a-040
+    title: Binge sessions per viewer
+    difficulty: expert
+    dataset: movies
+    module: m19
+    tags: [sessionization, lag, window, running-sum]
+    prompt: |
+      FlickNest wants to know how often its heaviest viewers binge. A **binge session** is a run of plays by the same user where each play starts no more than **30 minutes** after the previous play of that user. A play that starts more than 30 minutes after the previous one begins a new session. The very first play of a user also begins a session.
+
+      Keep only users with at least **30 sessions**. Show `user_id`, `sessions` (how many binge sessions they have), `plays` (how many rows they have in `watch_history`) and `minutes_watched` (the sum of `minutes_watched`).
+
+      Sort by `sessions` (highest first), then by `user_id`.
+    solution: |
+      WITH plays AS (
+          SELECT user_id, started_at, minutes_watched,
+                 LAG(started_at) OVER (
+                     PARTITION BY user_id
+                     ORDER BY started_at, watch_id
+                 ) AS prev_at
+          FROM watch_history
+      ),
+      flagged AS (
+          SELECT user_id, minutes_watched,
+                 CASE
+                     WHEN prev_at IS NULL
+                          OR started_at - prev_at > INTERVAL '30 minutes'
+                         THEN 1
+                     ELSE 0
+                 END AS new_session
+          FROM plays
+      )
+      SELECT user_id,
+             SUM(new_session) AS sessions,
+             COUNT(*) AS plays,
+             SUM(minutes_watched) AS minutes_watched
+      FROM flagged
+      GROUP BY user_id
+      HAVING SUM(new_session) >= 30
+      ORDER BY sessions DESC, user_id;
+    ordered: true
+    hints:
+      - "Use LAG to find each play's previous start time for the same user. Ordering by started_at makes the order clear."
+      - "Flag a play as a new session (1) when it has no previous play, or when the gap is more than 30 minutes. Otherwise flag it 0."
+      - "Adding up the flags per user gives the number of sessions. Keep the users with HAVING SUM(new_session) >= 30."
+    explanation: |
+      **Sessionization** means cutting a long stream of events into sessions. The usual recipe has three steps: look back with `LAG`, flag the rows that start a new session, and add the flags up (a running `SUM` gives each session its own number).
+
+      The 30 minutes is a rule you choose, not a law. In this data the binge clusters are far apart, so any cut-off between 30 minutes and about 5 hours gives the same sessions. Always test how sensitive your result is to the rule.
+
+  - id: ch-a-041
+    title: Which details each event records
+    difficulty: expert
+    dataset: app
+    module: m16
+    tags: [jsonb, lateral, json-keys, aggregation]
+    prompt: |
+      Every event in FitTrack stores its extra details in the `properties` column. This column is `jsonb`, and each kind of event uses different keys.
+
+      For each `event_name` and each key in `properties`, count the events that have that key. Show these three columns:
+
+      - `event_name`
+      - `detail` (the name of the key)
+      - `events` (how many events have that key)
+
+      Sort by `event_name`, then by `detail`.
+    solution: |
+      SELECT e.event_name,
+             k.detail,
+             COUNT(*) AS events
+      FROM events e
+      CROSS JOIN LATERAL jsonb_object_keys(e.properties) AS k(detail)
+      GROUP BY e.event_name, k.detail
+      ORDER BY e.event_name, k.detail;
+    ordered: true
+    hints:
+      - "jsonb_object_keys(some_jsonb) returns the key names of one JSON object, one key per row."
+      - "A function that takes a value from the current row needs LATERAL: CROSS JOIN LATERAL jsonb_object_keys(e.properties) AS k(detail)."
+      - "After the join, GROUP BY e.event_name, k.detail and COUNT(*)."
+    explanation: |
+      **JSONB** stores flexible documents inside one column. Different rows can hold different keys, so a fixed set of columns would not fit. Functions such as `jsonb_object_keys` turn a document back into rows so you can count, filter and join them like a table.
+
+      `LATERAL` lets the function read `e.properties` from the same row, which is why `CROSS JOIN LATERAL` is needed. Keys that a row does not have are simply absent, so they are not counted.
+
+  - id: ch-a-042
+    title: Month-over-month growth in 2024
+    difficulty: expert
+    dataset: shop
+    module: m19
+    tags: [growth, lag, window, date]
+    prompt: |
+      The CFO wants to see how fast revenue grows from one month to the next.
+
+      Use only **delivered** orders. For each month (by `order_date`), the revenue is the sum of `quantity * unit_price * (1 - discount)` over its order lines, rounded to 2 decimals.
+
+      For each month of **2024**, show:
+
+      - `month`: the month as `YYYY-MM`
+      - `revenue`: the monthly revenue
+      - `growth_pct`: the change from the previous month, as a percentage: (this month's revenue minus the previous month's revenue) divided by the previous month's revenue, times 100, rounded to 2 decimals
+
+      January 2024 compares with December 2023, so use the 2023 months to find the previous month. Sort by `month`.
+    solution: |
+      WITH monthly AS (
+          SELECT DATE_TRUNC('month', o.order_date)::date AS month_start,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY DATE_TRUNC('month', o.order_date)
+      ),
+      with_previous AS (
+          SELECT month_start, revenue,
+                 LAG(revenue) OVER (ORDER BY month_start) AS previous_revenue
+          FROM monthly
+      )
+      SELECT TO_CHAR(month_start, 'YYYY-MM') AS month,
+             revenue,
+             ROUND(100.0 * (revenue - previous_revenue) / previous_revenue, 2) AS growth_pct
+      FROM with_previous
+      WHERE month_start >= DATE '2024-01-01'
+      ORDER BY month_start;
+    ordered: true
+    hints:
+      - "First make one row per month with its delivered revenue. Round it to 2 decimals as the prompt says."
+      - "LAG(revenue) OVER (ORDER BY month_start) gives the previous month's revenue. Add it as a column in a separate step."
+      - "Filter to 2024 after the LAG. If you filter before it, January 2024 has no previous month."
+    explanation: |
+      Growth metrics are a staple of analytics. The pattern is always the same: aggregate to the period you care about, then use `LAG` to reach the previous period, then compute the change.
+
+      The order of steps matters. If you filter to 2024 *before* `LAG`, January has nothing to compare with. Filtering after the window function keeps the 2023 months available as the "previous" values.
+
+  - id: ch-a-043
+    title: The biggest raises over the years
+    difficulty: expert
+    dataset: company
+    module: m11
+    tags: [first-value, last-value, window, frame]
+    prompt: |
+      HR wants to see how much each long-serving employee's salary has grown since their first salary.
+
+      Look at employees with at least **5 rows** in `salary_history` (the hire salary plus at least 4 changes). For each of them, show:
+
+      - `emp_id`
+      - `first_salary`: the salary on their earliest `effective_date`
+      - `latest_salary`: the salary on their latest `effective_date`
+      - `increase_pct`: (latest salary minus first salary) divided by first salary, times 100, rounded to 1 decimal
+
+      Sort by `increase_pct` (highest first), then by `emp_id`.
+    solution: |
+      WITH ranked AS (
+          SELECT s.emp_id,
+                 FIRST_VALUE(s.salary) OVER w AS first_salary,
+                 LAST_VALUE(s.salary) OVER w AS latest_salary
+          FROM salary_history s
+          WINDOW w AS (
+              PARTITION BY s.emp_id
+              ORDER BY s.effective_date
+              ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+          )
+      )
+      SELECT emp_id,
+             MAX(first_salary) AS first_salary,
+             MAX(latest_salary) AS latest_salary,
+             ROUND(100.0 * (MAX(latest_salary) - MAX(first_salary))
+                   / MAX(first_salary), 1) AS increase_pct
+      FROM ranked
+      GROUP BY emp_id
+      HAVING COUNT(*) >= 5
+      ORDER BY increase_pct DESC, emp_id;
+    ordered: true
+    hints:
+      - "FIRST_VALUE and LAST_VALUE are window functions. Sort each employee's rows by effective_date, then take the first and the last salary."
+      - "LAST_VALUE has a trap. Its default frame stops at the current row, so it returns the current salary. Add ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING to see the whole history."
+      - "Use a named window: WINDOW w AS (PARTITION BY s.emp_id ORDER BY s.effective_date ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)."
+    explanation: |
+      `FIRST_VALUE` and `LAST_VALUE` return a value from the start or the end of a window. Without an explicit frame, a window with an `ORDER BY` covers "everything up to the current row", so `LAST_VALUE` simply returns the current row's value. That is the most common mistake with this function.
+
+      Specifying the frame as `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` fixes it. A `MAX` over each group also works, since the first and last values are the minimum and maximum date, but the window version shows the frame idea clearly.
+
+  - id: ch-a-044
+    title: An automatic price-change log
+    difficulty: expert
+    dataset: shop
+    module: m17
+    tags: [trigger, plpgsql, audit, dml]
+    setup: |
+      CREATE TABLE price_audit (
+          product_id integer NOT NULL,
+          old_price numeric(10,2) NOT NULL,
+          new_price numeric(10,2) NOT NULL
+      );
+    prompt: |
+      Finance wants a history of every price change, written by the database itself, so nobody can forget to log one. The table `price_audit` already exists. It has the columns `product_id`, `old_price` and `new_price`.
+
+      Write two statements:
+
+      1. A function named `log_price_change()` that returns `trigger`. When the price of a product really changes, it inserts one row into `price_audit` with the product's id, the old price and the new price. A change to other columns (such as `stock_qty`) must not write a row.
+      2. A trigger named `products_price_audit` that runs **after** each `UPDATE` on `products`, **for each row**, and calls `log_price_change()`.
+
+      The app then updates two product prices and one stock quantity, and shows the `price_audit` table.
+    solution: |
+      CREATE FUNCTION log_price_change()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+          IF NEW.price IS DISTINCT FROM OLD.price THEN
+              INSERT INTO price_audit (product_id, old_price, new_price)
+              VALUES (NEW.product_id, OLD.price, NEW.price);
+          END IF;
+          RETURN NEW;
+      END;
+      $$;
+
+      CREATE TRIGGER products_price_audit
+      AFTER UPDATE ON products
+      FOR EACH ROW
+      EXECUTE FUNCTION log_price_change();
+    check: |
+      UPDATE products SET price = price + 10 WHERE product_id IN (1, 2);
+      UPDATE products SET stock_qty = stock_qty + 5 WHERE product_id = 1;
+      SELECT product_id, old_price, new_price
+      FROM price_audit
+      ORDER BY product_id;
+    ordered: true
+    hints:
+      - "A trigger runs a trigger function automatically. Inside the function, NEW holds the row after the change and OLD holds the row before it."
+      - "IF NEW.price IS DISTINCT FROM OLD.price THEN ... END IF; checks for a real change. Put the INSERT inside that IF."
+      - "CREATE TRIGGER products_price_audit AFTER UPDATE ON products FOR EACH ROW EXECUTE FUNCTION log_price_change();"
+    explanation: |
+      A **trigger** is code the database runs by itself when rows change. Here the rule is "log every real price change", so the logging can never be skipped by a careless query.
+
+      Two details matter. `IS DISTINCT FROM` compares values safely even with NULLs. And the check on `price` stops stock updates from writing audit rows. Triggers run once per row when you use `FOR EACH ROW`, and `NEW` / `OLD` give access to the values.
+
+  - id: ch-a-045
+    title: When each account first went below zero
+    difficulty: expert
+    dataset: bank
+    module: m11
+    tags: [running-total, window, rows-frame, tie-breaker]
+    prompt: |
+      Harbor Bank wants to know when each account first became overdrawn. Work out a **running balance** for every account:
+
+      - add up the account's transactions in time order, from its first transaction up to the current one
+      - order by `txn_time`, and by `txn_id` when two transactions have the same time
+
+      The **first** transaction that makes the running balance negative (below 0) is the answer for that account. Show these columns:
+
+      - `account_id`
+      - `first_negative_time`: the `txn_time` of that transaction
+      - `balance_after`: the running balance after that transaction
+
+      Sort by `account_id`.
+    solution: |
+      WITH running AS (
+          SELECT t.account_id, t.txn_id, t.txn_time,
+                 SUM(t.amount) OVER (
+                     PARTITION BY t.account_id
+                     ORDER BY t.txn_time, t.txn_id
+                     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                 ) AS balance
+          FROM transactions t
+      )
+      SELECT DISTINCT ON (account_id)
+             account_id,
+             txn_time AS first_negative_time,
+             balance AS balance_after
+      FROM running
+      WHERE balance < 0
+      ORDER BY account_id, txn_time, txn_id;
+    ordered: true
+    hints:
+      - "A running balance is a SUM with ORDER BY inside OVER. It adds each row to the rows before it."
+      - "Use ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW, and put txn_id in the ORDER BY so that rows with the same time keep one fixed order."
+      - "Keep the rows where the running balance is below 0, then use DISTINCT ON (account_id) ORDER BY account_id, txn_time, txn_id to keep the first one."
+    explanation: |
+      A running balance is one of the most common window function tasks in finance. The frame matters: `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` means each row adds itself to the total, one at a time.
+
+      Many transactions share a time in this data. A `RANGE` frame (the default with `ORDER BY`) would give all rows with the same time the same total, so the "first" negative row could be the wrong one. Adding `txn_id` to the sort makes the answer repeatable.
+
+  - id: ch-a-046
+    title: Each product's best month
+    difficulty: expert
+    dataset: messy
+    module: m18
+    tags: [unpivot, lateral, values, window]
+    prompt: |
+      The table `product_sales_wide` stores the revenue of each product in one column per month. It is hard to compare months that way.
+
+      Turn it into one row per product and month. Use these columns:
+
+      - `product`
+      - `month_name` (the three-letter month: `Jan`, `Feb`, `Mar`, `Apr`, `May` or `Jun`)
+      - `revenue`
+
+      Then keep only each product's **best month**, the row with the highest `revenue`. Show `product`, `month_name` and `revenue`, sorted by `product`.
+    solution: |
+      WITH monthly AS (
+          SELECT w.product, m.month_name, m.revenue
+          FROM product_sales_wide w
+          CROSS JOIN LATERAL (
+              VALUES ('Jan', w.jan), ('Feb', w.feb), ('Mar', w.mar),
+                     ('Apr', w.apr), ('May', w.may), ('Jun', w.jun)
+          ) AS m(month_name, revenue)
+      )
+      SELECT product, month_name, revenue
+      FROM (
+          SELECT product, month_name, revenue,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY product
+                     ORDER BY revenue DESC
+                 ) AS rn
+          FROM monthly
+      ) x
+      WHERE rn = 1
+      ORDER BY product;
+    ordered: true
+    hints:
+      - "Unpivoting turns columns into rows. A VALUES list can hold one row per month: ('Jan', w.jan), ('Feb', w.feb), ..."
+      - "CROSS JOIN LATERAL (VALUES ...) AS m(month_name, revenue) gives six rows for each product. LATERAL lets the VALUES list read the current product's columns."
+      - "Then number the rows of each product by revenue, highest first, with ROW_NUMBER() OVER (PARTITION BY product ORDER BY revenue DESC), and keep row 1."
+    explanation: |
+      Moving data from wide (one column per month) to long (one row per month) is called **unpivoting**. Long tables are easier to filter, group and join, so most analysis is done in long form.
+
+      `VALUES` with `LATERAL` is a neat way to unpivot a few columns. A `UNION ALL` of six `SELECT`s gives the same rows. The best-month step is a classic "top 1 per group" with `ROW_NUMBER()`.
+
+  - id: ch-a-047
+    title: Typical workout length by type
+    difficulty: expert
+    dataset: app
+    module: m19
+    tags: [percentile, median, json, aggregation]
+    prompt: |
+      The coaches want to know how long a typical workout lasts, for each workout type. Use the **completed** workouts (`workout_completed` events). Their length is stored in `properties` as `duration_min`.
+
+      For each `workout_type` show these columns:
+
+      - `workout_type` (from `properties`)
+      - `completed` (how many completed workouts there are)
+      - `median_minutes`: the median `duration_min`, rounded to 1 decimal
+      - `p90_minutes`: the 90th percentile of `duration_min`, rounded to 1 decimal
+
+      Use the continuous percentile (`PERCENTILE_CONT`). Sort by `workout_type`.
+    solution: |
+      SELECT properties->>'workout_type' AS workout_type,
+             COUNT(*) AS completed,
+             ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+                 ORDER BY (properties->>'duration_min')::numeric))::numeric, 1) AS median_minutes,
+             ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
+                 ORDER BY (properties->>'duration_min')::numeric))::numeric, 1) AS p90_minutes
+      FROM events
+      WHERE event_name = 'workout_completed'
+      GROUP BY properties->>'workout_type'
+      ORDER BY workout_type;
+    ordered: true
+    hints:
+      - "properties->>'duration_min' returns the value as text. Cast it to a number with ::numeric before you calculate."
+      - "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) gives the median. Use 0.9 for the 90th percentile."
+      - "The result of PERCENTILE_CONT is a double value, so cast it to numeric before ROUND(..., 1)."
+    explanation: |
+      Averages can be misleading when a few very long workouts pull them up. **Percentiles** describe the spread: the median is the middle workout, and the 90th percentile is the length that 90 out of 100 workouts stay under.
+
+      `PERCENTILE_CONT` interpolates between two values when the position falls between them. `PERCENTILE_DISC` always returns a value from the data instead. Both are valid; the choice should be stated in every report.

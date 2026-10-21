@@ -3458,7 +3458,6 @@ lessons:
           GROUP BY c.customer_id;
         note: "LEFT JOIN keeps customers with no orders, and COUNT(column) gives 0 for them."
 
-  # @@NEXT_LESSON@@
 
 testPool:
   - type: quiz
@@ -4023,4 +4022,589 @@ testPool:
       one. The `order_id` tie-breaker makes the choice fixed even when two orders
       share a date.
 
-  # @@NEXT_TEST@@
+
+project:
+  id: m20-proj
+  title: "Final Capstone: Build a Star Schema & Executive Report"
+  icon: "🏁"
+  dataset: shop
+  md: |
+    ShopSmart's board meets on Monday. Priya, the head of analytics, needs one clean
+    picture of 2023 and 2024. Until now every report has been a long query that
+    joins six tables, copied from one person to the next, and nobody is sure which
+    copy is right.
+
+    Priya asks you to fix this properly. You will build a small **star schema**: two
+    dimension tables that describe customers and products, and one fact table that
+    records every order line. Then you will answer the board's questions from that
+    star, with a single executive summary at the end.
+
+    Each task builds on the one before, and each run starts from the original shop
+    data. So the tables from earlier tasks are rebuilt for you in the **setup** of
+    later tasks. You can focus on the new step every time.
+
+    Work through the tasks in order. Check each result before you move on, because
+    later tasks depend on it.
+  tasks:
+    - type: exercise
+      id: m20-proj-1
+      title: Build dim_customer
+      difficulty: 1
+      prompt: |
+        Create a table called `dim_customer` with these columns, in this order:
+        `customer_key`, `customer_id`, `first_name`, `last_name`, `state` and
+        `segment`.
+
+        `customer_key` is 1 for the customer with the lowest `customer_id`, 2 for the
+        next one, and so on. Create it with `ROW_NUMBER()`, numbered by
+        `customer_id`.
+      solution: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+      check: |
+        SELECT customer_key, customer_id, first_name, last_name, state, segment
+        FROM dim_customer
+        WHERE customer_key <= 5
+        ORDER BY customer_key;
+      columnNames: true
+      hints:
+        - You need `CREATE TABLE dim_customer AS SELECT ...` from the `customers` table.
+        - "Give the first column the name `customer_key`, using `ROW_NUMBER() OVER (...)`."
+        - "SELECT ROW_NUMBER() OVER (ORDER BY ___) AS customer_key, customer_id, first_name, last_name, state, segment FROM customers;"
+      explanation: |
+        The surrogate key keeps the warehouse safe if the shop's own ids change later.
+        The check reads the first five keys, which must match the customer ids 1 to 5.
+
+    - type: exercise
+      id: m20-proj-2
+      title: Build dim_product
+      difficulty: 1
+      prompt: |
+        Create a table called `dim_product` with these columns, in this order:
+        `product_key`, `product_id`, `product_name`, `category_name` and
+        `supplier_name`.
+
+        `product_key` is 1 for the product with the lowest `product_id`, 2 for the next
+        one, and so on, using `ROW_NUMBER()` numbered by `product_id`. Get the category
+        name from `categories` and the supplier name from `suppliers`.
+
+        Some products have no supplier. For those, `supplier_name` must be empty (NULL),
+        and the product must still be in the table.
+      solution: |
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+      check: |
+        SELECT product_key, product_id, product_name, category_name, supplier_name
+        FROM dim_product
+        WHERE product_key IN (1, 47, 60)
+        ORDER BY product_key;
+      columnNames: true
+      hints:
+        - Join `products` to `categories` with an inner join, as in the lesson.
+        - A `LEFT JOIN` to `suppliers` keeps the products without a supplier.
+        - "...FROM products AS p JOIN categories AS c ON c.category_id = p.category_id ___ JOIN suppliers ..."
+      explanation: |
+        Products 47 and 60 have no supplier, so their `supplier_name` is NULL. An
+        inner join to `suppliers` would have removed them from the dimension without
+        any warning.
+
+    - type: exercise
+      id: m20-proj-3
+      title: Build fact_sales
+      difficulty: 2
+      prompt: |
+        The tables `dim_customer` and `dim_product` already exist, as built in the
+        previous two tasks.
+
+        Create a table called `fact_sales` with **one row for each order line**, and
+        these columns, in this order:
+
+        - `order_item_id`
+        - `order_id`
+        - `customer_key` (from `dim_customer`)
+        - `product_key` (from `dim_product`)
+        - `order_date` (from `orders`)
+        - `order_status` (the `status` of the order)
+        - `quantity`
+        - `sales_amount`, which is `quantity * unit_price * (1 - discount)`, with no
+          rounding
+
+        Join each line to its order, then to both dimensions.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+      solution: |
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      check: |
+        SELECT COUNT(*) AS fact_rows,
+               COUNT(DISTINCT customer_key) AS customers,
+               ROUND(SUM(sales_amount), 2) AS total_amount
+        FROM fact_sales;
+      columnNames: true
+      hints:
+        - Start from `order_items`, because the fact has one row for each line.
+        - Join `orders` on `order_id`, then join the two dimensions on their business ids.
+        - "...FROM order_items AS i JOIN orders AS o ON o.order_id = i.order_id JOIN dim_customer AS dc ON dc.customer_id = o.customer_id ___ dim_product AS dp ON dp.product_id = i.product_id;"
+      explanation: |
+        The fact table keeps all 2,296 order lines, and the check confirms the total
+        amount of $314,851.34 for every line, delivered or not. Every later report
+        starts from this table.
+
+    - type: exercise
+      id: m20-proj-4
+      title: Prove the fact table is complete
+      difficulty: 2
+      prompt: |
+        Before the board sees any number, check that the star matches the source.
+
+        Show three columns, in one row:
+
+        - `fact_lines`: the number of rows in `fact_sales`
+        - `source_lines`: the number of rows in `order_items`
+        - `amount_difference`: the sum of `sales_amount` in `fact_sales`, minus the sum
+          of `quantity * unit_price * (1 - discount)` over `order_items`, rounded to 2
+          decimal places
+
+        A correct star shows the same number of lines and a difference of 0.00.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      solution: |
+        SELECT (SELECT COUNT(*) FROM fact_sales) AS fact_lines,
+               (SELECT COUNT(*) FROM order_items) AS source_lines,
+               ROUND((SELECT SUM(sales_amount) FROM fact_sales)
+                     - (SELECT SUM(quantity * unit_price * (1 - discount))
+                        FROM order_items), 2) AS amount_difference;
+      columnNames: true
+      hints:
+        - Each of the three numbers can be a small subquery in the `SELECT` list.
+        - "`(SELECT COUNT(*) FROM fact_sales)` counts the rows of the fact table."
+        - "Subtract the source total from the fact total, then wrap the result in `ROUND(..., 2)`."
+      explanation: |
+        A reconciliation like this is the last check before the numbers reach a board.
+        Both counts are 2,296, and the amounts differ by exactly 0.00.
+
+    - type: exercise
+      id: m20-proj-5
+      title: Revenue by category and year
+      difficulty: 2
+      prompt: |
+        Use `dim_product` and `fact_sales`. They already exist, as built in the
+        setup.
+
+        Show revenue for **delivered** orders by category and by calendar year. Show
+        three columns:
+
+        - `category_name`
+        - `year`: the year of `order_date`, as a whole number such as 2024
+        - `revenue`: the sum of `sales_amount`, rounded to 2 decimal places
+
+        Sort the rows by `category_name`, then by `year`.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      solution: |
+        SELECT dp.category_name,
+               EXTRACT(YEAR FROM f.order_date)::int AS year,
+               ROUND(SUM(f.sales_amount), 2) AS revenue
+        FROM fact_sales AS f
+        JOIN dim_product AS dp
+             ON dp.product_key = f.product_key
+        WHERE f.order_status = 'delivered'
+        GROUP BY dp.category_name,
+                 EXTRACT(YEAR FROM f.order_date)
+        ORDER BY dp.category_name, year;
+      ordered: true
+      columnNames: true
+      hints:
+        - Filter with `f.order_status = 'delivered'`, then group by the category and the year.
+        - "`EXTRACT(YEAR FROM f.order_date)` gives the year. Cast it with `::int` to show a whole number."
+        - "...GROUP BY dp.category_name, EXTRACT(YEAR FROM f.order_date) ORDER BY dp.category_name, ___;"
+      explanation: |
+        Each category has one row for each year it sold in. Grouping by the category
+        name, which lives in the dimension, keeps the query short, because the fact
+        table already has the date and the status.
+
+    - type: exercise
+      id: m20-proj-6
+      title: The five best customers of 2024
+      difficulty: 2
+      prompt: |
+        Use `dim_customer` and `fact_sales`. They already exist, as built in the
+        setup.
+
+        Show the **5 customers with the highest delivered revenue in 2024**. Show three
+        columns: `first_name`, `last_name` and `revenue`. `revenue` is the sum of
+        `sales_amount` for delivered orders placed in 2024, rounded to 2 decimal places.
+
+        Sort by `revenue` from highest to lowest, then by `customer_key`.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      solution: |
+        SELECT dc.first_name,
+               dc.last_name,
+               ROUND(SUM(f.sales_amount), 2) AS revenue
+        FROM fact_sales AS f
+        JOIN dim_customer AS dc
+             ON dc.customer_key = f.customer_key
+        WHERE f.order_status = 'delivered'
+          AND f.order_date >= '2024-01-01'
+          AND f.order_date < '2025-01-01'
+        GROUP BY dc.customer_key, dc.first_name, dc.last_name
+        ORDER BY revenue DESC, dc.customer_key
+        LIMIT 5;
+      ordered: true
+      columnNames: true
+      hints:
+        - Filter the fact table to delivered orders placed in 2024, then group by customer.
+        - "`GROUP BY dc.customer_key` keeps two customers with the same name apart."
+        - "...ORDER BY ___ DESC, dc.customer_key LIMIT ___;"
+      explanation: |
+        Noor Haddad leads with $6,488.88. The fifth customer, Stefan Petrov at $4,062.45,
+        is clearly ahead of the sixth. The `customer_key` tie-breaker makes the list
+        fixed every time.
+
+    - type: exercise
+      id: m20-proj-7
+      title: Month-over-month growth in 2024
+      difficulty: 3
+      prompt: |
+        Use `fact_sales`. It already exists, as built in the setup.
+
+        For each month of **2024**, using **delivered** orders, show three columns:
+
+        - `month`: the month as text in the form `YYYY-MM`
+        - `revenue`: the sum of `sales_amount`, rounded to 2 decimal places
+        - `growth_pct`: the percentage change from the previous month, calculated from
+          the unrounded sums and rounded to 1 decimal place. Show `NULL` for January,
+          because there is no earlier month in 2024.
+
+        Sort the rows by `month`.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      solution: |
+        WITH monthly AS (
+            SELECT to_char(order_date, 'YYYY-MM') AS month,
+                   SUM(sales_amount) AS raw_revenue
+            FROM fact_sales
+            WHERE order_status = 'delivered'
+              AND order_date >= '2024-01-01'
+              AND order_date < '2025-01-01'
+            GROUP BY to_char(order_date, 'YYYY-MM')
+        )
+        SELECT month,
+               ROUND(raw_revenue, 2) AS revenue,
+               ROUND(100.0 * (raw_revenue
+                     - LAG(raw_revenue) OVER (ORDER BY month))
+                     / LAG(raw_revenue) OVER (ORDER BY month), 1)
+                   AS growth_pct
+        FROM monthly
+        ORDER BY month;
+      ordered: true
+      columnNames: true
+      hints:
+        - First total each month in a CTE, using the unrounded `sales_amount`.
+        - "`LAG(raw_revenue) OVER (ORDER BY month)` gives the previous month's total."
+        - "The percentage is (this month - previous month) / previous month * 100. Write `100.0 * ...` so the division keeps its decimals."
+      explanation: |
+        January has no previous month, so `LAG` returns NULL and the growth is NULL.
+        February fell by 46.2 percent, and March grew by 110.0 percent. Calculating from
+        the unrounded totals avoids a small error that rounding each month first would
+        create.
+
+    - type: exercise
+      id: m20-proj-8
+      title: The executive summary
+      difficulty: 3
+      prompt: |
+        Use `dim_product` and `fact_sales`. They already exist, as built in the setup.
+
+        Write **one query** that returns **one row** with these five columns, in this
+        order. Every number is about **delivered** orders placed in **2024**.
+
+        - `delivered_revenue_2024`: the total `sales_amount`, rounded to 2 decimal places
+        - `delivered_orders_2024`: the number of **different** orders
+        - `avg_order_value_2024`: `sales_amount` total divided by the number of orders,
+          rounded to 2 decimal places
+        - `active_customers_2024`: the number of **different** customers (`customer_key`)
+        - `top_category_2024`: the category name with the highest revenue in 2024
+
+        Use subqueries or CTEs. Do not use `SELECT *`.
+      setup: |
+        CREATE TABLE dim_customer AS
+        SELECT ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key,
+               customer_id,
+               first_name,
+               last_name,
+               state,
+               segment
+        FROM customers;
+
+        CREATE TABLE dim_product AS
+        SELECT ROW_NUMBER() OVER (ORDER BY p.product_id) AS product_key,
+               p.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               s.name AS supplier_name
+        FROM products AS p
+        JOIN categories AS c
+             ON c.category_id = p.category_id
+        LEFT JOIN suppliers AS s
+                  ON s.supplier_id = p.supplier_id;
+
+        CREATE TABLE fact_sales AS
+        SELECT i.order_item_id,
+               o.order_id,
+               dc.customer_key,
+               dp.product_key,
+               o.order_date,
+               o.status AS order_status,
+               i.quantity,
+               i.quantity * i.unit_price * (1 - i.discount)
+                   AS sales_amount
+        FROM order_items AS i
+        JOIN orders AS o
+             ON o.order_id = i.order_id
+        JOIN dim_customer AS dc
+             ON dc.customer_id = o.customer_id
+        JOIN dim_product AS dp
+             ON dp.product_id = i.product_id;
+      solution: |
+        WITH sales_2024 AS (
+            SELECT order_id,
+                   customer_key,
+                   product_key,
+                   sales_amount
+            FROM fact_sales
+            WHERE order_status = 'delivered'
+              AND order_date >= '2024-01-01'
+              AND order_date < '2025-01-01'
+        ),
+        category_revenue AS (
+            SELECT dp.category_name,
+                   SUM(s.sales_amount) AS revenue
+            FROM sales_2024 AS s
+            JOIN dim_product AS dp
+                 ON dp.product_key = s.product_key
+            GROUP BY dp.category_name
+        )
+        SELECT ROUND(SUM(s.sales_amount), 2)
+                   AS delivered_revenue_2024,
+               COUNT(DISTINCT s.order_id)
+                   AS delivered_orders_2024,
+               ROUND(SUM(s.sales_amount)
+                     / COUNT(DISTINCT s.order_id), 2)
+                   AS avg_order_value_2024,
+               COUNT(DISTINCT s.customer_key)
+                   AS active_customers_2024,
+               (SELECT cr.category_name
+                FROM category_revenue AS cr
+                ORDER BY cr.revenue DESC, cr.category_name
+                LIMIT 1) AS top_category_2024
+        FROM sales_2024 AS s;
+      columnNames: true
+      hints:
+        - Start with a CTE that keeps only the delivered 2024 rows of the fact table.
+        - "Use `COUNT(DISTINCT s.order_id)` for orders, because one order has several lines."
+        - "The top category is a subquery over a second CTE, `category_revenue`, sorted by revenue and then by name, with LIMIT 1."
+      explanation: |
+        This is the one row the board will read. Delivered revenue in 2024 is
+        $145,872.38 from 419 orders, which averages $348.14 per order. 128 customers
+        bought something, and Phones is the top category. Every number comes from the
+        star you built in the first seven tasks.
+

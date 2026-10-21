@@ -1,0 +1,70 @@
+glossary:
+  - term: SQL dialect
+    definition: "The version of SQL that one database understands. The core is shared, but each product adds its own words, such as LIMIT in PostgreSQL and TOP in SQL Server."
+    example: "PostgreSQL: SELECT name FROM products LIMIT 5;   SQL Server: SELECT TOP 5 name FROM products;"
+    module: m20
+
+  - term: Deterministic ordering
+    definition: "A sort that always gives the same order of rows, because a unique tie-breaker column settles every tie. Without it, rows with equal values may swap places between runs."
+    example: "ORDER BY price DESC, product_id LIMIT 4;"
+    module: m20
+
+  - term: Data warehouse
+    definition: "A database built for reports and analysis, where data is arranged once in a shape that is easy to query, rather than in the shape the shop's application needs."
+    example: "A warehouse holds dim_customer, dim_product and fact_sales, built from the shop tables."
+    module: m20
+
+  - term: Star schema
+    definition: "A warehouse layout with one fact table in the middle and dimension tables around it, like the points of a star. Reports start from the fact table and add only the dimensions they need."
+    example: "fact_sales JOIN dim_product ON dim_product.product_key = fact_sales.product_key"
+    module: m20
+
+  - term: Fact table
+    definition: "A table that records events, such as orders or payments, with numbers you can add up. Each row is one event at the grain you chose."
+    example: "fact_sales: one row per order line, with quantity and sales_amount."
+    module: m20
+
+  - term: Dimension table
+    definition: "A table that describes the things around the facts, such as customers, products or dates. It has descriptive columns and usually far fewer rows than the fact table."
+    example: "dim_product: product_key, product_name, category_name"
+    module: m20
+
+  - term: Surrogate key
+    definition: "A key number that the warehouse makes up for each dimension row, instead of using the shop's own id. It keeps the links safe when the source ids change."
+    example: "ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key"
+    module: m20
+
+  - term: Slowly changing dimension (SCD)
+    definition: "A dimension whose values change over time, such as a customer's city. Type 1 overwrites the old value and loses history. Type 2 keeps each version as its own row, with start and end dates."
+    example: "Ana, Austin until 2024-02-29 (is_current FALSE); Ana, Denver from 2024-03-01 (is_current TRUE)"
+    module: m20
+
+  - term: Reconciliation
+    definition: "A check that two independent sources give the same total. When they differ, you explain the difference before you trust either number."
+    example: "Sum of payments = sum of paid order totals: 263,983.37 = 263,983.37"
+    module: m20
+
+  - term: Edge case
+    definition: "An unusual input that a query must still handle correctly, such as a NULL, a tie, an empty group or a duplicate row. Testing edge cases is how you find the bugs that normal rows hide."
+    example: "SUM over no rows returns NULL, not 0, so use COALESCE(SUM(price), 0)."
+    module: m20
+
+  - term: Placeholder
+    definition: "A marker, such as $1 in SQL or %s in Python, that stands for a value sent separately from the query text. It keeps user input from changing the meaning of the query."
+    example: "PREPARE state_count (text) AS SELECT COUNT(*) FROM customers WHERE state = $1;"
+    module: m20
+
+  - term: Driver
+    definition: "A library that a program such as Python uses to connect to a database, send SQL and receive the rows back."
+    example: "import psycopg  (a driver for PostgreSQL)"
+    module: m20
+
+  - term: BI tool
+    definition: "Business intelligence software, such as Tableau, Power BI, Looker or Metabase, that draws charts and dashboards from queries or views in a database."
+    example: "A dashboard reads v_state_customers and draws a bar chart of customers per state."
+    module: m20
+
+  - term: dbt model
+    definition: "In dbt (data build tool), one SQL SELECT saved in a file. The file name becomes a table or view, and models refer to each other by name with ref()."
+    example: "FROM {{ ref('delivered_lines') }}"
+    module: m20
