@@ -2357,6 +2357,709 @@ lessons:
           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
           PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x)
         note: Aggregates (use GROUP BY, not OVER). CONT interpolates; DISC returns a real value.
+  - id: m11-l05
+    title: "Named windows & filtering"
+    summary: Name a window once with WINDOW, reuse it, and keep only the rows you want with a CTE (PostgreSQL has no QUALIFY).
+    minutes: 32
+    dataset: movies
+    steps:
+      - type: read
+        title: Copy, paste, regret
+        md: |
+          FlickNest's catalog team keeps a "shelf report". It started small, but now several columns repeat the **same** long window:
+
+          ```sql
+          ROW_NUMBER() OVER (
+              PARTITION BY age_rating
+              ORDER BY duration_min DESC, movie_id
+          )
+          FIRST_VALUE(title) OVER (
+              PARTITION BY age_rating
+              ORDER BY duration_min DESC, movie_id
+          )
+          ```
+
+          One day someone changes the sort order in one column and forgets the other. Now the two columns disagree, and nobody gets an error.
+
+          The cure is to give the window a **name** once and reuse it everywhere.
+
+          > [!ANALOGY]
+          > A named window is like a contact in your phone. You save the long phone number once as "Mum", and from then on you just tap the name. Change the number in one place and every call goes to the new number.
+
+          Today you learn two things: the `WINDOW` clause, and the question everybody asks sooner or later: *"How do I keep only the rows where the rank is 1?"*
+
+      - type: example
+        title: Name the window once
+        md: |
+          Here we look at the nine films released in **2021 or later**. The window is called `shelf`, and three columns use it.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ROW_NUMBER() OVER shelf AS pos,
+              FIRST_VALUE(title) OVER shelf AS longest,
+              FIRST_VALUE(duration_min) OVER shelf
+                  - duration_min AS min_shorter
+          FROM movies
+          WHERE release_year >= 2021
+          WINDOW shelf AS (
+              PARTITION BY age_rating
+              ORDER BY duration_min DESC, movie_id
+          )
+          ORDER BY age_rating, pos;
+        after: |
+          Nine films, one shelf per age rating. On the PG shelf, **The Last Terraformer** (126 min) is first, so **Rain Over Valparaiso** is 15 minutes shorter and **Moonwalk Motel** is 18 minutes shorter.
+
+          The window is written **once** (in the `WINDOW` line) and used three times with `OVER shelf`. Change the sort in that one place and all three columns follow.
+
+      - type: read
+        title: The anatomy of the WINDOW clause
+        md: |
+          Here is where the new clause lives in a query:
+
+          ```text
+          SELECT ...   OVER shelf ...
+          FROM ...
+          WHERE ...
+          GROUP BY ...
+          HAVING ...
+          WINDOW shelf AS ( ... )
+          ORDER BY ...
+          LIMIT ...
+          ```
+
+          A few simple rules:
+
+          - **Name it however you like**: `shelf`, `w`, `by_rating`.
+          - **Use it with `OVER name`**, with no parentheses, when you want the window exactly as defined.
+          - **`WINDOW` comes after `HAVING` and before `ORDER BY`.**
+          - **Define several windows with one `WINDOW` keyword**, separated by commas.
+
+          > [!TIP]
+          > A window you define but never use is harmless, so it is safe to leave a named window in a query while you are experimenting.
+
+      - type: exercise
+        id: m11-l05-e1
+        title: The newest film on each shelf
+        prompt: |
+          For films released in **2021 or later**, show `title`, `age_rating`, `release_year` and two columns that share **one named window**:
+
+          - `pos`: the film's position when the films of the same age rating are listed **newest first** (ties: lowest `movie_id` first)
+          - `newest`: the title of the newest film of that age rating
+
+          Sort by `age_rating`, then `pos`.
+        starter: |
+          SELECT title, age_rating, release_year
+          FROM movies
+          WHERE release_year >= 2021
+          ORDER BY age_rating, release_year DESC, movie_id;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              release_year,
+              ROW_NUMBER() OVER recent AS pos,
+              FIRST_VALUE(title) OVER recent AS newest
+          FROM movies
+          WHERE release_year >= 2021
+          WINDOW recent AS (
+              PARTITION BY age_rating
+              ORDER BY release_year DESC, movie_id
+          )
+          ORDER BY age_rating, pos;
+        ordered: true
+        hints:
+          - Define the window once in a WINDOW line, then point both new columns at it.
+          - "The window needs PARTITION BY age_rating and ORDER BY release_year DESC, movie_id. Put the WINDOW line after WHERE and before ORDER BY."
+          - "ROW_NUMBER() OVER recent AS pos, FIRST_VALUE(title) OVER recent AS newest ... WINDOW recent AS (PARTITION BY ___ ORDER BY release_year ___, movie_id)"
+        explanation: |
+          Both columns use `recent`, so they can never disagree. Moonwalk Motel and Rain Over Valparaiso were both released in 2023, and the `movie_id` tie-breaker puts Moonwalk Motel first.
+
+          Whenever you catch yourself pasting the same `OVER (...)` twice, reach for `WINDOW`.
+        difficulty: 1
+
+      - type: example
+        title: Two windows, two jobs
+        md: |
+          One query can define as many named windows as you need. Here `in_rating` ranks a film among its own age rating, and `overall` ranks it among **all** nine films.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ROW_NUMBER() OVER in_rating AS pos_in_rating,
+              ROW_NUMBER() OVER overall AS pos_overall
+          FROM movies
+          WHERE release_year >= 2021
+          WINDOW in_rating AS (
+                     PARTITION BY age_rating
+                     ORDER BY duration_min DESC, movie_id
+                 ),
+                 overall AS (
+                     ORDER BY duration_min DESC, movie_id
+                 )
+          ORDER BY pos_overall;
+        after: |
+          **Velocity Falls** is first among the R films (`pos_in_rating` 1) but only fourth overall, because three longer films from other age ratings are ahead of it.
+
+          Notice the comma between the two definitions: it is **one** `WINDOW` keyword, then `name AS (...)`, comma, `name AS (...)`.
+
+      - type: exercise
+        id: m11-l05-e2
+        title: Shelf average and overall average
+        prompt: |
+          For films released in **2021 or later**, show `title`, `age_rating`, `duration_min` and two averages, both rounded to 1 decimal:
+
+          - `rating_avg`: the average `duration_min` of the films with the **same age rating**
+          - `all_avg`: the average `duration_min` of **all nine films**
+
+          Define two named windows, `by_rating` and `everyone`. (A window with nothing inside its parentheses, `everyone AS ()`, simply means "all rows".) Sort by `age_rating`, then `duration_min` descending.
+        starter: |
+          SELECT title, age_rating, duration_min
+          FROM movies
+          WHERE release_year >= 2021
+          ORDER BY age_rating, duration_min DESC;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ROUND(AVG(duration_min) OVER by_rating, 1)
+                  AS rating_avg,
+              ROUND(AVG(duration_min) OVER everyone, 1)
+                  AS all_avg
+          FROM movies
+          WHERE release_year >= 2021
+          WINDOW by_rating AS (PARTITION BY age_rating),
+                 everyone AS ()
+          ORDER BY age_rating, duration_min DESC;
+        ordered: true
+        hints:
+          - You need two windows. One splits the films by age rating, the other has no PARTITION BY at all.
+          - "WINDOW by_rating AS (PARTITION BY age_rating), everyone AS () - then AVG(duration_min) OVER by_rating and AVG(duration_min) OVER everyone."
+          - "ROUND(AVG(duration_min) OVER ___, 1) AS rating_avg, ROUND(AVG(duration_min) OVER ___, 1) AS all_avg"
+        explanation: |
+          The overall average of the nine films is 112.1 minutes, and it repeats on every row. The PG shelf averages 115.0 minutes, the PG-13 shelf 112.3 and the R shelf 107.5.
+
+          An empty window `()` is the named version of `OVER ()` from module 10.
+        difficulty: 2
+
+      - type: read
+        title: Windows built from windows
+        md: |
+          A named window can be the **starting point** for another one. You write the base window's name first, then add to it. This is handy when many windows share the same `PARTITION BY` and differ only in their order or frame.
+
+          ```sql
+          WINDOW per_rating AS (PARTITION BY age_rating),
+                 last3 AS (
+                     per_rating
+                     ORDER BY release_year, movie_id
+                     ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+                 )
+          ```
+
+          `last3` starts from `per_rating` and adds its own `ORDER BY` and frame.
+
+          > [!WARNING]
+          > PostgreSQL enforces some strict rules when you build on a window:
+          >
+          > - The base window must be defined **earlier** in the `WINDOW` list.
+          > - The new window **cannot** write its own `PARTITION BY` (error: `cannot override PARTITION BY clause of window`).
+          > - It can add an `ORDER BY` only if the base has none (error: `cannot override ORDER BY clause of window`).
+          > - The base window must **not** have a frame (error: `cannot copy window ... because it has a frame clause`).
+
+      - type: example
+        title: A moving average inside each age rating
+        md: |
+          `per_rating` holds the partition and `last3` adds the sorting and the 3-row frame. Because the frame never crosses a partition, the first film of each rating starts a fresh average.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              release_year,
+              duration_min,
+              ROUND(AVG(duration_min) OVER last3, 1)
+                  AS avg_last3
+          FROM movies
+          WHERE release_year >= 2020
+          WINDOW per_rating AS (PARTITION BY age_rating),
+                 last3 AS (
+                     per_rating
+                     ORDER BY release_year, movie_id
+                     ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+                 )
+          ORDER BY age_rating, release_year, movie_id;
+        after: |
+          15 films. Embers of the Wolf Crown is the first PG film (112 min), so its `avg_last3` is just 112.0. The next PG film, The Honest Liar (108 min), averages the two films so far: 110.0.
+
+          When the R films start, the average starts over: The Quiet Cellar (99 min) shows 99.0 and does **not** borrow from the PG-13 films above it.
+
+      - type: read
+        title: The question everybody asks
+        md: |
+          FlickNest wants a **Marathon shelf**: the *two longest films* in each age rating. You already know how to number the films with `ROW_NUMBER()`. So the obvious plan is to keep only the rows where that number is 1 or 2:
+
+          ```sql
+          WHERE ROW_NUMBER() OVER (...) <= 2
+          ```
+
+          Sadly, that does not work. To see why, look at the order in which the database really runs a query. `WHERE` happens **early**, long before the window functions are calculated in the `SELECT` step.
+
+      - type: viz
+        viz: execution-order
+        title: WHERE runs before the windows exist
+        md: |
+          Click **"Order the database RUNS it"**. `WHERE` is near the top and `SELECT` (where window functions are calculated) comes later. At the time `WHERE` runs, there is no `ROW_NUMBER` yet to look at.
+        config:
+          highlight: [WHERE, SELECT]
+
+      - type: example
+        title: "Window functions in WHERE (expected error)"
+        md: |
+          Run it and read the message. The same message appears if you try a window function in `GROUP BY` or `HAVING`.
+        expectError: true
+        sql: |
+          SELECT title, age_rating, duration_min
+          FROM movies
+          WHERE ROW_NUMBER() OVER (
+                    PARTITION BY age_rating
+                    ORDER BY duration_min DESC, movie_id
+                ) <= 2;
+        after: |
+          PostgreSQL says `window functions are not allowed in WHERE`.
+
+          Window functions are only allowed in two places: the `SELECT` list and `ORDER BY`. To filter on their result you have to calculate them in one layer and filter in the next.
+
+      - type: predict
+        id: m11-l05-p1
+        question: |
+          This looks like a clever fix: give the window result a name (`rn`) and filter on the name. What happens?
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              ROW_NUMBER() OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              ) AS rn
+          FROM movies
+          WHERE rn <= 2;
+        options:
+          - "It returns the 8 longest films, two per age rating"
+          - "It returns all 110 films, because WHERE is ignored"
+          - 'An error: column "rn" does not exist'
+          - "An error: window functions are not allowed in WHERE"
+        answer: 2
+        expectError: true
+        explanation: |
+          Aliases such as `rn` are created in the `SELECT` step, which runs **after** `WHERE`. So when `WHERE` looks for a column called `rn`, there is nothing with that name yet.
+
+          Both attempts fail for the same reason: `WHERE` is too early. The solution is to add a layer.
+
+      - type: read
+        title: The CTE fix (and why there is no QUALIFY)
+        md: |
+          Wrap the ranking in a CTE (or a subquery in `FROM`). Inside the CTE the windows are calculated, and the outer query filters on the finished column:
+
+          ```sql
+          WITH ranked AS (
+              SELECT ..., ROW_NUMBER() OVER (...) AS rn
+              FROM movies
+          )
+          SELECT ...
+          FROM ranked
+          WHERE rn <= 2;
+          ```
+
+          Some other databases (for example Snowflake and BigQuery) have a `QUALIFY` clause that filters on window results directly. **PostgreSQL does not**, so this one extra layer is the standard pattern. You will use it all the time.
+
+      - type: stepper
+        title: Top 2 per shelf, layer by layer
+        md: |
+          Run each stage. Stage 1 numbers the nine films of 2021 or later, stage 2 wraps that in a CTE, and stage 3 keeps only the first two of each shelf.
+        stages:
+          - label: "1. Number the films"
+            md: |
+              Calculate `rn` in the `SELECT` list, with the window named `shelf`.
+            sql: |
+              SELECT
+                  title,
+                  age_rating,
+                  duration_min,
+                  ROW_NUMBER() OVER shelf AS rn
+              FROM movies
+              WHERE release_year >= 2021
+              WINDOW shelf AS (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              )
+              ORDER BY age_rating, rn;
+          - label: "2. Wrap it in a CTE"
+            md: |
+              Same rows, but now `rn` is a real column of `ranked`.
+            sql: |
+              WITH ranked AS (
+                  SELECT
+                      title,
+                      age_rating,
+                      duration_min,
+                      ROW_NUMBER() OVER shelf AS rn
+                  FROM movies
+                  WHERE release_year >= 2021
+                  WINDOW shelf AS (
+                      PARTITION BY age_rating
+                      ORDER BY duration_min DESC, movie_id
+                  )
+              )
+              SELECT title, age_rating, duration_min, rn
+              FROM ranked
+              ORDER BY age_rating, rn;
+          - label: "3. Filter in the outer query"
+            md: |
+              Now `WHERE rn <= 2` works, because `rn` exists. Three films disappear: one PG film and two PG-13 films.
+            sql: |
+              WITH ranked AS (
+                  SELECT
+                      title,
+                      age_rating,
+                      duration_min,
+                      ROW_NUMBER() OVER shelf AS rn
+                  FROM movies
+                  WHERE release_year >= 2021
+                  WINDOW shelf AS (
+                      PARTITION BY age_rating
+                      ORDER BY duration_min DESC, movie_id
+                  )
+              )
+              SELECT title, age_rating, duration_min, rn
+              FROM ranked
+              WHERE rn <= 2
+              ORDER BY age_rating, rn;
+
+      - type: exercise
+        id: m11-l05-e3
+        title: The Marathon shelf
+        prompt: |
+          Use **all 110 films**. For each age rating, show the **two longest films**: `title`, `age_rating`, `duration_min` and `rn` (1 for the longest, 2 for the second longest).
+
+          Ties on `duration_min` are broken by the lowest `movie_id`. Sort by `age_rating`, then `rn`.
+        starter: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ROW_NUMBER() OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              ) AS rn
+          FROM movies;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  title,
+                  age_rating,
+                  duration_min,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY age_rating
+                      ORDER BY duration_min DESC, movie_id
+                  ) AS rn
+              FROM movies
+          )
+          SELECT title, age_rating, duration_min, rn
+          FROM ranked
+          WHERE rn <= 2
+          ORDER BY age_rating, rn;
+        ordered: true
+        hints:
+          - The starter already numbers every film. You need a second layer that keeps only some of them.
+          - Put the starter query inside WITH ranked AS (...), then SELECT from ranked WHERE rn <= 2.
+          - "WITH ranked AS (SELECT ..., ROW_NUMBER() OVER (...) AS rn FROM movies) SELECT title, age_rating, duration_min, rn FROM ranked WHERE rn <= ___ ORDER BY age_rating, rn;"
+        explanation: |
+          Eight rows. Neon Archive (150 min) leads the PG shelf, Mothlight (149) the PG-13 shelf, Echoes of Andromeda Bay (147) the R shelf. The G shelf is a close call: Winter Break Ghost Club and Mango Island Mystery both run 91 minutes, and the `movie_id` tie-breaker decides who is number one.
+
+          Always include a tie-breaker in the window's `ORDER BY`. Without it, "the top 2" could change from one run to the next.
+        difficulty: 2
+
+      - type: read
+        title: Filter before the window, or after?
+        md: |
+          There are **two places** to filter, and they give different answers.
+
+          | Where you filter | What the window sees |
+          |---|---|
+          | `WHERE` in the **same** query | only the rows that survived the filter |
+          | `WHERE` in the **outer** query | all the rows, because the window was already calculated |
+
+          Neither is "better". You choose by asking: *should the filtered-out rows still count?*
+
+          - "Rank among **R-rated films only**" means filter **before** the window.
+          - "Where does this R-rated film stand among **all** films?" means filter **after** the window.
+
+          > [!MISTAKE]
+          > Filtering in the inner query when you meant the outer one (or the other way round) gives numbers that look perfectly sensible, but are wrong for your question. The query never errors, so always ask yourself which of the two you want.
+
+      - type: predict
+        id: m11-l05-p2
+        question: |
+          The CTE ranks **all 110 films** from longest to shortest. The outer query then keeps the R-rated films and shows the first one. What does `pos` show on that row?
+        sql: |
+          WITH ranked AS (
+              SELECT
+                  title,
+                  age_rating,
+                  ROW_NUMBER() OVER (
+                      ORDER BY duration_min DESC, movie_id
+                  ) AS pos
+              FROM movies
+          )
+          SELECT title, pos
+          FROM ranked
+          WHERE age_rating = 'R'
+          ORDER BY pos
+          LIMIT 1;
+        options:
+          - "1"
+          - "3"
+          - "28"
+          - "NULL"
+        answer: 1
+        explanation: |
+          The window ranked all 110 films before the filter ran. The longest R film, **Echoes of Andromeda Bay** (147 min), is the third longest film overall, behind Neon Archive (150) and Mothlight (149).
+
+          If you had put `WHERE age_rating = 'R'` **inside** the CTE, the same film would show `pos` 1.
+
+      - type: fill
+        id: m11-l05-f1
+        prompt: Complete the query that shows the **three longest films** in each age rating.
+        template: |
+          WITH ranked AS (
+              SELECT title, age_rating, duration_min,
+                     ROW_NUMBER() OVER shelf AS rn
+              FROM movies
+              ___ shelf AS (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min DESC, movie_id
+              )
+          )
+          SELECT title, age_rating, duration_min
+          FROM ranked
+          ___ rn <= 3;
+        answers:
+          - ["WINDOW"]
+          - ["WHERE"]
+        explanation: |
+          `WINDOW shelf AS (...)` defines the name inside the CTE, and the outer query filters with `WHERE rn <= 3`. This pattern is called **top-N per group**.
+
+      - type: parsons
+        id: m11-l05-o1
+        prompt: Put the lines in order to list the **two shortest films** of each age rating.
+        lines:
+          - WITH ranked AS (
+          - "    SELECT title, age_rating,"
+          - "           ROW_NUMBER() OVER shelf AS rn"
+          - "    FROM movies"
+          - "    WINDOW shelf AS ("
+          - "        PARTITION BY age_rating"
+          - "        ORDER BY duration_min, movie_id)"
+          - )
+          - SELECT title, age_rating
+          - FROM ranked
+          - WHERE rn <= 2;
+        distractors:
+          - HAVING rn <= 2;
+        explanation: |
+          The `WINDOW` line sits inside the CTE, right after `FROM`, and the filter `WHERE rn <= 2` is in the outer query. `HAVING` is for groups, not for window results.
+
+      - type: example
+        title: FILTER inside a window
+        md: |
+          There is a third kind of filtering: **inside** the window function. An aggregate can carry a `FILTER (WHERE ...)` clause (you met it in module 5), and it works with `OVER` too. Here `hits` counts only the films on the same shelf that earned **100 million or more**.
+        sql: |
+          SELECT
+              title,
+              age_rating,
+              box_office_musd AS earned,
+              COUNT(*) OVER by_rating AS films,
+              COUNT(*) FILTER (
+                  WHERE box_office_musd >= 100
+              ) OVER by_rating AS hits
+          FROM movies
+          WHERE release_year >= 2021
+          WINDOW by_rating AS (PARTITION BY age_rating)
+          ORDER BY age_rating, earned DESC, movie_id;
+        after: |
+          The PG shelf has 3 films and 2 hits (Moonwalk Motel and The Last Terraformer). The R shelf has 2 films and no hits.
+
+          Notice the difference: `FILTER` does **not** remove any rows from the result. It only decides which rows the function counts.
+
+      - type: exercise
+        id: m11-l05-e4
+        title: Long films on the shelf
+        prompt: |
+          For films released in **2020 or later**, show `title`, `age_rating`, `duration_min` and two counts that use one named window:
+
+          - `rating_films`: how many of these films have the same age rating
+          - `long_films`: how many of them run **110 minutes or more** (use `FILTER`)
+
+          Sort by `age_rating`, then `duration_min` descending, then `movie_id`.
+        starter: |
+          SELECT title, age_rating, duration_min
+          FROM movies
+          WHERE release_year >= 2020
+          ORDER BY age_rating, duration_min DESC, movie_id;
+        solution: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              COUNT(*) OVER by_rating AS rating_films,
+              COUNT(*) FILTER (
+                  WHERE duration_min >= 110
+              ) OVER by_rating AS long_films
+          FROM movies
+          WHERE release_year >= 2020
+          WINDOW by_rating AS (PARTITION BY age_rating)
+          ORDER BY age_rating, duration_min DESC, movie_id;
+        ordered: true
+        hints:
+          - Both columns look at the whole shelf, so they can share a window that only has PARTITION BY.
+          - "COUNT(*) FILTER (WHERE duration_min >= 110) OVER by_rating counts only the long films."
+          - "COUNT(*) OVER by_rating AS rating_films, COUNT(*) FILTER (WHERE ___ >= 110) OVER by_rating AS long_films"
+        explanation: |
+          Every PG row shows 5 films and 3 long ones, every PG-13 row 8 and 4, every R row 2 and 1. The count is the same for the whole shelf, because the window has no `ORDER BY` and so the frame is the entire partition.
+        difficulty: 2
+
+      - type: exercise
+        id: m11-l05-e5
+        title: Fix the Short list
+        prompt: |
+          The team wants the **three shortest films** in each age rating: `title`, `age_rating`, `duration_min` and `rn`. This query fails with an error. Fix it.
+
+          Ties on `duration_min` are broken by the lowest `movie_id`. Sort by `age_rating`, then `rn`.
+        starter: |
+          SELECT
+              title,
+              age_rating,
+              duration_min,
+              ROW_NUMBER() OVER (
+                  PARTITION BY age_rating
+                  ORDER BY duration_min, movie_id
+              ) AS rn
+          FROM movies
+          WHERE rn <= 3
+          ORDER BY age_rating, rn;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  title,
+                  age_rating,
+                  duration_min,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY age_rating
+                      ORDER BY duration_min, movie_id
+                  ) AS rn
+              FROM movies
+          )
+          SELECT title, age_rating, duration_min, rn
+          FROM ranked
+          WHERE rn <= 3
+          ORDER BY age_rating, rn;
+        ordered: true
+        hints:
+          - Read the error message. Which clause is trying to use `rn` before it exists?
+          - Move the ranking into a CTE, then put the `WHERE rn <= 3` in the outer query.
+          - "WITH ranked AS (SELECT ... AS rn FROM movies) SELECT title, age_rating, duration_min, rn FROM ranked WHERE rn <= ___ ORDER BY age_rating, rn;"
+        explanation: |
+          12 rows. The shortest film overall is Willow and the Wind Library (G, 78 minutes), and the shortest R film is Seven Candles for Marla (82 minutes).
+
+          Whenever you see `column "rn" does not exist` while filtering on a ranking, you know the fix: one more layer.
+        difficulty: 2
+
+      - type: exercise
+        id: m11-l05-e6
+        title: How close is the runner-up?
+        prompt: |
+          Use the films with a **known** `box_office_musd`. For each age rating, show the **two highest earners**:
+
+          - `title`, `age_rating`, `box_office_musd`
+          - `rn`: 1 for the top earner, 2 for the runner-up (ties: lowest `movie_id` first)
+          - `pct_of_top`: this film's box office as a percentage of the age rating's top earner, rounded to 1 decimal
+
+          Name your window and use `FIRST_VALUE`. Sort by `age_rating`, then `rn`.
+        starter: |
+          SELECT title, age_rating, box_office_musd
+          FROM movies
+          WHERE box_office_musd IS NOT NULL
+          ORDER BY age_rating, box_office_musd DESC;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  title,
+                  age_rating,
+                  box_office_musd,
+                  ROW_NUMBER() OVER by_earnings AS rn,
+                  ROUND(
+                      100 * box_office_musd
+                      / FIRST_VALUE(box_office_musd)
+                            OVER by_earnings,
+                      1
+                  ) AS pct_of_top
+              FROM movies
+              WHERE box_office_musd IS NOT NULL
+              WINDOW by_earnings AS (
+                  PARTITION BY age_rating
+                  ORDER BY box_office_musd DESC, movie_id
+              )
+          )
+          SELECT title, age_rating, box_office_musd,
+                 rn, pct_of_top
+          FROM ranked
+          WHERE rn <= 2
+          ORDER BY age_rating, rn;
+        ordered: true
+        hints:
+          - You need three things at once - a numbering, a comparison with the top film, and then a filter. The filter always goes in an outer layer.
+          - Name one window (partition by age rating, most money first). Use it for both ROW_NUMBER() and FIRST_VALUE(box_office_musd), then filter on rn in the outer query.
+          - "WITH ranked AS (SELECT ..., ROW_NUMBER() OVER w AS rn, ROUND(100 * box_office_musd / FIRST_VALUE(box_office_musd) OVER w, 1) AS pct_of_top FROM movies WHERE box_office_musd IS NOT NULL WINDOW w AS (...)) SELECT ... FROM ranked WHERE rn <= 2 ORDER BY age_rating, rn;"
+        explanation: |
+          Eight rows. In the PG rating, **Moonwalk Motel** earned 99.8% of the top film, The Great Marshmallow Mix-Up, so it is a very close runner-up. In the G rating, the runner-up (Winter Break Ghost Club) earned only 16.3% of Fox Lantern's 1,186.5 million.
+
+          This one combined named windows, `FIRST_VALUE`, NULL handling and the CTE filter. Those are the everyday tools of reporting queries.
+        difficulty: 3
+
+      - type: read
+        title: Naming and filtering - done
+        md: |
+          Two habits to take away:
+
+          1. **Name a window** the moment you use it twice. Your queries get shorter and safer.
+          2. **Filter on window results in an outer layer**: calculate in the CTE, filter in the next `SELECT`.
+
+          > [!REAL-WORLD]
+          > "Top 3 products per category", "latest order per customer" and "first purchase per user" all use exactly this recipe: a ranking window in a CTE and `WHERE rn <= n` outside. It is probably the single most common window-function pattern in real analytics code.
+
+          Next lesson is the finale: you will put frames, ranks, percentages and layers together on real bank and streaming questions.
+    cheatsheet:
+      - title: Name a window
+        sql: |
+          SELECT ROW_NUMBER() OVER w, SUM(x) OVER w
+          FROM t
+          WINDOW w AS (PARTITION BY g ORDER BY d);
+        note: WINDOW goes after HAVING and before ORDER BY. Use OVER w (no parentheses) to reuse it exactly.
+      - title: Build on another window
+        sql: |
+          WINDOW base AS (PARTITION BY g),
+                 run AS (base ORDER BY d)
+        note: The base must come first. The new window cannot repeat PARTITION BY, and the base must not have a frame.
+      - title: Filter on a window result (no QUALIFY)
+        sql: |
+          WITH ranked AS (
+              SELECT *, ROW_NUMBER() OVER (...) AS rn
+              FROM t
+          )
+          SELECT * FROM ranked WHERE rn <= 3;
+        note: Window functions are not allowed in WHERE, HAVING or GROUP BY. Calculate in a CTE, filter outside.
 testPool:
   - type: quiz
     id: m11-t01

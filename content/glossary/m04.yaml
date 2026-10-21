@@ -1,0 +1,61 @@
+glossary:
+  - term: Function
+    definition: A small ready-made tool. You hand it a value (or several), and it hands back a new value. Functions change what you see in the result, never the data stored in the table.
+    example: "UPPER('hi') returns HI;  LENGTH('hello') returns 5"
+    module: m04
+  - term: Argument
+    definition: A value you pass into a function. Arguments are written inside the parentheses and separated by commas. They can be columns, plain values or even other functions.
+    example: "In ROUND(price, 1) the two arguments are the column price and the number 1."
+    module: m04
+  - term: Nested functions
+    definition: A function placed inside another function. SQL works from the inside out, so the innermost function runs first and its result is handed to the one around it.
+    example: "UPPER(TRIM('  ana  '))  -- TRIM gives 'ana', then UPPER gives 'ANA'"
+    module: m04
+  - term: Substring
+    definition: A piece cut out of a longer text. Positions in SQL text start counting at 1, not 0. LEFT, RIGHT, SUBSTRING and SPLIT_PART all return substrings.
+    example: "SUBSTRING('SQL Quest' FROM 5 FOR 5)  -- returns Quest"
+    module: m04
+  - term: Modulo (%)
+    definition: The remainder left over after a whole-number division. It is written with the % sign or the MOD function, and it is handy for "every 10th row", "even or odd" and "leftover items" questions.
+    example: "17 % 5  -- returns 2, because 5 fits three times into 17 with 2 left over"
+    module: m04
+  - term: Numeric
+    definition: An exact decimal number type, like the prices in our shop tables. It never loses a cent, and functions like ROUND(x, 2) accept it.
+    example: "ROUND(2.5, 0)  -- 2.5 is a numeric value, so this works and returns 3"
+    module: m04
+  - term: Double precision
+    definition: An approximate decimal number type (also called floating point). Functions like SQRT return it. ROUND(x, 2) does not accept it, so you convert it to numeric first.
+    example: "ROUND(SQRT(2)::numeric, 2)  -- returns 1.41; without ::numeric it is an error"
+    module: m04
+  - term: Cast
+    definition: Converting a value from one data type to another. You can write CAST(value AS type) or the short form value::type. If the value does not fit the new type, the query stops with an error.
+    example: "'42'::integer + 1  -- the text '42' becomes a number, so the result is 43"
+    module: m04
+  - term: Interval
+    definition: A length of time, such as 7 days or 3 months. You can add an interval to a date or timestamp, or subtract one from it. The AGE function returns an interval too.
+    example: "DATE '2024-11-29' + INTERVAL '2 weeks'  -- 2024-12-13 00:00:00"
+    module: m04
+  - term: EXTRACT
+    definition: A function that pulls one part (year, month, day, weekday...) out of a date or timestamp and gives it back as a number. In EXTRACT(DOW ...) Sunday is 0 and Saturday is 6.
+    example: "EXTRACT(YEAR FROM DATE '2024-11-29')  -- returns 2024"
+    module: m04
+  - term: DATE_TRUNC
+    definition: A function that cuts a date or timestamp back to the start of a period such as a week, month, quarter or year. It is the tool for grouping dates into periods and for finding the first day of a month.
+    example: "DATE_TRUNC('month', DATE '2024-11-29')::date  -- returns 2024-11-01"
+    module: m04
+  - term: TO_CHAR
+    definition: A function that writes a date, timestamp or number as text in the layout you choose, using a format pattern such as YYYY, MM, DD, Mon, Day or HH24:MI. Putting FM in front removes padding spaces and zeros.
+    example: "TO_CHAR(DATE '2024-11-29', 'DD Mon YYYY')  -- returns 29 Nov 2024"
+    module: m04
+  - term: CASE expression
+    definition: SQL's "if this, then that". It checks its WHEN conditions from top to bottom and returns the result of the first one that is true, otherwise the ELSE value (or NULL if there is no ELSE). It is used to create labels and categories.
+    example: "CASE WHEN price < 50 THEN 'Cheap' ELSE 'Pricey' END"
+    module: m04
+  - term: COALESCE
+    definition: A function that returns the first value in its list that is not NULL. It is the standard way to replace missing values with a default.
+    example: "COALESCE(phone, 'no phone')  -- shows the phone, or the text no phone when it is NULL"
+    module: m04
+  - term: NULLIF
+    definition: A function that returns NULL when its two arguments are equal, and the first argument otherwise. It is mostly used to make a zero or an empty text count as missing, for example to avoid dividing by zero.
+    example: "120.0 / NULLIF(stock_qty, 0)  -- gives NULL instead of an error when stock_qty is 0"
+    module: m04

@@ -1,0 +1,1927 @@
+id: m15
+order: 15
+title: "Views, Indexes & Performance"
+subtitle: Reuse your best queries and make slow ones fast
+icon: "⚡"
+level: advanced
+description: |
+  Until now you made queries give the *right* answer. In this module you make them give it **fast**, and
+  you learn to save your best queries so nobody has to rewrite them.
+
+  You will create **views** (saved queries) and **materialized views** (saved results), learn how an
+  **index** lets PostgreSQL jump straight to a row, read **EXPLAIN** plans like an X-ray, design smarter
+  indexes, write queries the database can run quickly, and peek under the hood at how joins, statistics and
+  `VACUUM` work.
+
+  The shop is small, so for the speed experiments you will build bigger practice tables with one line of
+  SQL, right inside the examples. Your timing numbers will differ a little from the ones in the lessons,
+  but the *shape* of every plan stays the same.
+dataset: shop
+lessons:
+  - id: m15-l01
+    title: "Views: saved queries"
+    summary: Give a query a name with CREATE VIEW and reuse it like a table.
+    minutes: 25
+    steps:
+      - type: read
+        title: The copy-and-paste problem
+        md: |
+          Mia, the ShopSmart manager, has a problem. Six different reports all start with the same eight lines of SQL: join orders to their items and work out each order's **total**. Last week an analyst pasted the query and forgot one line of the discount calculation. Two reports showed different revenue and nobody knew which one was right.
+
+          What Mia wants is **one official copy** of that query, with a name, that everybody can use. SQL has exactly that: a **view**.
+
+          A **view** is a *saved query* with a name. After you create it, you can use it in `FROM` just like a table.
+
+          > [!ANALOGY]
+          > A view is like a **saved search** in your email app. The search does not copy your emails anywhere. Each time you click it, the app looks through your mailbox again and shows what matches *right now*.
+
+      - type: example
+        title: Your first view
+        md: |
+          The syntax is `CREATE VIEW name AS` followed by any `SELECT`. Press **Run**. The first statement saves the view, and the second one reads from it.
+        sql: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+
+          SELECT name, price
+          FROM active_products
+          ORDER BY price DESC
+          LIMIT 5;
+        after: |
+          You just treated `active_products` like a table: you chose columns, sorted and limited it. But there is no `active_products` data anywhere. PostgreSQL swapped the name for the saved `SELECT` and ran it on the `products` table.
+
+          Only the **56 products that are still for sale** appear, because the view's `WHERE` was saved with it.
+
+      - type: read
+        title: A view stores the question, not the answer
+        md: |
+          This is the most important idea of the lesson:
+
+          - A view stores **the text of a query**. It stores **no rows**.
+          - Every time you read from a view, PostgreSQL runs that query on the **current** data.
+          - So a view is always fresh, and it takes almost no space.
+
+          That also means a view is **not faster** than the query inside it. It is a shortcut for *typing*, not a shortcut for *speed*. (For speed, you will meet materialized views in the next lesson.)
+
+          > [!TIP]
+          > Look at the schema panel next to the editor. Views are listed next to the tables, so you can find them and see their columns.
+
+      - type: quiz
+        id: m15-l01-q1
+        question: |
+          What does PostgreSQL actually **store** when you run `CREATE VIEW cheap_items AS SELECT ...`?
+        options:
+          - "A copy of the rows the SELECT returns"
+          - "The text of the SELECT query, under the name cheap_items"
+          - "An index on the table"
+          - "A backup of the whole table"
+        answer: 1
+        explanation: |
+          A view is a **named query**. No rows are copied. Each time you use the view, the stored `SELECT` runs again on the live tables, which is why a view is never out of date.
+
+      - type: exercise
+        id: m15-l01-e1
+        title: Your own view
+        prompt: |
+          Create a view called `cheap_products` that shows `product_id`, `name` and `price` (in that order) of every product that costs **less than 20**.
+
+          After the `CREATE VIEW` you can add a `SELECT * FROM cheap_products;` to look at it. The check only needs the view to exist.
+        starter: |
+          CREATE VIEW cheap_products AS
+          SELECT
+        solution: |
+          CREATE VIEW cheap_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE price < 20;
+        check: |
+          SELECT * FROM cheap_products ORDER BY product_id;
+        hints:
+          - A view is just `CREATE VIEW some_name AS` followed by a normal SELECT query.
+          - "The query needs three columns from `products` and a `WHERE price < 20`."
+          - "CREATE VIEW cheap_products AS SELECT product_id, ___, price FROM products WHERE ___;"
+        explanation: |
+          Eight products cost less than 20, from the 9.99 screen protectors to the 19.99 jigsaw puzzle. If you later change a price in `products`, this view changes with it, because it re-runs its query every time.
+        difficulty: 1
+
+      - type: stepper
+        title: Building the order_totals view
+        md: |
+          Mia's official "order total" query is long, so let's build it one clause at a time before we save it. Click through the stages. Each one runs and shows its result.
+        stages:
+          - label: Orders
+            md: Start with the orders themselves.
+            sql: |
+              SELECT order_id, customer_id, order_date, status
+              FROM orders
+              ORDER BY order_id
+              LIMIT 5;
+          - label: Join items
+            md: Each order has one or more lines in `order_items`. Join them.
+            sql: |
+              SELECT o.order_id, i.quantity, i.unit_price, i.discount
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              ORDER BY o.order_id
+              LIMIT 6;
+          - label: Line totals
+            md: A line is worth quantity times unit price, minus its discount.
+            sql: |
+              SELECT o.order_id,
+                     i.quantity * i.unit_price * (1 - i.discount) AS line_total
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              ORDER BY o.order_id
+              LIMIT 6;
+          - label: Group
+            md: Add the lines up with `SUM`, one row per order.
+            sql: |
+              SELECT o.order_id, o.customer_id, o.order_date, o.status,
+                     ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              GROUP BY o.order_id, o.customer_id, o.order_date, o.status
+              ORDER BY o.order_id
+              LIMIT 5;
+          - label: Save it
+            md: Put `CREATE VIEW order_totals AS` in front. The query inside has no `LIMIT` or `ORDER BY`, because the view should hold *all* orders.
+            sql: |
+              CREATE VIEW order_totals AS
+              SELECT o.order_id, o.customer_id, o.order_date, o.status,
+                     ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              GROUP BY o.order_id, o.customer_id, o.order_date, o.status;
+
+              SELECT * FROM order_totals ORDER BY order_id LIMIT 5;
+
+      - type: read
+        title: One definition, many users
+        md: |
+          Now every analyst can skip the join and the maths. "The biggest delivered orders of 2024" shrinks from a dozen lines to five:
+
+          ```sql
+          SELECT order_id, order_date, total
+          FROM order_totals
+          WHERE status = 'delivered'
+            AND order_date >= '2024-01-01'
+          ORDER BY total DESC
+          LIMIT 5;
+          ```
+
+          The tricky discount maths lives in **one** place. If Mia ever changes the definition of "total", she changes the view once and every report follows.
+
+          That is the biggest reason views exist: **one definition, many users**. You will use the view in a minute.
+
+      - type: predict
+        id: m15-l01-p1
+        question: |
+          The view `cheap_products` lists products under 20 (8 products right now). Then one product's price is changed to 25. How many rows does the **last** query return?
+        sql: |
+          CREATE VIEW cheap_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE price < 20;
+
+          UPDATE products SET price = 25 WHERE product_id = 13;
+
+          SELECT COUNT(*) FROM cheap_products;
+        options: ["8", "7", "0", "An error"]
+        answer: 1
+        explanation: |
+          **7**. The view has no stored rows, so when the price of product 13 (Desk Mat XL) goes up to 25, the next read of the view simply no longer matches it. A view is always as fresh as the tables underneath.
+
+      - type: exercise
+        id: m15-l01-e2
+        title: Query a view
+        prompt: |
+          The view `order_totals` has already been created for you. It has the columns `order_id`, `customer_id`, `order_date`, `status` and `total`.
+
+          Show the `order_id` and `total` of the **5 biggest delivered orders placed in 2024** (order_date from `2024-01-01`). Biggest total first, ties broken by `order_id`.
+        setup: |
+          CREATE VIEW order_totals AS
+          SELECT o.order_id, o.customer_id, o.order_date, o.status,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          GROUP BY o.order_id, o.customer_id, o.order_date, o.status;
+        starter: |
+          SELECT order_id, total
+          FROM order_totals;
+        solution: |
+          SELECT order_id, total
+          FROM order_totals
+          WHERE status = 'delivered'
+            AND order_date >= '2024-01-01'
+          ORDER BY total DESC, order_id
+          LIMIT 5;
+        ordered: true
+        hints:
+          - You can treat `order_totals` exactly like a table. Add the filters you know.
+          - "Filter with `WHERE status = 'delivered' AND order_date >= '2024-01-01'`, then `ORDER BY total DESC, order_id` and `LIMIT 5`."
+          - "SELECT order_id, total FROM order_totals WHERE status = ___ AND order_date >= ___ ORDER BY total DESC, order_id LIMIT 5;"
+        explanation: |
+          Order 419 comes first with a total of 1,982.96, then 667, 482, 508 and 412. Notice you did not write a single `JOIN`: the view hid it.
+        difficulty: 1
+
+      - type: exercise
+        id: m15-l01-e3
+        title: A summary view
+        prompt: |
+          Create a view called `category_stats` with three columns, in this order:
+
+          - `category`: the category name (`categories.name`)
+          - `products`: how many products are in that category
+          - `avg_price`: the average product price, rounded to 2 decimals
+
+          Only categories that have at least one product will appear.
+        starter: |
+          CREATE VIEW category_stats AS
+          SELECT
+        solution: |
+          CREATE VIEW category_stats AS
+          SELECT c.name AS category,
+                 COUNT(*) AS products,
+                 ROUND(AVG(p.price), 2) AS avg_price
+          FROM categories c
+          JOIN products p ON p.category_id = c.category_id
+          GROUP BY c.name;
+        check: |
+          SELECT * FROM category_stats ORDER BY category;
+        columnNames: true
+        hints:
+          - You need to join `categories` to `products`, then group by the category name.
+          - "Use `COUNT(*)` and `ROUND(AVG(p.price), 2)`, and give all three columns aliases."
+          - "CREATE VIEW category_stats AS SELECT c.name AS category, COUNT(*) AS products, ROUND(AVG(___), 2) AS avg_price FROM categories c JOIN products p ON ___ GROUP BY c.name;"
+        explanation: |
+          The view returns 11 rows, one per category that has products. A view can hold any query you like, including joins and `GROUP BY`. The column names come from your aliases.
+        difficulty: 2
+
+      - type: read
+        title: Changing and renaming a view
+        md: |
+          Your view needs a new column? You can rewrite it with **`CREATE OR REPLACE VIEW`**. It creates the view if it is missing and replaces it if it exists.
+
+          There is one rule: the new query must keep all the old columns, **same names, same order, same types**. You may only add new columns at the **end**.
+
+          > [!MISTAKE]
+          > Trying to reorder, rename or remove columns with `CREATE OR REPLACE VIEW` fails with an error such as `cannot change name of view column`. To rename a column use `ALTER VIEW ... RENAME COLUMN`. To make bigger changes, `DROP VIEW` the old one first and create it again.
+
+      - type: example
+        title: CREATE OR REPLACE VIEW
+        md: |
+          We create `active_products` with four columns, then replace it with a version that has a fifth column, `category_id`, added at the end.
+        sql: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+
+          CREATE OR REPLACE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty, category_id
+          FROM products
+          WHERE is_active = true;
+
+          SELECT * FROM active_products ORDER BY product_id LIMIT 3;
+        after: |
+          The new column is at the end, so PostgreSQL accepts the replacement. Anyone who already used the old four columns keeps working, which is why this rule exists.
+
+      - type: example
+        title: When REPLACE says no
+        md: |
+          This time the new version swaps the order of `name` and `price`. Run it and read the error.
+        sql: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+
+          CREATE OR REPLACE VIEW active_products AS
+          SELECT product_id, price, name, stock_qty
+          FROM products
+          WHERE is_active = true;
+        expectError: true
+        after: |
+          PostgreSQL says `cannot change name of view column "name" to "price"`. Position 2 used to be `name` and now would be `price`, which could break reports that were reading the old view.
+
+          The fix is to keep the old order and add new columns last, or to `DROP VIEW` and create it again.
+
+      - type: exercise
+        id: m15-l01-e4
+        title: Add a column
+        prompt: |
+          The view `active_products` already exists with the columns `product_id`, `name` and `price`.
+
+          Use `CREATE OR REPLACE VIEW` to add a fourth column, `stock_qty`, **at the end**. Keep the same `WHERE is_active = true` filter.
+        setup: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE is_active = true;
+        starter: |
+          CREATE OR REPLACE VIEW active_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE is_active = true;
+        solution: |
+          CREATE OR REPLACE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+        check: |
+          SELECT * FROM active_products ORDER BY product_id LIMIT 5;
+        hints:
+          - You only need to repeat the whole query with one more column.
+          - New columns must go after the existing ones, so `stock_qty` goes after `price`.
+          - "CREATE OR REPLACE VIEW active_products AS SELECT product_id, name, price, ___ FROM products WHERE is_active = true;"
+        explanation: |
+          Because `stock_qty` was added last, PostgreSQL accepted the replacement. The starter just repeats the old definition, so it changes nothing yet.
+        difficulty: 2
+
+      - type: read
+        title: Can you change data through a view?
+        md: |
+          Sometimes, yes. A **simple view** (one table, no `GROUP BY`, no `DISTINCT`, no aggregates) is **updatable**: `UPDATE`, `INSERT` and `DELETE` on the view change the real table underneath.
+
+          For a view that groups, joins or calculates, PostgreSQL cannot know which table row you mean, so it refuses.
+
+          > [!NOTE]
+          > Changing data through views is useful but rare. Most of the time views are for **reading**. When in doubt, update the real table.
+
+      - type: example
+        title: Updating through a simple view
+        md: |
+          We raise a price through the view and then look at the real `products` table. We also try to change an inactive product (13, Desk Mat XL) which the view's `WHERE` hides.
+        sql: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+
+          UPDATE active_products SET price = 24.99 WHERE product_id = 4;
+          UPDATE active_products SET price = 1.00 WHERE product_id = 13;
+
+          SELECT product_id, name, price
+          FROM products
+          WHERE product_id IN (4, 13)
+          ORDER BY product_id;
+        after: |
+          Product 4 now costs 24.99 in the **real table**, so the first `UPDATE` worked. Product 13 still costs 19.99: it is inactive, so the view cannot see it, and the second `UPDATE` matched zero rows. A view's `WHERE` limits what you can change through it.
+
+      - type: example
+        title: A view you cannot update
+        md: |
+          `order_totals` uses `GROUP BY`, so a row of the view is a summary of many order lines. What should an `UPDATE` change?
+        sql: |
+          CREATE VIEW order_totals AS
+          SELECT o.order_id, ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          GROUP BY o.order_id;
+
+          UPDATE order_totals SET total = 0 WHERE order_id = 1;
+        expectError: true
+        after: |
+          `cannot update view "order_totals"`, with the detail *Views containing GROUP BY are not automatically updatable*. This is PostgreSQL protecting you: there is no single row to change.
+
+      - type: quiz
+        id: m15-l01-q2
+        question: |
+          Which of these views can PostgreSQL update automatically? (Pick all that apply.)
+        options:
+          - "CREATE VIEW v AS SELECT name, price FROM products WHERE price < 20"
+          - "CREATE VIEW v AS SELECT category_id, COUNT(*) AS n FROM products GROUP BY category_id"
+          - "CREATE VIEW v AS SELECT DISTINCT city FROM customers"
+          - "CREATE VIEW v AS SELECT * FROM orders"
+        answer: [0, 3]
+        explanation: |
+          Views over **one table** with plain columns are updatable (options 1 and 4). Views with `GROUP BY` or `DISTINCT` summarize rows, so a view row does not match one real row. Views that join several tables are also not automatically updatable.
+
+      - type: exercise
+        id: m15-l01-e5
+        title: Update through the view
+        prompt: |
+          The view `active_products` (columns `product_id`, `name`, `price`, `stock_qty`) already exists.
+
+          Using **the view** (not the `products` table), set `stock_qty` to `0` for product `2`.
+        setup: |
+          CREATE VIEW active_products AS
+          SELECT product_id, name, price, stock_qty
+          FROM products
+          WHERE is_active = true;
+        starter: |
+          UPDATE active_products
+          SET
+        solution: |
+          UPDATE active_products
+          SET stock_qty = 0
+          WHERE product_id = 2;
+        check: |
+          SELECT product_id, stock_qty
+          FROM products
+          WHERE product_id IN (1, 2, 3)
+          ORDER BY product_id;
+        hints:
+          - Use `UPDATE` with the view's name in the place where you would normally write a table name.
+          - "Do not forget the `WHERE` so only product 2 changes."
+          - "UPDATE active_products SET stock_qty = ___ WHERE product_id = ___;"
+        explanation: |
+          Product 2 now has 0 in stock in the real `products` table; products 1 and 3 are untouched. Always include the `WHERE`, exactly as with a normal `UPDATE`.
+        difficulty: 2
+
+      - type: read
+        title: Three view gotchas
+        md: |
+          > [!MISTAKE]
+          > **Thinking a view is faster.** A view runs its whole query every time. A slow query inside a view is still a slow view. Speed comes from indexes (lessons 3 to 5) or from a materialized view (next lesson).
+
+          > [!MISTAKE]
+          > **`SELECT *` inside a view.** The `*` is expanded to the real column list *when the view is created*. If you add a column to the table later, the view does **not** show it. List your columns explicitly.
+
+          > [!MISTAKE]
+          > **Two columns with the same name.** A normal query can return two columns called `name`, but a view needs unique names. Give each one an alias: `p.name AS product_name`.
+
+      - type: exercise
+        id: m15-l01-e6
+        title: Fix the bug
+        prompt: |
+          This view should list every product with its category, but `CREATE VIEW` fails. Fix it so the view has the columns `product_name` and `category_name` (in that order).
+        starter: |
+          CREATE VIEW product_catalog AS
+          SELECT p.name, c.name
+          FROM products p
+          JOIN categories c ON c.category_id = p.category_id;
+        solution: |
+          CREATE VIEW product_catalog AS
+          SELECT p.name AS product_name, c.name AS category_name
+          FROM products p
+          JOIN categories c ON c.category_id = p.category_id;
+        check: |
+          SELECT * FROM product_catalog ORDER BY product_name LIMIT 10;
+        columnNames: true
+        hints:
+          - 'Read the error: column "name" specified more than once. A view needs distinct column names.'
+          - Give each `name` column its own alias with `AS`.
+          - "SELECT p.name AS ___, c.name AS ___ FROM products p JOIN categories c ON ..."
+        explanation: |
+          A plain `SELECT` may return two columns with the same name, but a view turns the result into a "virtual table", and a table cannot have two columns with the same name. Aliases fix it.
+        difficulty: 2
+
+      - type: parsons
+        id: m15-l01-o1
+        prompt: |
+          Put the lines in order: create a view of delivered orders, then count its rows.
+        lines:
+          - CREATE VIEW delivered_orders AS
+          - SELECT order_id, customer_id, order_date
+          - FROM orders
+          - WHERE status = 'delivered';
+          - SELECT COUNT(*) FROM delivered_orders;
+        distractors:
+          - CREATE TABLE delivered_orders AS
+        explanation: |
+          The view must be created before you can read from it. `CREATE TABLE ... AS` would copy the rows into a new table, which is a different tool: a table is a snapshot, a view is a live window.
+
+      - type: example
+        title: Listing and dropping views
+        md: |
+          Views are objects in the database, so you can list them and remove them. We create two views, list them, drop one and list again.
+        sql: |
+          CREATE VIEW v_cheap AS SELECT name, price FROM products WHERE price < 20;
+          CREATE VIEW v_orders AS SELECT * FROM orders;
+
+          SELECT table_name, is_updatable
+          FROM information_schema.views
+          WHERE table_schema = 'public'
+          ORDER BY table_name;
+
+          DROP VIEW v_cheap;
+          DROP VIEW IF EXISTS v_not_there;
+
+          SELECT table_name
+          FROM information_schema.views
+          WHERE table_schema = 'public'
+          ORDER BY table_name;
+        after: |
+          Two result tabs appear (**Result 1** and **Result 2**): first both views, then only `v_orders`. `information_schema.views` is PostgreSQL's built-in list of views, and `is_updatable` tells you if you can change data through each one.
+
+          `DROP VIEW` removes only the saved query, never the data. `DROP VIEW IF EXISTS` does nothing, without an error, when the view is already gone. Dropping a **table** that a view uses is refused unless you add `CASCADE`.
+
+      - type: exercise
+        id: m15-l01-e7
+        title: A view built on a view
+        prompt: |
+          The view `order_totals` already exists (`order_id`, `customer_id`, `order_date`, `status`, `total`).
+
+          Create a view called `customer_spend` **on top of it** with three columns: `customer_id`, `orders` (how many delivered orders) and `spent` (the sum of `total` of the delivered orders). One row per customer who has at least one delivered order.
+        setup: |
+          CREATE VIEW order_totals AS
+          SELECT o.order_id, o.customer_id, o.order_date, o.status,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          GROUP BY o.order_id, o.customer_id, o.order_date, o.status;
+        starter: |
+          CREATE VIEW customer_spend AS
+          SELECT
+        solution: |
+          CREATE VIEW customer_spend AS
+          SELECT customer_id,
+                 COUNT(*) AS orders,
+                 SUM(total) AS spent
+          FROM order_totals
+          WHERE status = 'delivered'
+          GROUP BY customer_id;
+        check: |
+          SELECT * FROM customer_spend ORDER BY spent DESC, customer_id LIMIT 10;
+        columnNames: true
+        ordered: true
+        hints:
+          - A view can read from another view, because a view looks just like a table.
+          - "Group `order_totals` by `customer_id` after filtering `status = 'delivered'`."
+          - "CREATE VIEW customer_spend AS SELECT customer_id, COUNT(*) AS orders, SUM(___) AS spent FROM order_totals WHERE ___ GROUP BY customer_id;"
+        explanation: |
+          137 customers have a delivered order. Customer 6 leads with 18 orders and 8,458.39 spent. Stacking views like this is a neat way to build up complicated reports in small, named steps. Just remember that every layer runs again each time.
+        difficulty: 3
+    cheatsheet:
+      - title: Create or replace a view
+        sql: |
+          CREATE VIEW cheap_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE price < 20;
+        note: "Use CREATE OR REPLACE VIEW to change it; new columns must go at the end."
+      - title: Query a view
+        sql: SELECT * FROM cheap_products WHERE price < 10;
+        note: "A view works like a table in FROM, but its query runs again every time."
+      - title: Remove a view
+        sql: DROP VIEW IF EXISTS cheap_products;
+        note: "Drops only the saved query, never the data."
+      - title: List views
+        sql: |
+          SELECT table_name, is_updatable
+          FROM information_schema.views
+          WHERE table_schema = 'public';
+  - id: m15-l02
+    title: "Materialized views: saved results"
+    summary: Store a query's result on disk for instant reads, and refresh it when the data changes.
+    minutes: 25
+    steps:
+      - type: read
+        title: The dashboard that takes forever
+        md: |
+          Mia's "Monthly revenue" page adds up every delivered order from two years, joined to every order line. With 900 orders that takes a blink. But ShopSmart is growing: imagine **50 million** orders. Every page view would make the database crunch all of them again, and the numbers only change once a day!
+
+          A normal view will not help, because it re-runs its query every single time. What Mia needs is to **do the work once and keep the answer**. That is a **materialized view**.
+
+          A **materialized view** is a view whose *result rows are stored* on disk, like a small table. Reading it is instant. The price: the stored answer can become **stale**, until you refresh it.
+
+          > [!ANALOGY]
+          > A normal view is a **live webcam** of the shop: always current, but it has to point at the shop every time. A materialized view is a **photograph**: quick to look at and as sharp as the day it was taken, but it does not change until you take a new photo (`REFRESH`).
+
+      - type: example
+        title: Your first materialized view
+        md: |
+          The syntax is almost the same: add the word `MATERIALIZED`. PostgreSQL runs the query **once**, right now, and stores the 24 rows it returns.
+        sql: |
+          CREATE MATERIALIZED VIEW monthly_revenue AS
+          SELECT date_trunc('month', o.order_date)::date AS month,
+                 COUNT(DISTINCT o.order_id) AS orders,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY 1;
+
+          SELECT *
+          FROM monthly_revenue
+          ORDER BY month DESC
+          LIMIT 6;
+        after: |
+          The join and the `GROUP BY` ran only once, when the view was created. The `SELECT` after it just reads 24 tiny stored rows.
+
+          November 2024 had 65 delivered orders worth 18,037.94, and December 2024 shows 55 orders and 23,367.47. With millions of orders, "read 24 rows" instead of "crunch everything" is the whole point.
+
+      - type: read
+        title: View or materialized view?
+        md: |
+          | | View | Materialized view |
+          |---|---|---|
+          | What is stored | the query only | the query **and** its result rows |
+          | Reading it | runs the query every time | reads stored rows (fast) |
+          | Is it fresh? | always | only after a `REFRESH` |
+          | Can you index it? | no | **yes** |
+          | Disk space | almost none | like a small table |
+
+          Use a **view** when the data must always be current or the query is cheap. Use a **materialized view** when the query is expensive, many people read the result, and a bit of staleness is fine (a nightly report, a leaderboard, a dashboard).
+
+      - type: example
+        title: Fresh versus stale
+        md: |
+          We create a view and a materialized view with the same query, then a new order arrives. Watch which one notices.
+        sql: |
+          CREATE VIEW v_status AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders GROUP BY status;
+
+          CREATE MATERIALIZED VIEW mv_status AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders GROUP BY status;
+
+          INSERT INTO orders (order_id, customer_id, order_date, status, ship_city)
+          VALUES (901, 1, '2024-12-31', 'processing', 'Austin');
+
+          SELECT 'view' AS kind, orders
+          FROM v_status WHERE status = 'processing'
+          UNION ALL
+          SELECT 'materialized view', orders
+          FROM mv_status WHERE status = 'processing';
+        after: |
+          The plain **view** says 8 `processing` orders: it looked at the live table. The **materialized view** still says 7, the number from when it was created. Its photo is out of date.
+
+          The next step shows how to take a fresh photo.
+
+      - type: predict
+        id: m15-l02-p1
+        question: |
+          The `products` table has 60 rows. A materialized view counts them, and then a new product is added. What does the last query return?
+        sql: |
+          CREATE MATERIALIZED VIEW mv_product_count AS
+          SELECT COUNT(*) AS n FROM products;
+
+          INSERT INTO products
+              (product_id, name, category_id, price, cost, stock_qty, is_active, created_at)
+          VALUES (61, 'Test Mug', 4, 9.99, 4.00, 10, true, '2024-12-31');
+
+          SELECT n FROM mv_product_count;
+        options: ["60", "61", "NULL", "An error"]
+        answer: 0
+        explanation: |
+          **60**. The count was calculated and stored when the view was created. Adding a product changes `products`, but the stored photo stays the same until you run `REFRESH MATERIALIZED VIEW mv_product_count;`.
+
+      - type: exercise
+        id: m15-l02-e1
+        title: Cache the payment methods
+        prompt: |
+          Create a materialized view called `mv_payment_methods` from the `payments` table with three columns, in this order:
+
+          - `method`
+          - `payments`: how many payments used that method
+          - `total`: the sum of `amount` for that method
+        starter: |
+          CREATE MATERIALIZED VIEW mv_payment_methods AS
+          SELECT
+        solution: |
+          CREATE MATERIALIZED VIEW mv_payment_methods AS
+          SELECT method,
+                 COUNT(*) AS payments,
+                 SUM(amount) AS total
+          FROM payments
+          GROUP BY method;
+        check: |
+          SELECT * FROM mv_payment_methods ORDER BY method;
+        columnNames: true
+        hints:
+          - It is like a normal view, with the word MATERIALIZED added after CREATE.
+          - "Group `payments` by `method` and use `COUNT(*)` and `SUM(amount)`."
+          - "CREATE MATERIALIZED VIEW mv_payment_methods AS SELECT method, COUNT(*) AS payments, SUM(___) AS total FROM payments GROUP BY ___;"
+        explanation: |
+          Four rows: bank_transfer, card, gift_card and paypal. Card payments lead with 463 payments worth 162,887.72. These four rows are now stored, so a dashboard tile can read them without touching the 778 payment rows.
+        difficulty: 1
+
+      - type: read
+        title: Taking a new photo with REFRESH
+        md: |
+          To update the stored rows, run:
+
+          ```sql
+          REFRESH MATERIALIZED VIEW monthly_revenue;
+          ```
+
+          PostgreSQL re-runs the saved query and replaces **all** the stored rows. It does not happen by itself. In real projects a scheduled job (every night, every hour) calls `REFRESH`.
+
+          > [!NOTE]
+          > A plain `REFRESH` locks the materialized view while it works, so readers have to wait. Later in this lesson you will meet `REFRESH ... CONCURRENTLY`, which avoids that.
+
+      - type: exercise
+        id: m15-l02-e2
+        title: Refresh the stale view
+        prompt: |
+          The materialized view `mv_status_counts` (columns `status` and `orders`) was created this morning. Since then a new `processing` order arrived, so the stored number is out of date.
+
+          Bring `mv_status_counts` up to date. The check will look at the stored `processing` count.
+        setup: |
+          CREATE MATERIALIZED VIEW mv_status_counts AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders
+          GROUP BY status;
+
+          INSERT INTO orders (order_id, customer_id, order_date, status, ship_city)
+          VALUES (901, 1, '2024-12-31', 'processing', 'Austin');
+        starter: |
+          -- bring mv_status_counts up to date
+        solution: |
+          REFRESH MATERIALIZED VIEW mv_status_counts;
+        check: |
+          SELECT status, orders
+          FROM mv_status_counts
+          ORDER BY status;
+        hints:
+          - There is a special statement for taking a new photo of a materialized view.
+          - "It starts with `REFRESH`."
+          - "REFRESH MATERIALIZED VIEW ___;"
+        explanation: |
+          After the refresh, `processing` shows 8 instead of 7. Tip: first run `SELECT * FROM mv_status_counts;` to see the stale number, then refresh and look again.
+        difficulty: 1
+
+      - type: example
+        title: WITH NO DATA
+        md: |
+          Sometimes you want to create the structure now and fill it later. `WITH NO DATA` creates the materialized view **empty and unpopulated**. Reading it fails until the first refresh.
+        sql: |
+          CREATE MATERIALIZED VIEW mv_empty AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders
+          GROUP BY status
+          WITH NO DATA;
+
+          SELECT * FROM mv_empty;
+        expectError: true
+        after: |
+          PostgreSQL says `materialized view "mv_empty" has not been populated` and even tells you the fix: run `REFRESH MATERIALIZED VIEW mv_empty;`. After that first refresh, reading works.
+
+      - type: quiz
+        id: m15-l02-q1
+        question: |
+          Which tool fits best? **A screen in the warehouse must always show the orders that are processing right now**, including ones created a second ago.
+        options:
+          - "A plain view"
+          - "A materialized view refreshed every night"
+          - "A materialized view refreshed once a week"
+          - "A copy of the table made last month"
+        answer: 0
+        explanation: |
+          The warehouse needs live data, so use a **plain view** (or just a query). A materialized view is a photo and would hide the newest orders until the next refresh. Materialized views shine for *expensive* queries whose answer may be a bit old, like yesterday's revenue.
+
+      - type: read
+        title: Indexes and REFRESH CONCURRENTLY
+        md: |
+          Because a materialized view stores real rows, you can put an **index** on it (lesson 3 explains indexes in detail).
+
+          An index also unlocks a very useful trick. With a **unique index** on the materialized view you can run:
+
+          ```sql
+          REFRESH MATERIALIZED VIEW CONCURRENTLY mv_name;
+          ```
+
+          PostgreSQL builds the new rows on the side and swaps in only the differences, so people reading the view are **not blocked** while it refreshes. It is a little slower, but your dashboard never freezes.
+
+      - type: example
+        title: CONCURRENTLY needs a unique index
+        md: |
+          We try `CONCURRENTLY` on a materialized view that has no unique index yet.
+        sql: |
+          CREATE MATERIALIZED VIEW mv_status AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders
+          GROUP BY status;
+
+          REFRESH MATERIALIZED VIEW CONCURRENTLY mv_status;
+        expectError: true
+        after: |
+          The error message tells you exactly what to do: *Create a unique index with no WHERE clause on one or more columns of the materialized view.* PostgreSQL needs a unique key to match old rows with new rows.
+
+      - type: example
+        title: Index first, then refresh concurrently
+        md: |
+          This time we add a unique index on `status` (every status appears once), then refresh with a new order waiting.
+        sql: |
+          CREATE MATERIALIZED VIEW mv_status AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders
+          GROUP BY status;
+
+          CREATE UNIQUE INDEX uq_mv_status ON mv_status (status);
+
+          INSERT INTO orders (order_id, customer_id, order_date, status, ship_city)
+          VALUES (901, 1, '2024-12-31', 'processing', 'Austin');
+
+          REFRESH MATERIALIZED VIEW CONCURRENTLY mv_status;
+
+          SELECT * FROM mv_status ORDER BY status;
+        after: |
+          It worked, and `processing` now shows 8. In a real server, other users could have kept reading `mv_status` the whole time.
+
+          Remember the rule: **`CONCURRENTLY` needs a unique index** on the materialized view.
+
+      - type: exercise
+        id: m15-l02-e3
+        title: Make it refreshable
+        prompt: |
+          The materialized view `mv_category_revenue` already exists. Each `category` appears only once in it.
+
+          Create a **unique index** named `uq_mv_category` on its `category` column, so that it can be refreshed concurrently.
+        setup: |
+          CREATE MATERIALIZED VIEW mv_category_revenue AS
+          SELECT c.name AS category,
+                 SUM(i.quantity) AS units,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM order_items i
+          JOIN orders o ON o.order_id = i.order_id
+          JOIN products p ON p.product_id = i.product_id
+          JOIN categories c ON c.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.name;
+        starter: |
+          CREATE UNIQUE INDEX
+        solution: |
+          CREATE UNIQUE INDEX uq_mv_category
+          ON mv_category_revenue (category);
+        check: |
+          SELECT tablename, indexname, indexdef
+          FROM pg_indexes
+          WHERE tablename = 'mv_category_revenue';
+        hints:
+          - You create an index on a materialized view exactly like on a table.
+          - "The pattern is `CREATE UNIQUE INDEX index_name ON view_name (column);`"
+          - "CREATE UNIQUE INDEX uq_mv_category ON ___ (___);"
+        explanation: |
+          `pg_indexes` lists indexes of tables **and** materialized views. Now `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_category_revenue;` would be allowed.
+        difficulty: 2
+
+      - type: exercise
+        id: m15-l02-e4
+        title: The category revenue cache
+        prompt: |
+          Create a materialized view called `mv_category_revenue` with three columns, in this order:
+
+          - `category`: the category name
+          - `units`: total quantity sold
+          - `revenue`: total of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals
+
+          Count only lines that belong to **delivered** orders.
+        starter: |
+          CREATE MATERIALIZED VIEW mv_category_revenue AS
+          SELECT
+        solution: |
+          CREATE MATERIALIZED VIEW mv_category_revenue AS
+          SELECT c.name AS category,
+                 SUM(i.quantity) AS units,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM order_items i
+          JOIN orders o ON o.order_id = i.order_id
+          JOIN products p ON p.product_id = i.product_id
+          JOIN categories c ON c.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY c.name;
+        check: |
+          SELECT * FROM mv_category_revenue ORDER BY revenue DESC;
+        columnNames: true
+        ordered: true
+        hints:
+          - You need four tables in the join path - order_items, orders, products and categories.
+          - "Filter with `WHERE o.status = 'delivered'` and `GROUP BY c.name`."
+          - "SELECT c.name AS category, SUM(i.quantity) AS units, ROUND(SUM(___), 2) AS revenue FROM order_items i JOIN orders o ON ... JOIN products p ON ... JOIN categories c ON ... WHERE ... GROUP BY c.name"
+        explanation: |
+          Phones lead with 60,548.25, followed by Laptops with 46,914.56. This four-table query is exactly the kind of work you do **once** in a materialized view and read cheaply a thousand times.
+        difficulty: 2
+
+      - type: read
+        title: Materialized view gotchas
+        md: |
+          > [!MISTAKE]
+          > **Forgetting to refresh.** The number on the dashboard is quietly wrong, and nobody gets an error. Always decide *who* refreshes the view and *how often*, and write it down.
+
+          > [!MISTAKE]
+          > **Trying to change the rows by hand.** `UPDATE`, `INSERT` and `DELETE` on a materialized view are not allowed. Change the base tables, then refresh.
+
+          > [!REAL-WORLD]
+          > Data teams often build a "reporting layer" of materialized views refreshed every night: daily sales, top products, customer lifetime value. Dashboards read these small stored tables, so they feel instant.
+
+      - type: example
+        title: You cannot edit the photo
+        md: |
+          What happens if you try to update a materialized view directly?
+        sql: |
+          CREATE MATERIALIZED VIEW mv_status AS
+          SELECT status, COUNT(*) AS orders
+          FROM orders
+          GROUP BY status;
+
+          UPDATE mv_status SET orders = 0;
+        expectError: true
+        after: |
+          `cannot change materialized view "mv_status"`. The rows are only ever created by running the saved query (at creation or at `REFRESH`).
+
+      - type: exercise
+        id: m15-l02-e5
+        title: Which views are populated?
+        prompt: |
+          Two materialized views exist, `mv_a` and `mv_b`. PostgreSQL keeps a list of them in the system view `pg_matviews`.
+
+          Show `matviewname` and `ispopulated` for every materialized view, sorted by `matviewname`.
+        setup: |
+          CREATE MATERIALIZED VIEW mv_a AS SELECT COUNT(*) AS n FROM orders;
+          CREATE MATERIALIZED VIEW mv_b AS SELECT COUNT(*) AS n FROM payments WITH NO DATA;
+        starter: |
+          SELECT *
+          FROM pg_matviews;
+        solution: |
+          SELECT matviewname, ispopulated
+          FROM pg_matviews
+          ORDER BY matviewname;
+        ordered: true
+        hints:
+          - "`pg_matviews` is a read-only list that you query like any table."
+          - Select the two columns by name and add an ORDER BY.
+          - "SELECT matviewname, ___ FROM pg_matviews ORDER BY ___;"
+        explanation: |
+          `mv_a` is populated (`true`); `mv_b` was created `WITH NO DATA`, so it is `false` and would raise an error if you read it. `pg_matviews` also shows each view's definition.
+        difficulty: 2
+
+      - type: fill
+        id: m15-l02-f1
+        prompt: |
+          Complete the script: create a materialized view of customers per city, then update its stored rows.
+        template: |
+          CREATE ___ VIEW mv_cities AS
+          SELECT city, COUNT(*) AS customers
+          FROM customers
+          GROUP BY city;
+
+          ___ MATERIALIZED VIEW mv_cities;
+        answers:
+          - ["MATERIALIZED"]
+          - ["REFRESH"]
+        explanation: |
+          `CREATE MATERIALIZED VIEW` stores the result, and `REFRESH MATERIALIZED VIEW` re-runs the query and replaces the stored rows.
+
+      - type: quiz
+        id: m15-l02-q2
+        question: |
+          Which statements about materialized views are **true**? (Pick all that apply.)
+        options:
+          - "Reading a materialized view re-runs its query every time."
+          - "You can create an index on a materialized view."
+          - "A materialized view updates itself whenever the base tables change."
+          - "REFRESH MATERIALIZED VIEW re-runs the query and replaces the stored rows."
+        answer: [1, 3]
+        explanation: |
+          The stored rows are read directly (so option 1 is false), they can be indexed (true), and they only change on `REFRESH` (so option 3 is false and option 4 is true). Automatic updating is exactly what a materialized view does **not** do.
+
+      - type: exercise
+        id: m15-l02-e6
+        title: Cache with a safe refresh
+        prompt: |
+          Build the monthly revenue cache in one go:
+
+          1. Create a materialized view `mv_monthly_revenue` with columns `month` (the first day of the month, as a date), `orders` (how many different delivered orders) and `revenue` (sum of `quantity * unit_price * (1 - discount)` rounded to 2 decimals) for **delivered** orders.
+          2. Create a **unique index** on its `month` column, named `uq_mv_monthly_revenue`.
+        starter: |
+          CREATE MATERIALIZED VIEW mv_monthly_revenue AS
+          SELECT
+        solution: |
+          CREATE MATERIALIZED VIEW mv_monthly_revenue AS
+          SELECT date_trunc('month', o.order_date)::date AS month,
+                 COUNT(DISTINCT o.order_id) AS orders,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY 1;
+
+          CREATE UNIQUE INDEX uq_mv_monthly_revenue
+          ON mv_monthly_revenue (month);
+        check: |
+          SELECT
+              (SELECT COUNT(*) FROM mv_monthly_revenue) AS months,
+              (SELECT ROUND(SUM(revenue), 2) FROM mv_monthly_revenue) AS total_revenue,
+              (SELECT COUNT(*) FROM pg_indexes
+               WHERE indexname = 'uq_mv_monthly_revenue'
+                 AND indexdef LIKE 'CREATE UNIQUE INDEX%') AS unique_indexes;
+        columnNames: true
+        hints:
+          - "This is two statements: one `CREATE MATERIALIZED VIEW` and one `CREATE UNIQUE INDEX`."
+          - "Group by `date_trunc('month', o.order_date)::date`; `COUNT(DISTINCT o.order_id)` counts orders once even though an order has several lines."
+          - "CREATE UNIQUE INDEX uq_mv_monthly_revenue ON mv_monthly_revenue (___);"
+        explanation: |
+          You get 24 months of revenue stored in a tiny table, plus the unique index that allows `REFRESH ... CONCURRENTLY` later. Without `COUNT(DISTINCT o.order_id)` you would count order *lines* instead of orders.
+        difficulty: 3
+    cheatsheet:
+      - title: Create and refresh
+        sql: |
+          CREATE MATERIALIZED VIEW mv_sales AS
+          SELECT ... ;
+
+          REFRESH MATERIALIZED VIEW mv_sales;
+        note: "The rows are stored when you create it and replaced on every REFRESH."
+      - title: Refresh without blocking readers
+        sql: |
+          CREATE UNIQUE INDEX uq_mv_sales ON mv_sales (month);
+          REFRESH MATERIALIZED VIEW CONCURRENTLY mv_sales;
+        note: "CONCURRENTLY requires a unique index on the materialized view."
+      - title: View or materialized view?
+        sql: |
+          -- View: always fresh, runs every time
+          -- Materialized view: stored, fast, needs REFRESH
+          SELECT matviewname, ispopulated FROM pg_matviews;
+        note: "Pick a materialized view for expensive queries that can be a little stale."
+  - id: m15-l03
+    title: "How indexes work"
+    summary: Understand the B-tree index, create and drop indexes, and know what they cost.
+    minutes: 28
+    steps:
+      - type: read
+        title: Finding one order among 200,000
+        md: |
+          ShopSmart's support team types an order number and waits... and waits. The `orders` table has grown to **200,000 rows** and every lookup feels slow. Mia asks you: *"Can the database find an order without reading all of them?"*
+
+          Yes, with an **index**. Think about a **phone book**. To find "Hadad, Noor" you do not read every page from "A". The names are in alphabetical order, so you jump to the middle, then to the right quarter, and in a few jumps you are on the correct page.
+
+          A database index works the same way. It is a **separate, sorted list** of the values in one column, each pointing to the row where it lives.
+
+          > [!ANALOGY]
+          > The **index at the back of a book** lists topics alphabetically with page numbers. You look up "pagination", see "p. 214", and go straight there instead of reading the whole book.
+
+      - type: viz
+        viz: index
+        title: Race a full scan against an index
+        md: |
+          Pick an id and press **Race them!**. The left side reads rows one after another (a **sequential scan**). The right side walks down a **B-tree** (the shape of most indexes) in just a few steps.
+        config:
+          rows: 200000
+
+      - type: read
+        title: What a B-tree looks like
+        md: |
+          Most indexes are **B-trees**. A B-tree is a tree of sorted "pages":
+
+          - The **root** page says which branch to follow ("ids 1 to 50,000 go left...").
+          - **Branch** pages narrow it down further.
+          - **Leaf** pages hold the sorted values, each with a pointer to the real table row.
+
+          Each page holds hundreds of entries, so even with millions of rows the tree is only **3 or 4 levels** deep. Finding a value takes a handful of page reads instead of millions.
+
+          Because the leaves are sorted, an index also helps with `BETWEEN`, `<`, `>`, `ORDER BY` and `LIMIT`, not only `=`.
+
+          You create one with:
+
+          ```sql
+          CREATE INDEX index_name ON table_name (column_name);
+          ```
+
+          > [!NOTE]
+          > `CREATE INDEX` builds a B-tree unless you say otherwise. Other types (`GIN` and friends) come in lesson 5.
+
+      - type: example
+        title: The slow lookup
+        md: |
+          Let's feel the problem. The first statement builds a practice table, `big_orders`, with **200,000 rows**. (`generate_series(1, 200000)` simply counts from 1 to 200,000. You will meet it properly in module 16. Don't worry about the arithmetic: it just invents tidy pretend orders.)
+
+          `ANALYZE` lets PostgreSQL take notes about the new table, which lesson 7 explains. Then `EXPLAIN ANALYZE` runs a lookup and shows how PostgreSQL did it. Lesson 4 teaches you to read the whole plan. For now, just spot two things: the words **Seq Scan** and the **Execution Time** at the bottom.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT * FROM big_orders
+          WHERE order_id = 123456;
+        after: |
+          The plan starts with **Seq Scan on big_orders**: PostgreSQL read the table from the first row to the last. The line `Rows Removed by Filter: 199999` says it looked at 200,000 rows to find the one you wanted. On a typical run that took roughly 10 to 20 milliseconds. Your number will differ, and that is fine.
+
+          One lookup at 15 ms is okay. A website doing hundreds of lookups a second is not.
+
+      - type: example
+        title: The same lookup with an index
+        md: |
+          Same table, same query, but now we add an index on `order_id` before asking.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          ANALYZE big_orders;
+
+          CREATE INDEX idx_big_orders_order_id
+          ON big_orders (order_id);
+
+          EXPLAIN ANALYZE
+          SELECT * FROM big_orders
+          WHERE order_id = 123456;
+        after: |
+          Now the plan says **Index Scan using idx_big_orders_order_id**, and the `Execution Time` is a small fraction of a millisecond, around 0.05 ms on our test run. That is hundreds of times faster, for one extra line of SQL.
+
+          PostgreSQL chose the index **by itself**. You never write "use this index" in your query: you just create it, and the planner decides whether it helps.
+
+      - type: quiz
+        id: m15-l03-q1
+        question: |
+          Why can an index find `order_id = 123456` so much faster than scanning the table?
+        options:
+          - "The index stores a copy of the whole table in memory"
+          - "The index is a sorted structure, so PostgreSQL can skip almost all rows and jump straight to the right place"
+          - "The index deletes rows that are not needed"
+          - "The index runs the query on several computers at once"
+        answer: 1
+        explanation: |
+          An index is a **sorted tree** of values with pointers to the rows. Like looking up a word in a dictionary, you narrow the search down in a few steps. The index does not copy, delete or distribute your data.
+
+      - type: exercise
+        id: m15-l03-e1
+        title: Your first index
+        prompt: |
+          Customers' order histories are looked up by `customer_id` all the time. Create an index named `idx_orders_customer` on the `customer_id` column of the `orders` table.
+        starter: |
+          CREATE INDEX
+        solution: |
+          CREATE INDEX idx_orders_customer
+          ON orders (customer_id);
+        check: |
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_orders_customer';
+        hints:
+          - The pattern is CREATE INDEX name ON table (column).
+          - "Name first, then `ON orders`, then the column in parentheses."
+          - "CREATE INDEX idx_orders_customer ON ___ (___);"
+        explanation: |
+          `pg_indexes` is PostgreSQL's catalog of indexes. The check looks up yours by name and compares its definition. The `orders` table is small (900 rows), so you will not feel a difference, but this is exactly the index a big shop needs.
+        difficulty: 1
+
+      - type: read
+        title: Some indexes already exist
+        md: |
+          You did not create any index earlier in the course, but some already exist:
+
+          - A **primary key** automatically gets a unique index.
+          - A **`UNIQUE` constraint** automatically gets a unique index.
+
+          But a **foreign key** does **not** get an index! `orders.customer_id` points to `customers`, yet nothing makes lookups by `customer_id` fast. Joining on foreign keys is so common that you often create those indexes yourself.
+
+          To see what exists, ask the catalog `pg_indexes`.
+
+      - type: example
+        title: Which indexes does the shop have?
+        sql: |
+          SELECT tablename, indexname
+          FROM pg_indexes
+          WHERE schemaname = 'public'
+          ORDER BY tablename, indexname;
+        after: |
+          Eleven indexes, all created automatically by primary keys and `UNIQUE` rules (the names end in `_pkey` or `_key`).
+
+          Look at the `orders` table: it only has `orders_pkey`. There is **no index** on `orders.customer_id` and none on `order_items.product_id`. Two of the first columns you would want to search by!
+
+      - type: exercise
+        id: m15-l03-e2
+        title: What indexes does order_items have?
+        prompt: |
+          Show the `indexname` of every index on the table `order_items`, sorted by name.
+        starter: |
+          SELECT indexname
+          FROM pg_indexes;
+        solution: |
+          SELECT indexname
+          FROM pg_indexes
+          WHERE tablename = 'order_items'
+          ORDER BY indexname;
+        ordered: true
+        hints:
+          - "`pg_indexes` has a column called `tablename` you can filter on."
+          - "Add `WHERE tablename = 'order_items'` and an ORDER BY."
+          - "SELECT indexname FROM pg_indexes WHERE tablename = ___ ORDER BY ___;"
+        explanation: |
+          Two indexes: one for the primary key (`order_items_pkey`) and one for the `UNIQUE (order_id, product_id)` rule. The second one will also help queries that filter on `order_id` alone, which lesson 5 explains.
+        difficulty: 1
+
+      - type: read
+        title: Unique indexes
+        md: |
+          A **unique index** does two jobs: it speeds up lookups **and** refuses duplicate values.
+
+          ```sql
+          CREATE UNIQUE INDEX uq_name ON table_name (column_name);
+          ```
+
+          This is what `PRIMARY KEY` and `UNIQUE` use behind the scenes. Be careful: if the column **already contains duplicates**, PostgreSQL cannot build the unique index and tells you which value is duplicated.
+
+      - type: predict
+        id: m15-l03-p1
+        question: |
+          Many customers have placed more than one order. What happens when this statement runs?
+        sql: |
+          CREATE UNIQUE INDEX uq_orders_customer
+          ON orders (customer_id);
+        options:
+          - "The index is created"
+          - "An error: could not create unique index, a customer_id is duplicated"
+          - "An error: orders is not a table"
+          - "The index is created but ignores duplicates"
+        answer: 1
+        expectError: true
+        explanation: |
+          A unique index cannot exist while two rows share the same value. PostgreSQL stops with `could not create unique index "uq_orders_customer"` and a detail such as *Key (customer_id)=(81) is duplicated*. Uniqueness only makes sense for columns like email, order number or a primary key.
+
+      - type: example
+        title: A unique index as a rule
+        md: |
+          Supplier names should never repeat. We add a unique index, then try to add a second supplier with the same name as supplier 1.
+        sql: |
+          CREATE UNIQUE INDEX uq_suppliers_name
+          ON suppliers (name);
+
+          INSERT INTO suppliers (supplier_id, name, country)
+          SELECT 9, name, 'Norway'
+          FROM suppliers
+          WHERE supplier_id = 1;
+        expectError: true
+        after: |
+          The error says `duplicate key value violates unique constraint "uq_suppliers_name"` and shows the repeated name. The index quietly protects your data, and it also makes `WHERE name = ...` lookups fast.
+
+      - type: exercise
+        id: m15-l03-e3
+        title: A unique index
+        prompt: |
+          Product names are all different. Create a **unique** index named `uq_products_name` on the `name` column of `products`.
+        starter: |
+          CREATE
+        solution: |
+          CREATE UNIQUE INDEX uq_products_name
+          ON products (name);
+        check: |
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE indexname = 'uq_products_name';
+        hints:
+          - Put one extra word between CREATE and INDEX.
+          - "`CREATE UNIQUE INDEX name ON table (column);`"
+          - "CREATE ___ INDEX uq_products_name ON products (___);"
+        explanation: |
+          The `indexdef` the check compares starts with `CREATE UNIQUE INDEX`, so a plain index would not pass. It worked because all 60 product names are different.
+        difficulty: 2
+
+      - type: read
+        title: Indexes are not free
+        md: |
+          If indexes make reads fast, why not index every column? Because every index has a **cost**:
+
+          - **Slower writes.** Each `INSERT`, `UPDATE` or `DELETE` must also update every index on the table.
+          - **Disk space.** An index is a second copy of a column, sorted. It can be as big as the data itself.
+          - **Maintenance.** More things to vacuum and keep healthy (lesson 7).
+
+          So the rule is: **index the columns you often search, join or sort by, and nothing more.**
+
+      - type: example
+        title: What an index costs
+        md: |
+          We load 100,000 rows into two identical empty tables. `t_indexed` has three indexes, `t_plain` has none. `EXPLAIN ANALYZE` times each load (it really inserts the rows). The last result shows how big everything is. You get **three result tabs**: click each one.
+        sql: |
+          CREATE TABLE t_plain (id int, customer_id int, order_date date);
+          CREATE TABLE t_indexed (id int, customer_id int, order_date date);
+          CREATE INDEX t_idx1 ON t_indexed (id);
+          CREATE INDEX t_idx2 ON t_indexed (customer_id);
+          CREATE INDEX t_idx3 ON t_indexed (order_date);
+
+          EXPLAIN ANALYZE
+          INSERT INTO t_plain
+          SELECT g, g % 5000 + 1, DATE '2023-01-01' + g % 731
+          FROM generate_series(1, 100000) AS g;
+
+          EXPLAIN ANALYZE
+          INSERT INTO t_indexed
+          SELECT g, g % 5000 + 1, DATE '2023-01-01' + g % 731
+          FROM generate_series(1, 100000) AS g;
+
+          SELECT pg_size_pretty(pg_relation_size('t_indexed')) AS table_size,
+                 pg_size_pretty(pg_relation_size('t_idx1')
+                              + pg_relation_size('t_idx2')
+                              + pg_relation_size('t_idx3')) AS indexes_size;
+        after: |
+          Compare the two `Execution Time` lines at the bottom of Result 1 and Result 2. On our test runs, loading with three indexes took about **four to five times longer** (roughly 750 ms against 170 ms). The indexes also take up space of their own (Result 3): about 4.1 MB of indexes next to a table of 4.2 MB, so the three indexes together are almost as big as the data.
+
+          This is the trade-off: reads get faster, writes get slower, and the disk fills up. A table that is read a thousand times for every write loves indexes. A table that is mostly written (like a log) wants as few as possible.
+
+      - type: quiz
+        id: m15-l03-q2
+        question: |
+          A table `orders` has 1,000,000 rows. Which index is **most likely worth creating** for the query `WHERE customer_id = ?`, which returns about 10 rows each time?
+        options:
+          - "An index on customer_id (about 100,000 different values)"
+          - "An index on is_test, a boolean that is false for 99.9% of the rows"
+          - "An index on every column, just in case"
+          - "No index: a full scan is always best"
+        answer: 0
+        explanation: |
+          An index pays off when the search is **selective**: it narrows a million rows down to a handful. `customer_id` does that. A boolean that is the same for almost every row narrows nothing, and indexing every column makes all writes slow and wastes space.
+
+      - type: exercise
+        id: m15-l03-e4
+        title: Drop an index
+        prompt: |
+          The index `idx_orders_status` was created for a report that no longer exists, and it only slows writes down. Remove it.
+        setup: |
+          CREATE INDEX idx_orders_status ON orders (status);
+        starter: |
+          DROP
+        solution: |
+          DROP INDEX idx_orders_status;
+        check: |
+          SELECT indexname
+          FROM pg_indexes
+          WHERE indexname = 'idx_orders_status';
+        allowEmpty: true
+        hints:
+          - You remove an index with DROP, like you drop a view.
+          - "`DROP INDEX index_name;` - no table name needed."
+          - "DROP INDEX ___;"
+        explanation: |
+          The check finds no index with that name, so the drop worked. Dropping an index never touches your data, only the extra lookup structure. Use `DROP INDEX IF EXISTS name;` in scripts to avoid errors when it is already gone.
+        difficulty: 2
+
+      - type: exercise
+        id: m15-l03-e5
+        title: Fix the bug
+        prompt: |
+          This statement should create an index named `idx_orders_status` on the `status` column of `orders`, but it fails with a syntax error. Fix it.
+        starter: |
+          CREATE INDEX idx_orders_status ON orders status;
+        solution: |
+          CREATE INDEX idx_orders_status ON orders (status);
+        check: |
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_orders_status';
+        hints:
+          - Read the error message. It points at the word status.
+          - The column list of an index must be wrapped in parentheses.
+          - "CREATE INDEX idx_orders_status ON orders (status);"
+        explanation: |
+          Index columns always go in parentheses, even when there is only one. The same pattern works for several columns, which you will use in lesson 5.
+        difficulty: 2
+
+      - type: parsons
+        id: m15-l03-o1
+        prompt: |
+          Put the lines in order: create an index on `payments.order_id`, then list the indexes of `payments`.
+        lines:
+          - CREATE INDEX idx_payments_order
+          - ON payments (order_id);
+          - SELECT indexname
+          - FROM pg_indexes
+          - WHERE tablename = 'payments';
+        distractors:
+          - DROP INDEX idx_payments_order;
+        explanation: |
+          First the `CREATE INDEX ... ON table (column)` statement, then the query on `pg_indexes`. The result shows the new `idx_payments_order` next to `payments_pkey`. The `DROP INDEX` line would delete the index again.
+
+      - type: exercise
+        id: m15-l03-e6
+        title: How much space does an index use?
+        prompt: |
+          Compare the size of the `orders` table with the size of its primary key index. Show two columns:
+
+          - `table_size`: `pg_size_pretty(pg_relation_size('orders'))`
+          - `index_size`: `pg_size_pretty(pg_relation_size('orders_pkey'))`
+        starter: |
+          SELECT pg_size_pretty(pg_relation_size('orders')) AS table_size
+        solution: |
+          SELECT pg_size_pretty(pg_relation_size('orders')) AS table_size,
+                 pg_size_pretty(pg_relation_size('orders_pkey')) AS index_size;
+        columnNames: true
+        hints:
+          - "`pg_relation_size('name')` returns bytes; `pg_size_pretty` turns bytes into text like `64 kB`."
+          - You need two expressions in one SELECT, each with its own alias.
+          - "SELECT pg_size_pretty(pg_relation_size('orders')) AS table_size, pg_size_pretty(pg_relation_size(___)) AS index_size;"
+        explanation: |
+          The table takes 64 kB and the index on just its `order_id` column takes 40 kB, more than half the size of the table itself. That is why you should only create indexes you will actually use.
+        difficulty: 2
+    cheatsheet:
+      - title: Create an index
+        sql: CREATE INDEX idx_orders_customer ON orders (customer_id);
+        note: "Name, table, then the column(s) in parentheses. PostgreSQL decides when to use it."
+      - title: Unique index
+        sql: CREATE UNIQUE INDEX uq_products_name ON products (name);
+        note: "Speeds up lookups and rejects duplicates. Fails if duplicates already exist."
+      - title: Drop or list indexes
+        sql: |
+          DROP INDEX IF EXISTS idx_orders_customer;
+
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE tablename = 'orders';
+        note: "Primary keys and UNIQUE constraints get an index automatically. Foreign keys do not."
+      - title: The cost of indexes
+        sql: SELECT pg_size_pretty(pg_relation_size('orders_pkey'));
+        note: "Indexes use disk space and slow down INSERT, UPDATE and DELETE."
+  - id: m15-l04
+    title: "Reading EXPLAIN"
+    summary: Use EXPLAIN and EXPLAIN ANALYZE to see how PostgreSQL runs a query and where the time goes.
+    minutes: 30
+    steps:
+      - type: read
+        title: Guessing is slow, looking is fast
+        md: |
+          The dashboard is slow again. Mia asks: *"What is wrong with it?"* A beginner guesses ("maybe it needs an index?"). An expert **looks**.
+
+          Before running your query, PostgreSQL's **planner** decides *how* to get the answer: which tables to read first, whether to use an index, how to join. That decision is the **query plan**.
+
+          Two commands show you the plan:
+
+          - **`EXPLAIN`** shows the plan PostgreSQL *would* use. It does **not** run the query.
+          - **`EXPLAIN ANALYZE`** really **runs** the query and adds the measured time and row counts.
+
+          > [!ANALOGY]
+          > `EXPLAIN` is the **route preview** in a maps app: it shows the way and the estimated time. `EXPLAIN ANALYZE` is the **trip log** after you have actually driven: it shows how long every part really took.
+
+      - type: example
+        title: Your first EXPLAIN
+        md: |
+          Put `EXPLAIN` in front of any query. The result is the plan, one line of text per row.
+        sql: |
+          EXPLAIN
+          SELECT * FROM orders
+          WHERE order_id = 7;
+        after: |
+          Two lines. The first one is the plan step: **Index Scan using orders_pkey on orders**. PostgreSQL will use the primary key's index. The second line, `Index Cond: (order_id = 7)`, is the condition it will look up in the index.
+
+          Next to it in brackets are the planner's **estimates**. The next step explains them.
+
+      - type: read
+        title: Anatomy of a plan line
+        md: |
+          Look at the first line of the plan:
+
+          ```
+          Index Scan using orders_pkey on orders  (cost=0.28..8.29 rows=1 width=42)
+          ```
+
+          | Part | Meaning |
+          |---|---|
+          | `Index Scan using orders_pkey on orders` | **What** PostgreSQL does, and on which table or index. |
+          | `cost=0.28..8.29` | The planner's estimate: **start-up cost .. total cost**. It is measured in made-up "cost units", not milliseconds. Lower is better. |
+          | `rows=1` | How many rows the planner **expects** this step to produce. |
+          | `width=42` | The average size of one result row, in bytes. |
+
+          Cost units are only good for comparing plans for the *same* query. Never convert them to seconds.
+
+      - type: example
+        title: Now with ANALYZE
+        md: |
+          Add the word `ANALYZE` and the query really runs. The plan now has real measurements next to the estimates.
+        sql: |
+          EXPLAIN ANALYZE
+          SELECT * FROM orders
+          WHERE order_id = 7;
+        after: |
+          Compare the new brackets: `(actual time=0.053..0.057 rows=1.00 loops=1)`.
+
+          - **actual time** is milliseconds, again start-up..total.
+          - **rows** is how many rows this step really produced (PostgreSQL 18 prints decimals like `1.00`).
+          - **loops** is how many times the step ran. For a join's inner side it can be large, and the time and rows shown are **per loop**.
+
+          At the bottom, `Planning Time` is how long the planner thought, and `Execution Time` is the real run time of the query. The `Buffers:` lines count the 8 kB pages touched (since PostgreSQL 18 they appear by default with `ANALYZE`). `Index Searches: 1` (new in 18) counts how many times the index was probed.
+
+      - type: quiz
+        id: m15-l04-q1
+        question: |
+          You want to know how long a `SELECT` **really** takes. Which command do you use?
+        options:
+          - "EXPLAIN SELECT ..."
+          - "EXPLAIN ANALYZE SELECT ..."
+          - "ANALYZE SELECT ..."
+          - "SHOW PLAN SELECT ..."
+        answer: 1
+        explanation: |
+          Only `EXPLAIN ANALYZE` executes the query and measures it. Plain `EXPLAIN` shows estimates without running anything. (A bare `ANALYZE` is a different command: it updates the planner's statistics. You will meet it in lesson 7.)
+
+      - type: read
+        title: "Careful: ANALYZE really runs the query"
+        md: |
+          `EXPLAIN ANALYZE` executes the statement. For a `SELECT` that is harmless, but for an `INSERT`, `UPDATE` or `DELETE` the **changes really happen**.
+
+          The safe habit is to wrap it in a transaction (module 14) and roll it back:
+
+          ```sql
+          BEGIN;
+          EXPLAIN ANALYZE DELETE FROM reviews WHERE rating = 1;
+          ROLLBACK;
+          ```
+
+          > [!MISTAKE]
+          > Running `EXPLAIN ANALYZE DELETE ...` on production without `BEGIN` and `ROLLBACK` deletes the rows. Always check the first word of the statement after `ANALYZE`.
+
+      - type: example
+        title: Time a DELETE safely
+        md: |
+          We time a `DELETE` of one-star reviews, roll it back, and then count the reviews to prove nothing was lost.
+        sql: |
+          BEGIN;
+
+          EXPLAIN ANALYZE
+          DELETE FROM reviews
+          WHERE rating = 1;
+
+          ROLLBACK;
+
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        after: |
+          The plan shows a `Delete on reviews` step that read the table and found 5 rows with `rating = 1`. After `ROLLBACK` the last query still counts all **320** reviews: the delete was timed and then undone.
+
+      - type: parsons
+        id: m15-l04-o1
+        prompt: |
+          Put the lines in order to measure an `UPDATE` safely without keeping its changes.
+        lines:
+          - BEGIN;
+          - EXPLAIN ANALYZE
+          - UPDATE products SET price = price * 1.1
+          - WHERE category_id = 12;
+          - ROLLBACK;
+        distractors:
+          - COMMIT;
+        explanation: |
+          Open the transaction, run the timed statement (`EXPLAIN ANALYZE` followed by the `UPDATE`), and finish with `ROLLBACK`. `COMMIT` would make the price change permanent, which is the opposite of what you want while only measuring.
+
+      - type: exercise
+        id: m15-l04-e1
+        title: Time it, then undo it
+        prompt: |
+          Measure how long it takes to delete all reviews with `rating = 1` using `EXPLAIN ANALYZE`, but make sure **no review is actually deleted**.
+
+          The check counts the rows left in `reviews`.
+        starter: |
+          EXPLAIN ANALYZE
+          DELETE FROM reviews
+          WHERE rating = 1;
+        solution: |
+          BEGIN;
+          EXPLAIN ANALYZE
+          DELETE FROM reviews
+          WHERE rating = 1;
+          ROLLBACK;
+        check: |
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        columnNames: true
+        hints:
+          - The starter really deletes the rows. You need to undo it.
+          - Wrap the statement in a transaction, with BEGIN before it and ROLLBACK after it.
+          - "BEGIN; EXPLAIN ANALYZE DELETE ...; ___;"
+        explanation: |
+          With `BEGIN ... ROLLBACK` the five one-star reviews come back, so 320 remain. Without it the starter deletes them for real and only 315 are left, which is why the check fails for the starter.
+        difficulty: 2
+
+      - type: read
+        title: "A plan is a tree: read it from the inside out"
+        md: |
+          Bigger queries give bigger plans. Lines are **indented** to show which step feeds which:
+
+          ```
+          Limit
+            ->  Sort
+                  ->  HashAggregate
+                        ->  Seq Scan on big_orders
+          ```
+
+          Data flows **upwards**. The most indented step (here the `Seq Scan`) runs first and hands its rows to the step above it. So you **read from the deepest line up**, but the top line is the final result.
+
+      - type: example
+        title: A real plan with four steps
+        md: |
+          This builds our 200,000-row practice table again and asks for the five customers with the most orders since June 2024. (All customers have 40 orders in total, so the order of the top five isn't meaningful: we only care about the plan.) Read the plan from the bottom up.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT customer_id, COUNT(*) AS orders
+          FROM big_orders
+          WHERE order_date >= '2024-06-01'
+          GROUP BY customer_id
+          ORDER BY orders DESC, customer_id
+          LIMIT 5;
+        after: |
+          From the bottom up:
+
+          1. **Seq Scan on big_orders** reads all 200,000 rows and keeps about 58,000 that match the date (`Rows Removed by Filter` shows the rest).
+          2. **HashAggregate** groups them by `customer_id` into 5,000 groups.
+          3. **Sort** orders the groups. The note `top-N heapsort` means it only keeps the best 5.
+          4. **Limit** returns 5 rows.
+
+          Look at the `actual time` of each step: the numbers grow as you go up, because each step includes the time of the steps below it. Most of the time was spent reading the table. That is the step to improve.
+
+      - type: quiz
+        id: m15-l04-q2
+        question: |
+          Read this plan (shortened):
+
+          ```
+          Sort  (actual time=61.2..61.3 rows=5 loops=1)
+            ->  HashAggregate  (actual time=58.0..59.9 rows=5000 loops=1)
+                  ->  Seq Scan on big_orders  (actual time=0.1..33.4 rows=58000 loops=1)
+                        Filter: (order_date >= '2024-06-01'::date)
+                        Rows Removed by Filter: 142000
+          ```
+
+          Which step does PostgreSQL run **first**?
+        options:
+          - "Sort, because it is on top"
+          - "HashAggregate"
+          - "Seq Scan, because it is the most indented step"
+          - "It is random"
+        answer: 2
+        explanation: |
+          The deepest (most indented) step runs first and passes its rows up. Here the `Seq Scan` reads the table, `HashAggregate` groups, and `Sort` finishes. Also notice that the scan alone took about 33 of the 61 milliseconds, and it threw away 142,000 rows to keep 58,000.
+
+      - type: read
+        title: The scan types
+        md: |
+          The first thing to look at in a plan is **how each table is read**:
+
+          | Scan | What it does | Typical when |
+          |---|---|---|
+          | **Seq Scan** | Reads every row of the table | the table is small, or the query needs a big part of it |
+          | **Index Scan** | Walks the index, then fetches each matching row | few rows match |
+          | **Index Only Scan** | Answers from the index alone, without touching the table | the index contains every column the query needs |
+          | **Bitmap Index Scan + Bitmap Heap Scan** | Marks the matching pages first, then reads those pages once | a medium number of rows match, or they are spread over many pages |
+
+          > [!TIP]
+          > A **Seq Scan is not a bug**. For a tiny table, or a query that needs most of the rows, reading everything is the cheapest plan. It becomes a problem only when a *big* table is scanned to find *a few* rows.
+
+      - type: example
+        title: Four ways to read the same table
+        md: |
+          We build `big_orders` with two indexes and ask for four different slices. `EXPLAIN` (without `ANALYZE`) is enough, because we only want to see the choice. You get **four result tabs**, one per query: click through them.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_big_orders_order_id ON big_orders (order_id);
+          CREATE INDEX idx_big_orders_customer ON big_orders (customer_id);
+          ANALYZE big_orders;
+
+          EXPLAIN SELECT * FROM big_orders WHERE order_id = 777;
+          EXPLAIN SELECT order_id FROM big_orders WHERE order_id = 777;
+          EXPLAIN SELECT * FROM big_orders WHERE customer_id = 777;
+          EXPLAIN SELECT * FROM big_orders WHERE order_id < 150000;
+        after: |
+          - **Result 1**: one specific order, so an **Index Scan**.
+          - **Result 2**: the same lookup, but we only ask for `order_id`, which the index already holds. That allows an **Index Only Scan**.
+          - **Result 3**: customer 777 has 40 orders spread all over the table, so PostgreSQL first builds a **Bitmap** of the right pages, then reads them.
+          - **Result 4**: three quarters of the table matches. The planner decides that reading everything is cheaper than jumping through the index 150,000 times, so it uses a **Seq Scan even though an index exists**.
+
+          The planner compares the estimated cost of every option and picks the cheapest. That is why you never tell it which index to use.
+
+      - type: predict
+        id: m15-l04-p1
+        question: |
+          `customers` has a primary key, so `customer_id` is indexed. But the table has only 150 rows, stored in 3 pages. What scan will PostgreSQL choose for this query?
+        sql: |
+          EXPLAIN
+          SELECT * FROM customers
+          WHERE customer_id = 25;
+        options:
+          - "Seq Scan on customers"
+          - "Index Scan using customers_pkey"
+          - "Bitmap Heap Scan on customers"
+          - "An error: customers has no index"
+        answer: 0
+        explanation: |
+          A **Seq Scan**. Reading 3 tiny pages is cheaper (cost about 4.9) than visiting the index first and then the table (about 8.3). Having an index does not force PostgreSQL to use it: the planner always picks the cheapest plan. On `orders` (8 pages) the same kind of lookup does use the index.
+
+      - type: example
+        title: The same index, two different choices
+        md: |
+          On `orders` we create an index on `status`. Then we ask for the most common status (`delivered`, 72% of all orders) and for a rare one (`processing`, 7 orders). Two result tabs.
+        sql: |
+          CREATE INDEX idx_orders_status ON orders (status);
+
+          EXPLAIN SELECT * FROM orders WHERE status = 'delivered';
+          EXPLAIN SELECT * FROM orders WHERE status = 'processing';
+        after: |
+          For `delivered` the planner expects 650 of the 900 rows (`rows=650`) and uses a **Seq Scan**: almost the whole table is needed anyway. For `processing` it expects only 7 rows (`rows=7`) and switches to a **Bitmap** scan on the new index.
+
+          The deciding factor is **selectivity**: what fraction of the table the filter keeps. An index shines when the answer is a small slice.
+
+      - type: exercise
+        id: m15-l04-e2
+        title: Estimated versus actual
+        prompt: |
+          When the planner looks at `WHERE customer_id = 7` on `orders` it *estimates* 2 rows. Check the estimate against the truth: return one number, called `actual_rows`, the real count of orders with `customer_id = 7`.
+        starter: |
+          SELECT COUNT(*)
+          FROM orders;
+        solution: |
+          SELECT COUNT(*) AS actual_rows
+          FROM orders
+          WHERE customer_id = 7;
+        columnNames: true
+        hints:
+          - Count only the rows for customer 7.
+          - Add a WHERE clause and alias the count.
+          - "SELECT COUNT(*) AS actual_rows FROM orders WHERE customer_id = ___;"
+        explanation: |
+          The answer is 2: the estimate was exactly right. When estimates and actual rows are close, the planner usually makes good decisions. A big gap (for example `rows=1` estimated but 60,000 actual) is a red flag; lesson 7 shows why that happens and how to fix it.
+        difficulty: 1
+
+      - type: exercise
+        id: m15-l04-e3
+        title: How selective is a filter?
+        prompt: |
+          What share of all orders have `status = 'delivered'`? Return one number called `delivered_pct`: the percentage, rounded to 1 decimal (for example `72.2`).
+        starter: |
+          SELECT COUNT(*) AS delivered_pct
+          FROM orders;
+        solution: |
+          SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'delivered') / COUNT(*), 1) AS delivered_pct
+          FROM orders;
+        columnNames: true
+        hints:
+          - Count the delivered orders and divide by all orders, multiplied by 100.0 to avoid integer division.
+          - "`COUNT(*) FILTER (WHERE status = 'delivered')` counts only delivered orders."
+          - "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE ___) / COUNT(*), 1) AS delivered_pct FROM orders;"
+        explanation: |
+          72.2 percent of all orders are delivered. A filter that keeps 72% of the table is **not selective**, so the planner reads the whole table instead of using an index. A filter that keeps well under 5% is where indexes usually win.
+        difficulty: 1
+
+      - type: exercise
+        id: m15-l04-e4
+        title: What the planner knows about a table
+        prompt: |
+          The planner's notes about each table are kept in the catalog `pg_class`. Show, for the table named `orders`, two columns:
+
+          - `est_rows`: `reltuples` converted to an integer (`reltuples::int`)
+          - `pages`: `relpages` (the number of 8 kB pages)
+        starter: |
+          SELECT reltuples, relpages
+          FROM pg_class;
+        solution: |
+          SELECT reltuples::int AS est_rows,
+                 relpages AS pages
+          FROM pg_class
+          WHERE relname = 'orders';
+        columnNames: true
+        hints:
+          - "`pg_class` has one row per table and index, so you need a WHERE on `relname`."
+          - "Filter with `WHERE relname = 'orders'` and give the two columns their aliases."
+          - "SELECT reltuples::int AS est_rows, relpages AS ___ FROM pg_class WHERE relname = ___;"
+        explanation: |
+          The planner believes `orders` has 900 rows in 8 pages. These two numbers are what it multiplies by the cost constants to estimate a Seq Scan (about 19.25 for `orders`). Statistics like these come from `ANALYZE`.
+        difficulty: 2
+
+      - type: read
+        title: Finding the slow part
+        md: |
+          When a plan is long, hunt for these warning signs:
+
+          1. **A Seq Scan on a big table with a `Filter` that throws most rows away.** Look at `Rows Removed by Filter`. An index on the filtered column may help.
+          2. **The step with the biggest `actual time`.** Remember times include the steps below, so find the step where the time jumps up.
+          3. **Estimated `rows` far from actual `rows`.** The planner is working with bad information (lesson 7).
+          4. **A step with a large `loops` number.** A cheap step repeated a million times is expensive.
+
+          > [!REAL-WORLD]
+          > Experienced developers rarely guess. When a query is slow they run `EXPLAIN ANALYZE`, find the one step that dominates the time, fix it (often with an index), and run the same command again to prove it got faster.
+
+      - type: exercise
+        id: m15-l04-e5
+        title: Fix what the plan showed
+        prompt: |
+          The support team looks up payments by `order_id` all day long, and `EXPLAIN` shows a **Seq Scan on payments** for `WHERE order_id = 150`.
+
+          Fix it: create an index named `idx_payments_order_id` on `payments (order_id)`.
+        starter: |
+          EXPLAIN SELECT * FROM payments WHERE order_id = 150;
+        solution: |
+          CREATE INDEX idx_payments_order_id
+          ON payments (order_id);
+        check: |
+          SELECT indexname, indexdef
+          FROM pg_indexes
+          WHERE tablename = 'payments'
+          ORDER BY indexname;
+        hints:
+          - The plan needs an index on the column in the WHERE clause.
+          - "`CREATE INDEX name ON table (column);`"
+          - "CREATE INDEX idx_payments_order_id ON ___ (___);"
+        explanation: |
+          Run `EXPLAIN SELECT * FROM payments WHERE order_id = 150;` again afterwards. With 778 payments the planner may still prefer a cheap Seq Scan, but as the table grows, the index becomes the clear winner. This habit of "look at the plan, fix, look again" is the heart of performance work.
+        difficulty: 2
+
+      - type: exercise
+        id: m15-l04-e6
+        title: Which tables are the biggest?
+        prompt: |
+          A DBA wants to know where to look first. Show every ordinary table in the `public` schema with three columns:
+
+          - `table_name`: the table's name (`relname`)
+          - `pages`: `relpages`
+          - `est_rows`: `reltuples` as an integer
+
+          Biggest first by `pages`, ties broken by `table_name`. Join `pg_class` (alias `c`) to `pg_namespace` (alias `n`) on `n.oid = c.relnamespace`, and keep only `c.relkind = 'r'` (ordinary tables) in the namespace named `public`.
+        starter: |
+          SELECT c.relname AS table_name
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace;
+        solution: |
+          SELECT c.relname AS table_name,
+                 c.relpages AS pages,
+                 c.reltuples::int AS est_rows
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relkind = 'r'
+          ORDER BY c.relpages DESC, c.relname;
+        ordered: true
+        columnNames: true
+        hints:
+          - The join is already in the starter. Add the filters on schema name and table kind.
+          - "Use `WHERE n.nspname = 'public' AND c.relkind = 'r'`, then `ORDER BY c.relpages DESC, c.relname`."
+          - "SELECT c.relname AS table_name, c.relpages AS pages, c.reltuples::int AS est_rows FROM pg_class c JOIN pg_namespace n ON ... WHERE ... ORDER BY ___ DESC, c.relname;"
+        explanation: |
+          `order_items` (17 pages) and `orders` (8 pages) are the biggest tables; even they are tiny. Real tables measured in gigabytes have millions of pages, which is where plan choices matter.
+        difficulty: 3
+    cheatsheet:
+      - title: See the plan
+        sql: |
+          EXPLAIN
+          SELECT * FROM orders WHERE order_id = 7;
+        note: "Shows the planner's estimates without running the query."
+      - title: Measure the real run
+        sql: |
+          EXPLAIN ANALYZE
+          SELECT * FROM orders WHERE order_id = 7;
+        note: "Runs the query for real: compare estimated rows with actual rows."
+      - title: Measure a change safely
+        sql: |
+          BEGIN;
+          EXPLAIN ANALYZE DELETE FROM reviews WHERE rating = 1;
+          ROLLBACK;
+        note: "EXPLAIN ANALYZE executes DELETE, UPDATE and INSERT for real, so roll back."
+      - title: Scan types
+        sql: |
+          -- Seq Scan: whole table
+          -- Index Scan / Index Only Scan: through an index
+          -- Bitmap Heap Scan: pages marked by an index first
+        note: "Read plans from the most indented line up. The planner picks the cheapest option."
+testPool:
+  # ---------------------------------------------------------------- l01 Views
+  - type: exercise
+    id: m15-t01
+    lesson: m15-l01
+    difficulty: 1
+    prompt: |
+      Create a view called `us_west_customers` with the columns `customer_id`, `first_name`, `last_name` and `state`, for customers whose `state` is `'CA'`, `'OR'` or `'WA'`.
+    starter: |
+      CREATE VIEW us_west_customers AS
+      SELECT
+    solution: |
+      CREATE VIEW us_west_customers AS
+      SELECT customer_id, first_name, last_name, state
+      FROM customers
+      WHERE state IN ('CA', 'OR', 'WA');
+    check: |
+      SELECT * FROM us_west_customers ORDER BY customer_id;
+    hints:
+      - A view is `CREATE VIEW name AS` plus a normal SELECT.
+      - "Use `WHERE state IN (...)` to keep the three states."
+      - "CREATE VIEW us_west_customers AS SELECT customer_id, first_name, last_name, state FROM customers WHERE state IN (___);"
+    explanation: |
+      The view lists the customers living in those three states. It stores no rows, so new customers from CA, OR or WA appear in it automatically.

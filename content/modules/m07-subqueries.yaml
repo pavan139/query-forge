@@ -3459,3 +3459,914 @@ testPool:
       - Always a number
     answer: 0
     explanation: Scalar means a single value; it can be a number, text, a date...
+
+  - type: exercise
+    id: m07-t02
+    lesson: m07-l01
+    difficulty: 1
+    prompt: |
+      Show the `name` and `stock_qty` of every product that has **more units in stock than the average** `stock_qty`
+      of all products. Use a subquery for the average.
+    starter: |
+      SELECT name, stock_qty
+      FROM products
+      WHERE stock_qty > (SELECT ___ FROM products);
+    solution: |
+      SELECT name, stock_qty
+      FROM products
+      WHERE stock_qty > (SELECT AVG(stock_qty) FROM products);
+    hints:
+      - You need the average of one column, calculated by an inner query in parentheses.
+      - "The inner query is `SELECT AVG(stock_qty) FROM products`."
+      - "WHERE stock_qty > (SELECT AVG(___) FROM products)"
+    explanation: |
+      The inner query returns one number (about 180.92) and the outer query keeps the 25 products above it.
+
+  - type: predict
+    id: m07-t03
+    lesson: m07-l01
+    difficulty: 2
+    question: |
+      The `orders` table has 900 rows. What does the `total` column show in the 3 rows this query returns?
+    sql: |
+      SELECT order_id, (SELECT COUNT(*) FROM orders) AS total
+      FROM orders
+      WHERE order_id <= 3;
+    options: ["3 in every row", "900 in every row", "1, 2 and 3", "An error"]
+    answer: 1
+    explanation: |
+      The subquery in the `SELECT` list does not look at the outer row, so it counts **all** 900 orders and gives
+      the same single value to each of the 3 rows. The outer `WHERE` only decides which rows are shown.
+
+  - type: exercise
+    id: m07-t04
+    lesson: m07-l01
+    difficulty: 3
+    prompt: |
+      A product's **margin** is `price - cost`. Show each `category_id` with its average margin rounded to 2 decimals
+      (call it `avg_margin`), but only for categories whose average margin is **above the average margin of all
+      products**. Sort by `category_id`.
+    starter: |
+      SELECT category_id, ROUND(AVG(price - cost), 2) AS avg_margin
+      FROM products
+      GROUP BY category_id
+      HAVING AVG(price - cost) > (___)
+      ORDER BY category_id;
+    solution: |
+      SELECT category_id, ROUND(AVG(price - cost), 2) AS avg_margin
+      FROM products
+      GROUP BY category_id
+      HAVING AVG(price - cost) > (SELECT AVG(price - cost) FROM products)
+      ORDER BY category_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - A condition on a group's average belongs in HAVING, not WHERE.
+      - The inner query averages the margin of **all** products, with no GROUP BY.
+      - "HAVING AVG(price - cost) > (SELECT AVG(___ - ___) FROM products)"
+    explanation: |
+      Three categories qualify: Computers (7), Phones (8) and Laptops (12). The shop-wide average margin is about 81.03,
+      and the subquery computes it for you.
+
+  - type: exercise
+    id: m07-t05
+    lesson: m07-l02
+    difficulty: 1
+    prompt: |
+      Show the `customer_id` and `first_name` of every customer who has placed at least one order with the
+      discount code `BLACKFRIDAY`. Use `IN` with a subquery on `orders`. Sort by `customer_id`.
+    starter: |
+      SELECT customer_id, first_name
+      FROM customers
+      WHERE customer_id IN (SELECT ___ FROM orders WHERE ___)
+      ORDER BY customer_id;
+    solution: |
+      SELECT customer_id, first_name
+      FROM customers
+      WHERE customer_id IN (
+          SELECT customer_id
+          FROM orders
+          WHERE discount_code = 'BLACKFRIDAY'
+      )
+      ORDER BY customer_id;
+    ordered: true
+    hints:
+      - The inner query should return a list of customer ids taken from the orders.
+      - "Inner query: `SELECT customer_id FROM orders WHERE discount_code = 'BLACKFRIDAY'`."
+      - "WHERE customer_id IN (SELECT customer_id FROM orders WHERE discount_code = '___')"
+    explanation: |
+      24 customers used the code. A customer with several Black Friday orders still appears only once, because `IN` just
+      asks "is this id in the list?".
+
+  - type: quiz
+    id: m07-t06
+    lesson: m07-l02
+    difficulty: 2
+    question: |
+      A subquery returns the list `3, 7, NULL`. What does `5 NOT IN (3, 7, NULL)` evaluate to?
+    options:
+      - "TRUE, because 5 is not 3 and not 7"
+      - "FALSE, because the list contains a NULL"
+      - "NULL (unknown), so a WHERE clause would drop the row"
+      - "An error, because lists cannot hold NULL"
+    answer: 2
+    explanation: |
+      `5 NOT IN (3, 7, NULL)` means `5 <> 3 AND 5 <> 7 AND 5 <> NULL`. The first two are TRUE, the last one is unknown
+      (NULL), and TRUE AND TRUE AND NULL is NULL. `WHERE` keeps only TRUE rows, so nothing passes. That is the NOT IN trap.
+
+  - type: predict
+    id: m07-t07
+    lesson: m07-l02
+    difficulty: 2
+    question: |
+      There are 150 customers. The 102 returned orders were placed by 73 different customers, and `orders.customer_id`
+      never contains NULL. How many rows does this query return?
+    sql: |
+      SELECT customer_id
+      FROM customers
+      WHERE customer_id NOT IN (
+          SELECT customer_id
+          FROM orders
+          WHERE status = 'returned'
+      );
+    options: ["48", "73", "77", "0"]
+    answer: 2
+    explanation: |
+      The inner list holds 73 different customer ids (repeats do not matter) and has no NULL, so `NOT IN` works normally.
+      That leaves 150 - 73 = 77 customers, including the 10 who never ordered at all.
+
+  - type: parsons
+    id: m07-t08
+    lesson: m07-l02
+    difficulty: 2
+    prompt: |
+      Put the lines in order to list the suppliers that supply **no product priced above 300**, using a `NOT IN`
+      that is safe against NULLs (some products have no supplier).
+    lines:
+      - SELECT supplier_id, name
+      - FROM suppliers
+      - WHERE supplier_id NOT IN (
+      - SELECT supplier_id
+      - FROM products
+      - WHERE price > 300
+      - AND supplier_id IS NOT NULL
+      - )
+      - ORDER BY supplier_id;
+    distractors:
+      - AND supplier_id = NULL
+    explanation: |
+      `products.supplier_id` can be NULL, so the inner query filters those rows out with `IS NOT NULL`. Writing
+      `= NULL` would never be true, so it cannot do the job. The result: 5 suppliers.
+
+  - type: exercise
+    id: m07-t09
+    lesson: m07-l03
+    difficulty: 1
+    prompt: |
+      Show the `category_id` and `name` of every category that contains **at least one inactive product**
+      (`is_active = false`). Use `EXISTS`. Sort by `category_id`.
+    starter: |
+      SELECT c.category_id, c.name
+      FROM categories c
+      WHERE EXISTS (
+          SELECT 1
+          FROM products p
+          WHERE ___
+      )
+      ORDER BY c.category_id;
+    solution: |
+      SELECT c.category_id, c.name
+      FROM categories c
+      WHERE EXISTS (
+          SELECT 1
+          FROM products p
+          WHERE p.category_id = c.category_id
+            AND p.is_active = false
+      )
+      ORDER BY c.category_id;
+    ordered: true
+    hints:
+      - The inner query must be linked to the current category and also check the product's status.
+      - "Link with `p.category_id = c.category_id`, then add `AND p.is_active = false`."
+      - "WHERE p.category_id = c.___ AND p.is_active = ___"
+    explanation: |
+      Four categories have a discontinued product: Toys, Phones, Furniture and Peripherals. `EXISTS` only asks "is there at
+      least one?", so a category with two inactive products would still appear once.
+
+  - type: fill
+    id: m07-t10
+    lesson: m07-l03
+    difficulty: 1
+    prompt: |
+      Complete the query to list the products that have been **reviewed at least once**.
+    template: |
+      SELECT p.name
+      FROM products p
+      WHERE ___ (
+          SELECT 1
+          FROM reviews r
+          WHERE r.product_id = p.___
+      );
+    answers:
+      - ["EXISTS"]
+      - ["product_id"]
+    explanation: |
+      `EXISTS` keeps a product when the inner query finds at least one review. The link `r.product_id = p.product_id`
+      makes the inner query look only at that product's reviews. 52 of the 60 products qualify.
+
+  - type: exercise
+    id: m07-t11
+    lesson: m07-l03
+    difficulty: 3
+    prompt: |
+      Show `customer_id`, `first_name` and `last_name` of customers who have bought at least one **Laptops** product
+      (`category_id = 12`) but have **never** bought a **Peripherals** product (`category_id = 13`). Any order counts,
+      whatever its status. Sort by `customer_id`.
+    starter: |
+      SELECT c.customer_id, c.first_name, c.last_name
+      FROM customers c
+      WHERE EXISTS (___)
+        AND NOT EXISTS (___)
+      ORDER BY c.customer_id;
+    solution: |
+      SELECT c.customer_id, c.first_name, c.last_name
+      FROM customers c
+      WHERE EXISTS (
+          SELECT 1
+          FROM orders o
+          JOIN order_items oi ON oi.order_id = o.order_id
+          JOIN products p ON p.product_id = oi.product_id
+          WHERE o.customer_id = c.customer_id
+            AND p.category_id = 12
+      )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM orders o
+          JOIN order_items oi ON oi.order_id = o.order_id
+          JOIN products p ON p.product_id = oi.product_id
+          WHERE o.customer_id = c.customer_id
+            AND p.category_id = 13
+      )
+      ORDER BY c.customer_id;
+    ordered: true
+    hints:
+      - Two yes/no questions about each customer, joined by AND. Both need orders, order lines and products.
+      - Inside each subquery, join orders to order_items to products, then link back with `o.customer_id = c.customer_id`.
+      - "EXISTS (SELECT 1 FROM orders o JOIN order_items oi ON ... JOIN products p ON ... WHERE o.customer_id = c.customer_id AND p.category_id = 12)"
+    explanation: |
+      Eight customers qualify. A subquery can contain joins: only the link to the outer row (`c`) matters. The second
+      subquery is identical except for `category_id = 13` and the `NOT`.
+
+  - type: quiz
+    id: m07-t12
+    lesson: m07-l03
+    difficulty: 1
+    question: |
+      In this query, what decides whether a customer row is kept?
+    sql: |
+      SELECT c.first_name
+      FROM customers c
+      WHERE EXISTS (
+          SELECT 1
+          FROM orders o
+          WHERE o.customer_id = c.customer_id
+      );
+    options:
+      - The number 1 is compared with the customer's id
+      - Whether the customer has exactly one order
+      - Whether the inner query finds at least one order for that customer
+      - Whether the customer has more orders than average
+    answer: 2
+    explanation: |
+      `EXISTS` only checks whether the inner query returns any row for the current customer. What the inner `SELECT`
+      lists (here `1`) does not matter, and the number of matching orders does not matter either: one is enough.
+
+  - type: exercise
+    id: m07-t13
+    lesson: m07-l04
+    difficulty: 2
+    prompt: |
+      For every product in category 8 (Phones), show its `name`, `price` and `cheaper_in_category`: the number of
+      products **in the same category** that have a lower price. Use a correlated subquery in the `SELECT` list.
+      Sort by `price`.
+    starter: |
+      SELECT
+          p.name,
+          p.price,
+          (
+              SELECT COUNT(*)
+              FROM products x
+              WHERE ___
+          ) AS cheaper_in_category
+      FROM products p
+      WHERE p.category_id = 8
+      ORDER BY p.price;
+    solution: |
+      SELECT
+          p.name,
+          p.price,
+          (
+              SELECT COUNT(*)
+              FROM products x
+              WHERE x.category_id = p.category_id
+                AND x.price < p.price
+          ) AS cheaper_in_category
+      FROM products p
+      WHERE p.category_id = 8
+      ORDER BY p.price;
+    ordered: true
+    columnNames: true
+    hints:
+      - The inner query counts products. It needs two conditions linking it to the current outer product.
+      - Same category as `p`, and a price lower than `p.price`.
+      - "WHERE x.category_id = p.category_id AND x.price < p.___"
+    explanation: |
+      The cheapest phone gets 0 and the most expensive gets 7 (the category has 8 products). The count is recalculated for
+      every outer row, because the inner query uses `p.price` and `p.category_id`.
+
+  - type: exercise
+    id: m07-t14
+    lesson: m07-l04
+    difficulty: 3
+    dataset: company
+    prompt: |
+      *(This exercise uses the **company** database.)* Show `emp_id`, `first_name`, `salary` and `manager_salary`
+      (the salary of that employee's own manager) for every employee who **earns more than their manager**.
+      Use a correlated subquery.
+    starter: |
+      SELECT
+          e.emp_id,
+          e.first_name,
+          e.salary,
+          (
+              SELECT m.salary
+              FROM employees m
+              WHERE ___
+          ) AS manager_salary
+      FROM employees e
+      WHERE e.salary > (
+          SELECT m.salary
+          FROM employees m
+          WHERE ___
+      );
+    solution: |
+      SELECT
+          e.emp_id,
+          e.first_name,
+          e.salary,
+          (
+              SELECT m.salary
+              FROM employees m
+              WHERE m.emp_id = e.manager_id
+          ) AS manager_salary
+      FROM employees e
+      WHERE e.salary > (
+          SELECT m.salary
+          FROM employees m
+          WHERE m.emp_id = e.manager_id
+      );
+    columnNames: true
+    hints:
+      - Each employee has a `manager_id`, which is the `emp_id` of another row in the same table.
+      - The inner query looks up the row `m` whose `emp_id` equals the outer employee's `manager_id`.
+      - "WHERE m.emp_id = e.___"
+    explanation: |
+      Only one employee earns more than their manager: Jia Kang (135,000 against 118,000). The CEO has no manager, so the
+      subquery returns NULL for them and the comparison is never TRUE.
+
+  - type: predict
+    id: m07-t15
+    lesson: m07-l04
+    difficulty: 2
+    question: |
+      The 14 categories contain this many products, biggest first: 8, 8, 8, 7, 6, 5, 5, 4, 3, 3, 3, 0, 0, 0.
+      How many rows does this query return?
+    sql: |
+      SELECT c.name
+      FROM categories c
+      WHERE (
+          SELECT COUNT(*)
+          FROM products p
+          WHERE p.category_id = c.category_id
+      ) >= 5;
+    options: ["3", "7", "11", "14"]
+    answer: 1
+    explanation: |
+      For each category the inner query counts that category's own products. Seven categories reach 5 or more
+      (8, 8, 8, 7, 6, 5, 5). Without the link `p.category_id = c.category_id` every category would see all 60 products,
+      and all 14 rows would come back.
+
+  - type: parsons
+    id: m07-t16
+    lesson: m07-l04
+    difficulty: 3
+    prompt: |
+      Put the lines in order to list the reviews whose `rating` is **below the average rating of the same product**.
+    lines:
+      - SELECT r.review_id, r.product_id, r.rating
+      - FROM reviews r
+      - WHERE r.rating < (
+      - SELECT AVG(r2.rating)
+      - FROM reviews r2
+      - WHERE r2.product_id = r.product_id
+      - )
+      - ORDER BY r.review_id;
+    distractors:
+      - WHERE r2.product_id <> r.product_id
+    explanation: |
+      The inner query averages the ratings of the **same** product as the current outer review (`=`). With `<>` it would
+      average every other product instead, which answers a different question.
+
+  - type: fill
+    id: m07-t17
+    lesson: m07-l05
+    difficulty: 2
+    prompt: |
+      Complete the query: the **average number of payments per order**, counting only orders that have at least one
+      payment, rounded to 2 decimals.
+    template: |
+      SELECT ROUND(___(payment_count), 2) AS avg_payments
+      FROM (
+          SELECT order_id, COUNT(*) AS payment_count
+          FROM payments
+          GROUP BY ___
+      ) AS per_order;
+    answers:
+      - ["AVG"]
+      - ["order_id"]
+    explanation: |
+      The inner query makes one row per paid order with its number of payments; the outer query averages that column.
+      The answer is 1.03: 778 payments spread over 758 orders (a few orders were paid in two payments).
+
+  - type: exercise
+    id: m07-t18
+    lesson: m07-l05
+    difficulty: 3
+    prompt: |
+      For each `state`, show the **average number of orders per customer**, counting only customers who have placed at
+      least one order. Show `state` and `avg_orders` (rounded to 2 decimals), sorted by `state`.
+    starter: |
+      SELECT c.state, ROUND(AVG(t.order_count), 2) AS avg_orders
+      FROM customers c
+      JOIN (
+          ___
+      ) AS t ON t.customer_id = c.customer_id
+      GROUP BY c.state
+      ORDER BY c.state;
+    solution: |
+      SELECT c.state, ROUND(AVG(t.order_count), 2) AS avg_orders
+      FROM customers c
+      JOIN (
+          SELECT customer_id, COUNT(*) AS order_count
+          FROM orders
+          GROUP BY customer_id
+      ) AS t ON t.customer_id = c.customer_id
+      GROUP BY c.state
+      ORDER BY c.state;
+    ordered: true
+    columnNames: true
+    hints:
+      - First count the orders of each customer (one row per customer), then group those counts by state.
+      - "The derived table is `SELECT customer_id, COUNT(*) AS order_count FROM orders GROUP BY customer_id`. Join it to `customers`."
+      - "JOIN (SELECT customer_id, COUNT(*) AS order_count FROM orders GROUP BY ___) AS t ON t.customer_id = c.customer_id"
+    explanation: |
+      12 rows, from FL (3.83) to CO (10.09). A derived table lets you aggregate twice: first per customer, then per state.
+      Because it is an inner join, the 10 customers who never ordered are not part of the averages.
+
+  - type: quiz
+    id: m07-t19
+    lesson: m07-l05
+    difficulty: 2
+    question: |
+      This query should list the customers with **more than 10 orders**. Which condition goes in the outer `WHERE`?
+
+      ```sql
+      SELECT t.customer_id, t.n
+      FROM (
+          SELECT customer_id, COUNT(*) AS n
+          FROM orders
+          GROUP BY customer_id
+      ) AS t
+      WHERE ...;
+      ```
+    options:
+      - COUNT(*) > 10
+      - t.n > 10
+      - orders > 10
+      - HAVING t.n > 10
+    answer: 1
+    explanation: |
+      From the outside, the derived table `t` is an ordinary table with the columns `customer_id` and `n`, so a plain
+      `WHERE t.n > 10` works (22 customers). `COUNT(*)` is not allowed in `WHERE`, `orders` is not a column of `t`, and
+      `HAVING` cannot be written in the middle of a `WHERE`.
+
+  - type: exercise
+    id: m07-t20
+    lesson: m07-l06
+    difficulty: 2
+    prompt: |
+      Show the `name` and `price` of every product that is **cheaper than every product in the Kitchen category**
+      (`category_id = 9`). Use `ALL`. Sort by `price` from highest to lowest, then by `name`.
+    starter: |
+      SELECT name, price
+      FROM products
+      WHERE price < ___ (
+          SELECT price
+          FROM products
+          WHERE category_id = 9
+      )
+      ORDER BY price DESC, name;
+    solution: |
+      SELECT name, price
+      FROM products
+      WHERE price < ALL (
+          SELECT price
+          FROM products
+          WHERE category_id = 9
+      )
+      ORDER BY price DESC, name;
+    ordered: true
+    hints:
+      - "\"Cheaper than every one\" means cheaper than the cheapest Kitchen product."
+      - "Put `ALL` between the comparison and the parentheses: `price < ALL (subquery)`."
+      - "WHERE price < ___ (SELECT price FROM products WHERE category_id = 9)"
+    explanation: |
+      14 products are cheaper than the cheapest Kitchen item (29.99). `price < ALL (...)` is the same as
+      `price < (SELECT MIN(price) ...)`. The Kitchen products themselves are not included, since none is cheaper than itself.
+
+  - type: quiz
+    id: m07-t21
+    lesson: m07-l06
+    difficulty: 2
+    question: |
+      Which condition always gives the same rows as `price < ANY (SELECT price FROM products WHERE category_id = 9)`
+      (assuming the subquery returns at least one row)?
+    options:
+      - price < (SELECT MIN(price) FROM products WHERE category_id = 9)
+      - price < (SELECT MAX(price) FROM products WHERE category_id = 9)
+      - price < (SELECT AVG(price) FROM products WHERE category_id = 9)
+      - price < ALL (SELECT price FROM products WHERE category_id = 9)
+    answer: 1
+    explanation: |
+      `< ANY` means "less than at least one value in the list". If a price is below the **largest** Kitchen price, it is
+      below at least one of them. `< ALL` would be the same as `< MIN`, because the price must beat every value.
+
+  - type: fill
+    id: m07-t22
+    lesson: m07-l06
+    difficulty: 2
+    prompt: |
+      Complete the query to list the customers who have **never written a review**.
+    template: |
+      SELECT customer_id, first_name
+      FROM customers
+      WHERE customer_id ___ ___ (
+          SELECT customer_id
+          FROM reviews
+      );
+    answers:
+      - ["<>", "!="]
+      - ["ALL"]
+    explanation: |
+      `<> ALL (list)` means "different from every value in the list", which is the same idea as `NOT IN`. 35 customers
+      have no review. It is safe here because `reviews.customer_id` never contains NULL; with a NULL in the list,
+      `<> ALL` would return nothing, just like `NOT IN`.
+
+  - type: exercise
+    id: m07-t23
+    lesson: m07-l07
+    difficulty: 3
+    prompt: |
+      For each `state`, count the customers who have **at least one returned order** (a customer with several returned
+      orders is counted once). Show `state` and `customers`, sorted by `customers` from highest to lowest, then by `state`.
+    starter: |
+      SELECT c.state, COUNT(*) AS customers
+      FROM customers c
+      WHERE EXISTS (___)
+      GROUP BY c.state
+      ORDER BY customers DESC, c.state;
+    solution: |
+      SELECT c.state, COUNT(*) AS customers
+      FROM customers c
+      WHERE EXISTS (
+          SELECT 1
+          FROM orders o
+          WHERE o.customer_id = c.customer_id
+            AND o.status = 'returned'
+      )
+      GROUP BY c.state
+      ORDER BY customers DESC, c.state;
+    ordered: true
+    columnNames: true
+    hints:
+      - First decide which customers qualify (EXISTS), then group the qualifying customers by state.
+      - "With a JOIN you would count `COUNT(DISTINCT c.customer_id)`; with `EXISTS` a plain `COUNT(*)` is enough."
+      - "WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id AND o.status = '___')"
+    explanation: |
+      California leads with 19 customers, then Texas (11) and New York (10). `EXISTS` keeps each customer once, so
+      `COUNT(*)` is correct. A JOIN with `COUNT(*)` would count returned orders instead (26 for California).
+
+  - type: quiz
+    id: m07-t24
+    lesson: m07-l07
+    difficulty: 2
+    question: |
+      Query A joins `customers` to `orders` and keeps `o.status = 'cancelled'`. Query B selects customers with
+      `WHERE EXISTS (...)` on cancelled orders. A returns 127 rows and B returns 75 rows. Why?
+    options:
+      - B ignores customers that have more than one cancelled order
+      - A also includes customers who have no cancelled order
+      - A returns one row per cancelled order, B returns one row per customer
+      - EXISTS removes rows whose customer_id is NULL
+    answer: 2
+    explanation: |
+      A JOIN produces one result row for every matching pair, so a customer with three cancelled orders appears three
+      times (127 cancelled orders in total). `EXISTS` only asks whether at least one exists, so each of the 75 customers
+      appears once. Use the JOIN when you need columns from `orders`, and `EXISTS` when you only need the customers.
+
+  - type: predict
+    id: m07-t25
+    lesson: m07-l07
+    difficulty: 3
+    question: |
+      There are 150 customers and 900 orders. Ten customers have never ordered, and every order belongs to a customer.
+      How many rows does this query return?
+    sql: |
+      SELECT c.customer_id, o.order_id
+      FROM customers c
+      LEFT JOIN orders o ON o.customer_id = c.customer_id;
+    options: ["150", "900", "910", "1050"]
+    answer: 2
+    explanation: |
+      Each of the 900 orders matches exactly one customer, giving 900 rows. The 10 customers without orders are kept by
+      the `LEFT JOIN`, each as one extra row with a NULL `order_id`. Total: 900 + 10 = 910.
+
+project:
+  id: m07-proj
+  title: Product Performance Review
+  icon: "📈"
+  dataset: shop
+  md: |
+    It is early January 2025 and ShopSmart holds its yearly **product review meeting** tomorrow morning. Three
+    colleagues each need a list from you:
+
+    - **Priya** (marketing) wants to know where the money is.
+    - **Marcus** (warehouse) wants to know what is gathering dust on the shelves.
+    - **Dana** (customer care) wants to know which products are letting customers down.
+
+    You are the analyst who prepares the lists tonight. The tasks build on each other: a list you build early on
+    becomes a piece of a bigger query later.
+
+    You will use everything from this module: scalar subqueries, `IN`, `NOT EXISTS`, subqueries in `FROM`, and `ALL`.
+    Run each query and check the row count before you move on.
+
+    > [!TIP]
+    > Build big queries from the inside out. Run the inner query on its own first, check that it returns what you expect,
+    > and only then wrap it in the outer query.
+  tasks:
+    - type: exercise
+      id: m07-proj-1
+      title: Priya's list — the premium line-up
+      prompt: |
+        Priya wants the premium line-up. Show the `name`, `price` and `margin` (the `price` minus the `cost`) of every
+        product priced **above the average price** of all products. Sort by `margin` from highest to lowest.
+      starter: |
+        SELECT name, price, price - cost AS margin
+        FROM products
+        WHERE price > (___)
+        ORDER BY margin DESC;
+      solution: |
+        SELECT name, price, price - cost AS margin
+        FROM products
+        WHERE price > (SELECT AVG(price) FROM products)
+        ORDER BY margin DESC;
+      ordered: true
+      columnNames: true
+      hints:
+        - You need one number first (the average price), and the outer query compares each product with it.
+        - "The inner query is `SELECT AVG(price) FROM products`. Wrap it in parentheses after `price >`."
+        - "SELECT name, price, price - cost AS margin FROM products WHERE price > (SELECT AVG(___) FROM products) ORDER BY margin DESC;"
+      explanation: |
+        12 products cost more than the average of about 193.04. The Nimbus Air 13 Ultrabook earns the most per sale
+        (a margin of 564.44). The subquery keeps the list correct even when prices change.
+      difficulty: 1
+
+    - type: exercise
+      id: m07-proj-2
+      title: Marcus's list — premium, but nobody buys it
+      prompt: |
+        Marcus is worried about expensive stock that does not sell. Among the premium products from task 1
+        (price above the average price of all products), find those that have **never been ordered**: they have no row
+        in `order_items`. Show `name`, `price` and `stock_qty`, sorted by `name`.
+      starter: |
+        SELECT p.name, p.price, p.stock_qty
+        FROM products p
+        WHERE p.price > (___)
+          AND NOT EXISTS (___)
+        ORDER BY p.name;
+      solution: |
+        SELECT p.name, p.price, p.stock_qty
+        FROM products p
+        WHERE p.price > (SELECT AVG(price) FROM products)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM order_items oi
+              WHERE oi.product_id = p.product_id
+          )
+        ORDER BY p.name;
+      ordered: true
+      hints:
+        - Keep the premium condition from task 1 and add a second condition with AND.
+        - "\"Never ordered\" is a job for `NOT EXISTS` on `order_items`, linked with `oi.product_id = p.product_id`."
+        - "AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.product_id = p.___)"
+      explanation: |
+        Two premium products have never sold: the Standing Desk 140cm (42 units in stock) and the Zephyr Gaming Laptop X
+        (8 units). `NOT EXISTS` is the NULL-safe way to say "no matching row". `NOT IN` would also work here, because
+        `order_items.product_id` never contains NULL.
+      difficulty: 2
+
+    - type: exercise
+      id: m07-proj-3
+      title: Dana's list — the rating watch-list
+      prompt: |
+        Dana wants products that customers are not happy with. Show the `name`, `review_count` (number of reviews) and
+        `avg_rating` (average rating rounded to 2 decimals) of products that have **at least 5 reviews** and whose
+        average rating is **below the average rating of all reviews**. Sort by `avg_rating` (lowest first), then by `name`.
+      starter: |
+        SELECT
+            p.name,
+            COUNT(*) AS review_count,
+            ROUND(AVG(r.rating), 2) AS avg_rating
+        FROM reviews r
+        JOIN products p ON p.product_id = r.product_id
+        GROUP BY p.product_id, p.name
+        HAVING COUNT(*) >= 5
+           AND AVG(r.rating) < (___)
+        ORDER BY avg_rating, p.name;
+      solution: |
+        SELECT
+            p.name,
+            COUNT(*) AS review_count,
+            ROUND(AVG(r.rating), 2) AS avg_rating
+        FROM reviews r
+        JOIN products p ON p.product_id = r.product_id
+        GROUP BY p.product_id, p.name
+        HAVING COUNT(*) >= 5
+           AND AVG(r.rating) < (SELECT AVG(rating) FROM reviews)
+        ORDER BY avg_rating, p.name;
+      ordered: true
+      columnNames: true
+      hints:
+        - A condition on a group's average belongs in HAVING, and the number to compare with comes from a subquery.
+        - "The overall average rating is `SELECT AVG(rating) FROM reviews` (about 4.07)."
+        - "HAVING COUNT(*) >= 5 AND AVG(r.rating) < (SELECT AVG(___) FROM reviews)"
+      explanation: |
+        13 products are on the watch-list. The worst is *The Beginner's Guide to Sourdough* with an average of 2.78 from
+        9 reviews. Notice the scalar subquery inside `HAVING`: it is computed once, over all reviews, not per group.
+      difficulty: 2
+
+    - type: exercise
+      id: m07-proj-4
+      title: Priya's list — the best sellers
+      prompt: |
+        Priya also wants the best sellers. A product's **units sold** is the total `quantity` over all its `order_items`
+        rows (every order counts, whatever its status). Show the `name` and `units_sold` of products whose units sold
+        is **above the average units sold per ordered product**. Sort by `units_sold` from highest to lowest, then by `name`.
+      starter: |
+        SELECT p.name, SUM(oi.quantity) AS units_sold
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        GROUP BY p.product_id, p.name
+        HAVING SUM(oi.quantity) > (
+            ___
+        )
+        ORDER BY units_sold DESC, p.name;
+      solution: |
+        SELECT p.name, SUM(oi.quantity) AS units_sold
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        GROUP BY p.product_id, p.name
+        HAVING SUM(oi.quantity) > (
+            SELECT AVG(units)
+            FROM (
+                SELECT SUM(quantity) AS units
+                FROM order_items
+                GROUP BY product_id
+            ) AS per_product
+        )
+        ORDER BY units_sold DESC, p.name;
+      ordered: true
+      columnNames: true
+      hints:
+        - You need the average of a sum. That is an aggregate of an aggregate, so use a subquery in FROM.
+        - "Derived table: `SELECT SUM(quantity) AS units FROM order_items GROUP BY product_id`. Average its `units` column."
+        - "HAVING SUM(oi.quantity) > (SELECT AVG(units) FROM (SELECT SUM(quantity) AS units FROM order_items GROUP BY ___) AS per_product)"
+      explanation: |
+        17 products beat the average of about 62.3 units per ordered product. *Vitamin C Moisturizer* leads with 220.
+        The subquery inside `HAVING` contains its own derived table: three levels of query, each doing one small job.
+      difficulty: 3
+
+    - type: exercise
+      id: m07-proj-5
+      title: Dana's nightmare — popular but unloved
+      prompt: |
+        The worst case for Dana: products that sell a lot **and** have bad ratings. Show the `name` and `units_sold` of
+        products that are on **both** lists: the best sellers from task 4 (units sold above the average per ordered
+        product) **and** the watch-list from task 3 (at least 5 reviews, average rating below the average rating of all
+        reviews). Sort by `units_sold` from highest to lowest, then by `name`.
+      starter: |
+        SELECT p.name, SUM(oi.quantity) AS units_sold
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        WHERE p.product_id IN (
+            ___
+        )
+        GROUP BY p.product_id, p.name
+        HAVING SUM(oi.quantity) > (
+            ___
+        )
+        ORDER BY units_sold DESC, p.name;
+      solution: |
+        SELECT p.name, SUM(oi.quantity) AS units_sold
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        WHERE p.product_id IN (
+            SELECT product_id
+            FROM reviews
+            GROUP BY product_id
+            HAVING COUNT(*) >= 5
+               AND AVG(rating) < (SELECT AVG(rating) FROM reviews)
+        )
+        GROUP BY p.product_id, p.name
+        HAVING SUM(oi.quantity) > (
+            SELECT AVG(units)
+            FROM (
+                SELECT SUM(quantity) AS units
+                FROM order_items
+                GROUP BY product_id
+            ) AS per_product
+        )
+        ORDER BY units_sold DESC, p.name;
+      ordered: true
+      columnNames: true
+      hints:
+        - Reuse task 4 for the `HAVING` part, and turn the watch-list from task 3 into an `IN` list of product ids.
+        - "The watch-list subquery returns only `product_id`: `SELECT product_id FROM reviews GROUP BY product_id HAVING ...`."
+        - "WHERE p.product_id IN (SELECT product_id FROM reviews GROUP BY product_id HAVING COUNT(*) >= 5 AND AVG(rating) < (SELECT AVG(rating) FROM reviews))"
+      explanation: |
+        Nine of the 17 best sellers are also on the watch-list, led by *Vitamin C Moisturizer* (220 units, average rating
+        3.95). That is a useful message for Dana: fixing these nine would help the most customers. You combined `IN`,
+        `HAVING` with scalar subqueries, and a derived table, all in one query.
+      difficulty: 3
+
+    - type: exercise
+      id: m07-proj-6
+      title: Category champions
+      prompt: |
+        For the final slide, Priya wants the **best-selling product of every category** (most units sold, as in task 4).
+        Show `category` (the category name), `product` (the product name) and `units_sold`, for every category that has
+        sold something. Sort by `category`.
+      starter: |
+        SELECT c.name AS category, p.name AS product, u.units_sold
+        FROM (
+            SELECT product_id, SUM(quantity) AS units_sold
+            FROM order_items
+            GROUP BY product_id
+        ) AS u
+        JOIN products p ON p.product_id = u.product_id
+        JOIN categories c ON c.category_id = p.category_id
+        WHERE u.units_sold >= ALL (
+            ___
+        )
+        ORDER BY c.name;
+      solution: |
+        SELECT c.name AS category, p.name AS product, u.units_sold
+        FROM (
+            SELECT product_id, SUM(quantity) AS units_sold
+            FROM order_items
+            GROUP BY product_id
+        ) AS u
+        JOIN products p ON p.product_id = u.product_id
+        JOIN categories c ON c.category_id = p.category_id
+        WHERE u.units_sold >= ALL (
+            SELECT u2.units_sold
+            FROM (
+                SELECT product_id, SUM(quantity) AS units_sold
+                FROM order_items
+                GROUP BY product_id
+            ) AS u2
+            JOIN products p2 ON p2.product_id = u2.product_id
+            WHERE p2.category_id = p.category_id
+        )
+        ORDER BY c.name;
+      ordered: true
+      columnNames: true
+      hints:
+        - A product is the champion when its units are at least as high as those of every product in its own category.
+        - "That is `>= ALL (subquery)`, where the subquery lists the units of all products in the same category as the outer `p` (correlated)."
+        - "Inside, repeat the units-per-product derived table as `u2`, join `products p2`, and add WHERE p2.category_id = p.___"
+      explanation: |
+        11 categories have a champion, from *Vitamin C Moisturizer* (Beauty, 220 units) to *Aurora 14-inch Laptop*
+        (Laptops, 19 units). Electronics, Home and Sports have no products of their own, so they do not appear.
+        You wrote the same derived table twice. In m09 you will meet CTEs, which let you write it once and reuse the name.
+      difficulty: 3

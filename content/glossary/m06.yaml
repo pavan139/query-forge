@@ -1,0 +1,61 @@
+glossary:
+  - term: One-to-many relationship
+    definition: When one row in a table can be linked to many rows in another table, but each of those rows points back to only one. The "many" side holds the foreign key.
+    example: "One customer has many orders: orders.customer_id points to customers.customer_id."
+    module: m06
+  - term: Bridge table
+    definition: A table that sits between two others and links them, with one row for each pairing. It is also called a junction table. It lets many rows of one table connect to many rows of another.
+    example: "order_items links orders and products: one row per product in each order."
+    module: m06
+  - term: JOIN
+    definition: A way to combine rows from two tables into one result, side by side, by matching them with a rule. Think of it as following a foreign key automatically instead of looking each value up by hand.
+    example: "SELECT o.order_id, c.first_name FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id;"
+    module: m06
+  - term: ON condition
+    definition: The rule that tells a JOIN which rows belong together, usually a foreign key equal to a primary key. If two columns share the same name, USING (column) is a shorter way to write it. Without a rule, a JOIN matches the wrong rows or fails.
+    example: "JOIN customers AS c ON o.customer_id = c.customer_id   -- or: JOIN customers USING (customer_id)"
+    module: m06
+  - term: INNER JOIN
+    definition: The default kind of join. It keeps only the rows that have a match on both sides, and drops any row without a partner. Writing JOIN on its own means INNER JOIN.
+    example: "customers JOIN orders ...  -- a customer who never ordered does not appear"
+    module: m06
+  - term: Table alias
+    definition: A short nickname for a table, given in the FROM or JOIN clause, such as orders AS o. Use it to prefix columns (o.order_id). This is required when two tables have a column with the same name, because PostgreSQL otherwise reports that the column reference is ambiguous.
+    example: "FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id"
+    module: m06
+  - term: LEFT JOIN
+    definition: Keeps every row of the left table, even when nothing on the right matches. For those rows, the right table's columns are filled with NULL. It is also written LEFT OUTER JOIN.
+    example: "FROM customers AS c LEFT JOIN orders AS o ON o.customer_id = c.customer_id"
+    module: m06
+  - term: Anti-join
+    definition: A query that finds the rows with no match in another table. With a LEFT JOIN you keep the rows where the right-hand key IS NULL. It answers questions such as "which customers never ordered?".
+    example: "FROM customers AS c LEFT JOIN orders AS o ON o.customer_id = c.customer_id WHERE o.order_id IS NULL"
+    module: m06
+  - term: RIGHT JOIN
+    definition: The mirror image of a LEFT JOIN. It keeps every row of the right table and fills the left side with NULL when there is no match. Most people simply swap the two tables and use LEFT JOIN instead.
+    example: "FROM employees AS e RIGHT JOIN departments AS d ON e.dept_id = d.dept_id"
+    module: m06
+  - term: FULL OUTER JOIN
+    definition: Keeps every row from both tables. Matched rows are joined, and unmatched rows from either side appear with NULLs on the other side. It is handy for comparing two lists.
+    example: "FROM departments AS d FULL JOIN employees AS e ON e.dept_id = d.dept_id"
+    module: m06
+  - term: Self join
+    definition: Joining a table to itself, by using it twice under two different aliases. It is used for hierarchies, such as employees and their managers, and for comparing rows of the same table.
+    example: "FROM employees AS e JOIN employees AS m ON e.manager_id = m.emp_id"
+    module: m06
+  - term: CROSS JOIN
+    definition: Pairs every row of one table with every row of another, with no matching rule. The result has rows(A) x rows(B) rows, so it grows very fast. It is useful for building every combination, for example suppliers x categories.
+    example: "SELECT s.name, c.name FROM suppliers AS s CROSS JOIN categories AS c;  -- 8 x 14 = 112 rows"
+    module: m06
+  - term: Non-equi join
+    definition: A join whose rule uses something other than equality, such as BETWEEN, < or >. It is used to match a value to a range, like a price to a price band or a date to a promotion period.
+    example: "JOIN price_bands AS b ON p.price >= b.min_price AND p.price < b.max_price"
+    module: m06
+  - term: Fan-out
+    definition: When a join repeats the rows of one table once for every matching row in another table. Adding up a column from the repeated table then counts the same value several times and inflates the total. Fix it by joining only what you need, counting with COUNT(DISTINCT id), or summarising each side before joining.
+    example: "A payment of 128.95 joined to 4 order lines appears 4 times, so SUM(amount) says 515.80."
+    module: m06
+  - term: Grain
+    definition: What one row of a table (or of a joined result) stands for, such as one customer, one order, or one order line. Joining to a table with a finer grain changes the grain of your result, and that is where double counting comes from.
+    example: "orders = one row per order; order_items = one row per product in an order"
+    module: m06

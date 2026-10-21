@@ -1,0 +1,566 @@
+id: m13
+order: 13
+title: Designing Databases — DDL & Modeling
+subtitle: Build your own tables, keys and rules
+icon: "🧱"
+level: advanced
+description: |
+  Until now you have *asked questions* of tables that someone else built. In this module you become the
+  **architect**: you decide which tables exist, which columns they have, which kinds of data they hold, and
+  which **rules** protect that data from mistakes.
+
+  You will learn `CREATE TABLE` and the PostgreSQL data types, constraints (`PRIMARY KEY`, `NOT NULL`, `UNIQUE`,
+  `DEFAULT`, `CHECK`), foreign keys, `ALTER TABLE`, identity columns and generated columns. Then comes the real
+  craft of design: **normalization** (splitting a messy spreadsheet into clean tables), modeling one-to-one,
+  one-to-many and many-to-many relationships, and keeping things tidy with schemas, temporary tables and comments.
+
+  Everything runs on an empty database, so nothing you build can hurt anything. Break it, rebuild it, learn.
+dataset: blank
+lessons:
+  - id: m13-l01
+    title: CREATE TABLE & data types
+    summary: Build a table from scratch and choose the right type for every column.
+    minutes: 30
+    steps:
+      - type: read
+        title: Maya opens a plant shop
+        md: |
+          Your friend Maya is opening an online plant shop. So far her whole business lives in a paper notebook.
+          She asks you: *"Can you set up a real database for me?"*
+
+          Every database starts with an empty room. Before any data goes in, you must build the **shelves**.
+          In SQL, the commands that build and change the structure are called **DDL** (*Data Definition Language*):
+          `CREATE`, `ALTER` and `DROP`. The commands you already know for working with the *rows*
+          (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) are called **DML**.
+
+          Our first DDL command is `CREATE TABLE`. You give the table a name, then list each **column** with its
+          **data type**:
+
+          ```sql
+          CREATE TABLE table_name (
+              column_name  data_type,
+              column_name  data_type
+          );
+          ```
+
+          > [!ANALOGY]
+          > Think of the very first row of a spreadsheet, the one with the headings. `CREATE TABLE` is you typing
+          > those headings, *and* deciding for each column what kind of thing is allowed in it: only numbers,
+          > only dates, any text...
+
+      - type: example
+        title: Your first CREATE TABLE
+        md: |
+          Press **Run**. This mini-script builds Maya's `plants` table, adds one plant, and looks at it.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer,
+              name text,
+              price numeric(6,2),
+              in_stock boolean
+          );
+
+          INSERT INTO plants (plant_id, name, price, in_stock)
+          VALUES (1, 'Monstera', 24.50, true);
+
+          SELECT * FROM plants;
+        after: |
+          The table has **4 columns** and now one row: `1 | Monstera | 24.50 | true`.
+
+          The first statement built the empty shelf, the second put one plant on it and the third showed it.
+          Each column got a **type**: `integer` (whole numbers), `text` (words), `numeric(6,2)` (exact decimals)
+          and `boolean` (true/false). We will meet every one of them in this lesson.
+
+      - type: read
+        title: Every run starts with an empty database
+        md: |
+          In this module you work on the **blank** database. Remember: each time you press **Run**, the database
+          starts again from empty. So a table you create in one example is gone when the next example runs.
+
+          That is why every example here is a tiny **script**: *create the table, fill it, look at it* — all in one
+          go. Statements run top to bottom, and each one ends with a semicolon `;`.
+
+          > [!TIP]
+          > When a script returns several results, the result area shows tabs: **Result 1**, **Result 2**...
+          > Click a tab to look at each one. Statements that return no rows (like `CREATE TABLE`) show a green
+          > "completed" line instead.
+
+      - type: exercise
+        id: m13-l01-e1
+        title: Your very own table
+        prompt: |
+          A vet clinic needs a table called `pets`. Create it with these columns, **in this order**:
+
+          - `pet_id` — `integer`
+          - `name` — `text`
+          - `birth_date` — `date`
+          - `is_vaccinated` — `boolean`
+
+          When you press **Check**, the app looks at the *structure* of the table you built (column names and
+          types) and compares it with the model answer.
+        starter: |
+          CREATE TABLE pets (
+              pet_id integer,
+              ___
+          );
+        solution: |
+          CREATE TABLE pets (
+              pet_id integer,
+              name text,
+              birth_date date,
+              is_vaccinated boolean
+          );
+        check: |
+          SELECT attname AS column_name,
+                 format_type(atttypid, atttypmod) AS data_type
+          FROM pg_attribute
+          WHERE attrelid = 'pets'::regclass
+            AND attnum > 0 AND NOT attisdropped
+          ORDER BY attnum;
+        hints:
+          - Start with `CREATE TABLE pets (`, then one line per column, then `);`.
+          - Each line is `column_name data_type`, and every line except the last ends with a comma.
+          - "CREATE TABLE pets (pet_id integer, name text, birth_date ___, is_vaccinated ___);"
+        explanation: |
+          A column is always `name` + `type`. The columns of the new table appear in the order you wrote them.
+          Notice there is **no comma after the last column** — a trailing comma is a classic syntax error (you will
+          fix one in a minute).
+        difficulty: 1
+
+      - type: read
+        title: Numbers — whole, exact and approximate
+        md: |
+          Choosing the right type is the most important decision when you create a column. Start with numbers:
+
+          | Type | What it stores | Example |
+          |---|---|---|
+          | `smallint` | small whole numbers (up to 32 767) | `12` |
+          | `integer` | whole numbers (up to about 2.1 billion) | `40000` |
+          | `bigint` | huge whole numbers (up to about 9.2 quintillion) | `5000000000` |
+          | `numeric(p,s)` | **exact** decimals: `p` digits in total, `s` after the point | `1234.50` |
+          | `double precision` | **approximate** decimals (fast, tiny rounding errors) | `0.1` |
+
+          `numeric(6,2)` means "6 digits in total, 2 of them after the decimal point", so the biggest value is
+          `9999.99`. For **money, always use `numeric`** — never an approximate type.
+
+          > [!ANALOGY]
+          > `integer` is a counting jar: 1, 2, 3 — no halves. `numeric` is a till that counts every cent exactly.
+          > `double precision` is a measuring tape: great for heights and temperatures, but it can be off by a hair.
+
+      - type: example
+        title: Exact versus approximate
+        md: |
+          Let's see why money should never be approximate. We add the same two numbers twice, once as
+          `double precision` and once as `numeric`.
+        sql: |
+          SELECT 0.1::double precision + 0.2::double precision AS approx_sum,
+                 0.1::numeric + 0.2::numeric AS exact_sum;
+        after: |
+          The approximate version prints **0.30000000000000004**; the exact one prints **0.3**.
+          Computers store `double precision` in binary, where 0.1 cannot be written exactly (like 1/3 cannot be
+          written exactly in decimals). Over thousands of invoices these tiny errors add up, so we keep prices in
+          `numeric`.
+
+      - type: predict
+        id: m13-l01-p1
+        question: |
+          Is the approximate sum of 0.1 and 0.2 **equal** to 0.3? What does this return?
+        sql: |
+          SELECT 0.1::double precision + 0.2::double precision
+                 = 0.3::double precision AS is_equal;
+        options: ["true", "false", "NULL", "An error"]
+        answer: 1
+        explanation: |
+          It returns **false**: the left side is really 0.30000000000000004. This is exactly why you never compare
+          approximate numbers with `=`, and why prices use `numeric`.
+
+      - type: quiz
+        id: m13-l01-q1
+        question: |
+          You are creating a `phone` column for customers. Phone numbers look like `07700 900123` or `+44 20 7946 0958`.
+          Which type is the best choice?
+        options: ["integer", "bigint", "numeric(12,0)", "text"]
+        answer: 3
+        explanation: |
+          **text**. A phone number is an *identifier*, not a quantity: you never add two phone numbers together.
+          As a number it would lose the leading zero, the `+` and the spaces. A good rule of thumb: if you would
+          never do maths with it (phone numbers, postcodes, ID cards), store it as text.
+
+      - type: read
+        title: Text, yes/no and the char trap
+        md: |
+          For words and sentences PostgreSQL has these types:
+
+          - `text` — text of **any length**. This is the default choice.
+          - `varchar(n)` — text with a **maximum** of `n` characters (longer values are rejected).
+          - `char(n)` — fixed length, padded with spaces. **Avoid it** — the padding causes surprises.
+
+          For yes/no questions use `boolean` (`true`, `false`, or NULL if unknown).
+
+          > [!TIP]
+          > In PostgreSQL `text` and `varchar(n)` are equally fast. Use `varchar(n)` only when there is a real
+          > business rule about the length (for example a country code is always at most 2 letters).
+
+          > [!MISTAKE]
+          > Choosing `varchar(20)` for a name "to be safe" and then meeting someone with a 25-letter name.
+          > The insert fails. When in doubt, use `text` and add a `CHECK` rule later (next lesson).
+
+      - type: example
+        title: A varchar limit in action
+        md: |
+          This script creates a column limited to 5 characters. The first insert fits; the second one does not.
+          It will stop with an error — that is the point.
+        sql: |
+          CREATE TABLE tags (
+              tag_id integer,
+              label varchar(5)
+          );
+
+          INSERT INTO tags (tag_id, label) VALUES (1, 'Fern');
+          INSERT INTO tags (tag_id, label) VALUES (2, 'Monstera');
+        expectError: true
+        after: |
+          PostgreSQL says: *value too long for type character varying(5)*. 'Fern' has 4 letters and was saved;
+          'Monstera' has 8 and was refused. Note the app also tells you the first two statements ran fine — the
+          table and the first row exist; only the third statement failed.
+
+      - type: fill
+        id: m13-l01-f1
+        prompt: |
+          A gym needs a `members` table. Fill in the data types: a whole-number id, the full name (any length),
+          the date the member joined, and whether they are currently active (yes/no).
+        template: |
+          CREATE TABLE members (
+              member_id ___,
+              full_name ___,
+              joined_on ___,
+              is_active ___
+          );
+        answers:
+          - ["integer", "int", "bigint"]
+          - ["text", "varchar"]
+          - ["date"]
+          - ["boolean", "bool"]
+        explanation: |
+          `integer`, `text`, `date`, `boolean` — the four everyday types. (`int` is a short spelling of `integer`,
+          and `bool` of `boolean`.)
+
+      - type: exercise
+        id: m13-l01-e2
+        title: The invoices table
+        prompt: |
+          Create a table `invoices` with these columns, **in this order**:
+
+          - `invoice_id` — `bigint`
+          - `customer_name` — `text`
+          - `amount` — `numeric(10,2)` (exact money, up to 8 digits before the point)
+          - `issued_on` — `date`
+          - `is_paid` — `boolean`
+        starter: |
+          CREATE TABLE invoices (
+              invoice_id ___,
+              customer_name ___,
+              amount ___,
+              issued_on ___,
+              is_paid ___
+          );
+        solution: |
+          CREATE TABLE invoices (
+              invoice_id bigint,
+              customer_name text,
+              amount numeric(10,2),
+              issued_on date,
+              is_paid boolean
+          );
+        check: |
+          SELECT attname AS column_name,
+                 format_type(atttypid, atttypmod) AS data_type
+          FROM pg_attribute
+          WHERE attrelid = 'invoices'::regclass
+            AND attnum > 0 AND NOT attisdropped
+          ORDER BY attnum;
+        hints:
+          - Same shape as the pets table, just different names and types.
+          - "The money column needs its two numbers in brackets: `numeric(10,2)`."
+          - "CREATE TABLE invoices (invoice_id bigint, customer_name text, amount numeric(10,2), issued_on ___, is_paid ___);"
+        explanation: |
+          `numeric(10,2)` allows 10 digits in total with 2 after the point, so the biggest invoice is 99,999,999.99.
+          The checker compares the full type, so `numeric(10,2)` and a plain `numeric` would **not** be the same.
+        difficulty: 1
+
+      - type: read
+        title: Dates, times and a little JSON
+        md: |
+          Three types handle time:
+
+          - `date` — a calendar day: `2025-03-01`
+          - `timestamp` — a day **and** a clock time, but with no time zone: `2025-03-01 09:30:00`
+          - `timestamptz` — a day and time **with a time zone**: it remembers the exact moment in time.
+
+          For "when did this happen?" columns (orders, log-ins, messages) use **`timestamptz`**. A moment is the
+          same moment for a customer in London and one in Sydney; `timestamptz` stores it that way and shows
+          it in your session's time zone (here: UTC).
+
+          One more handy type is **`jsonb`**: flexible, structured data (like a small settings document) stored
+          inside a single column. You will use it properly in a later module; for now just know it exists.
+
+      - type: example
+        title: Dates in a table
+        md: |
+          Here are all three time types side by side. The first query shows the data; the second shows the
+          table's blueprint from `information_schema.columns`, the database's own list of columns.
+        sql: |
+          CREATE TABLE events (
+              day date,
+              clock_time timestamp,
+              moment timestamptz
+          );
+
+          INSERT INTO events (day, clock_time, moment)
+          VALUES ('2025-03-01', '2025-03-01 09:30:00',
+                  '2025-03-01 09:30:00+02');
+
+          SELECT * FROM events;
+
+          SELECT column_name, data_type
+          FROM information_schema.columns
+          WHERE table_name = 'events'
+          ORDER BY ordinal_position;
+        after: |
+          In **Result 1** the `moment` column shows `2025-03-01 07:30:00+00`: we typed 09:30 in a time zone two
+          hours ahead of UTC, and PostgreSQL stored the exact moment and printed it in UTC. The other two columns
+          kept exactly what we typed.
+
+          **Result 2** is the blueprint: `date`, `timestamp without time zone` and `timestamp with time zone`.
+          You can use this query on any table to double-check what you built.
+
+      - type: example
+        title: A missing comma
+        md: |
+          Typos in a `CREATE TABLE` are easy to make. Run this one and read the message.
+        sql: |
+          CREATE TABLE tickets (
+              ticket_id integer,
+              title text
+              opened_at timestamptz,
+              is_open boolean
+          );
+        expectError: true
+        after: |
+          *syntax error at or near "opened_at"*. PostgreSQL read `title text`, then expected a comma or `)`,
+          but found `opened_at`. The error points at the **first word after the problem**, so look just before it:
+          the comma after `title text` is missing.
+
+      - type: exercise
+        id: m13-l01-e3
+        title: Fix the table
+        prompt: |
+          This script should create a `tickets` table with columns `ticket_id` (integer), `title` (text),
+          `opened_at` (timestamptz) and `is_open` (boolean) — but it has **two** syntax bugs. Fix them.
+        starter: |
+          CREATE TABLE tickets (
+              ticket_id integer,
+              title text
+              opened_at timestamptz,
+              is_open boolean,
+          );
+        solution: |
+          CREATE TABLE tickets (
+              ticket_id integer,
+              title text,
+              opened_at timestamptz,
+              is_open boolean
+          );
+        check: |
+          SELECT attname AS column_name,
+                 format_type(atttypid, atttypmod) AS data_type
+          FROM pg_attribute
+          WHERE attrelid = 'tickets'::regclass
+            AND attnum > 0 AND NOT attisdropped
+          ORDER BY attnum;
+        hints:
+          - Columns are separated by commas, but there is nothing after the *last* column.
+          - One comma is missing after `title text`, and one comma too many sits after `is_open boolean`.
+          - "title text,   ...   is_open boolean   (no comma on the last line)"
+        explanation: |
+          Rule of thumb: **a comma goes between columns, never after the last one.** PostgreSQL reports the first
+          problem it meets; after you fix it, the next one appears. Fixing errors one at a time is normal.
+        difficulty: 2
+
+      - type: parsons
+        id: m13-l01-o1
+        prompt: |
+          Put the lines in order to create a `shelves` table with an id, a label and a capacity.
+          Two of the lines do not belong in a correct statement.
+        lines:
+          - "CREATE TABLE shelves ("
+          - "    shelf_id integer,"
+          - "    label text,"
+          - "    capacity smallint"
+          - ");"
+        distractors:
+          - "    capacity smallint,"
+          - "CREATE shelves TABLE ("
+        explanation: |
+          The statement starts with `CREATE TABLE name (`, lists the columns separated by commas (none after the
+          last one) and finishes with `);`. The words `CREATE TABLE` must come in that order.
+
+      - type: read
+        title: DROP TABLE — the delete button
+        md: |
+          `DROP TABLE table_name;` removes a table **and all its rows**. There is no recycle bin.
+
+          Two small helpers keep your scripts friendly:
+
+          - `DROP TABLE IF EXISTS plants;` — no error if the table is already gone.
+          - `CREATE TABLE IF NOT EXISTS plants (...);` — no error if the table is already there
+            (it simply does nothing).
+
+          > [!MISTAKE]
+          > Mixing up three commands that sound alike. `DELETE FROM plants` removes **rows** but keeps the table.
+          > `TRUNCATE plants` empties all rows quickly. `DROP TABLE plants` removes the **table itself**.
+
+          > [!REAL-WORLD]
+          > Developers keep a "setup script" that starts with `DROP TABLE IF EXISTS ...` lines and then recreates
+          > everything. They can run it again and again to get a clean database — exactly like pressing Run here.
+
+      - type: example
+        title: Gone for good
+        md: |
+          We create a table, fill it, drop it, and then try to read it.
+        sql: |
+          CREATE TABLE plants (plant_id integer, name text);
+          INSERT INTO plants (plant_id, name) VALUES (1, 'Fern');
+          DROP TABLE plants;
+          SELECT * FROM plants;
+        expectError: true
+        after: |
+          *relation "plants" does not exist*. In PostgreSQL's vocabulary a table is a "relation". After `DROP TABLE`
+          the table and its row have vanished. The first three statements ran fine; only the last failed.
+
+      - type: exercise
+        id: m13-l01-e4
+        title: Out with the old
+        prompt: |
+          A table called `scratch_notes` was left over from an old experiment. In one script:
+
+          1. Remove `scratch_notes`.
+          2. Create a table `notes` with the columns `note_id` (integer) and `body` (text).
+        setup: |
+          CREATE TABLE scratch_notes (note text);
+        starter: |
+          DROP TABLE ___;
+
+          CREATE TABLE notes (
+              ___
+          );
+        solution: |
+          DROP TABLE scratch_notes;
+
+          CREATE TABLE notes (
+              note_id integer,
+              body text
+          );
+        check: |
+          SELECT c.relname AS table_name,
+                 a.attname AS column_name,
+                 format_type(a.atttypid, a.atttypmod) AS data_type
+          FROM pg_class c
+          JOIN pg_attribute a ON a.attrelid = c.oid
+          WHERE c.relnamespace = 'public'::regnamespace
+            AND c.relkind = 'r'
+            AND a.attnum > 0 AND NOT a.attisdropped
+          ORDER BY c.relname, a.attnum;
+        hints:
+          - You need two statements, each ending with a semicolon.
+          - "First `DROP TABLE scratch_notes;`, then a normal `CREATE TABLE notes (...)`."
+          - "DROP TABLE scratch_notes; CREATE TABLE notes (note_id ___, body ___);"
+        explanation: |
+          The check lists every column of every table in the database. It passes only when `scratch_notes` is gone
+          and `notes` has exactly the right columns. `DROP TABLE IF EXISTS scratch_notes;` would also work and is
+          safer in scripts you run more than once.
+        difficulty: 2
+
+      - type: exercise
+        id: m13-l01-e5
+        title: From a description to a table
+        prompt: |
+          Maya describes her hotel-booking sheet in plain words. Create a table `bookings` with these columns,
+          **in this order**:
+
+          1. `booking_id` — a whole number that could one day grow beyond 2 billion → `bigint`
+          2. `guest_name` — the guest's name, any length → `text`
+          3. `nightly_rate` — exact money, never above 9999.99 → `numeric(6,2)`
+          4. `check_in` — just the calendar day → `date`
+          5. `created_at` — the exact moment the booking was made, with time zone → `timestamptz`
+          6. `preferences` — flexible structured data (extra requests) → `jsonb`
+        starter: |
+          CREATE TABLE bookings (
+              booking_id bigint,
+              ___
+          );
+        solution: |
+          CREATE TABLE bookings (
+              booking_id bigint,
+              guest_name text,
+              nightly_rate numeric(6,2),
+              check_in date,
+              created_at timestamptz,
+              preferences jsonb
+          );
+        check: |
+          SELECT attname AS column_name,
+                 format_type(atttypid, atttypmod) AS data_type
+          FROM pg_attribute
+          WHERE attrelid = 'bookings'::regclass
+            AND attnum > 0 AND NOT attisdropped
+          ORDER BY attnum;
+        hints:
+          - Use the type written after each arrow in the list. Keep the order.
+          - "Six lines, five commas: the last column has no comma."
+          - "CREATE TABLE bookings (booking_id bigint, guest_name text, nightly_rate numeric(6,2), check_in ___, created_at ___, preferences ___);"
+        explanation: |
+          Six columns, six deliberate type choices. Good type choices make the database reject nonsense for you:
+          you cannot store `'tomorrow-ish'` in a `date` column, or `abc` in a `bigint`.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Create a table
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer,
+              name text,
+              price numeric(6,2),
+              in_stock boolean
+          );
+        note: "Column name + type, separated by commas. No comma after the last column."
+      - title: Everyday data types
+        sql: |
+          integer / bigint        -- whole numbers
+          numeric(10,2)           -- exact decimals (money!)
+          text / varchar(n)       -- words
+          boolean                 -- true / false
+          date / timestamptz      -- day / exact moment
+          jsonb                   -- flexible structured data
+        note: "Phone numbers, postcodes and IDs are text, not numbers."
+      - title: Remove a table safely
+        sql: |
+          DROP TABLE IF EXISTS plants;
+          CREATE TABLE IF NOT EXISTS plants (plant_id integer);
+        note: "DROP TABLE deletes the table AND all its rows. There is no undo."
+      - title: Inspect a table's columns
+        sql: |
+          SELECT column_name, data_type
+          FROM information_schema.columns
+          WHERE table_name = 'plants'
+          ORDER BY ordinal_position;
+
+testPool:
+  - type: quiz
+    id: m13-t01
+    lesson: m13-l01
+    difficulty: 1
+    question: Which kind of command is `CREATE TABLE`?
+    options: ["DML (changes rows)", "DDL (defines structure)", "A query", "A comment"]
+    answer: 1
+    explanation: "`CREATE`, `ALTER` and `DROP` are DDL — Data Definition Language — they define the structure."

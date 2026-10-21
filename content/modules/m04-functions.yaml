@@ -3449,11 +3449,1051 @@ lessons:
           WHERE discount_code IS DISTINCT FROM 'WELCOME10'
         note: "Fill the NULLs first (or use IS DISTINCT FROM) when you want rows with missing values to count as 'different'."
 testPool:
+  # ---------------------------------------------------------------- l01 Text functions
   - type: quiz
     id: m04-t01
     lesson: m04-l01
     difficulty: 1
-    question: Which function makes text UPPERCASE?
-    options: [UPPER, LOWER, INITCAP]
+    question: |
+      What does this query return?
+    sql: |
+      SELECT LENGTH(TRIM('  hi  '));
+    options: ["2", "4", "6", "0"]
     answer: 0
-    explanation: UPPER.
+    explanation: |
+      Functions work from the inside out. `TRIM` first removes the spaces at both ends and leaves `hi`,
+      then `LENGTH` counts its 2 characters. Without `TRIM` the answer would be 6, because the two
+      spaces on each side count as characters too.
+
+  - type: exercise
+    id: m04-t02
+    lesson: m04-l01
+    difficulty: 1
+    prompt: |
+      Marketing wants a short code for every city. Show each **different** city together with
+      `city_code`: the first three letters of the city name in CAPITAL letters. Sort by `city`.
+    starter: |
+      SELECT DISTINCT city,
+      FROM customers
+      ORDER BY city;
+    solution: |
+      SELECT DISTINCT city, UPPER(LEFT(city, 3)) AS city_code
+      FROM customers
+      ORDER BY city;
+    ordered: true
+    columnNames: true
+    hints:
+      - Two small functions work together here. One cuts off the first letters, the other makes capitals.
+      - "LEFT(city, 3) takes three characters. Wrap it in UPPER(...) to make them capitals."
+      - "SELECT DISTINCT city, UPPER(LEFT(city, ___)) AS city_code FROM customers ORDER BY city;"
+    explanation: |
+      `DISTINCT` looks at the whole row (city **and** code), so you get one line for each of the 14 cities.
+      Codes are not always unique: `Los Angeles` becomes `LOS` and `New York` becomes `NEW`, because they
+      are cut from the front of the text.
+
+  - type: predict
+    id: m04-t03
+    lesson: m04-l01
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT UPPER(LEFT('quest', 1))
+          || SUBSTRING('quest' FROM 2);
+    options: ["Quest", "Qquest", "QUEST", "An error"]
+    answer: 0
+    explanation: |
+      `LEFT('quest', 1)` is `q`, and `UPPER` turns it into `Q`. `SUBSTRING('quest' FROM 2)` starts at
+      character 2 and runs to the end: `uest`. Glued together with `||` that gives `Quest`. This is a
+      hand-made `INITCAP` for a single word.
+
+  - type: quiz
+    id: m04-t04
+    lesson: m04-l01
+    difficulty: 2
+    question: |
+      Which of these expressions return exactly `Denver` from the text `'Denver, CO'`?
+      Pick **two**.
+    options:
+      - "LEFT('Denver, CO', 6)"
+      - "SPLIT_PART('Denver, CO', ',', 1)"
+      - "SUBSTRING('Denver, CO' FROM 1 FOR 5)"
+      - "RIGHT('Denver, CO', 6)"
+    answer: [0, 1]
+    explanation: |
+      `LEFT(..., 6)` takes the first six characters, `Denver`. `SPLIT_PART(..., ',', 1)` returns the piece
+      in front of the comma, also `Denver`. The `SUBSTRING` option takes only 5 characters (`Denve`), and
+      `RIGHT(..., 6)` takes the *last* six characters (`er, CO`).
+
+  - type: exercise
+    id: m04-t05
+    lesson: m04-l01
+    difficulty: 3
+    prompt: |
+      Phone numbers look like `(213) 555-0100`. For customers 1 to 12 who **have a phone**, show
+      `customer_id`, `phone` and `local_number`: the seven digits after the area code, **without the
+      dash** (for the number above: `5550100`). Sort by `customer_id`.
+    solution: |
+      SELECT
+          customer_id,
+          phone,
+          REPLACE(SPLIT_PART(phone, ' ', 2), '-', '')
+              AS local_number
+      FROM customers
+      WHERE customer_id <= 12
+          AND phone IS NOT NULL
+      ORDER BY customer_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - The phone has a space between the area code and the rest. You can split on that space.
+      - "SPLIT_PART(phone, ' ', 2) returns 555-0100. Then remove the dash with REPLACE."
+      - "REPLACE(SPLIT_PART(phone, ' ', ___), '-', ___) AS local_number"
+    explanation: |
+      Eight of the first twelve customers have a phone (customers 1, 2, 7 and 9 do not). `SPLIT_PART`
+      picks `555-0100`, and `REPLACE` swaps the dash for an empty string. Another route is
+      `REPLACE(RIGHT(phone, 8), '-', '')`: both work because every phone has the same shape.
+
+  # ---------------------------------------------------------------- l02 Number functions
+  - type: exercise
+    id: m04-t06
+    lesson: m04-l02
+    difficulty: 1
+    prompt: |
+      The publisher raises all book prices by **12%** (the new price is the old price times 1.12).
+      For every product in category 4 ("Books") show `name`, `price` and `new_price`, rounded to
+      2 decimals. Sort by `product_id`.
+    starter: |
+      SELECT name, price,
+      FROM products
+      WHERE category_id = 4
+      ORDER BY product_id;
+    solution: |
+      SELECT name, price, ROUND(price * 1.12, 2) AS new_price
+      FROM products
+      WHERE category_id = 4
+      ORDER BY product_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Multiply the price by 1.12, then round the result.
+      - "ROUND(number, 2) keeps two decimals: ROUND(price * 1.12, 2)."
+      - "SELECT name, price, ROUND(price * ___, ___) AS new_price FROM products WHERE category_id = 4 ORDER BY product_id;"
+    explanation: |
+      Seven books qualify. `Mindful Mornings Journal` goes from 16.99 to 19.03, because the raw result
+      `19.0288` is rounded to two decimals. Without `ROUND` you would see ugly four-decimal prices.
+
+  - type: quiz
+    id: m04-t07
+    lesson: m04-l02
+    difficulty: 2
+    question: |
+      What does `SELECT ROUND(1234.567, -2);` return?
+    options: ["1200", "1234.57", "1230", "1300"]
+    answer: 0
+    explanation: |
+      A **negative** number of decimals rounds to the left of the decimal point: `-1` means the nearest
+      ten (1230), `-2` the nearest hundred. 1234.567 is closer to 1200 than to 1300, so the answer is 1200.
+      `1234.57` is what `ROUND(1234.567, 2)` would give.
+
+  - type: fill
+    id: m04-t08
+    lesson: m04-l02
+    difficulty: 2
+    prompt: |
+      `SQRT` returns a `double precision` number, and `ROUND(x, 1)` refuses those. Complete the cast so
+      the query returns `7.1`.
+    template: |
+      SELECT ROUND(SQRT(50)::___, 1) AS root;
+    answers:
+      - ["numeric", "decimal"]
+    explanation: |
+      `SQRT(50)` is 7.0710678..., and `::numeric` converts it to an exact number that `ROUND` accepts.
+      Without the cast PostgreSQL says "function round(double precision, integer) does not exist".
+      `decimal` is just another name for `numeric`.
+
+  - type: exercise
+    id: m04-t09
+    lesson: m04-l02
+    difficulty: 3
+    prompt: |
+      A customer pays for a laptop in **3 instalments**. For every product in category 12 ("Laptops")
+      show `name`, `price`, `payment` and `last_payment`:
+
+      - `payment`: one third of the price, rounded to 2 decimals (the first two instalments)
+      - `last_payment`: whatever is left, so that the three instalments add up to the price exactly
+
+      Sort by `product_id`.
+    solution: |
+      SELECT
+          name,
+          price,
+          ROUND(price / 3, 2) AS payment,
+          price - 2 * ROUND(price / 3, 2) AS last_payment
+      FROM products
+      WHERE category_id = 12
+      ORDER BY product_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - The first two instalments are equal. The last one is the price minus those two.
+      - "payment is ROUND(price / 3, 2). last_payment is price - 2 * payment, so repeat the ROUND inside it."
+      - "ROUND(price / 3, 2) AS payment, price - 2 * ROUND(price / ___, 2) AS last_payment"
+    explanation: |
+      Rounding one third can lose or gain a cent. For the Aurora 14-inch laptop each instalment is 300.00,
+      so the last one is only 299.99 (300.00 + 300.00 + 299.99 = 899.99). For the Terra Student Laptop
+      the three instalments are all 183.33. Real billing systems use exactly this trick so the
+      customer is never charged a cent too much.
+
+
+  # ---------------------------------------------------------------- l03 Dates and times I
+  - type: exercise
+    id: m04-t10
+    lesson: m04-l03
+    difficulty: 1
+    prompt: |
+      The shop sends a birthday email to everyone born in **November**. For customers 1 to 60 whose
+      `birth_date` is in November, show `customer_id`, `first_name` and `birth_date`. Sort by
+      `customer_id`.
+    starter: |
+      SELECT customer_id, first_name, birth_date
+      FROM customers
+      WHERE customer_id <= 60
+          AND
+      ORDER BY customer_id;
+    solution: |
+      SELECT customer_id, first_name, birth_date
+      FROM customers
+      WHERE customer_id <= 60
+          AND EXTRACT(MONTH FROM birth_date) = 11
+      ORDER BY customer_id;
+    ordered: true
+    hints:
+      - You only need the month of the birth date, not the whole date.
+      - "EXTRACT(MONTH FROM birth_date) returns the month number. November is month 11."
+      - "WHERE customer_id <= 60 AND EXTRACT(___ FROM birth_date) = ___"
+    explanation: |
+      Seven customers qualify: 1, 9, 15, 24, 42, 44 and 56. Customers with no `birth_date` (NULL) are
+      dropped automatically, because `EXTRACT` of NULL is NULL and a NULL never equals 11.
+
+  - type: predict
+    id: m04-t11
+    lesson: m04-l03
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT DATE '2024-02-28' + 2;
+    options: ["2024-03-01", "2024-03-02", "2024-02-30", "An error"]
+    answer: 0
+    explanation: |
+      Adding a whole number to a date adds that many **days**. 2024 is a leap year, so February has 29
+      days: 28 February + 1 day is 29 February, and + 2 days is 1 March. In a normal year such as 2023,
+      `DATE '2023-02-28' + 2` would give 2 March. SQL knows the calendar so you do not have to.
+
+  - type: exercise
+    id: m04-t12
+    lesson: m04-l03
+    difficulty: 3
+    prompt: |
+      Weekend orders are slow to pack. Show `order_id`, `order_date`, `shipped_date` and `days_to_ship`
+      (days between ordering and shipping) for orders placed on a **Saturday or Sunday** on or after
+      **2024-12-01** that took **more than 3 days** to ship. Sort by `order_id`.
+    solution: |
+      SELECT
+          order_id,
+          order_date,
+          shipped_date,
+          shipped_date - order_date AS days_to_ship
+      FROM orders
+      WHERE order_date >= '2024-12-01'
+          AND EXTRACT(DOW FROM order_date) IN (0, 6)
+          AND shipped_date - order_date > 3
+      ORDER BY order_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Three conditions are joined with AND - a date range, a weekday test and a waiting-time test.
+      - "In EXTRACT(DOW ...) Sunday is 0 and Saturday is 6, so use IN (0, 6). Days to ship is shipped_date - order_date."
+      - "WHERE order_date >= '2024-12-01' AND EXTRACT(DOW FROM order_date) IN (___, ___) AND shipped_date - order_date > ___"
+    explanation: |
+      Three orders qualify: 835, 837 and 856, and each of them waited exactly 4 days. Orders that have not
+      shipped yet have a NULL `shipped_date`, so `shipped_date - order_date` is NULL and they quietly drop
+      out of the result. That is what we want here, because we only look at shipments that happened.
+
+  - type: quiz
+    id: m04-t13
+    lesson: m04-l03
+    difficulty: 2
+    question: |
+      Mia was born on `2000-03-15`. On `2024-01-10` she is **23** years old, because her 24th birthday is
+      still two months away. Which expression returns exactly `23`?
+    options:
+      - "EXTRACT(YEAR FROM DATE '2024-01-10') - EXTRACT(YEAR FROM DATE '2000-03-15')"
+      - "EXTRACT(YEAR FROM AGE(DATE '2024-01-10', DATE '2000-03-15'))"
+      - "DATE '2024-01-10' - DATE '2000-03-15'"
+      - "AGE(DATE '2024-01-10', DATE '2000-03-15')"
+    answer: 1
+    explanation: |
+      `AGE(...)` returns an interval, here `23 years 9 mons 26 days`, and `EXTRACT(YEAR FROM ...)` picks
+      the 23. Subtracting the two *year numbers* gives 24 because it ignores the birthday that has not
+      happened yet. Subtracting the dates gives 8701 **days**, and `AGE` on its own is the full interval,
+      not a single number.
+
+  # ---------------------------------------------------------------- l04 Dates and times II
+  - type: exercise
+    id: m04-t14
+    lesson: m04-l04
+    difficulty: 2
+    prompt: |
+      **Black Friday 2024** was on 29 November. Show `payment_id`, `paid_time` (hours and minutes on the
+      24-hour clock, like `09:02`) and `amount` for every payment made **by card** on that day.
+      Sort by `payment_id`.
+    solution: |
+      SELECT
+          payment_id,
+          TO_CHAR(paid_at, 'HH24:MI') AS paid_time,
+          amount
+      FROM payments
+      WHERE method = 'card'
+          AND paid_at >= '2024-11-29'
+          AND paid_at < '2024-11-30'
+      ORDER BY payment_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - "`paid_at` holds a date AND a time, so a single day is a range from midnight to the next midnight."
+      - "Use paid_at >= '2024-11-29' AND paid_at < '2024-11-30' for the day, and TO_CHAR(paid_at, '...') for the time."
+      - "TO_CHAR(paid_at, 'HH24:___') AS paid_time ... WHERE method = 'card' AND paid_at >= '2024-11-29' AND paid_at < '___'"
+    explanation: |
+      Four card payments were made that day: 697 at 12:06, 698 at 13:31, 700 at 14:19 and 702 at 21:26.
+      `paid_at = '2024-11-29'` would only match payments at exactly midnight, and a `BETWEEN` ending on
+      `'2024-11-29'` has the same problem, so the half-open range is the safe habit. In the pattern `MI`
+      means minutes - `MM` would give the month.
+
+  - type: parsons
+    id: m04-t15
+    lesson: m04-l04
+    difficulty: 2
+    prompt: |
+      Arrange the lines to show the 5 most recently placed orders with a `month_label` such as
+      `Dec 2024`. Newest first; for orders on the same day, the higher `order_id` comes first.
+      One line does not belong.
+    lines:
+      - SELECT order_id,
+      - TO_CHAR(order_date, 'Mon YYYY') AS month_label
+      - FROM orders
+      - ORDER BY order_date DESC, order_id DESC
+      - LIMIT 5;
+    distractors:
+      - TO_CHAR('Mon YYYY', order_date) AS month_label
+    explanation: |
+      `TO_CHAR` takes the **value first** and the **pattern second**. The distractor has them swapped, so
+      PostgreSQL would complain that `to_char(unknown, date)` does not exist. The five newest orders are
+      900, 899, 898, 897 and 896, all labelled `Dec 2024`.
+
+  - type: quiz
+    id: m04-t16
+    lesson: m04-l04
+    difficulty: 2
+    question: |
+      `paid_at` is a **timestamp**. Which condition selects every payment made in **October 2024**, and
+      nothing else?
+    options:
+      - "paid_at BETWEEN '2024-10-01' AND '2024-10-31'"
+      - "paid_at >= '2024-10-01' AND paid_at < '2024-11-01'"
+      - "TO_CHAR(paid_at, 'MM') = '10'"
+      - "EXTRACT(MONTH FROM paid_at) = 10"
+    answer: 1
+    explanation: |
+      The half-open range starts at midnight on 1 October and stops just before midnight on 1 November,
+      so it catches every second of the month: 50 payments. The `BETWEEN` version stops at
+      `2024-10-31 00:00:00` and misses everything paid later on 31 October, so it finds only 49. The
+      last two options also match October **2023** (22 more payments), because they only look at the
+      month number.
+
+  - type: exercise
+    id: m04-t17
+    lesson: m04-l04
+    difficulty: 3
+    prompt: |
+      Finance closes the books on the last day of every **quarter**. For orders 1, 150, 400, 650 and 900
+      show `order_id`, `order_date` and `quarter_end`: the last day of the quarter in which the order
+      was placed, as a plain date. Sort by `order_id`.
+    solution: |
+      SELECT
+          order_id,
+          order_date,
+          (DATE_TRUNC('quarter', order_date)
+              + INTERVAL '3 months')::date - 1 AS quarter_end
+      FROM orders
+      WHERE order_id IN (1, 150, 400, 650, 900)
+      ORDER BY order_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Think of the month trick - jump to the start of the period, move forward by one period, step back one day.
+      - "DATE_TRUNC('quarter', order_date) is the first day of the quarter. Add INTERVAL '3 months' for the next quarter's first day."
+      - "(DATE_TRUNC('quarter', order_date) + INTERVAL '___ months')::date - ___ AS quarter_end"
+    explanation: |
+      Quarters start on 1 January, 1 April, 1 July and 1 October. Adding 3 months to the quarter start
+      gives the **next** quarter's first day, and subtracting 1 day lands on the last day of the quarter:
+      order 150 (18 August 2023) gets 2023-09-30. Order 900 was placed on 2024-12-31, which already is
+      the last day of its quarter, so it keeps that date. The `::date` turns the timestamp back into a
+      plain date.
+
+  # ---------------------------------------------------------------- l05 Converting types
+  - type: predict
+    id: m04-t18
+    lesson: m04-l05
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT
+          '7' || '3' AS glued,
+          '7'::integer + '3'::integer AS added;
+    options: ["73 and 10", "10 and 10", "73 and 73", "An error"]
+    answer: 0
+    explanation: |
+      `||` glues **text**, so `'7' || '3'` is the text `73`. In the second column both pieces are first
+      cast to integers, so `+` does real arithmetic: 7 + 3 = 10. The same characters give different
+      answers depending on the type they have.
+
+  - type: exercise
+    id: m04-t19
+    lesson: m04-l05
+    difficulty: 2
+    prompt: |
+      A call-centre agent typed a date as text: `'03.12.2024'` (**day**.month.year, so 3 December 2024).
+      Show `order_id` and `status` of all orders placed on that date, sorted by `order_id`.
+
+      The query below runs without an error but returns the **wrong orders**. Can you fix it?
+    starter: |
+      SELECT order_id, status
+      FROM orders
+      WHERE order_date = '03.12.2024'
+      ORDER BY order_id;
+    solution: |
+      SELECT order_id, status
+      FROM orders
+      WHERE order_date = TO_DATE('03.12.2024', 'DD.MM.YYYY')
+      ORDER BY order_id;
+    ordered: true
+    hints:
+      - PostgreSQL guessed the order of the day and the month. You can tell it exactly which is which.
+      - "TO_DATE(text, pattern) converts text with a pattern. Day is DD, month is MM, year is YYYY."
+      - "WHERE order_date = TO_DATE('03.12.2024', '___.___.YYYY')"
+    explanation: |
+      Written as a plain quoted text, `'03.12.2024'` is read **month first**, which means 12 March 2024
+      (orders 387 and 388). Silent mistakes like this are worse than errors! `TO_DATE` with the pattern
+      `'DD.MM.YYYY'` removes the guesswork: 3 December 2024 has five orders, 824 to 828.
+
+  - type: fill
+    id: m04-t20
+    lesson: m04-l05
+    difficulty: 1
+    prompt: |
+      Complete the query so the text `'2024-03-15'` becomes a real date, then add 30 days to it.
+    template: |
+      SELECT ___('2024-03-15' AS ___) + 30 AS due_date;
+    answers:
+      - ["CAST"]
+      - ["date"]
+    explanation: |
+      `CAST(value AS type)` is the long form of `value::type`. Once the text is a real `date`, adding
+      30 means 30 days, and the result is `2024-04-14`. As plain text, `'2024-03-15' + 30` could not be
+      added at all.
+
+  - type: parsons
+    id: m04-t21
+    lesson: m04-l05
+    difficulty: 2
+    prompt: |
+      Data warehouses often store a date as a whole number such as `20230101` (a "date key"). Arrange the
+      lines to show `order_id` and `date_key` for orders 1, 100, 500 and 900, sorted by `order_id`.
+      One line does not belong.
+    lines:
+      - SELECT order_id,
+      - TO_CHAR(order_date, 'YYYYMMDD')::integer AS date_key
+      - FROM orders
+      - WHERE order_id IN (1, 100, 500, 900)
+      - ORDER BY order_id;
+    distractors:
+      - TO_CHAR(order_date, 'YYYY-MM-DD')::integer AS date_key
+    explanation: |
+      `TO_CHAR` writes the date as the text `20230101`, and `::integer` turns that text into a number.
+      The distractor keeps the dashes, and `'2023-01-01'` cannot be read as an integer, so PostgreSQL
+      stops with "invalid input syntax for type integer".
+
+  # ---------------------------------------------------------------- l06 CASE WHEN
+  - type: exercise
+    id: m04-t22
+    lesson: m04-l06
+    difficulty: 2
+    prompt: |
+      Sales wants to group customers by coast. For customers 1 to 15 show `customer_id`, `state` and
+      `region`:
+
+      - `'West Coast'` for the states CA, OR and WA
+      - `'East Coast'` for the states NY, MA, GA and FL
+      - `'Other'` for every other state
+
+      Sort by `customer_id`.
+    solution: |
+      SELECT
+          customer_id,
+          state,
+          CASE
+              WHEN state IN ('CA', 'OR', 'WA')
+                  THEN 'West Coast'
+              WHEN state IN ('NY', 'MA', 'GA', 'FL')
+                  THEN 'East Coast'
+              ELSE 'Other'
+          END AS region
+      FROM customers
+      WHERE customer_id <= 15
+      ORDER BY customer_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Each rule is one WHEN line, and everything left over goes into ELSE.
+      - "A WHEN condition can use IN: WHEN state IN ('CA', 'OR', 'WA') THEN 'West Coast'."
+      - "CASE WHEN state IN ('CA', 'OR', 'WA') THEN 'West Coast' WHEN state IN (___) THEN 'East Coast' ELSE '___' END AS region"
+    explanation: |
+      Seven customers land on the West Coast, five on the East Coast, and customers 4 and 10 (Colorado)
+      and 12 (Arizona) end up in `Other`. Because the groups cannot overlap, the order of the `WHEN` lines
+      does not matter here. `IN` keeps each rule short.
+
+  - type: parsons
+    id: m04-t23
+    lesson: m04-l06
+    difficulty: 2
+    prompt: |
+      Arrange the lines to label the first 10 orders `'Full price'` when **no discount code** was used,
+      and `'Promo'` otherwise. Sort by `order_id`. One line does not belong.
+    lines:
+      - SELECT order_id,
+      - CASE WHEN discount_code IS NULL THEN 'Full price'
+      - ELSE 'Promo'
+      - END AS pricing
+      - FROM orders
+      - WHERE order_id <= 10
+      - ORDER BY order_id;
+    distractors:
+      - CASE WHEN discount_code = NULL THEN 'Full price'
+    explanation: |
+      A missing code must be tested with `IS NULL`. The distractor uses `= NULL`, which is never true,
+      so every order would be labelled `Promo`. With the right line, orders 1 and 9 (code `WELCOME10`)
+      are `Promo` and the other eight are `Full price`.
+
+  - type: quiz
+    id: m04-t24
+    lesson: m04-l06
+    difficulty: 3
+    question: |
+      Order 2 has **no** discount code (`discount_code` is NULL). Which label does it get from this
+      query?
+    sql: |
+      SELECT
+          CASE discount_code
+              WHEN NULL THEN 'No code'
+              ELSE 'Has code'
+          END AS code_status
+      FROM orders
+      WHERE order_id = 2;
+    options: ["No code", "Has code", "NULL (an empty cell)", "An error"]
+    answer: 1
+    explanation: |
+      A simple `CASE` compares with `=`, and `NULL = NULL` is never true (the result is unknown), so
+      `WHEN NULL` can never match. Order 2 falls through to `ELSE` and is labelled `Has code`, which is
+      wrong. The fix is the searched form: `CASE WHEN discount_code IS NULL THEN 'No code' ...`.
+
+  - type: exercise
+    id: m04-t25
+    lesson: m04-l06
+    difficulty: 3
+    prompt: |
+      Bulk buyers get an **extra discount** on top of the discount the line already has. The normal
+      line total is `quantity * unit_price * (1 - discount)`. Multiply it by:
+
+      - `0.90` when `quantity` is 4 or more
+      - `0.95` when `quantity` is 2 or 3
+      - `1` when `quantity` is 1
+
+      For the order lines with `order_item_id` 1, 2, 16, 21, 24, 82 and 98 show `order_item_id`,
+      `quantity` and `bulk_total` (the result, rounded to 2 decimals). Sort by `order_item_id`.
+    solution: |
+      SELECT
+          order_item_id,
+          quantity,
+          ROUND(quantity * unit_price * (1 - discount)
+              * CASE
+                  WHEN quantity >= 4 THEN 0.90
+                  WHEN quantity >= 2 THEN 0.95
+                  ELSE 1
+              END, 2) AS bulk_total
+      FROM order_items
+      WHERE order_item_id IN (1, 2, 16, 21, 24, 82, 98)
+      ORDER BY order_item_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - A CASE can sit inside a calculation and produce the multiplier.
+      - "Test quantity >= 4 first. Then quantity >= 2 only has to catch 2 and 3, and ELSE 1 covers quantity 1."
+      - "ROUND(quantity * unit_price * (1 - discount) * CASE WHEN quantity >= 4 THEN ___ WHEN quantity >= 2 THEN ___ ELSE 1 END, 2) AS bulk_total"
+    explanation: |
+      Line 21 (4 units at 39.99, no discount) is 159.96 normally and 143.96 with the 10% bulk discount.
+      Line 2 has quantity 1, so it stays at 692.99. The order of the `WHEN` lines matters: if you tested
+      `quantity >= 2` first, the 4- and 5-unit lines would wrongly get only 5% off, because the first
+      matching line wins.
+
+  # ---------------------------------------------------------------- l07 Handling NULLs
+  - type: exercise
+    id: m04-t26
+    lesson: m04-l07
+    difficulty: 1
+    prompt: |
+      For reviews 1 to 12 show `review_id`, `rating` and `comment_length`: the number of characters in
+      the `review_text`, or `0` when the customer left no text. Sort by `review_id`.
+    starter: |
+      SELECT review_id, rating,
+          LENGTH(review_text) AS comment_length
+      FROM reviews
+      WHERE review_id <= 12
+      ORDER BY review_id;
+    solution: |
+      SELECT
+          review_id,
+          rating,
+          COALESCE(LENGTH(review_text), 0) AS comment_length
+      FROM reviews
+      WHERE review_id <= 12
+      ORDER BY review_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - "The starter already measures the text. Its result is NULL when there is no text. Replace that NULL with 0."
+      - "COALESCE(value, fallback) returns the fallback when the value is NULL."
+      - "COALESCE(LENGTH(review_text), ___) AS comment_length"
+    explanation: |
+      `LENGTH` of NULL is NULL, not 0, so reviews 3 and 7 (which have no text) show an empty cell in the
+      starter. `COALESCE` turns them into 0. Always ask yourself whether "missing" really means "zero"
+      before you do this - here it does, because no text means no characters.
+
+  - type: predict
+    id: m04-t27
+    lesson: m04-l07
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT
+          COALESCE(NULLIF('', ''), 'n/a') AS a,
+          COALESCE(NULLIF('hi', ''), 'n/a') AS b;
+    options: ["n/a and hi", "(empty text) and hi", "n/a and n/a", "NULL and hi"]
+    answer: 0
+    explanation: |
+      `NULLIF('', '')` returns NULL because both values are equal, so `COALESCE` replaces that NULL with
+      `n/a`. `NULLIF('hi', '')` sees two different values and returns `hi`, which `COALESCE` keeps.
+      Together they turn blank strings **and** NULLs into a clean default, a favourite trick for
+      cleaning imported data.
+
+  - type: quiz
+    id: m04-t28
+    lesson: m04-l07
+    difficulty: 2
+    question: |
+      A report divides `orders_count` by `visits`, and `visits` is sometimes 0. Which expression returns
+      NULL for those rows instead of crashing?
+    options:
+      - "orders_count / NULLIF(visits, 0)"
+      - "orders_count / COALESCE(visits, 0)"
+      - "NULLIF(orders_count / visits, 0)"
+      - "orders_count / GREATEST(visits, 0)"
+    answer: 0
+    explanation: |
+      `NULLIF(visits, 0)` turns a zero into NULL **before** the division, and dividing by NULL gives NULL.
+      `COALESCE(visits, 0)` and `GREATEST(visits, 0)` still leave zeros in place, and in the third option
+      the division happens first, so the crash comes before `NULLIF` is even reached.
+
+  - type: fill
+    id: m04-t29
+    lesson: m04-l07
+    difficulty: 2
+    prompt: |
+      Shipping costs **2% of the price, but never less than 3 dollars**. Complete the query.
+    template: |
+      SELECT
+          name,
+          price,
+          ___(ROUND(price * 0.02, 2), ___) AS shipping_fee
+      FROM products
+      WHERE product_id IN (1, 6, 23, 60);
+    answers:
+      - ["GREATEST"]
+      - ["3", "3.0", "3.00"]
+    explanation: |
+      "At least 3" means a **floor**, and a floor is made with `GREATEST` (the bigger of the two
+      numbers wins). The laptop pays 18.00, while the mouse, the screen protector and the hairbrush
+      would pay less than a dollar and are lifted to 3. `LEAST` would do the opposite: it makes a cap.
+
+  - type: exercise
+    id: m04-t30
+    lesson: m04-l07
+    difficulty: 3
+    prompt: |
+      For products 45 to 60 show `product_id`, `name` and `supplier_label`: the text `Supplier 7` (the
+      word `Supplier`, a space and the `supplier_id`), or the text `Direct` when the product has **no
+      supplier**. Sort by `product_id`.
+    solution: |
+      SELECT
+          product_id,
+          name,
+          COALESCE('Supplier ' || supplier_id, 'Direct')
+              AS supplier_label
+      FROM products
+      WHERE product_id BETWEEN 45 AND 60
+      ORDER BY product_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - What happens when you glue the word Supplier to a NULL with ||?
+      - "'Supplier ' || NULL is NULL, so COALESCE can catch the whole expression and supply the fallback."
+      - "COALESCE('Supplier ' || ___, '___') AS supplier_label"
+    explanation: |
+      Because `||` returns NULL as soon as one part is NULL, the NULL **spreads** through the whole
+      label, and `COALESCE` replaces it with `Direct`. Products 47, 50 and 60 have no supplier, the other
+      13 get labels such as `Supplier 7`. Normally NULL spreading is a trap; here we use it on purpose.
+project:
+  id: m04-proj
+  title: Customer Data Tidy-up
+  icon: "🧹"
+  dataset: shop
+  md: |
+    ## Moving day for the customer list
+
+    **ShopSmart** is switching to a brand-new customer tool (a *CRM*, short for "customer relationship
+    management"). The import is on Monday, and Karim from the data team has handed you a checklist.
+
+    *"The new tool is fussy,"* Karim says. *"Names, emails, phone numbers and dates all have to be written
+    in a certain way, and I need to know which customer records are incomplete. Can you prepare the data
+    with SQL?"*
+
+    Here is the checklist:
+
+    1. **Display names** in the CRM style
+    2. **Usernames** that are too long for the new tool
+    3. **Phone numbers** in one tidy format
+    4. **Birthday cards** with the birthday and the age they reach
+    5. **Incomplete records** that need follow-up
+    6. **Anniversary gifts** with the weekday they will arrive
+    7. **The import file**: all the pieces together in one query
+
+    You will use everything from this module: text functions, number and date functions, type
+    conversion, `CASE` and NULL handling. The jobs get harder as you go, and each one is a fresh query.
+
+    ## Your toolkit
+
+    All the work happens in one table, `customers`:
+
+    - `customer_id`, `first_name`, `last_name`, `email`, `phone`
+    - `city`, `state`, `segment`
+    - `signup_date`, `birth_date`
+
+    > [!TIP]
+    > Build each answer in small steps: first the plain columns, then one function at a time. When a
+    > nested expression gets long, run the inner part on its own to check it.
+
+    > [!MISTAKE]
+    > Some customers have no phone and some have no birth date. Remember that a function of NULL is NULL,
+    > and `||` loses the whole text when one part is NULL.
+  tasks:
+    - type: exercise
+      id: m04-proj-1
+      title: "Job 1: Display names"
+      prompt: |
+        *"The CRM shows every contact as `LAST, First`,"* says Karim. *"The last name in capitals, then a
+        comma and a space, then the first name just as it is stored."*
+
+        For customers 1 to 10 show `customer_id` and `display_name`, for example `WHITE, Felix`.
+        Sort by `customer_id`.
+      starter: |
+        SELECT customer_id,
+        FROM customers
+        WHERE customer_id <= 10
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            UPPER(last_name) || ', ' || first_name AS display_name
+        FROM customers
+        WHERE customer_id <= 10
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - You need one function for the capitals and the glue operator for the rest.
+        - "UPPER(last_name) makes the capitals. Join the pieces with ||, using ', ' for the comma and space."
+        - "UPPER(last_name) || '___' || first_name AS display_name"
+      explanation: |
+        `UPPER(last_name) || ', ' || first_name` builds the text piece by piece. Neither name column is
+        ever NULL in this table, so `||` is safe here. If a part could be missing, `CONCAT_WS(', ', ...)`
+        would be the more forgiving tool.
+      difficulty: 1
+
+    - type: exercise
+      id: m04-proj-2
+      title: "Job 2: Usernames that are too long"
+      prompt: |
+        The CRM uses the part of the email **before the `@`** as the username, and it can store at most
+        **15 characters**.
+
+        Find every customer whose username is **longer than 15 characters**. Show `customer_id`,
+        `username`, `username_length` and `domain` (the part after the `@`). Longest username first;
+        for equal lengths, the lower `customer_id` first.
+      starter: |
+        SELECT customer_id,
+        FROM customers
+        WHERE
+        ORDER BY username_length DESC, customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            SPLIT_PART(email, '@', 1) AS username,
+            LENGTH(SPLIT_PART(email, '@', 1)) AS username_length,
+            SPLIT_PART(email, '@', 2) AS domain
+        FROM customers
+        WHERE LENGTH(SPLIT_PART(email, '@', 1)) > 15
+        ORDER BY username_length DESC, customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - Split the email at the @ sign first, then measure the first piece.
+        - "SPLIT_PART(email, '@', 1) is the username and piece 2 is the domain. Wrap piece 1 in LENGTH(...) to count it."
+        - "WHERE LENGTH(SPLIT_PART(email, '@', ___)) > ___ ... ORDER BY username_length DESC, customer_id;"
+      explanation: |
+        Eight customers are affected. `gabriela.castillo` (customer 70) is the longest with 17 characters;
+        seven others have 16, such as `joaquin.gonzalez` (customer 17). A column alias cannot be used in
+        `WHERE`, so the `LENGTH(SPLIT_PART(...))` expression is repeated there, but you can use the alias
+        `username_length` in `ORDER BY`.
+      difficulty: 2
+
+    - type: exercise
+      id: m04-proj-3
+      title: "Job 3: Phone numbers"
+      prompt: |
+        Phone numbers are stored as `(213) 555-0100`, but the CRM wants `213-555-0100`. Customers
+        without a phone must show the text `no phone`.
+
+        For customers 1 to 12 show `customer_id` and `phone_clean`. Sort by `customer_id`.
+      starter: |
+        SELECT customer_id,
+            REPLACE(phone, '(', '') AS phone_clean
+        FROM customers
+        WHERE customer_id <= 12
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            COALESCE(
+                REPLACE(REPLACE(phone, '(', ''), ') ', '-'),
+                'no phone'
+            ) AS phone_clean
+        FROM customers
+        WHERE customer_id <= 12
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - Two things must disappear or change - the opening bracket, and the closing bracket plus space, which becomes a dash.
+        - "Nest two REPLACEs. Then wrap everything in COALESCE(..., 'no phone') to fill the blanks."
+        - "COALESCE(REPLACE(REPLACE(phone, '___', ''), ') ', '___'), 'no phone') AS phone_clean"
+      explanation: |
+        `REPLACE(phone, ') ', '-')` replaces the bracket **and** the space after it with a single dash, so
+        the second `REPLACE` does two jobs at once. Customers 1, 2, 7 and 9 have no phone: `REPLACE` of NULL
+        stays NULL, and `COALESCE` turns that NULL into `no phone`.
+      difficulty: 2
+
+    - type: exercise
+      id: m04-proj-4
+      title: "Job 4: Birthday cards"
+      prompt: |
+        Marketing wants to print birthday cards. For customers 1 to 12 show:
+
+        - `customer_id`
+        - `birthday`: the day and the short month name without a leading zero, like `9 Nov`, or the
+          text `unknown` when there is no birth date
+        - `turns_in_2025`: the age they reach during 2025, which is 2025 minus the **year** they were
+          born (NULL if unknown)
+
+        Sort by `customer_id`.
+      starter: |
+        SELECT customer_id,
+        FROM customers
+        WHERE customer_id <= 12
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            COALESCE(TO_CHAR(birth_date, 'FMDD Mon'), 'unknown')
+                AS birthday,
+            2025 - EXTRACT(YEAR FROM birth_date) AS turns_in_2025
+        FROM customers
+        WHERE customer_id <= 12
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - TO_CHAR writes a date as text, and EXTRACT pulls out the year as a number.
+        - "TO_CHAR(birth_date, 'FMDD Mon') gives 9 Nov (FM removes the padding). Wrap it in COALESCE for 'unknown'."
+        - "COALESCE(TO_CHAR(birth_date, 'FMDD ___'), 'unknown') AS birthday, 2025 - EXTRACT(___ FROM birth_date) AS turns_in_2025"
+      explanation: |
+        `FM` ("fill mode") removes the zero padding, so the 9th of November is `9 Nov`, not `09 Nov`.
+        `TO_CHAR` of a NULL date is NULL, which `COALESCE` replaces with `unknown`. For `turns_in_2025` we
+        deliberately leave the NULL alone: an unknown birth year gives an unknown age. Customer 12 is the
+        only one of the twelve without a birth date.
+      difficulty: 2
+
+    - type: exercise
+      id: m04-proj-5
+      title: "Job 5: Incomplete records"
+      prompt: |
+        Karim needs a follow-up list. Look at customers 1 to 40 who are **missing a phone, a birth date,
+        or both**. Show `customer_id`, `first_name` and `missing`, which says what is missing:
+
+        - `'phone and birth date'` when both are missing
+        - `'phone'` when only the phone is missing
+        - `'birth date'` when only the birth date is missing
+
+        Sort by `customer_id`.
+      starter: |
+        SELECT customer_id, first_name,
+        FROM customers
+        WHERE customer_id <= 40
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            first_name,
+            CASE
+                WHEN phone IS NULL AND birth_date IS NULL
+                    THEN 'phone and birth date'
+                WHEN phone IS NULL THEN 'phone'
+                ELSE 'birth date'
+            END AS missing
+        FROM customers
+        WHERE customer_id <= 40
+            AND (phone IS NULL OR birth_date IS NULL)
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - First keep only the incomplete rows, then label them. Test for NULL with IS NULL, never with = NULL.
+        - "WHERE needs phone IS NULL OR birth_date IS NULL (in brackets, next to the id filter). CASE then labels the reason."
+        - "CASE WHEN phone IS NULL AND birth_date IS NULL THEN '...' WHEN phone IS NULL THEN 'phone' ELSE '___' END AS missing"
+      explanation: |
+        Nine customers need follow-up. Customer 16 (Daniel) is missing both. The line for "both" must come
+        **first**: if `WHEN phone IS NULL` came first, customer 16 would be labelled just `phone`, because the
+        first matching line wins. The brackets around the `OR` matter too, otherwise it would mix with the
+        `customer_id` filter.
+      difficulty: 2
+
+    - type: exercise
+      id: m04-proj-6
+      title: "Job 6: Anniversary gifts"
+      prompt: |
+        Customers get a small gift on their **3rd signup anniversary**. The packing team wants to know
+        which weekday each gift is due.
+
+        For customers who signed up in **June 2022** show `customer_id`, `first_name`, `signup_date`,
+        `third_anniversary` (the signup date plus 3 years, as a plain date) and `weekday` (the full
+        weekday name of that anniversary, without extra spaces, like `Sunday`). Sort by `customer_id`.
+      starter: |
+        SELECT customer_id, first_name, signup_date
+        FROM customers
+        WHERE signup_date >= '2022-06-01'
+            AND signup_date < '2022-07-01'
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            customer_id,
+            first_name,
+            signup_date,
+            (signup_date + INTERVAL '3 years')::date
+                AS third_anniversary,
+            TO_CHAR(signup_date + INTERVAL '3 years', 'FMDay')
+                AS weekday
+        FROM customers
+        WHERE signup_date >= '2022-06-01'
+            AND signup_date < '2022-07-01'
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - The month filter is already in the starter. You need two new columns that start from the same date plus an interval.
+        - "signup_date + INTERVAL '3 years' gives a timestamp. Cast it with ::date for a plain date, and format it with TO_CHAR for the weekday."
+        - "(signup_date + INTERVAL '3 years')::___ AS third_anniversary, TO_CHAR(signup_date + INTERVAL '3 years', '___') AS weekday"
+      explanation: |
+        Fourteen customers signed up in June 2022 (ids 1 to 14), so their gifts are due in June 2025.
+        Customers 1 and 2 are both due on Sunday 1 June 2025. `FMDay` gives the weekday name without the
+        padding spaces that plain `Day` would add. The signup-month filter uses the safe "from the first
+        of the month up to, but not including, the first of the next month" range.
+      difficulty: 3
+
+    - type: exercise
+      id: m04-proj-7
+      title: "Job 7: The import file"
+      prompt: |
+        Time to put everything together! For customers 1 to 10 build one row per customer with exactly
+        these five columns, in this order:
+
+        1. `customer_code`: the letter `C`, the `customer_id` padded with zeros to 4 digits, a dash and
+           the `state`, like `C0003-CA`
+        2. `display_name`: the CRM style from Job 1, like `RODRIGUEZ, Ines`
+        3. `contact`: the phone in the `213-555-0100` style from Job 3, or the `email` when the
+           customer has no phone
+        4. `segment_code`: `'CON'` for Consumer, `'COR'` for Corporate and `'HOM'` for Home Office
+        5. `member_since`: the signup month like `Jun 2022` (short month name, a space, the year)
+
+        Sort by `customer_id`.
+
+        The starter below tries the first column, but it crashes. Can you see why?
+      starter: |
+        SELECT
+            'C' || LPAD(customer_id, 4, '0') || '-' || state
+                AS customer_code
+        FROM customers
+        WHERE customer_id <= 10
+        ORDER BY customer_id;
+      solution: |
+        SELECT
+            'C' || LPAD(customer_id::text, 4, '0') || '-' || state
+                AS customer_code,
+            UPPER(last_name) || ', ' || first_name AS display_name,
+            COALESCE(
+                REPLACE(REPLACE(phone, '(', ''), ') ', '-'),
+                email
+            ) AS contact,
+            CASE segment
+                WHEN 'Consumer' THEN 'CON'
+                WHEN 'Corporate' THEN 'COR'
+                WHEN 'Home Office' THEN 'HOM'
+            END AS segment_code,
+            TO_CHAR(signup_date, 'Mon YYYY') AS member_since
+        FROM customers
+        WHERE customer_id <= 10
+        ORDER BY customer_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - Build one column at a time and run the query after each. The starter shows only the first column, and it crashes.
+        - "LPAD only works on text, so cast the id first: customer_id::text. COALESCE(cleaned_phone, email) chooses the contact."
+        - "CASE segment WHEN 'Consumer' THEN '___' WHEN 'Corporate' THEN '___' WHEN 'Home Office' THEN '___' END AS segment_code"
+      explanation: |
+        This one query uses a tool from every lesson of the module: `||` and `UPPER` (text), `LPAD` and
+        `::text` (padding and casting), `REPLACE` with `COALESCE` (cleaning and NULL handling), a simple
+        `CASE`, and `TO_CHAR` (dates). Customers 1, 2, 7 and 9 have no phone, so their `contact` falls back
+        to the email. Congratulations: this is exactly the kind of query analysts write to prepare real
+        data for another system!
+      difficulty: 3

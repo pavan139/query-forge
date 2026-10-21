@@ -1,0 +1,513 @@
+id: m08
+order: 8
+title: "Set Operations — Stacking & Comparing Results"
+subtitle: UNION, INTERSECT and EXCEPT combine, overlap and subtract lists
+icon: "📚"
+level: intermediate
+description: |
+  A **join** puts tables *side by side*. But sometimes you need the opposite: two lists stacked
+  **one on top of the other**, or a comparison like "who is on list A but **not** on list B?".
+
+  In this module you learn the four **set operations**. `UNION` and `UNION ALL` stack results.
+  `INTERSECT` finds what two lists have in common. `EXCEPT` finds what is on one list but not the other.
+  You will build contact lists, spot missing data, add a TOTAL row to a report, and learn the
+  rules that stop these queries from crashing.
+dataset: shop
+lessons:
+  - id: m08-l01
+    title: UNION & UNION ALL
+    summary: Stack the rows of two queries into one result, and choose whether duplicates stay.
+    minutes: 25
+    dataset: cafe
+    steps:
+      - type: read
+        title: Maria's party list
+        md: |
+          Maria, the café manager, is planning the holiday party. She wants **name tags** for everyone
+          who is invited: the loyalty-program customers **and** the café staff.
+
+          There is a catch. Customers live in one table and staff live in another. A `JOIN` puts tables
+          **side by side** (more columns). Maria needs the opposite: **one long list**, with the second
+          group written underneath the first.
+
+          That is what a **set operation** does. `UNION` takes the rows of one query and stacks the rows
+          of a second query underneath them.
+
+          > [!ANALOGY]
+          > Two stacks of name cards sit on a table: one for customers, one for staff. `UNION` picks up the
+          > staff stack and puts it on top of the customer stack. Now there is just one pile.
+
+          A join adds **columns**. A union adds **rows**. There are two flavours:
+
+          - `UNION ALL` keeps every card.
+          - `UNION` also throws away cards that are exact copies of each other.
+
+      - type: example
+        title: Stack two lists with UNION ALL
+        md: |
+          Staff names are stored as one piece of text, like `'Maria Santos'`. `SPLIT_PART(name, ' ', 1)`
+          cuts out the first word (module 4), so we can compare it with the customers' `first_name`.
+
+          Press **Run** to stack the Boston customers and the cashiers.
+        sql: |
+          SELECT first_name
+          FROM customers
+          WHERE city = 'Boston'
+          UNION ALL
+          SELECT SPLIT_PART(name, ' ', 1)
+          FROM staff
+          WHERE role = 'Cashier';
+        after: |
+          **10 rows**: 7 Boston customers plus 3 cashiers. Look closely: **Chloe** appears twice. One is the
+          customer Chloe King, the other is the cashier Chloe Dubois. Two different people, same first name.
+
+          `UNION ALL` never removes anything. The column is called `first_name` because the **first**
+          query decides the names. (Without `ORDER BY` the row order is never guaranteed.)
+
+      - type: example
+        title: Remove the copies with UNION
+        md: |
+          Same two queries, but the keyword is now plain `UNION`.
+        sql: |
+          SELECT first_name
+          FROM customers
+          WHERE city = 'Boston'
+          UNION
+          SELECT SPLIT_PART(name, ' ', 1)
+          FROM staff
+          WHERE role = 'Cashier';
+        after: |
+          **9 rows** this time. The two Chloes were identical rows (the same text), so `UNION` kept only one.
+
+          Remember: `UNION` = stack **and** remove duplicates. It judges the *whole row*, so with
+          several columns two rows only count as copies if **every** column matches.
+
+      - type: viz
+        viz: set-ops
+        title: Watch UNION and UNION ALL work
+        md: |
+          Here are two tiny lists, like the Boston customers and the cashiers. Click **UNION ALL** and
+          then **UNION** and watch what happens to Chloe (pink = on both lists). The other two buttons
+          are for the next lesson.
+        config:
+          a: { name: boston_customers, values: [Chloe, Naledi, Pavel, Hugo] }
+          b: { name: cashiers, values: [Omar, Chloe, Lena] }
+
+      - type: predict
+        id: m08-l01-p1
+        question: |
+          The same query is stacked on top of itself with `UNION`. How many rows does it return?
+        sql: |
+          SELECT city
+          FROM customers
+          UNION
+          SELECT city
+          FROM customers;
+        options: ["28 rows", "56 rows", "5 rows", "An error"]
+        answer: 2
+        explanation: |
+          `UNION` removes duplicates in the **whole** result, not only between the two lists. There are 28
+          customers but only 5 different cities, so you get 5 rows. With `UNION ALL` you would get 56 (28 + 28).
+
+      - type: exercise
+        id: m08-l01-e1
+        title: Customers and bakers
+        prompt: |
+          Show one list called `first_name` with the first name of every customer who lives in
+          **Portland**, followed by the first name of every staff member whose `role` is **'Baker'**.
+          Keep every row (use `UNION ALL`).
+        starter: |
+          SELECT first_name
+          FROM customers
+          WHERE city = 'Portland'
+          ___
+          SELECT SPLIT_PART(name, ' ', 1)
+          FROM staff
+          WHERE role = 'Baker';
+        solution: |
+          SELECT first_name
+          FROM customers
+          WHERE city = 'Portland'
+          UNION ALL
+          SELECT SPLIT_PART(name, ' ', 1)
+          FROM staff
+          WHERE role = 'Baker';
+        hints:
+          - It is the Boston-and-cashiers example again, with a different city and a different role.
+          - The keyword that stacks two queries and keeps every row is `UNION ALL`.
+          - "SELECT first_name FROM customers WHERE city = 'Portland' UNION ___ SELECT SPLIT_PART(name, ' ', 1) FROM staff WHERE role = 'Baker';"
+        explanation: |
+          8 Portland customers plus 2 bakers (Aiko and Hannah) give 10 rows. Nobody shares a first name here,
+          so `UNION` would return the same rows. The keyword you choose only matters when copies exist.
+        difficulty: 1
+
+      - type: read
+        title: UNION or UNION ALL?
+        md: |
+          Both stack lists. The difference is what happens to **identical rows**:
+
+          | | `UNION ALL` | `UNION` |
+          |---|---|---|
+          | Duplicates | kept | removed |
+          | Speed | fast | slower (it must compare rows) |
+          | Use it for | counting, adding up, "show me everything" | a clean unique list |
+
+          Maria's name tags are a clean list, so `UNION` fits. A report that adds up numbers needs `UNION ALL`.
+
+          > [!MISTAKE]
+          > Using `UNION` when you are going to **count or add up** the result. If two different orders look
+          > identical in the selected columns, `UNION` merges them into one row and your totals come out too
+          > small, with no error message. When in doubt, use `UNION ALL`.
+
+      - type: example
+        title: Maria's complete party list
+        md: |
+          Now the real thing: every customer and every staff member, each first name once, A to Z.
+          `ORDER BY` goes **once, at the very end**, and sorts the whole stacked list.
+        sql: |
+          SELECT first_name
+          FROM customers
+          UNION
+          SELECT SPLIT_PART(name, ' ', 1)
+          FROM staff
+          ORDER BY first_name;
+        after: |
+          **35 name tags.** Stacking all 28 customers and all 10 staff would give 38 rows, but 3 cards were
+          copies: Chloe and Hannah (one customer and one staff member each) and Dmitri (two customers
+          share that first name). `UNION` kept one card for each.
+
+      - type: exercise
+        id: m08-l01-e2
+        title: Last names, each once
+        prompt: |
+          Show one column called `last_name` with every different last name among the **Portland
+          customers** and **all staff members** (a staff member's last name is the **second** word of
+          `name`). Each last name must appear once. Sort A to Z.
+        starter: |
+          SELECT last_name
+          FROM customers
+          WHERE city = 'Portland'
+          ___
+          SELECT SPLIT_PART(name, ' ', 2)
+          FROM staff
+          ORDER BY last_name;
+        solution: |
+          SELECT last_name
+          FROM customers
+          WHERE city = 'Portland'
+          UNION
+          SELECT SPLIT_PART(name, ' ', 2)
+          FROM staff
+          ORDER BY last_name;
+        ordered: true
+        hints:
+          - Two people can share a last name, and the prompt wants each name only once.
+          - The keyword that removes duplicates is plain `UNION`.
+          - "... WHERE city = 'Portland' UNION SELECT SPLIT_PART(name, ' ', 2) FROM staff ORDER BY last_name;"
+        explanation: |
+          16 rows: 8 Portland customers plus 10 staff would be 18, minus 2 shared last names (Carter and
+          Fischer). Because `UNION` compares whole rows, each name survives once. All 16 names are
+          different, so the A to Z order is exact.
+        difficulty: 2
+
+      - type: read
+        title: The rules that keep UNION from crashing
+        md: |
+          For two queries to stack neatly, they must agree on three things:
+
+          1. **Same number of columns.** Three columns on top, three columns below.
+          2. **Compatible types, column by column.** Text with text, numbers with numbers, dates with dates.
+          3. **Same order.** Columns are matched by **position** (1st with 1st, 2nd with 2nd), never by name.
+
+          The column **names** in the result come from the **first** query. The second query's names are ignored.
+
+          > [!MISTAKE]
+          > Forgetting that columns are matched by *position*. If both columns are text, PostgreSQL will not
+          > warn you when you swap them. You just get a quietly wrong list. We will see this in a moment.
+
+      - type: example
+        title: A different number of columns
+        md: |
+          The top query has two columns and the bottom query has one. Run it and read the message.
+        sql: |
+          SELECT first_name, last_name
+          FROM customers
+          UNION
+          SELECT name
+          FROM staff;
+        expectError: true
+        after: |
+          PostgreSQL says: *each UNION query must have the same number of columns*. The fix is to make both
+          sides the same shape: either build one column on the customer side (with `||`), or split the staff
+          name into two columns (with `SPLIT_PART`).
+
+      - type: exercise
+        id: m08-l01-e3
+        title: Fix the crash
+        prompt: |
+          This query should list the **full names** of the Denver customers and the bakers in one column
+          called `full_name`, but it crashes. Fix it by making both queries return **one** column.
+        starter: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE city = 'Denver'
+          UNION ALL
+          SELECT name
+          FROM staff
+          WHERE role = 'Baker';
+        solution: |
+          SELECT first_name || ' ' || last_name AS full_name
+          FROM customers
+          WHERE city = 'Denver'
+          UNION ALL
+          SELECT name
+          FROM staff
+          WHERE role = 'Baker';
+        columnNames: true
+        hints:
+          - The top query has two columns, the bottom query has one. They must match.
+          - "Join `first_name` and `last_name` with `||` and a space between them, and give the result the alias `full_name`."
+          - "SELECT first_name || ' ' || last_name AS ___ FROM customers WHERE city = 'Denver' UNION ALL SELECT name FROM staff WHERE role = 'Baker';"
+        explanation: |
+          4 rows: Rosa Mendoza and Carlos Santos (Denver customers), then Aiko Tanaka and Hannah Weiss (bakers).
+          The alias goes on the **first** query, because that is where the result takes its column name from.
+        difficulty: 1
+
+      - type: example
+        title: Text and numbers do not mix
+        md: |
+          Now the types do not match: `first_name` is text, `hourly_rate` is a number.
+        sql: |
+          SELECT first_name
+          FROM customers
+          UNION
+          SELECT hourly_rate
+          FROM staff;
+        expectError: true
+        after: |
+          PostgreSQL says: *UNION types text and numeric cannot be matched*. Columns in the same position must
+          be compatible. Different kinds of numbers mix fine (a whole number and a decimal become a decimal),
+          and so do text with text and date with date. If you really must stack a number with text, convert
+          the number first, for example `hourly_rate::text`.
+
+      - type: quiz
+        id: m08-l01-q1
+        question: Which of these pairs of queries can be stacked with `UNION`? (Choose all that apply.)
+        options:
+          - "SELECT name, role FROM staff   +   SELECT first_name FROM customers"
+          - "SELECT name FROM staff   +   SELECT price FROM menu_items"
+          - "SELECT hired_on FROM staff   +   SELECT joined_on FROM customers"
+          - "SELECT quantity FROM orders   +   SELECT price FROM menu_items"
+        answer: [2, 3]
+        explanation: |
+          The first pair has 2 columns against 1. The second pair stacks text with a number. The third pair is
+          date with date, and the fourth is a whole number with a decimal number, which PostgreSQL can mix.
+
+      - type: example
+        title: The quiet mix-up
+        md: |
+          Both queries return two **text** columns, so there is no error. But look at the second column.
+        sql: |
+          SELECT first_name, city
+          FROM customers
+          WHERE city = 'Denver'
+          UNION ALL
+          SELECT role, name
+          FROM staff
+          WHERE role = 'Baker';
+        after: |
+          No error, yet the list is a mess. The second column holds a **city** for the customers but a
+          **name** for the bakers, and the first column holds a first name for customers but a role for bakers.
+          PostgreSQL matched the columns by position and had no way to know that was not what you meant.
+
+          Habit: write the two `SELECT` lists next to each other in your head and check they line up.
+
+      - type: fill
+        id: m08-l01-f1
+        prompt: |
+          Complete the query to list every date on which a customer **joined** or a staff member was
+          **hired**, with no duplicate dates.
+        template: |
+          SELECT joined_on
+          FROM customers
+          ___
+          SELECT ___
+          FROM staff;
+        answers:
+          - ["UNION"]
+          - ["hired_on"]
+        explanation: |
+          `UNION` removes duplicate dates (Ben Carter and Aiko Tanaka were hired on the same day). The second
+          query must also return a date, so it uses `hired_on`.
+
+      - type: exercise
+        id: m08-l01-e4
+        title: Newcomer days in 2024
+        prompt: |
+          Show one column called `day` with every date in **2024 or later** on which a customer **joined**
+          (`joined_on`) or a staff member was **hired** (`hired_on`). Each date once, oldest first.
+        starter: |
+          SELECT joined_on AS day
+          FROM customers
+          WHERE joined_on >= '2024-01-01'
+          ___
+          SELECT hired_on
+          FROM staff
+          WHERE hired_on >= '2024-01-01'
+          ORDER BY day;
+        solution: |
+          SELECT joined_on AS day
+          FROM customers
+          WHERE joined_on >= '2024-01-01'
+          UNION
+          SELECT hired_on
+          FROM staff
+          WHERE hired_on >= '2024-01-01'
+          ORDER BY day;
+        ordered: true
+        columnNames: true
+        hints:
+          - Both columns are dates, so they are allowed to be stacked.
+          - Use `UNION` and sort with `ORDER BY` at the very end.
+          - "SELECT joined_on AS day FROM customers WHERE joined_on >= '2024-01-01' UNION SELECT hired_on FROM staff WHERE hired_on >= '2024-01-01' ORDER BY ___;"
+        explanation: |
+          10 dates: 7 customers joined and 3 staff members were hired in 2024, and no two share a date. The
+          alias `day` is written once, on the first query, and `ORDER BY day` sorts the whole stacked list.
+        difficulty: 2
+
+      - type: parsons
+        id: m08-l01-o1
+        prompt: |
+          Put the lines in order to list the first names of the **staff first**, then the customers, as one
+          list **without duplicates**, sorted A to Z.
+        lines:
+          - SELECT SPLIT_PART(name, ' ', 1) AS first_name
+          - FROM staff
+          - UNION
+          - SELECT first_name
+          - FROM customers
+          - ORDER BY first_name;
+        distractors:
+          - UNION ALL
+        explanation: |
+          `UNION` (not `UNION ALL`) removes the copies. The alias on the first query names the column, and the
+          single `ORDER BY` closes the whole statement.
+
+      - type: exercise
+        id: m08-l01-e5
+        title: A two-column directory
+        prompt: |
+          Build a small phone-book style list with two columns, `first_name` and `last_name`, for every
+          **Portland customer** and every staff member whose `role` is **'Cashier'** (a staff member's first
+          name is the first word of `name`, the last name is the second word). Keep every row. Sort by
+          `last_name`, then `first_name`.
+        starter: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE city = 'Portland'
+          UNION ALL
+          SELECT ___
+          FROM staff
+          WHERE role = 'Cashier'
+          ORDER BY last_name, first_name;
+        solution: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE city = 'Portland'
+          UNION ALL
+          SELECT SPLIT_PART(name, ' ', 1),
+                 SPLIT_PART(name, ' ', 2)
+          FROM staff
+          WHERE role = 'Cashier'
+          ORDER BY last_name, first_name;
+        ordered: true
+        hints:
+          - The top query returns two columns, so the bottom query needs two columns too, in the same order.
+          - "Use `SPLIT_PART(name, ' ', 1)` for the first name and `SPLIT_PART(name, ' ', 2)` for the last name."
+          - "SELECT SPLIT_PART(name, ' ', ___), SPLIT_PART(name, ' ', ___) FROM staff WHERE role = 'Cashier' ..."
+        explanation: |
+          11 rows (8 customers and 3 cashiers). Two people share the last name Fischer, Dmitri and Lena, so the
+          second sort column, `first_name`, settles that tie. Both halves of a stacked query can be built with
+          completely different expressions, as long as the columns line up.
+        difficulty: 2
+
+      - type: exercise
+        id: m08-l01-e6
+        title: Everyone on Christmas Eve
+        prompt: |
+          Show one column called `person` with the full names of **everyone connected to the orders placed on
+          2024-12-24**: the customers who placed them (`first_name` and `last_name` with a space between) and
+          the staff members who served them (`staff.name`). Each person once, sorted A to Z.
+
+          Use `order_time` to find the day. Remember that it is a timestamp, not a date.
+        starter: |
+          SELECT c.first_name || ' ' || c.last_name AS person
+          FROM orders AS o
+          JOIN customers AS c ON c.customer_id = o.customer_id
+          WHERE o.order_time >= '2024-12-24'
+            AND o.order_time < '2024-12-25'
+          ___
+          SELECT ___
+          FROM orders AS o
+          JOIN staff AS s ON s.staff_id = o.staff_id
+          WHERE o.order_time >= '2024-12-24'
+            AND o.order_time < '2024-12-25'
+          ORDER BY person;
+        solution: |
+          SELECT c.first_name || ' ' || c.last_name AS person
+          FROM orders AS o
+          JOIN customers AS c ON c.customer_id = o.customer_id
+          WHERE o.order_time >= '2024-12-24'
+            AND o.order_time < '2024-12-25'
+          UNION
+          SELECT s.name
+          FROM orders AS o
+          JOIN staff AS s ON s.staff_id = o.staff_id
+          WHERE o.order_time >= '2024-12-24'
+            AND o.order_time < '2024-12-25'
+          ORDER BY person;
+        ordered: true
+        columnNames: true
+        hints:
+          - Each half of the union is an ordinary join query. Think of them as two separate questions first.
+          - "One query joins orders to customers, the other joins orders to staff. Both return one text column."
+          - "... UNION SELECT s.name FROM orders AS o JOIN staff AS s ON s.staff_id = o.staff_id WHERE ... ORDER BY person;"
+        explanation: |
+          4 people: the customers Hugo Jones and Camila Flores, and the staff members Diego Alvarez and Ben
+          Carter (two orders were placed that day). Each half of a union can be as complex as you like (joins,
+          filters, even `GROUP BY`) as long as the columns agree.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Stack and keep every row
+        sql: |
+          SELECT first_name FROM customers
+          UNION ALL
+          SELECT SPLIT_PART(name, ' ', 1) FROM staff;
+        note: UNION ALL puts the second result under the first and removes nothing. It is the fastest choice.
+      - title: Stack and remove duplicates
+        sql: |
+          SELECT city FROM customers
+          UNION
+          SELECT city FROM customers
+          ORDER BY city;
+        note: UNION also removes copies inside each list. ORDER BY goes once, at the very end.
+      - title: The three rules
+        sql: |
+          -- 1. same number of columns
+          -- 2. compatible types (text/text, number/number, date/date)
+          -- 3. matched by position; names come from the first query
+          SELECT joined_on AS day FROM customers
+          UNION
+          SELECT hired_on FROM staff;
+        note: Break a rule and you get an error, or worse, a quietly wrong list when the types happen to match.
+
+testPool:
+  - type: quiz
+    id: m08-t01
+    lesson: m08-l01
+    difficulty: 1
+    question: placeholder
+    options: [a, b]
+    answer: 0
+    explanation: placeholder

@@ -818,6 +818,11 @@ lessons:
             name is unique. Your future self will thank you.
           - An alias lives only for that query. Nothing is renamed in the database.
 
+          > [!MISTAKE]
+          > Giving two tables the **same** alias, for example `orders AS o JOIN customers AS o`. PostgreSQL
+          > stops with *table name "o" specified more than once*. Every table in a query needs its own
+          > nickname.
+
       - type: example
         title: The "ambiguous column" error
         md: |
@@ -4397,12 +4402,1279 @@ lessons:
         note: Join only the tables the question needs, and reconcile your total with a simple one-table query. SUM(DISTINCT) is not a fix.
 
 testPool:
+  # ---------------------------------------------------------------- l01 Why many tables?
   - type: quiz
     id: m06-t01
     lesson: m06-l01
     difficulty: 1
-    question: Placeholder
-    options: [a, b]
-    answer: 0
-    explanation: placeholder
+    question: |
+      The `reviews` table has the columns `review_id`, `product_id`, `customer_id` and `rating`.
+      Which of them are **foreign keys**? (Pick all that apply.)
+    options: [review_id, product_id, customer_id, rating]
+    answer: [1, 2]
+    explanation: |
+      `product_id` points to a row in `products` and `customer_id` points to a row in `customers`, so both
+      are foreign keys. `review_id` is the primary key (it identifies the review itself), and `rating` is
+      just a number from 1 to 5 that doesn't point anywhere.
 
+  - type: exercise
+    id: m06-t02
+    lesson: m06-l01
+    difficulty: 1
+    prompt: |
+      Order 80 was paid in two separate payments. Show the `payment_id`, `amount` and `method` of every
+      payment for `order_id` 80. Sort by `payment_id`.
+    starter: |
+      SELECT payment_id, ___
+      FROM payments
+      WHERE ___
+      ORDER BY payment_id;
+    solution: |
+      SELECT payment_id, amount, method
+      FROM payments
+      WHERE order_id = 80
+      ORDER BY payment_id;
+    ordered: true
+    hints:
+      - The payments are in the `payments` table. Which column tells you which order a payment belongs to?
+      - "`order_id` in `payments` is a foreign key, so filter on it with WHERE."
+      - "SELECT payment_id, amount, method FROM payments WHERE order_id = ___ ORDER BY payment_id;"
+    explanation: |
+      Two rows: payment 70 ($100.00 by gift card) and payment 71 ($132.96 by PayPal). The same `order_id` appears
+      on both rows because `payments.order_id` is a foreign key: one order, many payments (one-to-many).
+
+  - type: predict
+    id: m06-t03
+    lesson: m06-l01
+    difficulty: 2
+    question: |
+      The `payments` table has 778 rows, and `order_id` in `payments` is a foreign key. What will this
+      query show?
+    sql: |
+      SELECT COUNT(*) AS payments,
+             COUNT(DISTINCT order_id) AS orders_paid
+      FROM payments;
+    options: ["778 and 778", "778 and 758", "758 and 778", "900 and 758"]
+    answer: 1
+    explanation: |
+      There are 778 payment rows but only 758 different order ids: 20 orders were paid in two payments, so
+      their `order_id` shows up twice. A primary key could never repeat like that. A foreign key can.
+
+  # ---------------------------------------------------------------- l02 INNER JOIN
+  - type: exercise
+    id: m06-t04
+    lesson: m06-l02
+    difficulty: 1
+    prompt: |
+      Show the `review_id`, `rating` and the product `name` of every review with a rating of 1. Join
+      `reviews` with `products`. Sort by `review_id`.
+    starter: |
+      SELECT review_id, rating, name
+      FROM reviews
+      JOIN products
+          ON ___
+      WHERE rating = 1
+      ORDER BY review_id;
+    solution: |
+      SELECT review_id, rating, name
+      FROM reviews
+      JOIN products
+          ON reviews.product_id = products.product_id
+      WHERE rating = 1
+      ORDER BY review_id;
+    ordered: true
+    hints:
+      - Both tables have a `product_id` column. One is a foreign key, the other a primary key.
+      - "ON reviews.product_id = products.product_id"
+      - "JOIN products ON reviews.product_id = ___.product_id"
+    explanation: |
+      Five reviews have a single star: the Sourdough guide twice (reviews 39 and 178), Vitamin C Moisturizer,
+      Air Fryer 5L and the Programmable Coffee Maker. The `ON` rule matches each review's foreign key with
+      the primary key of the product it is about.
+
+  - type: quiz
+    id: m06-t05
+    lesson: m06-l02
+    difficulty: 1
+    question: |
+      You want to show each order line from `order_items` together with its product's name. Which `ON` rule
+      connects the two tables correctly?
+    options:
+      - order_items.product_id = products.product_id
+      - order_items.order_id = products.product_id
+      - order_items.order_item_id = products.product_id
+      - order_items.quantity = products.price
+    answer: 0
+    explanation: |
+      Join a foreign key to the primary key it points to: `order_items.product_id` points to
+      `products.product_id`. The other rules compare unrelated numbers. They would run without an error but
+      glue the wrong rows together, which is much worse than an error.
+
+  - type: parsons
+    id: m06-t06
+    lesson: m06-l02
+    difficulty: 2
+    prompt: |
+      Put the lines in order to show the `payment_id`, `amount` and order `status` of every payment made
+      with a gift card, sorted by `payment_id`. Two lines are decoys. Leave them out.
+    lines:
+      - SELECT payment_id, amount, status
+      - FROM payments
+      - JOIN orders
+      - "    ON payments.order_id = orders.order_id"
+      - WHERE method = 'gift_card'
+      - ORDER BY payment_id;
+    distractors:
+      - "    ON payments.order_id = orders.customer_id"
+      - WHERE orders.method = 'gift_card'
+    explanation: |
+      `JOIN ... ON` comes right after `FROM`, then `WHERE`, then `ORDER BY`. The first decoy joins a payment's
+      order number to a customer number (wrong columns, wrong rows). The second would fail: `method` is a
+      column of `payments`, not of `orders`.
+
+  # ---------------------------------------------------------------- l03 Table aliases
+  - type: fill
+    id: m06-t07
+    lesson: m06-l03
+    difficulty: 1
+    prompt: |
+      Give the tables the aliases `r` (for `reviews`) and `p` (for `products`), then finish the join rule.
+    template: |
+      SELECT r.review_id, p.name, r.rating
+      FROM reviews AS ___
+      JOIN products AS ___
+          ON r.product_id = ___.product_id
+      WHERE r.rating = 1;
+    answers:
+      - ["r"]
+      - ["p"]
+      - ["p"]
+    explanation: |
+      `AS r` and `AS p` create the short names. Once they exist, every column is written with its alias:
+      `r.product_id` comes from `reviews` and `p.product_id` from `products`.
+
+  - type: exercise
+    id: m06-t08
+    lesson: m06-l03
+    difficulty: 2
+    prompt: |
+      Using the aliases `py` for `payments` and `o` for `orders`, show `payment_id`, `order_id`, `amount`,
+      `order_date` and `status` for every `bank_transfer` payment (column `method`) on an order placed on or
+      after `'2024-12-01'`. Take `order_id` from `payments`. Sort by `payment_id`.
+
+      The starter fails: read the error message first.
+    starter: |
+      SELECT py.payment_id,
+             order_id,
+             py.amount,
+             o.order_date,
+             o.status
+      FROM payments AS py
+      JOIN orders AS o
+          ON py.order_id = o.order_id
+      WHERE py.method = 'bank_transfer';
+    solution: |
+      SELECT py.payment_id,
+             py.order_id,
+             py.amount,
+             o.order_date,
+             o.status
+      FROM payments AS py
+      JOIN orders AS o
+          ON py.order_id = o.order_id
+      WHERE py.method = 'bank_transfer'
+        AND o.order_date >= '2024-12-01'
+      ORDER BY py.payment_id;
+    ordered: true
+    hints:
+      - "The error says one column is ambiguous. Both tables have an `order_id` column."
+      - "Write `py.order_id`, then add a second condition for the date (AND ...) and an ORDER BY."
+      - "WHERE py.method = 'bank_transfer' AND o.order_date >= ___ ORDER BY py.payment_id;"
+    explanation: |
+      Five payments qualify (payments 718, 724, 740, 757 and 778). The bare `order_id` was ambiguous because
+      `payments` and `orders` both have one. A prefix such as `py.` removes the doubt.
+
+  - type: quiz
+    id: m06-t09
+    lesson: m06-l03
+    difficulty: 2
+    question: |
+      This query fails with *column reference ... is ambiguous*. Which column is the culprit?
+
+      ```sql
+      SELECT product_id, name, quantity
+      FROM order_items AS oi
+      JOIN products AS p
+          ON p.product_id = oi.product_id;
+      ```
+    options:
+      - "`product_id`: both tables have a column with that name"
+      - "`name`: it is a reserved word"
+      - "`quantity`: only one table has it"
+      - "None. The query runs fine."
+    answer: 0
+    explanation: |
+      Both `order_items` and `products` have a `product_id`, so PostgreSQL can't tell which one you mean.
+      `name` exists only in `products` and `quantity` only in `order_items`, so those are fine. The fix:
+      write `oi.product_id` or `p.product_id`.
+
+
+  # ---------------------------------------------------------------- l04 LEFT JOIN
+  - type: exercise
+    id: m06-t10
+    lesson: m06-l04
+    difficulty: 2
+    prompt: |
+      The marketing team wants to promote products that nobody has reviewed yet. Show the `name` and `price`
+      of every product that has **no review** and costs **more than 30**. Sort by `name`.
+    starter: |
+      SELECT p.name, p.price
+      FROM products AS p
+      LEFT JOIN reviews AS r
+          ON ___
+      WHERE ___
+      ORDER BY p.name;
+    solution: |
+      SELECT p.name, p.price
+      FROM products AS p
+      LEFT JOIN reviews AS r
+          ON r.product_id = p.product_id
+      WHERE r.review_id IS NULL
+        AND p.price > 30
+      ORDER BY p.name;
+    ordered: true
+    hints:
+      - Keep every product, even those without a matching review. Which join does that?
+      - "After a LEFT JOIN, products without reviews have NULL in the review columns. Test one with IS NULL, and add a second condition for the price."
+      - "WHERE r.review_id IS NULL AND p.price > ___"
+    explanation: |
+      Five products: Atlas of Hidden Cities, Laptop Stand Aluminum, Science Lab Starter Kit, Standing Desk 140cm
+      and Zephyr Gaming Laptop X. The three other unreviewed products cost less than 30 and were filtered out by
+      the second condition. A condition on the **left** table (`p.price`) is safe in `WHERE`.
+
+  - type: exercise
+    id: m06-t11
+    lesson: m06-l04
+    difficulty: 3
+    prompt: |
+      Show the `customer_id`, `first_name` and `last_name` of every customer who has **not a single delivered
+      order**. That includes customers who never ordered anything. Sort by `customer_id`.
+
+      The starter returns nothing. Can you see why?
+    starter: |
+      SELECT c.customer_id, c.first_name, c.last_name
+      FROM customers AS c
+      LEFT JOIN orders AS o
+          ON o.customer_id = c.customer_id
+      WHERE o.status = 'delivered'
+        AND o.order_id IS NULL
+      ORDER BY c.customer_id;
+    solution: |
+      SELECT c.customer_id, c.first_name, c.last_name
+      FROM customers AS c
+      LEFT JOIN orders AS o
+          ON o.customer_id = c.customer_id
+         AND o.status = 'delivered'
+      WHERE o.order_id IS NULL
+      ORDER BY c.customer_id;
+    ordered: true
+    hints:
+      - "In the starter, the WHERE asks for a delivered order and for no order at the same time. That can never be true."
+      - "Move the status test into the ON rule of the LEFT JOIN, so it decides what counts as a match."
+      - "ON o.customer_id = c.customer_id AND o.status = 'delivered' ... WHERE o.order_id IS NULL"
+    explanation: |
+      13 customers: the 10 who never ordered (141 to 150) plus 3 who ordered but never received anything
+      (customers 8, 68 and 132). With the status test in `ON`, only delivered orders count as a match, so a
+      customer with only cancelled or returned orders is left with NULLs and shows up in the anti-join.
+
+  - type: predict
+    id: m06-t12
+    lesson: m06-l04
+    difficulty: 3
+    question: |
+      The shop has 150 customers. 102 orders are `returned`, placed by 73 different customers. How many rows
+      does this query return?
+    sql: |
+      SELECT c.customer_id, o.order_id
+      FROM customers AS c
+      LEFT JOIN orders AS o
+          ON o.customer_id = c.customer_id
+         AND o.status = 'returned';
+    options: ["102", "150", "179", "900"]
+    answer: 2
+    explanation: |
+      The status test sits in `ON`, so no customer is dropped. The 77 customers without a returned order
+      (150 - 73) each appear once, with NULL in `order_id`. The other 73 customers appear once per returned
+      order, 102 rows in total. So 77 + 102 = **179**.
+
+  - type: quiz
+    id: m06-t13
+    lesson: m06-l04
+    difficulty: 1
+    question: |
+      Customer 145 has never placed an order. What does the `order_id` column show for them in this query?
+
+      ```sql
+      SELECT c.first_name, o.order_id
+      FROM customers AS c
+      LEFT JOIN orders AS o
+          ON o.customer_id = c.customer_id
+      WHERE c.customer_id = 145;
+      ```
+    options:
+      - "Nothing. The customer is missing from the result."
+      - "NULL. The customer's row is kept."
+      - "0"
+      - "An error"
+    answer: 1
+    explanation: |
+      A LEFT JOIN keeps every row of the left table. When no order matches, the columns from `orders` are
+      filled with NULL. With `INNER JOIN` the customer would have disappeared.
+
+  # ---------------------------------------------------------------- l05 RIGHT & FULL OUTER JOIN (company)
+  - type: exercise
+    id: m06-t14
+    lesson: m06-l05
+    difficulty: 2
+    dataset: company
+    prompt: |
+      In the Acme Corp database, which employees are **not assigned to any project**? Show `emp_id`,
+      `first_name`, `last_name` and `job_title`, sorted by `emp_id`. You may use a LEFT or a RIGHT JOIN with
+      `project_assignments`.
+    starter: |
+      SELECT e.emp_id, e.first_name, e.last_name, e.job_title
+      FROM employees AS e
+      LEFT JOIN project_assignments AS a
+          ON ___
+      WHERE ___
+      ORDER BY e.emp_id;
+    solution: |
+      SELECT e.emp_id, e.first_name, e.last_name, e.job_title
+      FROM employees AS e
+      LEFT JOIN project_assignments AS a
+          ON a.emp_id = e.emp_id
+      WHERE a.emp_id IS NULL
+      ORDER BY e.emp_id;
+    ordered: true
+    hints:
+      - Keep all employees, and look for the ones where the assignment side stays empty.
+      - "ON a.emp_id = e.emp_id, then WHERE a.emp_id IS NULL."
+      - "Written as a RIGHT JOIN it would be: FROM project_assignments AS a RIGHT JOIN employees AS e ON ..."
+    explanation: |
+      Ten employees: the CEO, the Chief of Staff, the five VPs, and three people in sales and marketing
+      (Mariana Hernandez, Beatriz Mendoza and Scarlett Walker). Joining `employees` and `project_assignments`
+      as a LEFT or a RIGHT JOIN gives the same answer; only the order of the two tables changes.
+
+  - type: predict
+    id: m06-t15
+    lesson: m06-l05
+    difficulty: 3
+    dataset: company
+    question: |
+      At Acme Corp, `project_assignments` has 96 rows. They belong to 45 different employees, and the
+      other 10 of the 55 employees have no assignment. Every assignment points to a real employee.
+      How many rows does this FULL JOIN return?
+    sql: |
+      SELECT e.emp_id, a.project_id
+      FROM employees AS e
+      FULL JOIN project_assignments AS a
+          ON a.emp_id = e.emp_id;
+    options: ["55", "96", "106", "151"]
+    answer: 2
+    explanation: |
+      Matched rows: one per assignment, so 96 (employees with several projects appear several times). Then the
+      10 employees without any assignment are added with NULLs on the right: 96 + 10 = **106**. No
+      assignment is left over without an employee, so nothing is added from the right side. Don't add 55 + 96:
+      matched rows are counted only once.
+
+  - type: parsons
+    id: m06-t16
+    lesson: m06-l05
+    difficulty: 2
+    dataset: company
+    prompt: |
+      Put the lines in order to list every project with the number of people assigned to it, projects
+      with the fewest people first (ties: by project name). Projects nobody works on must stay in the list.
+      Two lines are decoys. Leave them out.
+    lines:
+      - SELECT p.name, COUNT(a.emp_id) AS people
+      - FROM projects AS p
+      - LEFT JOIN project_assignments AS a
+      - "    ON a.project_id = p.project_id"
+      - GROUP BY p.project_id, p.name
+      - ORDER BY people, p.name;
+    distractors:
+      - JOIN project_assignments AS a
+      - WHERE a.emp_id IS NOT NULL
+    explanation: |
+      14 projects come back, and "Customer Data Lake" shows 0 people. An inner `JOIN` or the decoy `WHERE`
+      would throw that project away. `COUNT(a.emp_id)` counts only real assignments, so the project without
+      any gets 0, while `COUNT(*)` would wrongly give it 1.
+
+  # ---------------------------------------------------------------- l06 Joining 3+ tables
+  - type: exercise
+    id: m06-t17
+    lesson: m06-l06
+    difficulty: 2
+    prompt: |
+      Show the unhappy reviews from the second half of 2024: every review with a `rating` of **2 or less**
+      written on or after `'2024-07-01'` (column `created_at`). Show `review_id`, the reviewer's
+      `first_name`, the product name as `product`, the product's category name as `category` and the
+      `rating`. Sort by `review_id`.
+    starter: |
+      SELECT r.review_id,
+             cu.first_name,
+             p.name AS product,
+             cat.name AS category,
+             r.rating
+      FROM reviews AS r
+      JOIN customers AS cu
+          ON ___
+      JOIN products AS p
+          ON ___
+      JOIN categories AS cat
+          ON ___
+      WHERE ___
+      ORDER BY r.review_id;
+    solution: |
+      SELECT r.review_id,
+             cu.first_name,
+             p.name AS product,
+             cat.name AS category,
+             r.rating
+      FROM reviews AS r
+      JOIN customers AS cu
+          ON cu.customer_id = r.customer_id
+      JOIN products AS p
+          ON p.product_id = r.product_id
+      JOIN categories AS cat
+          ON cat.category_id = p.category_id
+      WHERE r.rating <= 2
+        AND r.created_at >= '2024-07-01'
+      ORDER BY r.review_id;
+    columnNames: true
+    ordered: true
+    hints:
+      - "Start from `reviews`: it holds foreign keys to `customers` and to `products`. The category is one more step away, through `products`."
+      - "Three joins: customers on customer_id, products on product_id, then categories on p.category_id."
+      - "JOIN categories AS cat ON cat.category_id = ___.category_id"
+    explanation: |
+      12 reviews. Four tables, three `ON` rules: each new table is joined to one that is already in the query.
+      `categories` can only be joined after `products`, because the `category_id` lives in `products`.
+      Both `products` and `categories` have a `name` column, so the aliases `product` and `category` keep the
+      result readable.
+
+  - type: exercise
+    id: m06-t18
+    lesson: m06-l06
+    difficulty: 3
+    prompt: |
+      Which products from suppliers based in **Japan** (`suppliers.country`) did customers living in the
+      state `'WA'` buy in **delivered** orders? Show each product `name` once, sorted by `name`.
+
+      The route is: customers, orders, order_items, products, suppliers.
+    starter: |
+      SELECT DISTINCT p.name
+      FROM customers AS c
+      JOIN orders AS o
+          ON o.customer_id = c.customer_id
+      JOIN order_items AS oi
+          ON ___
+      JOIN products AS p
+          ON ___
+      JOIN suppliers AS s
+          ON ___
+      WHERE ___
+      ORDER BY p.name;
+    solution: |
+      SELECT DISTINCT p.name
+      FROM customers AS c
+      JOIN orders AS o
+          ON o.customer_id = c.customer_id
+      JOIN order_items AS oi
+          ON oi.order_id = o.order_id
+      JOIN products AS p
+          ON p.product_id = oi.product_id
+      JOIN suppliers AS s
+          ON s.supplier_id = p.supplier_id
+      WHERE s.country = 'Japan'
+        AND c.state = 'WA'
+        AND o.status = 'delivered'
+      ORDER BY p.name;
+    ordered: true
+    hints:
+      - "Follow the route from left to right. Each `ON` connects the new table to the previous one with a foreign key."
+      - "order_items joins to orders on order_id, products joins to order_items on product_id, suppliers joins to products on supplier_id."
+      - "WHERE s.country = 'Japan' AND c.state = 'WA' AND o.status = ___"
+    explanation: |
+      Seven products, from the 27-inch 4K Monitor to the Wireless Ergonomic Mouse. The same product can be bought
+      by several people or in several orders, so `DISTINCT` keeps each name once. The filters come from three
+      different tables, but they all fit in one `WHERE` because every table is in the `FROM` chain.
+
+  - type: fill
+    id: m06-t19
+    lesson: m06-l06
+    difficulty: 2
+    prompt: |
+      Complete the chain so each 1-star review shows the name of its product's **category**.
+    template: |
+      SELECT r.review_id, cat.name AS category
+      FROM reviews AS r
+      JOIN ___ AS p
+          ON p.product_id = r.product_id
+      JOIN categories AS cat
+          ON cat.category_id = ___.category_id
+      WHERE r.rating = 1;
+    answers:
+      - ["products"]
+      - ["p"]
+    explanation: |
+      A review knows its product, and the product knows its category. So `products` has to come first, and the
+      second `ON` uses `p.category_id`. A review has no `category_id` of its own.
+
+  - type: parsons
+    id: m06-t20
+    lesson: m06-l06
+    difficulty: 2
+    prompt: |
+      Put the lines in order to list the product and the supplier of every order line in order 300, sorted by
+      product name. Two lines are decoys. Leave them out.
+    lines:
+      - SELECT p.name AS product, s.name AS supplier
+      - FROM order_items AS oi
+      - JOIN products AS p
+      - "    ON p.product_id = oi.product_id"
+      - JOIN suppliers AS s
+      - "    ON s.supplier_id = p.supplier_id"
+      - WHERE oi.order_id = 300
+      - ORDER BY product;
+    distractors:
+      - "    ON s.supplier_id = oi.supplier_id"
+      - JOIN categories AS cat
+    explanation: |
+      Order 300 has two lines: a Cast Iron Skillet (Lumen Trading Co.) and The Midnight Gardener (Orchid & Oak
+      Imports). `suppliers` has to be joined after `products`, because the supplier id lives in `products`.
+      The decoy `oi.supplier_id` doesn't exist: order lines don't store suppliers.
+
+  # ---------------------------------------------------------------- l07 Self joins (company)
+  - type: exercise
+    id: m06-t21
+    lesson: m06-l07
+    difficulty: 2
+    dataset: company
+    prompt: |
+      Some Acme employees work in a different city from their manager. Show those employees with these
+      columns: `employee` (full name: first name, a space, last name), `city`, `manager` (the manager's
+      full name, built the same way) and `manager_city`. Sort by the employee's `emp_id`.
+    starter: |
+      SELECT e.first_name || ' ' || e.last_name AS employee,
+             e.city,
+             ___ AS manager,
+             m.city AS manager_city
+      FROM employees AS e
+      JOIN employees AS m
+          ON ___
+      WHERE ___
+      ORDER BY e.emp_id;
+    solution: |
+      SELECT e.first_name || ' ' || e.last_name AS employee,
+             e.city,
+             m.first_name || ' ' || m.last_name AS manager,
+             m.city AS manager_city
+      FROM employees AS e
+      JOIN employees AS m
+          ON e.manager_id = m.emp_id
+      WHERE e.city <> m.city
+      ORDER BY e.emp_id;
+    columnNames: true
+    ordered: true
+    hints:
+      - "Use the `employees` table twice: `e` is the employee, `m` is the manager."
+      - "ON e.manager_id = m.emp_id pairs each employee with their manager. Then compare the two cities in WHERE."
+      - "WHERE e.city <> m.city"
+    explanation: |
+      Eight employees, for example Thiago Rodriguez (Austin) whose manager is in Chicago. The CEO has no manager,
+      so an inner self join leaves him out. Comparing `e.city` with `m.city` is exactly the "compare rows inside
+      one table" trick of the self join.
+
+  - type: exercise
+    id: m06-t22
+    lesson: m06-l07
+    difficulty: 3
+    dataset: company
+    prompt: |
+      Find the employees of department 3 (`dept_id = 3`) who do **not manage anybody**: nobody has their
+      `emp_id` as `manager_id`. Show `emp_id`, `first_name`, `last_name` and `job_title`, sorted by `emp_id`.
+    starter: |
+      SELECT e.emp_id, e.first_name, e.last_name, e.job_title
+      FROM employees AS e
+      LEFT JOIN employees AS r
+          ON ___
+      WHERE ___
+      ORDER BY e.emp_id;
+    solution: |
+      SELECT e.emp_id, e.first_name, e.last_name, e.job_title
+      FROM employees AS e
+      LEFT JOIN employees AS r
+          ON r.manager_id = e.emp_id
+      WHERE e.dept_id = 3
+        AND r.emp_id IS NULL
+      ORDER BY e.emp_id;
+    ordered: true
+    hints:
+      - "Think of `r` as 'a person who reports to e'. Which employees have nobody like that?"
+      - "LEFT JOIN employees AS r ON r.manager_id = e.emp_id keeps everyone; then look for r.emp_id IS NULL."
+      - "WHERE e.dept_id = 3 AND r.emp_id IS NULL"
+    explanation: |
+      Six people: five Account Executives and a Sales Development Rep. This combines a self join with an
+      anti-join: the second copy of the table plays the role of "direct reports", and a NULL there means the
+      person has none. The `dept_id` test is on the left table, so it is safe in `WHERE`.
+
+  - type: quiz
+    id: m06-t23
+    lesson: m06-l07
+    difficulty: 3
+    dataset: company
+    question: |
+      Manager 3 has exactly three direct reports (employees 8, 9 and 10). How many rows does this query
+      return?
+
+      ```sql
+      SELECT a.emp_id AS a_id, b.emp_id AS b_id
+      FROM employees AS a
+      JOIN employees AS b
+          ON a.manager_id = b.manager_id
+         AND a.emp_id <> b.emp_id
+      WHERE a.manager_id = 3;
+      ```
+    options:
+      - "3 rows: one per colleague pair"
+      - "6 rows: each pair appears twice, as (8, 9) and (9, 8)"
+      - "9 rows: every report with every report"
+      - "0 rows: a row can't be joined with itself"
+    answer: 1
+    explanation: |
+      `<>` means "different", so (8, 9) and (9, 8) both qualify, and so on: 3 x 2 = 6 rows. With `a.emp_id < b.emp_id`
+      each pair is listed once, which gives 3 rows. If you drop the `emp_id` test altogether you get 9 rows,
+      because every person is also paired with themselves.
+
+  # ---------------------------------------------------------------- l08 CROSS JOIN & non-equi joins
+  - type: fill
+    id: m06-t24
+    lesson: m06-l08
+    difficulty: 1
+    prompt: |
+      List every combination of the supplier with `supplier_id` 1 and the six top-level categories (the
+      ones with no parent). Complete the join type.
+    template: |
+      SELECT s.name AS supplier, c.name AS category
+      FROM suppliers AS s
+      ___ JOIN categories AS c
+      WHERE s.supplier_id = 1
+        AND c.parent_id IS NULL;
+    answers:
+      - ["CROSS"]
+    explanation: |
+      `CROSS JOIN` pairs every row on the left with every row on the right and needs no `ON`. One supplier
+      times six top-level categories gives 6 rows. The `WHERE` filters the combinations after they are built.
+
+  - type: exercise
+    id: m06-t25
+    lesson: m06-l08
+    difficulty: 3
+    dataset: company
+    setup: |
+      CREATE TABLE salary_grades (
+          grade text,
+          min_salary numeric,
+          max_salary numeric
+      );
+      INSERT INTO salary_grades VALUES
+          ('A', 40000, 80000),
+          ('B', 80000, 120000),
+          ('C', 120000, 160000),
+          ('D', 160000, 400000);
+    prompt: |
+      HR keeps a helper table `salary_grades(grade, min_salary, max_salary)` with these bands:
+
+      | grade | min_salary | max_salary |
+      |---|---|---|
+      | A | 40000 | 80000 |
+      | B | 80000 | 120000 |
+      | C | 120000 | 160000 |
+      | D | 160000 | 400000 |
+
+      An employee is in a grade when `min_salary <= salary < max_salary`. For **current** employees
+      (`terminated_on IS NULL`), show each `grade` and how many people it holds as `people`. Sort by `grade`.
+    starter: |
+      SELECT g.grade, COUNT(*) AS people
+      FROM employees AS e
+      JOIN salary_grades AS g
+          ON ___
+      WHERE e.terminated_on IS NULL
+      GROUP BY g.grade
+      ORDER BY g.grade;
+    solution: |
+      SELECT g.grade, COUNT(*) AS people
+      FROM employees AS e
+      JOIN salary_grades AS g
+          ON e.salary >= g.min_salary
+         AND e.salary < g.max_salary
+      WHERE e.terminated_on IS NULL
+      GROUP BY g.grade
+      ORDER BY g.grade;
+    ordered: true
+    hints:
+      - "This is a range join: no column is equal to another. The ON rule compares a salary with two limits."
+      - "Use two conditions joined with AND: one for the lower limit (>=) and one for the upper limit (<)."
+      - "ON e.salary >= g.min_salary AND e.salary < ___"
+    explanation: |
+      A has 7 people, B has 18, C has 13 and D has 12: 50 current employees in all, each in exactly one grade,
+      because the bands don't overlap. The upper limit uses `<` so that someone earning exactly 80,000 lands in
+      B only, not in A and B.
+
+  - type: predict
+    id: m06-t26
+    lesson: m06-l08
+    difficulty: 2
+    dataset: company
+    question: |
+      Acme Corp has 7 departments. How many rows does this query return?
+    sql: |
+      SELECT a.name AS dept_a,
+             b.name AS dept_b
+      FROM departments AS a
+      JOIN departments AS b
+          ON a.dept_id < b.dept_id;
+    options: ["7", "21", "42", "49"]
+    answer: 1
+    explanation: |
+      The rule `a.dept_id < b.dept_id` keeps each pair once, with the smaller id on the left: 7 x 6 / 2 = **21**.
+      With `<>` you'd get 42 (each pair twice), and a `CROSS JOIN` would give 49 (every department also paired
+      with itself).
+
+  - type: quiz
+    id: m06-t27
+    lesson: m06-l08
+    difficulty: 1
+    question: |
+      A shop sells T-shirts in 3 sizes (table `sizes`), 4 colours (table `colours`) and 5 fabrics
+      (table `fabrics`). How many rows does `sizes CROSS JOIN colours CROSS JOIN fabrics` return?
+    options: ["12", "20", "60", "12 + 20 = 32"]
+    answer: 2
+    explanation: |
+      A cross join multiplies: 3 x 4 x 5 = **60** combinations. That is handy for building a full catalogue,
+      and also the reason an accidental cross join can freeze a query: two tables of 1,000 rows already
+      give a million.
+
+  # ---------------------------------------------------------------- l09 Joins + aggregation
+  - type: exercise
+    id: m06-t28
+    lesson: m06-l09
+    difficulty: 3
+    prompt: |
+      Build a supplier scorecard from **all** orders (any status). Show `supplier` (the supplier's `name`),
+      `products` (how many products it supplies), `products_ordered` (how many of those products appear in
+      at least one order line) and `units` (total `quantity` sold, or 0 if none). Every supplier must appear.
+      Sort by `units`, highest first.
+    starter: |
+      SELECT s.name AS supplier,
+             COUNT(___ p.product_id) AS products,
+             COUNT(DISTINCT oi.product_id) AS products_ordered,
+             COALESCE(SUM(oi.quantity), 0) AS units
+      FROM suppliers AS s
+      LEFT JOIN products AS p
+          ON ___
+      LEFT JOIN order_items AS oi
+          ON ___
+      GROUP BY s.supplier_id, s.name
+      ORDER BY units DESC;
+    solution: |
+      SELECT s.name AS supplier,
+             COUNT(DISTINCT p.product_id) AS products,
+             COUNT(DISTINCT oi.product_id) AS products_ordered,
+             COALESCE(SUM(oi.quantity), 0) AS units
+      FROM suppliers AS s
+      LEFT JOIN products AS p
+          ON p.supplier_id = s.supplier_id
+      LEFT JOIN order_items AS oi
+          ON oi.product_id = p.product_id
+      GROUP BY s.supplier_id, s.name
+      ORDER BY units DESC;
+    columnNames: true
+    ordered: true
+    hints:
+      - "Route: suppliers, then products, then order_items. Use LEFT JOINs so unsold products still count as products."
+      - "Each product is repeated once per order line after the second join. Which COUNT variant ignores repeats?"
+      - "COUNT(DISTINCT p.product_id) AS products"
+    explanation: |
+      Eight suppliers. Jade River Manufacturing leads with 17 products (16 of them ordered) and 749 units;
+      Nordlys Distribution closes the list with 5 products, 4 ordered, 114 units. Without `DISTINCT`, Jade River
+      would claim **503** products, because each product row is repeated for every order line it appears on. The
+      `SUM(oi.quantity)` is safe: `quantity` belongs to the finest-grained table in the query.
+
+  - type: predict
+    id: m06-t29
+    lesson: m06-l09
+    difficulty: 3
+    question: |
+      Order 16 was paid in two payments ($130.00 and $322.98, together $452.98) and contains 2 order lines.
+      What does this query return?
+    sql: |
+      SELECT SUM(py.amount) AS paid
+      FROM orders AS o
+      JOIN payments AS py
+          ON py.order_id = o.order_id
+      JOIN order_items AS oi
+          ON oi.order_id = o.order_id
+      WHERE o.order_id = 16;
+    options: ["452.98", "905.96", "1358.94", "130.00"]
+    answer: 1
+    explanation: |
+      After the joins there are 2 payments x 2 order lines = 4 rows, and each payment appears twice. The sum is
+      2 x 452.98 = **905.96**: exactly double what the customer paid. Dropping the join to `order_items` brings
+      back the honest 452.98.
+
+  - type: quiz
+    id: m06-t30
+    lesson: m06-l09
+    difficulty: 2
+    question: |
+      A colleague's report says the shop's delivered revenue is **$412,000**. You run a simple check on
+      `order_items` and `orders` alone and get **$229,443.50**. What is the most likely cause?
+    options:
+      - "An extra join to a table with several rows per order repeated the order lines (fan-out)."
+      - "An INNER JOIN dropped some of the rows."
+      - "The report forgot ORDER BY."
+      - "The report used GROUP BY instead of HAVING."
+    answer: 0
+    explanation: |
+      A total that is **too big** points to fan-out: some row was repeated by a join, for example by also joining
+      `payments` to the same orders. A total that is **too small** would point to the opposite problem, an
+      `INNER JOIN` that lost rows. `ORDER BY` only changes the order and can't change a sum.
+
+project:
+  id: m06-proj
+  title: ShopSmart Customer 360
+  icon: "👥"
+  dataset: shop
+  md: |
+    It's the first week of January 2025. Mia, the ShopSmart manager, has just hired a customer-success team
+    and has one big wish.
+
+    *"I want a **Customer 360**: one place that shows who our customers are, what they buy, what they pay and
+    who is quietly drifting away. Every list must show real names, not id numbers. You know JOINs now, so I'm
+    counting on you."*
+
+    The dashboard has three sections, and each task is one query that feeds it:
+
+    - **Section 1, the orders desk** (tasks 1 and 2): who ordered, and what is in the parcel.
+    - **Section 2, money matters** (tasks 3 and 4): the best customers, and orders nobody paid for.
+    - **Section 3, customer health** (tasks 5 to 8): silent customers, happiness, segments and customers who
+      went quiet.
+
+    **Ground rules**
+
+    - The data runs up to `2024-12-31`. Use the fixed dates given in each task.
+    - There is no "order total" column. A line is worth `quantity * unit_price * (1 - discount)`, and
+      revenue means the sum of those lines.
+    - Revenue figures count **delivered** orders only, unless the task says otherwise.
+
+    > [!TIP]
+    > Plan the route before you write: which tables hold the columns you need, and which keys connect them?
+    > After each join, look at the row count. If it is bigger than you expected, a fan-out may be hiding.
+
+    Skills you will use: `INNER JOIN`, `LEFT JOIN` anti-joins, joins across 3 or more tables, `GROUP BY`,
+    `HAVING` and `COUNT(DISTINCT ...)`. Let's build the Customer 360!
+  tasks:
+    - type: exercise
+      id: m06-proj-1
+      title: "Section 1: the newest orders"
+      prompt: |
+        The support team starts every morning with the latest orders. Show `order_id`, `order_date`, `status`,
+        the customer's `first_name` and `last_name`, and their `city` for every order placed on or after
+        `'2024-12-29'`.
+
+        Newest first (`order_date` descending); if two orders share a date, the higher `order_id` comes first.
+      starter: |
+        SELECT o.order_id,
+               o.order_date,
+               o.status,
+               c.first_name,
+               c.last_name,
+               c.city
+        FROM orders AS o
+        JOIN customers AS c
+            ON ___
+        WHERE ___
+        ORDER BY ___;
+      solution: |
+        SELECT o.order_id,
+               o.order_date,
+               o.status,
+               c.first_name,
+               c.last_name,
+               c.city
+        FROM orders AS o
+        JOIN customers AS c
+            ON o.customer_id = c.customer_id
+        WHERE o.order_date >= '2024-12-29'
+        ORDER BY o.order_date DESC, o.order_id DESC;
+      ordered: true
+      hints:
+        - "Two tables: `orders` holds the order, `customers` holds the name and city. The foreign key is `customer_id`."
+        - "ON o.customer_id = c.customer_id, then a WHERE on the order date and an ORDER BY with two sort keys."
+        - "WHERE o.order_date >= '2024-12-29' ORDER BY o.order_date DESC, o.order_id ___"
+      explanation: |
+        Seven orders, from order 900 (Henry Thompson from Chicago, placed on the last day of the year and already
+        shipped) down to order 894. The `ON` rule links each order to its customer through the foreign key, and the second sort key
+        makes the order unambiguous when several orders share a date.
+      difficulty: 1
+
+    - type: exercise
+      id: m06-proj-2
+      title: "Section 1: what is in the parcel?"
+      prompt: |
+        Henry Thompson (order 900) emails to ask what exactly is in his parcel. Show the lines of
+        **order 900** with these columns:
+
+        - `product`: the product's name
+        - `category`: the name of the product's category
+        - `quantity`
+        - `line_total`: `quantity * unit_price * (1 - discount)`, rounded to 2 decimals
+
+        Most valuable line first.
+      starter: |
+        SELECT p.name AS product,
+               cat.name AS category,
+               oi.quantity,
+               ROUND(oi.quantity * oi.unit_price
+                     * (1 - oi.discount), 2) AS line_total
+        FROM order_items AS oi
+        JOIN products AS p
+            ON ___
+        JOIN categories AS cat
+            ON ___
+        WHERE oi.order_id = 900
+        ORDER BY line_total DESC;
+      solution: |
+        SELECT p.name AS product,
+               cat.name AS category,
+               oi.quantity,
+               ROUND(oi.quantity * oi.unit_price
+                     * (1 - oi.discount), 2) AS line_total
+        FROM order_items AS oi
+        JOIN products AS p
+            ON p.product_id = oi.product_id
+        JOIN categories AS cat
+            ON cat.category_id = p.category_id
+        WHERE oi.order_id = 900
+        ORDER BY line_total DESC;
+      columnNames: true
+      ordered: true
+      hints:
+        - "The order lines live in `order_items`. The product name is in `products`, and the category name is one step further, in `categories`."
+        - "Join products on product_id, then categories on the category_id that `products` holds."
+        - "JOIN categories AS cat ON cat.category_id = ___.category_id"
+      explanation: |
+        Four lines: a 10-inch Tablet Lite ($229.99), a Floor Lamp ($69.99), a Webcam ($49.99) and a Water Bottle
+        ($24.99). The category lives two steps away from the order line (line, then product, then category), so
+        `categories` can only be joined after `products`.
+      difficulty: 2
+
+    - type: exercise
+      id: m06-proj-3
+      title: "Section 2: our best customers"
+      prompt: |
+        Mia wants to thank the five customers who brought in the most money. Using **delivered** orders only,
+        show `customer_id`, `first_name`, `last_name`, `orders` (how many different delivered orders) and
+        `revenue` (rounded to 2 decimals). Show the top 5 by revenue, highest first.
+      starter: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               COUNT(DISTINCT ___) AS orders,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        JOIN orders AS o
+            ON o.customer_id = c.customer_id
+        JOIN order_items AS oi
+            ON ___
+        WHERE ___
+        GROUP BY ___
+        ORDER BY revenue DESC
+        LIMIT 5;
+      solution: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               COUNT(DISTINCT o.order_id) AS orders,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        JOIN orders AS o
+            ON o.customer_id = c.customer_id
+        JOIN order_items AS oi
+            ON oi.order_id = o.order_id
+        WHERE o.status = 'delivered'
+        GROUP BY c.customer_id, c.first_name, c.last_name
+        ORDER BY revenue DESC
+        LIMIT 5;
+      columnNames: true
+      ordered: true
+      hints:
+        - "Route: customers, orders, order_items. Join first, then group by customer."
+        - "Revenue sums the order lines. The order count must ignore the repeats caused by joining to `order_items`: use COUNT(DISTINCT o.order_id)."
+        - "WHERE o.status = 'delivered' GROUP BY c.customer_id, c.first_name, c.last_name"
+      explanation: |
+        Noor Haddad leads with $8,458.40 from 18 orders, followed by Seun Kamau ($7,227.87), Ingrid Cooper
+        ($6,832.25), Isabella Cooper ($6,268.44) and Ella Cooper ($6,037.70). Three of the five share the last name
+        Cooper, so grouping by `last_name` alone would have merged them: group by `customer_id` (plus the name
+        columns you show). `COUNT(DISTINCT o.order_id)` counts orders, where `COUNT(*)` would have counted
+        order lines.
+      difficulty: 2
+
+    - type: exercise
+      id: m06-proj-4
+      title: "Section 2: delivered but never paid"
+      prompt: |
+        Finance has noticed that some **delivered** orders have no payment at all. Show `order_id`,
+        `order_date` and the customer's `first_name`, `last_name` and `email` for every delivered order that has
+        **no row in `payments`**. Sort by `order_id`.
+      starter: |
+        SELECT o.order_id,
+               o.order_date,
+               c.first_name,
+               c.last_name,
+               c.email
+        FROM orders AS o
+        JOIN customers AS c
+            ON ___
+        LEFT JOIN payments AS py
+            ON ___
+        WHERE ___
+        ORDER BY o.order_id;
+      solution: |
+        SELECT o.order_id,
+               o.order_date,
+               c.first_name,
+               c.last_name,
+               c.email
+        FROM orders AS o
+        JOIN customers AS c
+            ON c.customer_id = o.customer_id
+        LEFT JOIN payments AS py
+            ON py.order_id = o.order_id
+        WHERE o.status = 'delivered'
+          AND py.payment_id IS NULL
+        ORDER BY o.order_id;
+      ordered: true
+      hints:
+        - "Every order has a customer, so an INNER JOIN to `customers` is fine. Payments may be missing, so that join must keep the orders without a match."
+        - "LEFT JOIN payments, then keep the rows where a payment column is NULL (an anti-join), and filter on the status."
+        - "WHERE o.status = 'delivered' AND py.payment_id IS ___"
+      explanation: |
+        Six orders: 681, 688, 692, 698, 782 and 797. The customers' emails are ready for the finance team to
+        write to. This query mixes both kinds of join: an INNER JOIN where a match always exists, and a LEFT JOIN
+        plus `IS NULL` to find the orders where it doesn't.
+      difficulty: 2
+
+    - type: exercise
+      id: m06-proj-5
+      title: "Section 3: the silent corporate customers"
+      prompt: |
+        The account managers want feedback from the **Corporate** customers (`segment = 'Corporate'`), starting
+        with those who have **never written a review**. Show `customer_id`, `first_name`, `last_name` and
+        `state`. Sort by `customer_id`.
+      starter: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               c.state
+        FROM customers AS c
+        LEFT JOIN reviews AS r
+            ON ___
+        WHERE ___
+        ORDER BY c.customer_id;
+      solution: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               c.state
+        FROM customers AS c
+        LEFT JOIN reviews AS r
+            ON r.customer_id = c.customer_id
+        WHERE c.segment = 'Corporate'
+          AND r.review_id IS NULL
+        ORDER BY c.customer_id;
+      ordered: true
+      hints:
+        - "This is an anti-join, like finding customers without orders, but this time the other table is `reviews`."
+        - "LEFT JOIN reviews on customer_id, then look for r.review_id IS NULL. The segment test belongs to the customers, so it can go in WHERE."
+        - "WHERE c.segment = 'Corporate' AND r.review_id IS ___"
+      explanation: |
+        Eleven Corporate customers have never reviewed anything, among them Daniel Morgan (FL) and Diya Rao (CA).
+        The segment test is on the **left** table, so putting it in `WHERE` is safe. A test on the right table
+        would have undone the LEFT JOIN.
+      difficulty: 2
+
+    - type: exercise
+      id: m06-proj-6
+      title: "Section 3: how happy are our shoppers?"
+      prompt: |
+        Show how customers rate each product category. For every category with **at least 25 reviews**, show
+        `category` (the name), `reviews` (how many reviews its products received) and `avg_rating` (the average
+        rating, rounded to 2 decimals). Sort by `avg_rating`, highest first, then by `category`.
+
+        Use the category the product itself belongs to (`products.category_id`).
+      starter: |
+        SELECT cat.name AS category,
+               COUNT(*) AS reviews,
+               ROUND(AVG(r.rating), 2) AS avg_rating
+        FROM reviews AS r
+        JOIN products AS p
+            ON ___
+        JOIN categories AS cat
+            ON ___
+        GROUP BY ___
+        HAVING ___
+        ORDER BY avg_rating DESC, category;
+      solution: |
+        SELECT cat.name AS category,
+               COUNT(*) AS reviews,
+               ROUND(AVG(r.rating), 2) AS avg_rating
+        FROM reviews AS r
+        JOIN products AS p
+            ON p.product_id = r.product_id
+        JOIN categories AS cat
+            ON cat.category_id = p.category_id
+        GROUP BY cat.category_id, cat.name
+        HAVING COUNT(*) >= 25
+        ORDER BY avg_rating DESC, category;
+      columnNames: true
+      ordered: true
+      hints:
+        - "Route: reviews, then products (to find the category), then categories (to get its name)."
+        - "Group by the category, count the reviews and average the ratings. A condition on a group goes in HAVING."
+        - "GROUP BY cat.category_id, cat.name HAVING COUNT(*) >= ___"
+      explanation: |
+        Five categories qualify: Toys (4.33, 27 reviews), Phones (4.27, 44), Kitchen (4.12, 57), Peripherals
+        (3.85, 39) and Books (3.82, 61). Books gets the most reviews but the lowest average, a nice example of
+        why a count and an average tell different stories. `COUNT(*)` is safe here: every joined row is exactly
+        one review.
+      difficulty: 2
+
+    - type: exercise
+      id: m06-proj-7
+      title: "Section 3: the segment scoreboard"
+      prompt: |
+        Build a scoreboard for the three customer `segment`s, counting **delivered** orders only. Show:
+
+        - `segment`
+        - `customers`: how many customers the segment has in total (even those without delivered orders)
+        - `buyers`: how many of them have at least one delivered order
+        - `orders`: how many different delivered orders
+        - `revenue`: the delivered revenue, rounded to 2 decimals
+
+        Highest revenue first.
+      starter: |
+        SELECT c.segment,
+               COUNT(DISTINCT c.customer_id) AS customers,
+               COUNT(DISTINCT o.customer_id) AS buyers,
+               COUNT(DISTINCT ___) AS orders,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        LEFT JOIN orders AS o
+            ON o.customer_id = c.customer_id
+           AND ___
+        LEFT JOIN order_items AS oi
+            ON oi.order_id = o.order_id
+        GROUP BY c.segment
+        ORDER BY revenue DESC;
+      solution: |
+        SELECT c.segment,
+               COUNT(DISTINCT c.customer_id) AS customers,
+               COUNT(DISTINCT o.customer_id) AS buyers,
+               COUNT(DISTINCT o.order_id) AS orders,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        LEFT JOIN orders AS o
+            ON o.customer_id = c.customer_id
+           AND o.status = 'delivered'
+        LEFT JOIN order_items AS oi
+            ON oi.order_id = o.order_id
+        GROUP BY c.segment
+        ORDER BY revenue DESC;
+      columnNames: true
+      ordered: true
+      hints:
+        - "Every customer must be counted, so start from `customers` with LEFT JOINs. Where should the 'delivered' test go so no customer disappears?"
+        - "Put the status test inside the ON of the orders join. After the joins each customer and order is repeated, so count the ids with COUNT(DISTINCT ...)."
+        - "COUNT(DISTINCT o.order_id) AS orders ... AND o.status = 'delivered'"
+      explanation: |
+        Consumer: 89 customers, 80 buyers, 396 orders, $142,528.77. Home Office: 28, 25, 133, $46,572.96. Corporate:
+        33, 32, 121, $40,341.77. The orders add up to 650 and the revenue to $229,443.50, the shop's known
+        delivered totals. That is your reconciliation check that nothing fanned out or got lost. Every `COUNT` of
+        a customer or order id needs `DISTINCT`, because the joins repeat them once per order line.
+      difficulty: 3
+
+    - type: exercise
+      id: m06-proj-8
+      title: "Section 3: big spenders gone quiet"
+      prompt: |
+        The final list is the one Mia cares about most: valuable customers who may be drifting away. Find
+        customers whose delivered revenue is **at least 1500** and whose most recent delivered order was
+        **before `'2024-07-01'`**.
+
+        Show `customer_id`, `first_name`, `last_name`, `last_order` (the date of their latest delivered order)
+        and `revenue` (rounded to 2 decimals). Highest revenue first.
+      starter: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               MAX(o.order_date) AS last_order,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        JOIN orders AS o
+            ON o.customer_id = c.customer_id
+        JOIN order_items AS oi
+            ON oi.order_id = o.order_id
+        WHERE o.status = 'delivered'
+        GROUP BY c.customer_id, c.first_name, c.last_name
+        HAVING ___
+        ORDER BY revenue DESC;
+      solution: |
+        SELECT c.customer_id,
+               c.first_name,
+               c.last_name,
+               MAX(o.order_date) AS last_order,
+               ROUND(SUM(oi.quantity * oi.unit_price
+                         * (1 - oi.discount)), 2) AS revenue
+        FROM customers AS c
+        JOIN orders AS o
+            ON o.customer_id = c.customer_id
+        JOIN order_items AS oi
+            ON oi.order_id = o.order_id
+        WHERE o.status = 'delivered'
+        GROUP BY c.customer_id, c.first_name, c.last_name
+        HAVING SUM(oi.quantity * oi.unit_price
+                   * (1 - oi.discount)) >= 1500
+           AND MAX(o.order_date) < '2024-07-01'
+        ORDER BY revenue DESC;
+      columnNames: true
+      ordered: true
+      hints:
+        - "Both conditions are about whole customers (their total and their latest date), so they belong in HAVING, not WHERE."
+        - "HAVING can use two aggregates joined with AND: one SUM and one MAX."
+        - "HAVING SUM(oi.quantity * oi.unit_price * (1 - oi.discount)) >= 1500 AND MAX(o.order_date) < ___"
+      explanation: |
+        Four customers: Camila Lopez (last delivered order 2024-05-25, $5,382.70), Pablo Dlamini (2023-12-07,
+        $3,423.81), Anya Fischer (2023-09-02, $2,370.92) and Mina Choi (2024-06-02, $1,870.87). These are the
+        people to win back first. `MAX(o.order_date)` is safe from fan-out, because repeating a date doesn't
+        change the latest one, and the revenue `SUM` comes from the finest-grained table. Congratulations: you
+        built a Customer 360 with joins!
+      difficulty: 3

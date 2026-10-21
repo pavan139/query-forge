@@ -1060,6 +1060,1790 @@ lessons:
           WITH a AS (...), b AS (SELECT * FROM a)
           SELECT * FROM b;
         note: A CTE can only see CTEs written above it.
+  - id: m09-l03
+    title: "Refactoring: from nested to named"
+    summary: Untangle a nested query into tidy CTEs, and learn what MATERIALIZED means.
+    minutes: 25
+    steps:
+      - type: read
+        title: Sam's monster query
+        md: |
+          Your colleague Sam has moved to another team. He left you one query and a sticky note: *"It works. Please don't touch it!"*
+
+          You open the query and your eyes cross. There are subqueries inside subqueries, and one of them even appears **twice**. Nobody dares to change it, because nobody can read it.
+
+          Today you learn to **refactor**: to rewrite a query so it is easier to read, **without changing the answer**. CTEs are the perfect tool for it.
+
+          > [!ANALOGY]
+          > Refactoring is like tidying a messy desk. You put the same papers into labelled folders. Nothing is thrown away, and every paper is still there. It is just easy to find things now.
+
+      - type: example
+        title: The monster
+        md: |
+          This query finds the products that sold **more units than the average product** (delivered orders only). Press **Run**, then try to explain it in one sentence.
+        sql: |
+          SELECT p.name, u.units
+          FROM (
+              SELECT i.product_id, SUM(i.quantity) AS units
+              FROM order_items AS i
+              JOIN orders AS o ON o.order_id = i.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY i.product_id
+          ) AS u
+          JOIN products AS p ON p.product_id = u.product_id
+          WHERE u.units > (
+              SELECT AVG(units)
+              FROM (
+                  SELECT SUM(i.quantity) AS units
+                  FROM order_items AS i
+                  JOIN orders AS o ON o.order_id = i.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY i.product_id
+              ) AS x
+          )
+          ORDER BY u.units DESC, p.name;
+        after: |
+          18 products beat the average, which is about 44.49 units per product. Vitamin C Moisturizer is the champion with 145 units.
+
+          The answer is fine. The problem is the shape: the *same* counting query is written out **twice** (once in `FROM`, once inside `WHERE`). If Sam ever changes one copy and forgets the other, the report quietly breaks.
+
+      - type: read
+        title: The refactoring recipe
+        md: |
+          Follow these four moves, and run the query again after each one:
+
+          1. **Spot** a subquery you can name. A repeated one is the best candidate.
+          2. **Cut** it out and paste it at the top as `WITH nickname AS ( ... )`.
+          3. **Replace** each original spot with the nickname.
+          4. **Compare**: the new query must return exactly the same rows as the old one.
+
+          > [!TIP]
+          > Move one subquery at a time, and run the query after each move. If the result changes, you know which move caused it.
+
+      - type: stepper
+        title: Untangling the monster in three moves
+        md: |
+          Click through the stages and run each one. All three return the **same 18 rows**. Only the shape changes.
+        stages:
+          - label: "1. Before"
+            md: This is Sam's original query, with the counting query written twice.
+            sql: |
+              SELECT p.name, u.units
+              FROM (
+                  SELECT i.product_id, SUM(i.quantity) AS units
+                  FROM order_items AS i
+                  JOIN orders AS o ON o.order_id = i.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY i.product_id
+              ) AS u
+              JOIN products AS p ON p.product_id = u.product_id
+              WHERE u.units > (
+                  SELECT AVG(units)
+                  FROM (
+                      SELECT SUM(i.quantity) AS units
+                      FROM order_items AS i
+                      JOIN orders AS o ON o.order_id = i.order_id
+                      WHERE o.status = 'delivered'
+                      GROUP BY i.product_id
+                  ) AS x
+              )
+              ORDER BY u.units DESC, p.name;
+          - label: "2. Name the first copy"
+            md: |
+              The first counting query becomes the CTE `units_sold`. The `FROM` part is already much easier to read. The second copy is still hiding inside `WHERE`.
+            sql: |
+              WITH units_sold AS (
+                  SELECT i.product_id, SUM(i.quantity) AS units
+                  FROM order_items AS i
+                  JOIN orders AS o ON o.order_id = i.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY i.product_id
+              )
+              SELECT p.name, u.units
+              FROM units_sold AS u
+              JOIN products AS p ON p.product_id = u.product_id
+              WHERE u.units > (
+                  SELECT AVG(units)
+                  FROM (
+                      SELECT SUM(i.quantity) AS units
+                      FROM order_items AS i
+                      JOIN orders AS o ON o.order_id = i.order_id
+                      WHERE o.status = 'delivered'
+                      GROUP BY i.product_id
+                  ) AS x
+              )
+              ORDER BY u.units DESC, p.name;
+          - label: "3. Reuse the name"
+            md: |
+              The second copy is the same query, so it can simply say `FROM units_sold`. The long block disappears.
+            sql: |
+              WITH units_sold AS (
+                  SELECT i.product_id, SUM(i.quantity) AS units
+                  FROM order_items AS i
+                  JOIN orders AS o ON o.order_id = i.order_id
+                  WHERE o.status = 'delivered'
+                  GROUP BY i.product_id
+              )
+              SELECT p.name, u.units
+              FROM units_sold AS u
+              JOIN products AS p ON p.product_id = u.product_id
+              WHERE u.units > (SELECT AVG(units) FROM units_sold)
+              ORDER BY u.units DESC, p.name;
+
+      - type: quiz
+        id: m09-l03-q1
+        question: |
+          You have refactored a query into CTEs. What is the best way to check you did not break anything?
+        options:
+          - Check that the new query is shorter than the old one
+          - Check that it runs without an error message
+          - Run both versions and check that they return exactly the same rows
+          - Check that every CTE has a nice name
+        answer: 2
+        explanation: |
+          Refactoring means *same answer, better shape*. A shorter query can still be wrong, and a query that runs without an error can still return different rows. Always compare the results of the old and the new version.
+
+      - type: read
+        title: Another favourite refactoring
+        md: |
+          A **correlated subquery** (a subquery that peeks at the outer row) runs once per row, and it is hard to read. A classic example: *products that cost more than 1.5 times the average price of their own category.*
+
+          ```sql
+          SELECT p.name, p.price
+          FROM products AS p
+          WHERE p.price > 1.5 * (
+              SELECT AVG(p2.price)
+              FROM products AS p2
+              WHERE p2.category_id = p.category_id
+          );
+          ```
+
+          The tidy version moves the averages into a CTE (one row per category) and **joins** it. Run it on the next step.
+
+      - type: example
+        title: Correlated subquery, now a CTE and a join
+        md: Same question, same 9 products, and as a bonus we can show the category average too.
+        sql: |
+          WITH category_avg AS (
+              SELECT category_id, AVG(price) AS avg_price
+              FROM products
+              GROUP BY category_id
+          )
+          SELECT
+              p.name,
+              p.price,
+              ROUND(a.avg_price, 2) AS category_avg
+          FROM products AS p
+          JOIN category_avg AS a ON a.category_id = p.category_id
+          WHERE p.price > 1.5 * a.avg_price
+          ORDER BY p.price DESC, p.name;
+        after: |
+          9 products, from the Lumio Phone S5 Plus ($899.99, in a category that averages $245.62) down to the Atlas of Hidden Cities.
+
+          The CTE calculated each category's average **once**. And because `a.avg_price` is a normal column now, we could easily put it in the `SELECT` list, which the old correlated version could not do.
+
+      - type: exercise
+        id: m09-l03-e1
+        title: The most loyal customers
+        prompt: |
+          Here is a nested query that finds the customers with the **highest number of orders**. The counting query is written twice:
+
+          ```sql
+          SELECT customer_id, order_count
+          FROM (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          ) AS t
+          WHERE order_count = (
+              SELECT MAX(order_count)
+              FROM (
+                  SELECT customer_id, COUNT(*) AS order_count
+                  FROM orders
+                  GROUP BY customer_id
+              ) AS u
+          );
+          ```
+
+          Refactor it: write the counting query **once** as a CTE named `per_customer`, and use it twice. Return `customer_id` and `order_count` for every customer with the top count.
+        starter: |
+          WITH per_customer AS (
+              -- the counting query, written once
+          )
+          SELECT customer_id, order_count
+          FROM per_customer
+          WHERE order_count = (
+              -- what goes here?
+          );
+        solution: |
+          WITH per_customer AS (
+              SELECT customer_id, COUNT(*) AS order_count
+              FROM orders
+              GROUP BY customer_id
+          )
+          SELECT customer_id, order_count
+          FROM per_customer
+          WHERE order_count = (SELECT MAX(order_count) FROM per_customer);
+        hints:
+          - Cut one copy of the counting query and paste it between the parentheses of the CTE.
+          - The bracket after `=` becomes a short scalar subquery that reads `FROM per_customer`.
+          - "WHERE order_count = (SELECT MAX(___) FROM per_customer);"
+        explanation: |
+          Five customers are tied at the top with 23 orders each: 6, 14, 39, 44 and 64. That is why we compare with `= MAX(...)` instead of using `LIMIT 1`, which would pick only one of them.
+
+          The refactored query is half as long, and the counting logic exists in exactly one place.
+        difficulty: 1
+
+      - type: predict
+        id: m09-l03-p1
+        question: |
+          Careful: the CTE below has the same name as a real table. How many rows does the last line count?
+        sql: |
+          WITH orders AS (
+              SELECT *
+              FROM orders
+              WHERE status = 'cancelled'
+          )
+          SELECT COUNT(*)
+          FROM orders;
+        options:
+          - "1 row, with the value 900"
+          - "1 row, with the value 127"
+          - "1 row, with the value 0"
+          - "An error: the name orders is already taken"
+        answer: 1
+        explanation: |
+          Inside this statement the CTE **hides** the real table of the same name, so `FROM orders` in the main query means "the 127 cancelled orders". The inner `FROM orders` (inside the parentheses) still reads the real table, because a normal CTE cannot see itself.
+
+          > [!MISTAKE]
+          > Never give a CTE the name of a real table. It works, but it is a trap for the next reader (and for you). Pick a name that describes the content, like `cancelled_orders`.
+
+      - type: exercise
+        id: m09-l03-e2
+        title: Disappointing reviews
+        prompt: |
+          Sam also left this correlated query. It finds reviews whose rating is **at least 2 stars below the average rating of the same product**:
+
+          ```sql
+          SELECT r.review_id, r.product_id, r.rating
+          FROM reviews AS r
+          WHERE r.rating <= (
+              SELECT AVG(r2.rating)
+              FROM reviews AS r2
+              WHERE r2.product_id = r.product_id
+          ) - 2;
+          ```
+
+          Refactor it with a CTE `product_avg` (average rating per product) joined to `reviews`. Show `review_id`, `product_id`, `rating` and `avg_rating` (the product's average, rounded to 2 decimals).
+        starter: |
+          WITH product_avg AS (
+              SELECT product_id, AVG(rating) AS avg_rating
+              FROM reviews
+              GROUP BY product_id
+          )
+          SELECT
+          FROM reviews AS r
+        solution: |
+          WITH product_avg AS (
+              SELECT product_id, AVG(rating) AS avg_rating
+              FROM reviews
+              GROUP BY product_id
+          )
+          SELECT
+              r.review_id,
+              r.product_id,
+              r.rating,
+              ROUND(a.avg_rating, 2) AS avg_rating
+          FROM reviews AS r
+          JOIN product_avg AS a ON a.product_id = r.product_id
+          WHERE r.rating <= a.avg_rating - 2;
+        hints:
+          - The CTE is ready for you. Join it to `reviews` on the product.
+          - Join on `product_id`, then keep the rows where the rating is at least 2 below the average, using the CTE's column.
+          - "JOIN product_avg AS a ON a.product_id = r.product_id WHERE r.rating <= a.avg_rating - ___;"
+        explanation: |
+          Seven reviews qualify. For example, review 194 gave product 59 just 1 star, while that product averages 3.95 stars.
+
+          The CTE computes one average per product, and the join hands that number to every review of the product, which is the same thing the correlated subquery did row by row.
+        difficulty: 2
+
+      - type: read
+        title: "MATERIALIZED and NOT MATERIALIZED"
+        md: |
+          One more word you will meet: **materialized**. It describes *how* PostgreSQL runs a CTE. The answer never changes, only the speed might.
+
+          - **Materialized** means: calculate the CTE once, keep the rows in memory, and read them from there.
+          - **Not materialized** (also called *inlined*) means: paste the CTE's query into the main query, as if you had written a plain subquery.
+
+          Since PostgreSQL 12, PostgreSQL decides for you. A simple CTE that is used **once** is inlined. A CTE used **more than once** is materialized, so the work is done only once. (Before version 12, every CTE was materialized.)
+
+          You can override the choice:
+
+          ```sql
+          WITH name AS MATERIALIZED (...)      -- calculate once
+          WITH name AS NOT MATERIALIZED (...)  -- merge into the main query
+          ```
+
+          > [!NOTE]
+          > Most of the time you should not touch this. Write a clear query first, and only add `MATERIALIZED` or `NOT MATERIALIZED` if you have measured a slow query and know why.
+
+      - type: example
+        title: "Peek inside: a CTE used once (preview of EXPLAIN)"
+        md: |
+          `EXPLAIN` shows the plan PostgreSQL will follow, without running the query. You learn to read it fully in a later module. For now, just look for the words **CTE Scan**.
+        sql: |
+          EXPLAIN
+          WITH delivered AS (
+              SELECT order_id, customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          )
+          SELECT COUNT(*)
+          FROM delivered;
+        after: |
+          The plan reads `orders` directly, and there is **no CTE Scan**. PostgreSQL inlined the CTE: it treated it like a plain subquery, because the name is used only once.
+
+      - type: example
+        title: "Peek inside: forcing MATERIALIZED"
+        md: Same query, with one extra word after `AS`.
+        sql: |
+          EXPLAIN
+          WITH delivered AS MATERIALIZED (
+              SELECT order_id, customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          )
+          SELECT COUNT(*)
+          FROM delivered;
+        after: |
+          Now the plan has a line `CTE delivered` (the CTE is calculated) and a `CTE Scan on delivered` (the main query reads the stored rows). Same result as before, a slightly different route.
+
+          If you wrote `NOT MATERIALIZED` for a CTE that is used twice, PostgreSQL would paste the query in at both places instead of storing it.
+
+      - type: fill
+        id: m09-l03-f1
+        prompt: |
+          Complete both queries. The first CTE must be calculated **once and stored**. The second must be **merged into the main query**.
+        template: |
+          WITH a AS ___ (SELECT 1 AS n)
+          SELECT * FROM a;
+
+          WITH b AS ___ (SELECT 2 AS n)
+          SELECT * FROM b;
+        answers:
+          - ["MATERIALIZED"]
+          - ["NOT MATERIALIZED"]
+        explanation: |
+          `AS MATERIALIZED` forces PostgreSQL to compute the CTE once and store it. `AS NOT MATERIALIZED` asks it to inline the CTE. Both queries return the same kind of result, because these keywords change only the *how*, never the *what*.
+
+      - type: exercise
+        id: m09-l03-e3
+        title: Fix the lost filter
+        prompt: |
+          A teammate refactored Sam's monster, but the numbers look too big. The original counted **delivered orders only**, and this version counts every order, including cancelled and returned ones. The filter got lost on the way.
+
+          Fix the CTE so that only units from **delivered** orders are counted. It must return the same 18 rows as Sam's original (`name`, `units`, biggest first, ties by `name`).
+        starter: |
+          WITH units_sold AS (
+              SELECT i.product_id, SUM(i.quantity) AS units
+              FROM order_items AS i
+              GROUP BY i.product_id
+          )
+          SELECT p.name, u.units
+          FROM units_sold AS u
+          JOIN products AS p ON p.product_id = u.product_id
+          WHERE u.units > (SELECT AVG(units) FROM units_sold)
+          ORDER BY u.units DESC, p.name;
+        solution: |
+          WITH units_sold AS (
+              SELECT i.product_id, SUM(i.quantity) AS units
+              FROM order_items AS i
+              JOIN orders AS o ON o.order_id = i.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY i.product_id
+          )
+          SELECT p.name, u.units
+          FROM units_sold AS u
+          JOIN products AS p ON p.product_id = u.product_id
+          WHERE u.units > (SELECT AVG(units) FROM units_sold)
+          ORDER BY u.units DESC, p.name;
+        ordered: true
+        hints:
+          - "`order_items` has no status column. Which table knows whether an order was delivered?"
+          - Inside the CTE, JOIN `orders` on order_id and add a WHERE on the status.
+          - "FROM order_items AS i JOIN orders AS o ON ___ WHERE o.status = ___ GROUP BY i.product_id"
+        explanation: |
+          With the filter restored you get the original 18 products again. This is the most common refactoring accident: when you move a subquery, **take its WHERE clause and its JOINs with it**.
+
+          That is why the last move of the recipe says *compare*.
+        difficulty: 2
+
+      - type: exercise
+        id: m09-l03-e4
+        title: Average order value by status
+        prompt: |
+          Another nested query from Sam's folder:
+
+          ```sql
+          SELECT status, ROUND(AVG(total), 2) AS avg_total
+          FROM (
+              SELECT o.status, x.total
+              FROM orders AS o
+              JOIN (
+                  SELECT order_id,
+                         SUM(quantity * unit_price * (1 - discount)) AS total
+                  FROM order_items
+                  GROUP BY order_id
+              ) AS x ON x.order_id = o.order_id
+          ) AS y
+          GROUP BY status;
+          ```
+
+          Rewrite it as a pipeline of **two CTEs**: `order_totals` (one row per order with its `total`) and `with_status` (each order's `status` and `total`). Return `status` and `avg_total`, sorted by `status`.
+        solution: |
+          WITH order_totals AS (
+              SELECT order_id,
+                     SUM(quantity * unit_price * (1 - discount)) AS total
+              FROM order_items
+              GROUP BY order_id
+          ),
+          with_status AS (
+              SELECT o.status, t.total
+              FROM orders AS o
+              JOIN order_totals AS t ON t.order_id = o.order_id
+          )
+          SELECT status, ROUND(AVG(total), 2) AS avg_total
+          FROM with_status
+          GROUP BY status
+          ORDER BY status;
+        ordered: true
+        hints:
+          - Work from the inside out. The innermost query becomes the first CTE.
+          - "The middle query (orders joined to the totals) becomes the second CTE. The main query is then just the GROUP BY on top."
+          - "WITH order_totals AS (...), with_status AS (SELECT o.status, t.total FROM orders AS o JOIN order_totals AS t ON ___) SELECT status, ROUND(AVG(total), 2) AS avg_total FROM with_status GROUP BY status ORDER BY status;"
+        explanation: |
+          Delivered orders average $352.99, cancelled ones $351.88, and the 7 processing orders $275.61.
+
+          The rule of thumb: **innermost subquery first**. Each layer of nesting turns into one CTE, and the layers line up in the order you would explain them to a friend.
+
+      - type: quiz
+        id: m09-l03-q2
+        question: |
+          One CTE is used **twice** in a query, and you did not write MATERIALIZED or NOT MATERIALIZED. What does PostgreSQL 18 do by default?
+        options:
+          - It calculates the CTE once and reuses the stored rows
+          - It refuses to run the query
+          - It calculates the CTE separately at each place it is used
+          - It only allows the first use and ignores the second
+        answer: 0
+        explanation: |
+          When a CTE is referenced more than once, PostgreSQL materializes it: the work is done once and the rows are reused. A CTE used only once is inlined into the main query.
+
+      - type: parsons
+        id: m09-l03-o1
+        prompt: Arrange the lines to list the order statuses that have more orders than the average status.
+        lines:
+          - WITH status_counts AS (
+          - "    SELECT status, COUNT(*) AS n"
+          - "    FROM orders"
+          - "    GROUP BY status"
+          - )
+          - SELECT status, n
+          - FROM status_counts
+          - WHERE n > (SELECT AVG(n) FROM status_counts);
+        distractors:
+          - WHERE n > AVG(n);
+        explanation: |
+          Only `delivered` (650 orders) beats the average of 180 orders per status. The CTE is used **twice**: once for the rows and once inside the scalar subquery for the average.
+
+          The distractor fails because an aggregate such as `AVG(n)` cannot be used directly in `WHERE`.
+
+      - type: exercise
+        id: m09-l03-e5
+        title: Categories above the average
+        prompt: |
+          Which categories earn **more delivered revenue than the average category**?
+
+          Build a CTE `product_revenue` (revenue per product on delivered order lines: `quantity * unit_price * (1 - discount)`), then a CTE `category_revenue` (revenue per `products.category_id`). The second CTE is used **twice**: once for the rows and once to calculate the average.
+
+          Show `name` and `revenue` (rounded to 2 decimals), biggest revenue first. Categories that sold nothing are not part of the average.
+        solution: |
+          WITH product_revenue AS (
+              SELECT
+                  i.product_id,
+                  SUM(i.quantity * i.unit_price * (1 - i.discount))
+                      AS revenue
+              FROM order_items AS i
+              JOIN orders AS o ON o.order_id = i.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY i.product_id
+          ),
+          category_revenue AS (
+              SELECT p.category_id, SUM(pr.revenue) AS revenue
+              FROM product_revenue AS pr
+              JOIN products AS p ON p.product_id = pr.product_id
+              GROUP BY p.category_id
+          )
+          SELECT c.name, ROUND(cr.revenue, 2) AS revenue
+          FROM category_revenue AS cr
+          JOIN categories AS c ON c.category_id = cr.category_id
+          WHERE cr.revenue > (SELECT AVG(revenue) FROM category_revenue)
+          ORDER BY cr.revenue DESC;
+        ordered: true
+        hints:
+          - This is the two-station pipeline from the previous lesson, plus an "above average" filter at the end.
+          - The average comes from a scalar subquery on `category_revenue`, placed in the WHERE of the main query.
+          - "... WHERE cr.revenue > (SELECT AVG(___) FROM category_revenue) ORDER BY cr.revenue DESC;"
+        explanation: |
+          Five categories beat the average of about $20,858: Phones, Laptops, Kitchen, Peripherals and Computers. Computers is only a hair above ($21,238.89).
+
+          Because `category_revenue` is a CTE, the average is calculated from exactly the same rows that you display. With nested subqueries you would have to copy the whole pipeline a second time.
+        difficulty: 3
+    cheatsheet:
+      - title: Refactor nested to named
+        sql: |
+          -- 1. cut the subquery out of FROM / WHERE
+          -- 2. paste it on top
+          WITH nickname AS (
+              SELECT ...
+          )
+          -- 3. use the nickname where it used to be
+          SELECT ... FROM nickname;
+        note: Move one subquery at a time, and compare the results of the old and the new query.
+      - title: Correlated subquery to CTE + JOIN
+        sql: |
+          WITH category_avg AS (
+              SELECT category_id, AVG(price) AS avg_price
+              FROM products
+              GROUP BY category_id
+          )
+          SELECT p.name
+          FROM products AS p
+          JOIN category_avg AS a ON a.category_id = p.category_id
+          WHERE p.price > a.avg_price;
+        note: One group-by CTE joined back replaces a subquery that runs once per row.
+      - title: MATERIALIZED / NOT MATERIALIZED
+        sql: |
+          WITH big AS MATERIALIZED (SELECT ...)      -- compute once
+          SELECT ... FROM big;
+
+          WITH big AS NOT MATERIALIZED (SELECT ...)  -- merge into query
+          SELECT ... FROM big;
+        note: By default PostgreSQL inlines a CTE used once and materializes one used twice. The answer never changes.
+  - id: m09-l04
+    title: "Recursive CTEs: a query that repeats itself"
+    summary: Use WITH RECURSIVE to count, grow numbers and build date calendars, with a safe stop rule.
+    minutes: 28
+    steps:
+      - type: read
+        title: The missing days
+        md: |
+          Lena from marketing asks: *"Please show me the number of orders for each day of the first two weeks of January 2024. I need **every** day in the list, even the days when nobody ordered."*
+
+          You try `GROUP BY order_date`, but days with no orders have no rows, so they simply vanish from your result. You would need a list of *all* the dates first. There is no such table in the shop database.
+
+          This is where the most magical tool in SQL helps: a **recursive CTE**. It is a CTE that can **refer to itself**, so it can repeat a step again and again and *create* rows out of thin air. Counting is the easiest way to see how it works.
+
+          > [!ANALOGY]
+          > Counting aloud has three parts. You start somewhere ("1"). You repeat one rule ("say the previous number plus one"). And you know when to stop ("when I reach 5"). A recursive CTE has exactly these three parts.
+
+      - type: example
+        title: Count from 1 to 5
+        md: This is the smallest recursive query you can write. Press **Run** and watch the numbers appear.
+        sql: |
+          WITH RECURSIVE counter(n) AS (
+              SELECT 1
+              UNION ALL
+              SELECT n + 1
+              FROM counter
+              WHERE n < 5
+          )
+          SELECT n
+          FROM counter;
+        after: |
+          Five rows: 1, 2, 3, 4, 5. There is no table with these numbers anywhere. The query **made them up**.
+
+          Look closely at the middle: `FROM counter` reads the very CTE that is being defined. That is what makes it recursive.
+
+      - type: read
+        title: The three parts of a recursive CTE
+        md: |
+          ```sql
+          WITH RECURSIVE counter(n) AS (
+              SELECT 1              -- 1. anchor: where to start
+              UNION ALL
+              SELECT n + 1          -- 2. recursive part: make
+              FROM counter          --    the next row from the
+              WHERE n < 5           --    previous one
+          )                         -- 3. the WHERE is the stop rule
+          SELECT n FROM counter;
+          ```
+
+          1. The **anchor** runs once. It gives the first row(s).
+          2. The **recursive part** reads the rows from the *previous round* and builds the next ones.
+          3. The **stop rule** (usually a `WHERE`) makes a round produce *no new rows*. When that happens, the loop is over.
+
+          `UNION ALL` glues the anchor and the recursive part together. The word `RECURSIVE` after `WITH` is required, and `counter(n)` gives the columns their names.
+
+      - type: stepper
+        title: Watch the loop, round by round
+        md: |
+          Each stage runs the same counter with a different cap on the number of rounds (`round_no`), so you can see the result **grow one row per round**.
+        stages:
+          - label: "Round 0: anchor"
+            md: |
+              The anchor runs once and produces the first row, `n = 1`. In this stage we cap the loop at zero rounds, so nothing else is added.
+            sql: |
+              WITH RECURSIVE counter(n, round_no) AS (
+                  SELECT 1, 0
+                  UNION ALL
+                  SELECT n + 1, round_no + 1
+                  FROM counter
+                  WHERE round_no < 0
+              )
+              SELECT * FROM counter;
+          - label: "Round 1"
+            md: |
+              The recursive part reads the last row (`n = 1`) and builds `n = 2`. Round 1 has produced one new row.
+            sql: |
+              WITH RECURSIVE counter(n, round_no) AS (
+                  SELECT 1, 0
+                  UNION ALL
+                  SELECT n + 1, round_no + 1
+                  FROM counter
+                  WHERE round_no < 1
+              )
+              SELECT * FROM counter;
+          - label: "Round 2"
+            md: |
+              Now it reads only the newest row (`n = 2`) and builds `n = 3`. Each round starts from the rows the previous round made.
+            sql: |
+              WITH RECURSIVE counter(n, round_no) AS (
+                  SELECT 1, 0
+                  UNION ALL
+                  SELECT n + 1, round_no + 1
+                  FROM counter
+                  WHERE round_no < 2
+              )
+              SELECT * FROM counter;
+          - label: "Round 3"
+            md: One more round, one more row. We are at `n = 4`.
+            sql: |
+              WITH RECURSIVE counter(n, round_no) AS (
+                  SELECT 1, 0
+                  UNION ALL
+                  SELECT n + 1, round_no + 1
+                  FROM counter
+                  WHERE round_no < 3
+              )
+              SELECT * FROM counter;
+          - label: "Round 4: stop"
+            md: |
+              Round 4 builds `n = 5`. In round 5 the recursive part looks at `n = 5`, the rule `n < 5` is false, **no row is produced**, and the loop ends. This is the real query with the real stop rule.
+            sql: |
+              WITH RECURSIVE counter(n, round_no) AS (
+                  SELECT 1, 0
+                  UNION ALL
+                  SELECT n + 1, round_no + 1
+                  FROM counter
+                  WHERE n < 5
+              )
+              SELECT * FROM counter;
+
+      - type: quiz
+        id: m09-l04-q1
+        question: |
+          What makes a recursive CTE stop repeating?
+        options:
+          - PostgreSQL stops after exactly 100 rounds
+          - A round in which the recursive part produces no new rows
+          - The anchor part runs out of rows
+          - It never stops on its own; only a LIMIT can stop it
+        answer: 1
+        explanation: |
+          The loop continues as long as each round creates at least one row. Your `WHERE` stop rule is what makes a round come back empty. There is no automatic limit of 100 rounds, which is why *you* must always write a stop rule.
+
+      - type: example
+        title: Growing numbers, step by step
+        md: |
+          The recursive part can calculate anything. Suppose you save $1,000 and earn 5% interest per year. This table shows the balance for 10 years (year 0 is today).
+        sql: |
+          WITH RECURSIVE growth(year, balance) AS (
+              SELECT 0, 1000.00
+              UNION ALL
+              SELECT year + 1, ROUND(balance * 1.05, 2)
+              FROM growth
+              WHERE year < 10
+          )
+          SELECT year, balance
+          FROM growth;
+        after: |
+          11 rows, from $1,000.00 in year 0 to **$1,628.91** in year 10.
+
+          Notice that the recursive part updates **two** columns at once: the year goes up by one, and the balance grows by 5%. The stop rule watches the `year` column.
+
+      - type: exercise
+        id: m09-l04-e1
+        title: Count to ten
+        prompt: |
+          Write a recursive CTE called `counter` that makes the numbers **1 to 10**, and select them. Return one column called `n`.
+        starter: |
+          WITH RECURSIVE counter(n) AS (
+              SELECT 1
+              UNION ALL
+              -- the recursive part
+          )
+          SELECT n
+          FROM counter;
+        solution: |
+          WITH RECURSIVE counter(n) AS (
+              SELECT 1
+              UNION ALL
+              SELECT n + 1
+              FROM counter
+              WHERE n < 10
+          )
+          SELECT n
+          FROM counter;
+        hints:
+          - It is almost the same as the example. Only the end point changes.
+          - "The recursive part is `SELECT n + 1 FROM counter WHERE ...`. Which number should the stop rule mention?"
+          - "SELECT n + 1 FROM counter WHERE n < ___"
+        explanation: |
+          Ten rows. The rule `n < 10` lets the loop create row 10 (from 9) and then stops, because 10 is not less than 10.
+
+          Pitfall: if you wrote `n <= 10` you would get 11 rows. The stop rule decides about the *next* row, so think "should I create another row from this one?".
+        difficulty: 1
+
+      - type: read
+        title: Two classic mistakes
+        md: |
+          > [!MISTAKE]
+          > **Forgetting the stop rule.** Without a `WHERE`, every round creates another row and the loop never ends. The shop database would keep counting until it is stopped (this app cancels runaway queries after about 20 seconds, but on a real server such a query can eat memory and disk until someone cancels it). **Always write a stop rule first.**
+
+          > [!MISTAKE]
+          > **Forgetting the word RECURSIVE.** Then PostgreSQL does not allow the CTE to refer to itself. Try it on the next step.
+
+      - type: example
+        title: "Forgot RECURSIVE (expected error)"
+        md: This is the counter again, but the word `RECURSIVE` is missing. Run it and read the hint.
+        expectError: true
+        sql: |
+          WITH counter(n) AS (
+              SELECT 1
+              UNION ALL
+              SELECT n + 1
+              FROM counter
+              WHERE n < 5
+          )
+          SELECT n
+          FROM counter;
+        after: |
+          The error says `relation "counter" does not exist`, and the hint tells you the cure: **use WITH RECURSIVE**. Without that word, a CTE cannot see its own name.
+
+          The fix is one word: `WITH RECURSIVE counter(n) AS ( ... )`.
+
+      - type: predict
+        id: m09-l04-p1
+        question: |
+          Which number does this query return?
+        sql: |
+          WITH RECURSIVE c(n) AS (
+              SELECT 1
+              UNION ALL
+              SELECT n + 2
+              FROM c
+              WHERE n < 10
+          )
+          SELECT COUNT(*)
+          FROM c;
+        options: ["5", "6", "10", "It never stops"]
+        answer: 1
+        explanation: |
+          The rows are 1, 3, 5, 7, 9 and **11**. When n is 9, the rule `n < 10` is still true, so the loop builds 11. Then 11 is not less than 10, and the loop stops.
+
+          So the *last row can go past the limit*. The rule is checked on the row you already have, before the next one is made.
+
+      - type: example
+        title: A safety net while you experiment
+        md: |
+          Here is a counter with **no stop rule at all**. It would run forever, except that the main query asks for only `LIMIT 5` rows. Press **Run**.
+        sql: |
+          WITH RECURSIVE runaway(n) AS (
+              SELECT 1
+              UNION ALL
+              SELECT n + 1
+              FROM runaway
+          )
+          SELECT n
+          FROM runaway
+          LIMIT 5;
+        after: |
+          PostgreSQL produced rows only until the main query had its 5. A `LIMIT` is a handy **seat belt** when you are testing a new recursive query.
+
+          But it is not a real stop rule. It does not work if the main query sorts or joins the rows first, because then PostgreSQL needs all of them. Always add a proper stop rule inside the CTE.
+
+      - type: example
+        title: A calendar of dates
+        md: |
+          Dates work too: in PostgreSQL, `date + 1` is the next day. This builds the first week of December 2024, with the weekday name.
+        sql: |
+          WITH RECURSIVE week(day) AS (
+              SELECT DATE '2024-12-01'
+              UNION ALL
+              SELECT day + 1
+              FROM week
+              WHERE day < DATE '2024-12-07'
+          )
+          SELECT day, TO_CHAR(day, 'Dy') AS weekday
+          FROM week;
+        after: |
+          Seven rows, Sunday 1 December to Saturday 7 December.
+
+          We wrote `DATE '2024-12-01'` on purpose. A bare text like `'2024-12-01'` would be treated as text, and `text + 1` is an error. State the type of the anchor clearly.
+
+      - type: example
+        title: Fill the gaps in a report
+        md: |
+          Back to Lena's question. We build a calendar for 1 to 14 January 2024 and `LEFT JOIN` the orders to it, so empty days stay in the list.
+        sql: |
+          WITH RECURSIVE calendar(day) AS (
+              SELECT DATE '2024-01-01'
+              UNION ALL
+              SELECT day + 1
+              FROM calendar
+              WHERE day < DATE '2024-01-14'
+          )
+          SELECT
+              c.day,
+              TO_CHAR(c.day, 'Dy') AS weekday,
+              COUNT(o.order_id) AS orders
+          FROM calendar AS c
+          LEFT JOIN orders AS o ON o.order_date = c.day
+          GROUP BY c.day
+          ORDER BY c.day;
+        after: |
+          All 14 days appear. Five of them (4, 5, 9, 10 and 14 January) have **0 orders**. A plain `GROUP BY order_date` on the orders table would have shown only the 9 days with orders.
+
+          Pattern to remember: *calendar first, then LEFT JOIN the data*. Use `COUNT(o.order_id)`, not `COUNT(*)`, so that empty days count as 0 instead of 1.
+
+      - type: exercise
+        id: m09-l04-e2
+        title: Countdown
+        prompt: |
+          Make a countdown from **10 down to 1** with a recursive CTE called `countdown`. Return one column `n`, with the rows in order from 10 down to 1.
+        starter: |
+          WITH RECURSIVE countdown(n) AS (
+              SELECT 10
+              UNION ALL
+              SELECT
+              FROM countdown
+              WHERE
+          )
+          SELECT n
+          FROM countdown
+          ORDER BY n DESC;
+        solution: |
+          WITH RECURSIVE countdown(n) AS (
+              SELECT 10
+              UNION ALL
+              SELECT n - 1
+              FROM countdown
+              WHERE n > 1
+          )
+          SELECT n
+          FROM countdown
+          ORDER BY n DESC;
+        ordered: true
+        hints:
+          - The rule goes the other way now. Each row is one less than the row before.
+          - "Use `n - 1` in the recursive part, and a stop rule that keeps going while n is still bigger than 1."
+          - "SELECT n - 1 FROM countdown WHERE n > ___"
+        explanation: |
+          Ten rows, from 10 to 1. With `n > 1` the loop builds 1 (from 2) and stops, because 1 is not greater than 1.
+
+          A countdown is the mirror image of the counter: change `+` to `-`, and `<` to `>`.
+        difficulty: 1
+
+      - type: exercise
+        id: m09-l04-e3
+        title: Doubling
+        prompt: |
+          A coin doubles in value every day. Make a table with the columns `day` (0, 1, 2 ...) and `value` (1, 2, 4, 8 ...), starting with day 0 and value 1, and **stop at the first row where the value reaches 1024 or more**.
+
+          That is 11 rows (day 0 to day 10). Name the CTE `doubling`.
+        starter: |
+          WITH RECURSIVE doubling(day, value) AS (
+              SELECT 0, 1
+              UNION ALL
+              -- double the value, add one day
+          )
+          SELECT day, value
+          FROM doubling;
+        solution: |
+          WITH RECURSIVE doubling(day, value) AS (
+              SELECT 0, 1
+              UNION ALL
+              SELECT day + 1, value * 2
+              FROM doubling
+              WHERE value < 1024
+          )
+          SELECT day, value
+          FROM doubling;
+        hints:
+          - Two columns change in every round. Write both in the SELECT of the recursive part.
+          - "The recursive part is `SELECT day + 1, value * 2 FROM doubling WHERE ...`. Keep going while the value is still below 1024."
+          - "SELECT day + 1, value * 2 FROM doubling WHERE value < ___"
+        explanation: |
+          After 10 days the coin is worth 1024. The row with 1024 is created from 512 (which is below 1024), and then the loop stops.
+
+          Growth like this is why recursion needs a stop rule: doubling passes a billion after only 30 rounds.
+        difficulty: 2
+
+      - type: fill
+        id: m09-l04-f1
+        prompt: Fill in the blanks to count down from 5 to 1.
+        template: |
+          WITH ___ countdown(n) AS (
+              SELECT 5
+              ___ ALL
+              SELECT n - 1
+              FROM countdown
+              WHERE n > ___
+          )
+          SELECT n
+          FROM countdown;
+        answers:
+          - ["RECURSIVE"]
+          - ["UNION"]
+          - ["1"]
+        explanation: |
+          `WITH RECURSIVE` allows the CTE to refer to itself, `UNION ALL` joins the anchor to the recursive part, and `n > 1` is the stop rule: it lets the loop build 1 from 2 and then stops.
+
+      - type: exercise
+        id: m09-l04-e4
+        title: Fix the bug, the price rise
+        prompt: |
+          A subscription costs $20.00 today (year 0), and the price rises by 10% each year, rounded to 2 decimals. This query should show years 0 to 5, but it crashes with a type error.
+
+          Fix it so that it returns 6 rows with the columns `year` and `price`.
+        starter: |
+          WITH RECURSIVE prices(year, price) AS (
+              SELECT 0, 20
+              UNION ALL
+              SELECT year + 1, ROUND(price * 1.10, 2)
+              FROM prices
+              WHERE year < 5
+          )
+          SELECT year, price
+          FROM prices;
+        solution: |
+          WITH RECURSIVE prices(year, price) AS (
+              SELECT 0, 20.00
+              UNION ALL
+              SELECT year + 1, ROUND(price * 1.10, 2)
+              FROM prices
+              WHERE year < 5
+          )
+          SELECT year, price
+          FROM prices;
+        hints:
+          - 'The error says the column "has type integer in non-recursive term but type numeric overall".'
+          - The anchor's `20` is a whole number, but `ROUND(price * 1.10, 2)` is a decimal number. Both parts of a recursive CTE must produce the same type in each column.
+          - "Write the anchor value as a decimal: SELECT 0, 20.00 (or 20::numeric)."
+        explanation: |
+          The price goes 20.00, 22.00, 24.20, 26.62, 29.28, 32.21.
+
+          In a recursive CTE the **type of each column is fixed by the anchor**. If the recursive part produces a different type, PostgreSQL complains. The cure is to write the anchor in the final type: `20.00`, `DATE '...'`, or an explicit cast such as `20::numeric`.
+        difficulty: 2
+
+      - type: exercise
+        id: m09-l04-e5
+        title: Every Monday of the first quarter
+        prompt: |
+          List **every Monday from 2024-01-01 up to 2024-03-31** (inclusive). 1 January 2024 is a Monday, so start there and add 7 days each round.
+
+          Use a CTE `mondays` with one column `day`. The last Monday must not be after 31 March. Return the column `day`, sorted by `day`.
+        starter: |
+          WITH RECURSIVE mondays(day) AS (
+              SELECT DATE '2024-01-01'
+              UNION ALL
+              SELECT day + 7
+              FROM mondays
+              WHERE
+          )
+          SELECT day
+          FROM mondays
+          ORDER BY day;
+        solution: |
+          WITH RECURSIVE mondays(day) AS (
+              SELECT DATE '2024-01-01'
+              UNION ALL
+              SELECT day + 7
+              FROM mondays
+              WHERE day + 7 <= DATE '2024-03-31'
+          )
+          SELECT day
+          FROM mondays
+          ORDER BY day;
+        ordered: true
+        hints:
+          - The stop rule decides whether the *next* Monday is still inside the quarter.
+          - "If you write `WHERE day < '2024-03-31'`, the loop builds one Monday too many (2024-04-01). Check the next date instead: `day + 7`."
+          - "WHERE day + 7 <= DATE '2024-03-31'"
+        explanation: |
+          13 Mondays, from 1 January to 25 March. The next Monday (1 April) would be past the end of the quarter, so the rule `day + 7 <= 31 March` stops the loop before it is created.
+
+          This is the boundary lesson from the "n + 2" predict: when the step is bigger than 1, test the *next* value, not the current one.
+        difficulty: 2
+
+      - type: parsons
+        id: m09-l04-o1
+        prompt: Arrange the lines to list the powers of ten from 1 up to 100000.
+        lines:
+          - WITH RECURSIVE tens(n) AS (
+          - "    SELECT 1"
+          - "    UNION ALL"
+          - "    SELECT n * 10"
+          - "    FROM tens"
+          - "    WHERE n < 100000"
+          - )
+          - SELECT n
+          - FROM tens;
+        distractors:
+          - WITH tens(n) AS (
+        explanation: |
+          Six rows: 1, 10, 100, 1000, 10000 and 100000. The anchor comes first, then `UNION ALL`, then the recursive part with its stop rule.
+
+          The distractor is missing the word `RECURSIVE`, so PostgreSQL would reject the self-reference.
+
+      - type: quiz
+        id: m09-l04-q2
+        question: |
+          One of these recursive CTEs would run **forever** (do not run it!). Which one?
+
+          ```
+          A: start 1, next = n + 1, keep going WHERE n < 100
+          B: start 1, next = n + 2, keep going WHERE n <> 10
+          C: start 1, next = n * 2, keep going WHERE n < 1000
+          D: start 5, next = n - 1, keep going WHERE n > 0
+          ```
+        options:
+          - A
+          - B
+          - C
+          - D
+        answer: 1
+        explanation: |
+          B counts 1, 3, 5, 7, 9, 11 ... and jumps *over* 10, so the rule `n <> 10` is never false. A, C and D all end, because their rules (`<`, `<`, `>`) become false sooner or later.
+
+          Safer habit: use `<`, `<=` or `>` for stop rules, not `<>`, so a number that skips past the limit still stops.
+
+      - type: exercise
+        id: m09-l04-e6
+        title: Orders per day, with zero days
+        prompt: |
+          Marketing wants the last 12 days of 2024 in one report, **including days without orders**.
+
+          Build a calendar CTE `calendar(day)` from `2024-12-20` to `2024-12-31`, then `LEFT JOIN` the `orders` (match `order_date`). Return `day` and `orders` (the number of orders), sorted by `day`.
+        solution: |
+          WITH RECURSIVE calendar(day) AS (
+              SELECT DATE '2024-12-20'
+              UNION ALL
+              SELECT day + 1
+              FROM calendar
+              WHERE day < DATE '2024-12-31'
+          )
+          SELECT c.day, COUNT(o.order_id) AS orders
+          FROM calendar AS c
+          LEFT JOIN orders AS o ON o.order_date = c.day
+          GROUP BY c.day
+          ORDER BY c.day;
+        ordered: true
+        hints:
+          - Two parts, a recursive calendar and a LEFT JOIN to the orders, like the January example.
+          - Count `o.order_id` (not `*`) so that days without a matching order show 0.
+          - "... SELECT c.day, COUNT(o.order_id) AS orders FROM calendar AS c LEFT JOIN orders AS o ON ___ GROUP BY c.day ORDER BY c.day;"
+        explanation: |
+          12 rows. The busiest day is 20 December with 6 orders, and 26 and 28 December had none (they would be missing without the calendar).
+
+          Because `COUNT(o.order_id)` ignores NULLs, a day with no match counts 0. `COUNT(*)` would wrongly say 1.
+        difficulty: 3
+
+      - type: exercise
+        id: m09-l04-e7
+        title: Savings goal
+        prompt: |
+          You have $1,000 and want to reach **$3,000**. Every month the balance earns 1% interest, then you add $200. Calculate each new balance as `ROUND(balance * 1.01 + 200, 2)`.
+
+          Build a CTE `savings(month, balance)` that starts with month 0 and balance `1000.00`, and **stops after the first month where the balance is 3000 or more**. Select `month` and `balance` for all rows.
+        solution: |
+          WITH RECURSIVE savings(month, balance) AS (
+              SELECT 0, 1000.00
+              UNION ALL
+              SELECT month + 1, ROUND(balance * 1.01 + 200, 2)
+              FROM savings
+              WHERE balance < 3000
+          )
+          SELECT month, balance
+          FROM savings;
+        hints:
+          - The stop rule watches the balance, not the month.
+          - "Keep building new rows WHERE balance < 3000. The last row can be above 3000, because the check happens on the row before it."
+          - "SELECT month + 1, ROUND(balance * 1.01 + 200, 2) FROM savings WHERE balance < ___"
+        explanation: |
+          It takes 10 months (11 rows including month 0). At month 9 the balance is $2,967.39, still below 3,000, so the loop makes month 10 with **$3,197.06** and then stops.
+
+          This is a real pattern: loop until a business condition is met (a goal, a limit, a threshold), without knowing in advance how many rounds it will take.
+        difficulty: 3
+    cheatsheet:
+      - title: Recursive counter
+        sql: |
+          WITH RECURSIVE counter(n) AS (
+              SELECT 1                 -- anchor
+              UNION ALL
+              SELECT n + 1             -- recursive part
+              FROM counter
+              WHERE n < 10             -- stop rule
+          )
+          SELECT n FROM counter;
+        note: Needs the word RECURSIVE. A round that produces no rows ends the loop.
+      - title: Date series
+        sql: |
+          WITH RECURSIVE days(day) AS (
+              SELECT DATE '2024-01-01'
+              UNION ALL
+              SELECT day + 1
+              FROM days
+              WHERE day < DATE '2024-01-31'
+          )
+          SELECT day FROM days;
+        note: Start with DATE '...' so the type is right. Then LEFT JOIN your data to fill gaps.
+      - title: Safety rules
+        sql: |
+          -- 1. always write a stop rule (use <, <= or >)
+          -- 2. anchor and recursive part: same column types
+          -- 3. while testing, add LIMIT as a seat belt
+          SELECT n FROM counter LIMIT 20;
+        note: A CTE that never stops runs until it is cancelled (this app stops it after about 20 seconds).
+  - id: m09-l05
+    title: "Recursive hierarchies: org charts and category trees"
+    summary: Walk down (or up) an org chart or a category tree of any depth, with levels and path strings.
+    minutes: 30
+    dataset: company
+    steps:
+      - type: read
+        title: Who is on Layla's team?
+        md: |
+          Priya from HR asks: *"Please list everyone in Layla Khan's organisation. And I mean **everyone** below her, not only the people who report to her directly."*
+
+          In the `employees` table, every person has a `manager_id` that points to the `emp_id` of their boss. That is a **hierarchy**: a tree where each person has one boss. Layla's part of the tree looks like this:
+
+          ```
+          Layla Khan (Director)
+          +-- Jun Zhang (Frontend Team Lead)
+          |   +-- Vikram Kumar
+          |   +-- Pierre Popov
+          |   +-- Noah Thompson
+          |   +-- Kwame Diallo
+          +-- Evelyn Cooper (Mobile Team Lead)
+              +-- Sipho Adeyemi
+              +-- Vikram Boateng
+          ```
+
+          A self join (module 6) can look **one** level down. How many levels are there? You cannot know in advance, and that is exactly the job for a recursive CTE.
+
+          > [!ANALOGY]
+          > Imagine asking: "Who reports to Layla?" You get two names. Then you ask the same question about each of them, and then about each of *their* answers, until you hear "nobody". That repeated question is the recursive part.
+
+      - type: example
+        title: One level only
+        md: A plain query finds Layla's direct reports. Her `emp_id` is 9.
+        sql: |
+          SELECT emp_id, first_name, last_name, job_title
+          FROM employees
+          WHERE manager_id = 9;
+        after: |
+          Only two people: Jun Zhang and Evelyn Cooper. But they have teams of their own, and those people are missing from the answer.
+
+      - type: read
+        title: The recipe for walking down a tree
+        md: |
+          Some words first. The top of the tree is the **root**. People with no one below them are **leaves**. The **depth** (or **level**) says how many steps a person is from where you started.
+
+          The recursive recipe has two parts:
+
+          1. **Anchor**: the starting person, for example `WHERE emp_id = 9`. Depth 0.
+          2. **Recursive part**: "find employees whose manager is somebody already in my list", and add 1 to the depth.
+
+          ```sql
+          SELECT e.emp_id, ..., t.depth + 1
+          FROM employees AS e
+          JOIN team AS t ON e.manager_id = t.emp_id
+          ```
+
+          Read the join aloud: *the employee's manager is the team member.* That sentence walks one step **down**.
+
+          > [!TIP]
+          > The loop stops by itself. When none of the newest people manage anyone, the join finds nothing, the round is empty, and the recursion ends. No extra stop rule needed (as long as your data is a proper tree).
+
+      - type: example
+        title: Layla's whole organisation
+        md: The anchor is Layla (depth 0). Each round adds the next level of people.
+        sql: |
+          WITH RECURSIVE team(emp_id, name, job_title, depth) AS (
+              SELECT emp_id,
+                     first_name || ' ' || last_name,
+                     job_title,
+                     0
+              FROM employees
+              WHERE emp_id = 9
+              UNION ALL
+              SELECT e.emp_id,
+                     e.first_name || ' ' || e.last_name,
+                     e.job_title,
+                     t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT emp_id, name, job_title, depth
+          FROM team
+          ORDER BY depth, emp_id;
+        after: |
+          Nine people: Layla (depth 0), her 2 team leads (depth 1), and 6 engineers (depth 2). That is what Priya asked for.
+
+          The `depth` column counts the steps from Layla. It is a number we carry along and add 1 to in every round.
+
+      - type: stepper
+        title: The tree is discovered level by level
+        md: |
+          Each stage lets the loop run one more round, using a cap on the depth. Watch the team grow downwards.
+        stages:
+          - label: "Round 0: Layla"
+            md: The anchor gives one row, Layla, at depth 0. No rounds yet.
+            sql: |
+              WITH RECURSIVE team(emp_id, name, depth) AS (
+                  SELECT emp_id, first_name || ' ' || last_name, 0
+                  FROM employees
+                  WHERE emp_id = 9
+                  UNION ALL
+                  SELECT e.emp_id, e.first_name || ' ' || e.last_name,
+                         t.depth + 1
+                  FROM employees AS e
+                  JOIN team AS t ON e.manager_id = t.emp_id
+                  WHERE t.depth < 0
+              )
+              SELECT * FROM team ORDER BY depth, emp_id;
+          - label: "Round 1: team leads"
+            md: |
+              The recursive part finds everyone whose manager is Layla: Jun Zhang and Evelyn Cooper, at depth 1.
+            sql: |
+              WITH RECURSIVE team(emp_id, name, depth) AS (
+                  SELECT emp_id, first_name || ' ' || last_name, 0
+                  FROM employees
+                  WHERE emp_id = 9
+                  UNION ALL
+                  SELECT e.emp_id, e.first_name || ' ' || e.last_name,
+                         t.depth + 1
+                  FROM employees AS e
+                  JOIN team AS t ON e.manager_id = t.emp_id
+                  WHERE t.depth < 1
+              )
+              SELECT * FROM team ORDER BY depth, emp_id;
+          - label: "Round 2: engineers"
+            md: |
+              Now it looks only at the newest rows (the two team leads) and finds their six reports at depth 2.
+            sql: |
+              WITH RECURSIVE team(emp_id, name, depth) AS (
+                  SELECT emp_id, first_name || ' ' || last_name, 0
+                  FROM employees
+                  WHERE emp_id = 9
+                  UNION ALL
+                  SELECT e.emp_id, e.first_name || ' ' || e.last_name,
+                         t.depth + 1
+                  FROM employees AS e
+                  JOIN team AS t ON e.manager_id = t.emp_id
+                  WHERE t.depth < 2
+              )
+              SELECT * FROM team ORDER BY depth, emp_id;
+          - label: "Round 3: nobody"
+            md: |
+              No engineer manages anyone, so round 3 finds no rows and the recursion ends by itself. This is the real query with no cap at all, and it returns the same nine people.
+            sql: |
+              WITH RECURSIVE team(emp_id, name, depth) AS (
+                  SELECT emp_id, first_name || ' ' || last_name, 0
+                  FROM employees
+                  WHERE emp_id = 9
+                  UNION ALL
+                  SELECT e.emp_id, e.first_name || ' ' || e.last_name,
+                         t.depth + 1
+                  FROM employees AS e
+                  JOIN team AS t ON e.manager_id = t.emp_id
+              )
+              SELECT * FROM team ORDER BY depth, emp_id;
+
+      - type: quiz
+        id: m09-l05-q1
+        question: |
+          Which join condition walks **down** the chart (from a manager to the people who report to them)? Here `t` is the CTE and `e` is `employees`.
+        options:
+          - ON e.manager_id = t.emp_id
+          - ON e.emp_id = t.manager_id
+          - ON e.emp_id = t.emp_id
+          - ON e.manager_id = t.manager_id
+        answer: 0
+        explanation: |
+          "The employee's manager is a team member" means `e.manager_id = t.emp_id`: it finds the **reports** of the people already found. The second option does the opposite and walks **up** to the bosses (you will use it in a minute).
+
+      - type: exercise
+        id: m09-l05-e1
+        title: Oscar's organisation
+        prompt: |
+          Oscar Lewis (`emp_id` 11, Director of Sales, Americas) wants to know who is in his organisation.
+
+          List Oscar himself (depth 0) and everyone below him. Show `emp_id`, `name` (first name, a space, last name) and `depth`, sorted by `depth`, then `emp_id`.
+        starter: |
+          WITH RECURSIVE team(emp_id, name, depth) AS (
+              SELECT emp_id, first_name || ' ' || last_name, 0
+              FROM employees
+              WHERE emp_id = 11
+              UNION ALL
+              -- find the people who report to someone in team
+          )
+          SELECT emp_id, name, depth
+          FROM team
+          ORDER BY depth, emp_id;
+        solution: |
+          WITH RECURSIVE team(emp_id, name, depth) AS (
+              SELECT emp_id, first_name || ' ' || last_name, 0
+              FROM employees
+              WHERE emp_id = 11
+              UNION ALL
+              SELECT e.emp_id,
+                     e.first_name || ' ' || e.last_name,
+                     t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT emp_id, name, depth
+          FROM team
+          ORDER BY depth, emp_id;
+        ordered: true
+        hints:
+          - It is the same shape as Layla's query. Only the anchor person is different, and the anchor is already written for you.
+          - "The recursive part joins `employees AS e` to `team AS t` on e.manager_id = t.emp_id, and adds 1 to the depth."
+          - "SELECT e.emp_id, e.first_name || ' ' || e.last_name, t.depth + 1 FROM employees AS e JOIN team AS t ON e.manager_id = ___"
+        explanation: |
+          Eight people: Oscar, two team leads (Mei Nakamura and Arthur Jackson) and five people below them (four account executives and a business consultant).
+
+          The recursion followed the chain on its own: Oscar, then his reports, then their reports.
+        difficulty: 1
+
+      - type: exercise
+        id: m09-l05-e2
+        title: The top of the chart
+        prompt: |
+          The CEO wants a one-page chart showing only the **first three levels** of Acme Corp: the CEO (level 1), the people reporting to the CEO (level 2) and their direct reports (level 3).
+
+          Start at the person with no manager (`manager_id IS NULL`). Show `emp_id`, `name` (first and last name with a space) and `level`, sorted by `level`, then `emp_id`. Add a stop rule so the recursion does not go deeper than level 3.
+        starter: |
+          WITH RECURSIVE chart(emp_id, name, level) AS (
+              SELECT emp_id, first_name || ' ' || last_name, 1
+              FROM employees
+              WHERE manager_id IS NULL
+              UNION ALL
+              SELECT
+              FROM employees AS e
+              JOIN chart AS c ON e.manager_id = c.emp_id
+          )
+          SELECT emp_id, name, level
+          FROM chart
+          ORDER BY level, emp_id;
+        solution: |
+          WITH RECURSIVE chart(emp_id, name, level) AS (
+              SELECT emp_id, first_name || ' ' || last_name, 1
+              FROM employees
+              WHERE manager_id IS NULL
+              UNION ALL
+              SELECT e.emp_id,
+                     e.first_name || ' ' || e.last_name,
+                     c.level + 1
+              FROM employees AS e
+              JOIN chart AS c ON e.manager_id = c.emp_id
+              WHERE c.level < 3
+          )
+          SELECT emp_id, name, level
+          FROM chart
+          ORDER BY level, emp_id;
+        ordered: true
+        hints:
+          - You need a WHERE in the recursive part that stops the loop once you reach level 3.
+          - The WHERE looks at the level of the row you already have (c.level). Keep going while it is below 3.
+          - "... JOIN chart AS c ON e.manager_id = c.emp_id WHERE c.level < ___"
+        explanation: |
+          16 people: 1 CEO, 6 people at level 2, and 9 at level 3.
+
+          When you want only part of a tree, a stop rule on the depth is perfect. Check the **current** level (`c.level < 3`): a row at level 3 is kept, but it does not create level 4.
+        difficulty: 2
+
+      - type: example
+        title: "Path strings: who is above you?"
+        md: |
+          Carry a text along! The `path` column starts with a name and adds ` > ` and the next name each round. Sorting by the path puts every person right under their boss.
+        sql: |
+          WITH RECURSIVE team(emp_id, path, depth) AS (
+              SELECT emp_id, last_name, 0
+              FROM employees
+              WHERE emp_id = 9
+              UNION ALL
+              SELECT e.emp_id,
+                     t.path || ' > ' || e.last_name,
+                     t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT path
+          FROM team
+          ORDER BY path;
+        after: |
+          The nine people are listed in tree order: Khan first, then Cooper with her two engineers, then Zhang with his four. Each row shows the whole chain from Layla down to that person.
+
+          Sorting text puts "Khan" before "Khan > Cooper", so a boss always appears right before their team.
+
+      - type: predict
+        id: m09-l05-p1
+        question: |
+          Oops, someone forgot the `WHERE` in the anchor. The company has 55 employees. How many rows does this return?
+        sql: |
+          WITH RECURSIVE team(emp_id, depth) AS (
+              SELECT emp_id, 1
+              FROM employees
+              UNION ALL
+              SELECT e.emp_id, t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT COUNT(*)
+          FROM team;
+        options: ["55", "223", "5", "It never stops"]
+        answer: 1
+        explanation: |
+          Every employee becomes a starting point. So each person appears once for themselves, and again for **every boss above them**. A level-5 engineer appears 5 times, a level-4 team lead 4 times, and so on. 1 + 6x2 + 9x3 + 12x4 + 27x5 = **223** rows.
+
+          > [!MISTAKE]
+          > If your tree result has duplicate people, check the anchor first. It should name exactly the person (or people) you want to start from.
+
+      - type: exercise
+        id: m09-l05-e3
+        title: Org chart paths for Marketing
+        prompt: |
+          Isaac King (`emp_id` 5) is the VP of Marketing. Build the path of **last names** for everyone in his organisation, starting with Isaac himself (so the first path is just `King`).
+
+          Show `emp_id` and `path` (last names joined with `' > '`), sorted by `path`.
+        solution: |
+          WITH RECURSIVE team(emp_id, path) AS (
+              SELECT emp_id, last_name
+              FROM employees
+              WHERE emp_id = 5
+              UNION ALL
+              SELECT e.emp_id, t.path || ' > ' || e.last_name
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT emp_id, path
+          FROM team
+          ORDER BY path;
+        ordered: true
+        hints:
+          - Start from the example with Layla and change the anchor to emp_id 5.
+          - "The recursive part builds the path with `t.path || ' > ' || e.last_name`."
+          - "SELECT e.emp_id, t.path || ' > ' || ___ FROM employees AS e JOIN team AS t ON e.manager_id = t.emp_id"
+        explanation: |
+          Nine rows, for example `King > Jones > Wu > Hill`. Isaac has two direct reports: Oliver Jones (who manages two leads with two people each) and Xin Pham (who has no team).
+
+          A path is a handy way to show the whole chain in one cell, and `ORDER BY path` gives you the tree in reading order.
+        difficulty: 2
+
+      - type: example
+        title: Going up instead of down
+        md: |
+          Swap the join and you walk **up** the chart. This lists the chain of command above Vikram Boateng (`emp_id` 36): himself, his boss, his boss's boss, and so on.
+        sql: |
+          WITH RECURSIVE chain(emp_id, job_title, manager_id, steps_up) AS (
+              SELECT emp_id, job_title, manager_id, 0
+              FROM employees
+              WHERE emp_id = 36
+              UNION ALL
+              SELECT e.emp_id, e.job_title, e.manager_id,
+                     c.steps_up + 1
+              FROM employees AS e
+              JOIN chain AS c ON e.emp_id = c.manager_id
+          )
+          SELECT steps_up, emp_id, job_title
+          FROM chain
+          ORDER BY steps_up;
+        after: |
+          Five rows: Android Engineer, Mobile Team Lead, Director of Product Engineering, VP of Engineering and Chief Executive Officer.
+
+          The join is now `e.emp_id = c.manager_id`: "the employee is the manager of somebody in my list". The CEO's `manager_id` is NULL, so no row matches, and the loop ends at the top.
+
+      - type: exercise
+        id: m09-l05-e4
+        title: Chain of command
+        prompt: |
+          Lily Horvat (`emp_id` 49) is an Accountant. Show her chain of command: herself and everyone above her up to the CEO.
+
+          Return `steps_up` (0 for Lily, 1 for her boss, ...), `emp_id` and `job_title`, sorted by `steps_up`.
+        solution: |
+          WITH RECURSIVE chain(emp_id, job_title, manager_id, steps_up) AS (
+              SELECT emp_id, job_title, manager_id, 0
+              FROM employees
+              WHERE emp_id = 49
+              UNION ALL
+              SELECT e.emp_id, e.job_title, e.manager_id,
+                     c.steps_up + 1
+              FROM employees AS e
+              JOIN chain AS c ON e.emp_id = c.manager_id
+          )
+          SELECT steps_up, emp_id, job_title
+          FROM chain
+          ORDER BY steps_up;
+        ordered: true
+        hints:
+          - You walk upwards, so the join is the opposite of the "team" one.
+          - Carry `manager_id` in the CTE, and join `employees` on e.emp_id = c.manager_id.
+          - "... FROM employees AS e JOIN chain AS c ON e.emp_id = c.___"
+        explanation: |
+          Five rows: Accountant, Senior Accountant, Controller, VP of Finance and the CEO.
+
+          Going up always ends at the root: the CEO has no manager, so there is nothing more to join.
+        difficulty: 2
+
+      - type: fill
+        id: m09-l05-f1
+        prompt: Fill in the blanks to list Olivia's team (`emp_id` 8) and everyone below her.
+        template: |
+          WITH ___ team(emp_id, depth) AS (
+              SELECT emp_id, 0
+              FROM employees
+              WHERE emp_id = 8
+              UNION ALL
+              SELECT e.emp_id, t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.___ = t.___
+          )
+          SELECT emp_id, depth
+          FROM team;
+        answers:
+          - ["RECURSIVE"]
+          - ["manager_id"]
+          - ["emp_id"]
+        explanation: |
+          `WITH RECURSIVE` allows the self-reference. The join `e.manager_id = t.emp_id` says "the employee's manager is somebody already in the team", which walks down one level per round.
+
+      - type: exercise
+        id: m09-l05-e5
+        title: Fix the bug, upside-down chart
+        prompt: |
+          This query should list Olivia Brooks's organisation (`emp_id` 8) and everyone **below** her, with `emp_id`, `first_name` and `depth`. But it shows her bosses instead.
+
+          Fix the join so the query walks **down**, and sort it by `depth`, then `emp_id`.
+        starter: |
+          WITH RECURSIVE team(emp_id, first_name, manager_id, depth) AS (
+              SELECT emp_id, first_name, manager_id, 0
+              FROM employees
+              WHERE emp_id = 8
+              UNION ALL
+              SELECT e.emp_id, e.first_name, e.manager_id, t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.emp_id = t.manager_id
+          )
+          SELECT emp_id, first_name, depth
+          FROM team
+          ORDER BY depth, emp_id;
+        solution: |
+          WITH RECURSIVE team(emp_id, first_name, manager_id, depth) AS (
+              SELECT emp_id, first_name, manager_id, 0
+              FROM employees
+              WHERE emp_id = 8
+              UNION ALL
+              SELECT e.emp_id, e.first_name, e.manager_id, t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT emp_id, first_name, depth
+          FROM team
+          ORDER BY depth, emp_id;
+        ordered: true
+        hints:
+          - Run it and look at the rows. Are those the people below Olivia, or the people above her?
+          - The join condition is written for walking up. Swap which side holds `manager_id`.
+          - "Use ON e.manager_id = t.emp_id"
+        explanation: |
+          The fixed query returns 7 rows: Olivia, her two team leads (Paola Cruz and Amina Mwangi) and four engineers.
+
+          Remember the two sentences: **down** = "their manager is in my list" (`e.manager_id = t.emp_id`); **up** = "they are the manager of someone in my list" (`e.emp_id = t.manager_id`).
+        difficulty: 2
+
+      - type: example
+        title: A category tree in the shop
+        md: |
+          Trees are everywhere. In the shop database, `categories` points to its parent with `parent_id` (top-level categories have `NULL`). Let's build the path of every category.
+        dataset: shop
+        sql: |
+          WITH RECURSIVE tree(category_id, path, depth) AS (
+              SELECT category_id, name, 1
+              FROM categories
+              WHERE parent_id IS NULL
+              UNION ALL
+              SELECT c.category_id,
+                     t.path || ' > ' || c.name,
+                     t.depth + 1
+              FROM categories AS c
+              JOIN tree AS t ON c.parent_id = t.category_id
+          )
+          SELECT category_id, path, depth
+          FROM tree
+          ORDER BY path;
+        after: |
+          All 14 categories, in tree order, with depths 1 to 3, such as `Electronics > Computers > Laptops`.
+
+          Same recipe as the org chart: the anchor is the root(s) (`parent_id IS NULL`), and the recursive part joins on `parent_id = category_id`. Only the names of the columns changed.
+
+      - type: exercise
+        id: m09-l05-e6
+        title: Products in every category
+        dataset: shop
+        prompt: |
+          Using the path idea, show every category with the number of products that sit **directly** in it.
+
+          Return `path` (like `Electronics > Computers`) and `products` (count of products whose `category_id` is that category, 0 if none), sorted by `path`.
+        solution: |
+          WITH RECURSIVE tree(category_id, path) AS (
+              SELECT category_id, name
+              FROM categories
+              WHERE parent_id IS NULL
+              UNION ALL
+              SELECT c.category_id, t.path || ' > ' || c.name
+              FROM categories AS c
+              JOIN tree AS t ON c.parent_id = t.category_id
+          )
+          SELECT t.path, COUNT(p.product_id) AS products
+          FROM tree AS t
+          LEFT JOIN products AS p ON p.category_id = t.category_id
+          GROUP BY t.path
+          ORDER BY t.path;
+        ordered: true
+        hints:
+          - Build the `tree` CTE as in the example, then join `products` to it.
+          - Use a LEFT JOIN so categories without products still appear, and count `p.product_id`.
+          - "... SELECT t.path, COUNT(p.product_id) AS products FROM tree AS t LEFT JOIN products AS p ON ___ GROUP BY t.path ORDER BY t.path;"
+        explanation: |
+          14 rows. Electronics, Home and Sports have **0** products directly in them, because products live in the sub-categories (Phones has 8, Kitchen has 8, Laptops has 5, and so on).
+
+          That is correct, but not what a manager means by "how many products do we have in Electronics?". The next exercise rolls the numbers up.
+        difficulty: 2
+
+      - type: exercise
+        id: m09-l05-e7
+        title: Roll up to the departments
+        dataset: shop
+        prompt: |
+          The category manager wants to know how many products belong to each **top-level category**, counting everything in its sub-categories too (Electronics includes Computers, Laptops, Peripherals and Phones).
+
+          Hint: let every row of the tree remember the name of its top-level category (`root_name`). It starts as the category's own name in the anchor and is simply copied down in the recursive part.
+
+          Return `root_name` and `products` (all products below or at that top-level category), biggest first, ties by `root_name`.
+        solution: |
+          WITH RECURSIVE tree(category_id, root_name) AS (
+              SELECT category_id, name
+              FROM categories
+              WHERE parent_id IS NULL
+              UNION ALL
+              SELECT c.category_id, t.root_name
+              FROM categories AS c
+              JOIN tree AS t ON c.parent_id = t.category_id
+          )
+          SELECT t.root_name, COUNT(p.product_id) AS products
+          FROM tree AS t
+          LEFT JOIN products AS p ON p.category_id = t.category_id
+          GROUP BY t.root_name
+          ORDER BY products DESC, t.root_name;
+        ordered: true
+        hints:
+          - Carry a column that never changes while you go down, the name of the root.
+          - "Anchor: SELECT category_id, name ... WHERE parent_id IS NULL. Recursive part: SELECT c.category_id, t.root_name (just copy it)."
+          - "Then LEFT JOIN products ON category_id, GROUP BY root_name, COUNT(p.product_id)."
+        explanation: |
+          Electronics 24 products, Home 13, Books 7, Sports 7, Toys 6, Beauty 3 (they add up to all 60 products).
+
+          Carrying a value down the tree ("which root do I belong to?") is the secret behind most roll-up reports. The same trick works for the org chart: carry the VP's id down to count each VP's organisation.
+        difficulty: 3
+
+      - type: parsons
+        id: m09-l05-o1
+        prompt: Arrange the lines to count how many people (directly or indirectly) report to the VP of Finance (`emp_id` 6).
+        lines:
+          - WITH RECURSIVE team(emp_id, depth) AS (
+          - "    SELECT emp_id, 0"
+          - "    FROM employees"
+          - "    WHERE emp_id = 6"
+          - "    UNION ALL"
+          - "    SELECT e.emp_id, t.depth + 1"
+          - "    FROM employees AS e"
+          - "    JOIN team AS t ON e.manager_id = t.emp_id"
+          - )
+          - SELECT COUNT(*)
+          - FROM team
+          - WHERE depth > 0;
+        distractors:
+          - "    JOIN team AS t ON e.emp_id = t.manager_id"
+        explanation: |
+          4 people report to the VP of Finance (the Controller, the Senior Accountant, an Accountant and a Financial Analyst). `WHERE depth > 0` leaves out the VP herself.
+
+          The distractor walks up instead of down (and `team` has no `manager_id` column, so it would fail).
+
+      - type: quiz
+        id: m09-l05-q2
+        question: |
+          You want a list of everyone **above** an employee, up to the CEO. What does the anchor look like?
+        options:
+          - "WHERE manager_id IS NULL (start at the CEO)"
+          - "WHERE emp_id = <that employee> (start at the employee)"
+          - "No WHERE at all"
+          - "WHERE depth = 0"
+        answer: 1
+        explanation: |
+          Walking up starts at **the employee** and moves to the boss, then the boss's boss. Walking down from the CEO would start at `manager_id IS NULL`. The anchor is always the place where the walk begins.
+    cheatsheet:
+      - title: Everyone below a manager
+        sql: |
+          WITH RECURSIVE team(emp_id, depth) AS (
+              SELECT emp_id, 0 FROM employees WHERE emp_id = 9
+              UNION ALL
+              SELECT e.emp_id, t.depth + 1
+              FROM employees AS e
+              JOIN team AS t ON e.manager_id = t.emp_id
+          )
+          SELECT * FROM team;
+        note: Anchor = the boss. Join = "their manager is already in my list". Depth 0 is the boss.
+      - title: Chain of command (walk up)
+        sql: |
+          WITH RECURSIVE chain(emp_id, manager_id) AS (
+              SELECT emp_id, manager_id FROM employees WHERE emp_id = 36
+              UNION ALL
+              SELECT e.emp_id, e.manager_id
+              FROM employees AS e
+              JOIN chain AS c ON e.emp_id = c.manager_id
+          )
+          SELECT * FROM chain;
+        note: The join is flipped. It ends at the root, whose manager_id is NULL.
+      - title: Carry a path or a root
+        sql: |
+          -- anchor:    SELECT id, name AS path ...
+          -- recursive: SELECT c.id, t.path || ' > ' || c.name ...
+          SELECT path FROM tree ORDER BY path;
+        note: A text column that grows each round shows the whole chain, and sorting it gives tree order.
 testPool:
   - type: quiz
     id: m09-t01

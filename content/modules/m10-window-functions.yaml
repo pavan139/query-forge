@@ -477,6 +477,2800 @@ lessons:
           FROM employees;
         note: "Window functions are allowed in SELECT and ORDER BY, never in WHERE."
 
+  - id: m10-l02
+    title: "PARTITION BY: One Window per Group"
+    summary: Give each department (or any group) its own window, so every row shows its own group's average, total or count.
+    minutes: 28
+    steps:
+      - type: read
+        title: A fairer comparison
+        md: |
+          Sofia from HR is preparing the yearly pay review. She looks at your report from last time and says:
+          *"Comparing an HR salary with the **whole company** average isn't fair. The executives and engineers
+          pull that number up. Could each person be compared with **their own department**?"*
+
+          She is right. In the last lesson `OVER ()` gave every row the same window: all the rows. This time
+          we need **a separate window for each department**.
+
+      - type: example
+        title: The GROUP BY way
+        md: |
+          You already know how to get one average per department. Press **Run**.
+        sql: |
+          SELECT dept_id, ROUND(AVG(salary), 2) AS dept_avg
+          FROM employees
+          GROUP BY dept_id
+          ORDER BY dept_id;
+        after: |
+          **7 rows**: one per department. The last row, with a NULL `dept_id`, is the two contractors who
+          don't belong to a department yet. `GROUP BY` puts all NULLs in one group.
+
+          The numbers are right, but the people are gone. Sofia wants each person's salary **and** their
+          department's average on one line.
+
+      - type: read
+        title: Meet PARTITION BY
+        md: |
+          Inside the brackets of `OVER` you can write `PARTITION BY` and a column. It cuts the rows into
+          groups called **partitions**, and every partition gets its own window.
+
+          ```sql
+          AVG(salary) OVER (PARTITION BY dept_id)
+          ```
+
+          Read it as: *"the average salary, looking only at rows with the same `dept_id` as this row."*
+          Unlike `GROUP BY`, no row disappears.
+
+          > [!ANALOGY]
+          > A school prints each pupil's mark **and the average of their own class** on the report card.
+          > Four classes means four different averages, but every pupil still has their own line.
+          > `PARTITION BY class` is exactly that.
+
+      - type: example
+        title: Each salary next to its department's average
+        md: |
+          Here are the Finance (5) and HR (6) teams. Each person sees the average of *their own* department.
+        sql: |
+          SELECT
+              first_name,
+              dept_id,
+              salary,
+              ROUND(AVG(salary) OVER (PARTITION BY dept_id), 2)
+                  AS dept_avg
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, emp_id;
+        after: |
+          **10 rows**, and two different averages: **128000** for the five Finance people and **106200**
+          for the five HR people.
+
+          Yusuf (240000) is far above the Finance average, while Lily (78000) is below it. Samir (108000)
+          is a little above the HR average. That is the fair comparison Sofia wanted.
+
+      - type: viz
+        viz: window
+        title: Two groups, two windows
+        md: |
+          Eight salaries from three departments. Click **AVG per group** and **SUM per group**, then click
+          any row to see which rows its window uses.
+
+          Now untick the **PARTITION BY dept** box: all the rows fall into one big window, which is what
+          `OVER ()` does. Tick it again to get one window per department.
+        config:
+          table:
+            name: staff
+            columns: [name, dept, salary]
+            rows:
+              - [Diego, Executive, 320000]
+              - [Ming, Executive, 175000]
+              - [Yusuf, Finance, 240000]
+              - [Ingrid, Finance, 142000]
+              - [Lily, Finance, 78000]
+              - [Valentina, HR, 215000]
+              - [Samir, HR, 108000]
+              - [Naledi, HR, 46000]
+          partitionBy: dept
+          orderBy: salary
+          value: salary
+          functions: [partition_avg, partition_sum]
+
+      - type: exercise
+        id: m10-l02-e1
+        title: Top salary in each department
+        prompt: |
+          For the Executive (`dept_id = 1`) and Marketing (`dept_id = 4`) departments, show `first_name`,
+          `dept_id`, `salary` and a column `top_in_dept`: the **highest salary in that person's own
+          department**.
+        starter: |
+          SELECT first_name, dept_id, salary
+          FROM employees
+          WHERE dept_id IN (1, 4);
+        solution: |
+          SELECT
+              first_name,
+              dept_id,
+              salary,
+              MAX(salary) OVER (PARTITION BY dept_id) AS top_in_dept
+          FROM employees
+          WHERE dept_id IN (1, 4);
+        columnNames: true
+        hints:
+          - "Use an aggregate that finds the biggest value, and give it a window of its own for each department."
+          - "MAX(salary) OVER (PARTITION BY dept_id), with the alias top_in_dept."
+          - "SELECT first_name, dept_id, salary, MAX(salary) OVER (PARTITION BY ___) AS top_in_dept FROM employees WHERE dept_id IN (1, 4);"
+        explanation: |
+          The Executive department's top salary is **320000** (Diego). Marketing's is **225000** (Isaac). Each
+          row looks only at the rows in its own partition, so the two departments get different answers.
+        difficulty: 1
+
+      - type: quiz
+        id: m10-l02-q1
+        question: |
+          Which expression gives every employee the average salary of **their own department**, while keeping
+          every row?
+        options:
+          - "AVG(salary) OVER ()"
+          - "AVG(salary) OVER (GROUP BY dept_id)"
+          - "AVG(salary) OVER (PARTITION BY dept_id)"
+          - "AVG(salary) PARTITION BY dept_id"
+        answer: 2
+        explanation: |
+          `PARTITION BY` goes **inside** the brackets of `OVER`. `OVER ()` has no groups, so it uses one big
+          window. `GROUP BY` is not allowed inside `OVER`.
+
+      - type: read
+        title: Calculating with the group's number
+        md: |
+          Once the department's average or total sits on every row, you can calculate with it, just like in
+          the last lesson but fairer:
+
+          - **Gap to the department average:** `salary - AVG(salary) OVER (PARTITION BY dept_id)`
+          - **Share of the department payroll:** `100.0 * salary / SUM(salary) OVER (PARTITION BY dept_id)`
+          - **Team size:** `COUNT(*) OVER (PARTITION BY dept_id)`
+
+          You can also use **two windows in one query**, each with its own `OVER`. That lets you compare a
+          person with their department *and* with the whole company.
+
+      - type: example
+        title: Department average vs. company average
+        md: |
+          The first 8 employees, with two windows side by side. One has a `PARTITION BY`, the other has none.
+        sql: |
+          SELECT
+              emp_id,
+              dept_id,
+              salary,
+              ROUND(AVG(salary) OVER (PARTITION BY dept_id), 0)
+                  AS dept_avg,
+              ROUND(AVG(salary) OVER (), 0) AS company_avg
+          FROM employees
+          ORDER BY emp_id
+          LIMIT 8;
+        after: |
+          The `company_avg` column is the same on every row (**129509**), but `dept_avg` changes with the
+          department: **247500** for the two Executives, **141650** for Engineering, **122167** for Sales.
+
+          Only 8 rows are shown, yet each window looked at all 55 employees. `LIMIT` is applied at the very end,
+          after the windows are calculated.
+
+      - type: exercise
+        id: m10-l02-e2
+        title: Share of the department payroll
+        prompt: |
+          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `salary` and `pct_of_dept`:
+          the person's salary as a **percentage of their own department's total salary**, rounded to
+          **1 decimal place**.
+        starter: |
+          SELECT first_name, dept_id, salary
+          FROM employees
+          WHERE dept_id IN (5, 6);
+        solution: |
+          SELECT
+              first_name,
+              dept_id,
+              salary,
+              ROUND(100.0 * salary
+                  / SUM(salary) OVER (PARTITION BY dept_id), 1)
+                  AS pct_of_dept
+          FROM employees
+          WHERE dept_id IN (5, 6);
+        columnNames: true
+        hints:
+          - "You need each department's total salary on every row. Which aggregate adds up, and how do you give each department its own window?"
+          - "100.0 * salary / SUM(salary) OVER (PARTITION BY dept_id), wrapped in ROUND(..., 1)."
+          - "SELECT first_name, dept_id, salary, ROUND(100.0 * salary / SUM(salary) OVER (PARTITION BY ___), 1) AS pct_of_dept FROM employees WHERE dept_id IN (5, 6);"
+        explanation: |
+          Finance's payroll is 640000, so Yusuf's 240000 is **37.5%**. HR's payroll is 531000, so Valentina's
+          215000 is **40.5%**. The percentages of each department add up to 100, which is a handy check.
+        difficulty: 2
+
+      - type: fill
+        id: m10-l02-f1
+        prompt: |
+          Complete the query so that each person sees the **lowest** salary of their own department.
+        template: |
+          SELECT
+              first_name,
+              dept_id,
+              salary,
+              MIN(salary) ___ (___ BY dept_id) AS lowest_in_dept
+          FROM employees;
+        answers:
+          - ["OVER"]
+          - ["PARTITION"]
+        explanation: |
+          `OVER (PARTITION BY dept_id)` is the full recipe: `OVER` opens the window, `PARTITION BY` splits the
+          rows into one window per `dept_id`.
+
+      - type: read
+        title: What happens with NULL, and with two columns
+        md: |
+          **NULL** forms a partition of its own, just like it forms one group in `GROUP BY`. All the rows with
+          a NULL department share one window.
+
+          You can also partition by **several columns**: `PARTITION BY dept_id, employment_type` makes one
+          window for every *combination*, like "full-time people in Marketing".
+
+      - type: predict
+        id: m10-l02-p1
+        question: |
+          Kwame and Jia have no department (`dept_id` is NULL). What does `team_size` show on **Jia's** row?
+        sql: |
+          SELECT first_name, dept_id,
+                 COUNT(*) OVER (PARTITION BY dept_id) AS team_size
+          FROM employees
+          WHERE dept_id IS NULL OR dept_id = 5;
+        options:
+          - "1"
+          - "2"
+          - "5"
+          - "NULL"
+        answer: 1
+        explanation: |
+          The rows with a NULL `dept_id` land in one partition: Kwame and Jia. That partition has **2** rows,
+          so both of them show 2. The five Finance rows show 5.
+
+      - type: example
+        title: Partition by two columns
+        md: |
+          Marketing (4) and HR (6), with a window for each department **and** employment type.
+        sql: |
+          SELECT
+              first_name,
+              dept_id,
+              employment_type,
+              COUNT(*) OVER (
+                  PARTITION BY dept_id, employment_type
+              ) AS group_size
+          FROM employees
+          WHERE dept_id IN (4, 6)
+          ORDER BY dept_id, employment_type, emp_id;
+        after: |
+          **14 rows**. Marketing has 7 full-time people and 2 part-timers, HR has 4 full-time people and
+          1 part-timer. Each row shows the size of *its own* combination: 7, 2, 4 or 1.
+
+      - type: exercise
+        id: m10-l02-e3
+        title: Above or below?
+        prompt: |
+          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `salary` and a column
+          `vs_avg` that contains the text `'above'` when the salary is **greater than** the average salary
+          of the person's own department, and `'at or below'` otherwise.
+        starter: |
+          SELECT first_name, dept_id, salary
+          FROM employees
+          WHERE dept_id IN (5, 6);
+        solution: |
+          SELECT
+              first_name,
+              dept_id,
+              salary,
+              CASE
+                  WHEN salary > AVG(salary) OVER (PARTITION BY dept_id)
+                      THEN 'above'
+                  ELSE 'at or below'
+              END AS vs_avg
+          FROM employees
+          WHERE dept_id IN (5, 6);
+        columnNames: true
+        hints:
+          - "A window function is just a value, so you can use it inside a CASE condition in the SELECT list."
+          - "CASE WHEN salary > AVG(salary) OVER (PARTITION BY dept_id) THEN 'above' ELSE 'at or below' END"
+          - "SELECT first_name, dept_id, salary, CASE WHEN salary > AVG(salary) OVER (PARTITION BY ___) THEN 'above' ELSE 'at or below' END AS vs_avg FROM employees WHERE dept_id IN (5, 6);"
+        explanation: |
+          Four people are above their department average (Yusuf, Ingrid, Valentina and Samir). Window functions
+          can be used inside `CASE`, as long as the whole `CASE` is in the `SELECT` list (or `ORDER BY`).
+        difficulty: 2
+
+      - type: example
+        title: A habit that breaks the query
+        md: |
+          After lots of `GROUP BY`, it feels natural to add one here too. Run it and read the error.
+        sql: |
+          SELECT first_name, dept_id, salary,
+                 AVG(salary) OVER (PARTITION BY dept_id) AS dept_avg
+          FROM employees
+          GROUP BY dept_id;
+        expectError: true
+        after: |
+          PostgreSQL complains that `first_name` *must appear in the GROUP BY clause or be used in an aggregate
+          function*. `GROUP BY` squashes the rows again, which is exactly what we are avoiding.
+
+          `PARTITION BY` already does the grouping **inside the window**. Delete the `GROUP BY` and it works.
+
+          > [!MISTAKE]
+          > Adding `GROUP BY` next to a window function "to get one average per department". You don't need
+          > it. `PARTITION BY` is the only grouping a window function needs, and it never removes rows.
+
+      - type: stepper
+        title: Building the pay-review report
+        md: |
+          A good way to write a window query: start plain, then add one idea per step. Click through the
+          stages and run each one.
+        stages:
+          - label: The people
+            md: Start with the plain rows for Finance and HR.
+            sql: |
+              SELECT first_name, dept_id, salary
+              FROM employees
+              WHERE dept_id IN (5, 6)
+              ORDER BY dept_id, emp_id;
+          - label: Add the average
+            md: One new column. `PARTITION BY dept_id` gives each department its own window.
+            sql: |
+              SELECT first_name, dept_id, salary,
+                     AVG(salary) OVER (PARTITION BY dept_id)
+                         AS dept_avg
+              FROM employees
+              WHERE dept_id IN (5, 6)
+              ORDER BY dept_id, emp_id;
+          - label: Add the gap
+            md: Subtract the window average from the salary. Positive means above the average.
+            sql: |
+              SELECT first_name, dept_id, salary,
+                     salary - AVG(salary) OVER (PARTITION BY dept_id)
+                         AS gap
+              FROM employees
+              WHERE dept_id IN (5, 6)
+              ORDER BY dept_id, emp_id;
+          - label: Round and sort
+            md: Round the gap to whole dollars and put the biggest gap first inside each department.
+            sql: |
+              SELECT first_name, dept_id, salary,
+                     ROUND(salary - AVG(salary)
+                         OVER (PARTITION BY dept_id), 0) AS gap
+              FROM employees
+              WHERE dept_id IN (5, 6)
+              ORDER BY dept_id, gap DESC;
+
+      - type: example
+        title: Window functions work after a JOIN
+        md: |
+          Department names live in another table, so we join first. The window then sees the joined rows, and
+          we can partition by the department name.
+        sql: |
+          SELECT
+              d.name AS department,
+              e.first_name,
+              e.salary,
+              COUNT(*) OVER (PARTITION BY d.name) AS team_size
+          FROM employees e
+          JOIN departments d ON d.dept_id = e.dept_id
+          WHERE d.dept_id IN (1, 5)
+          ORDER BY d.name, e.emp_id;
+        after: |
+          **7 rows**: 2 Executives and 5 Finance people, each with the size of their own department.
+
+          The order inside a query is: `FROM` and `JOIN`, then `WHERE`, then the window functions, and finally
+          `ORDER BY` and `LIMIT`.
+
+      - type: exercise
+        id: m10-l02-e4
+        title: A department report with names
+        prompt: |
+          Join `employees` (alias `e`) to `departments` (alias `d`). For the Executive, Finance and HR
+          departments (`dept_id IN (1, 5, 6)`) show:
+
+          - `department`: the department name
+          - `first_name`
+          - `salary`
+          - `team_size`: the number of people in that department
+          - `pct_of_dept`: the salary as a percentage of the department's total salary (**1 decimal**)
+
+          Sort by department name, then by salary from highest to lowest.
+        starter: |
+          SELECT d.name AS department, e.first_name, e.salary
+          FROM employees e
+          JOIN departments d ON d.dept_id = e.dept_id
+          WHERE d.dept_id IN (1, 5, 6)
+          ORDER BY d.name, e.salary DESC;
+        solution: |
+          SELECT
+              d.name AS department,
+              e.first_name,
+              e.salary,
+              COUNT(*) OVER (PARTITION BY d.dept_id) AS team_size,
+              ROUND(100.0 * e.salary
+                  / SUM(e.salary) OVER (PARTITION BY d.dept_id), 1)
+                  AS pct_of_dept
+          FROM employees e
+          JOIN departments d ON d.dept_id = e.dept_id
+          WHERE d.dept_id IN (1, 5, 6)
+          ORDER BY d.name, e.salary DESC;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Two window functions, both partitioned by department. One counts rows, the other adds up salaries."
+          - "COUNT(*) OVER (PARTITION BY d.dept_id) for team_size, and 100.0 * e.salary / SUM(e.salary) OVER (PARTITION BY d.dept_id) for the percentage."
+          - "SELECT d.name AS department, e.first_name, e.salary, COUNT(*) OVER (PARTITION BY d.dept_id) AS team_size, ROUND(100.0 * e.salary / SUM(e.salary) OVER (PARTITION BY ___), 1) AS pct_of_dept FROM employees e JOIN departments d ON d.dept_id = e.dept_id WHERE d.dept_id IN (1, 5, 6) ORDER BY d.name, e.salary DESC;"
+        explanation: |
+          Diego (Executive) is **64.6%** of his department's payroll of 495000, and Yusuf (Finance) is 37.5%
+          of 640000. You could partition by `d.name` or by `d.dept_id`: each department has exactly one of each.
+        difficulty: 2
+
+      - type: parsons
+        id: m10-l02-o1
+        prompt: |
+          Arrange the lines to show Finance and HR people with their department's average salary, sorted by
+          department and then by highest salary first.
+        lines:
+          - "SELECT first_name, dept_id, salary,"
+          - "    AVG(salary) OVER (PARTITION BY dept_id) AS dept_avg"
+          - "FROM employees"
+          - "WHERE dept_id IN (5, 6)"
+          - "ORDER BY dept_id, salary DESC;"
+        distractors:
+          - "GROUP BY dept_id"
+        explanation: |
+          The window function sits in `SELECT`. There is no `GROUP BY`: `PARTITION BY` handles the grouping
+          inside the window, and it keeps every row.
+
+      - type: exercise
+        id: m10-l02-e5
+        title: Who is furthest below their department?
+        prompt: |
+          Look only at **current** employees who belong to a department (`terminated_on IS NULL` and
+          `dept_id IS NOT NULL`). Show `emp_id`, `dept_id`, `salary` and `pct_of_dept_avg`: the salary as a
+          percentage of the average salary of the person's own department (**1 decimal**).
+
+          Keep only the **5 people with the lowest percentage**, lowest first.
+        starter: |
+          SELECT emp_id, dept_id, salary
+          FROM employees
+          WHERE terminated_on IS NULL
+            AND dept_id IS NOT NULL;
+        solution: |
+          SELECT
+              emp_id,
+              dept_id,
+              salary,
+              ROUND(100.0 * salary
+                  / AVG(salary) OVER (PARTITION BY dept_id), 1)
+                  AS pct_of_dept_avg
+          FROM employees
+          WHERE terminated_on IS NULL
+            AND dept_id IS NOT NULL
+          ORDER BY pct_of_dept_avg, emp_id
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - "First build the percentage column with a PARTITION BY window. Then sort by that column and keep 5 rows."
+          - "ORDER BY pct_of_dept_avg (an alias is allowed in ORDER BY) and LIMIT 5, after the WHERE."
+          - "SELECT emp_id, dept_id, salary, ROUND(100.0 * salary / AVG(salary) OVER (PARTITION BY ___), 1) AS pct_of_dept_avg FROM employees WHERE terminated_on IS NULL AND dept_id IS NOT NULL ORDER BY pct_of_dept_avg, emp_id LIMIT 5;"
+        explanation: |
+          The part-time data analyst (emp 38) earns only **37.5%** of the Engineering average of 143833.33.
+          Because `WHERE` runs first, the averages are based on **current** employees only. `LIMIT` is applied
+          last, so every window still saw all the matching rows.
+        difficulty: 3
+
+      - type: read
+        title: What you can do now
+        md: |
+          `PARTITION BY` is `GROUP BY` for windows: it makes **one window per group**, and no row is lost.
+
+          - `OVER ()` means one window of all rows.
+          - `OVER (PARTITION BY col)` means one window per value of `col`.
+          - `WHERE` and `JOIN` happen first, so they decide which rows are in each window.
+
+          Next: **ranking** people inside their window, with `ROW_NUMBER`, `RANK` and `DENSE_RANK`.
+    cheatsheet:
+      - title: One window per group
+        sql: |
+          SELECT name, dept_id, salary,
+                 AVG(salary) OVER (PARTITION BY dept_id)
+                     AS dept_avg
+          FROM employees;
+        note: "PARTITION BY goes inside OVER (...). Every row is kept."
+      - title: Share of the group's total
+        sql: |
+          SELECT name, dept_id,
+                 ROUND(100.0 * salary
+                   / SUM(salary) OVER (PARTITION BY dept_id), 1)
+                     AS pct_of_dept
+          FROM employees;
+        note: "Each department's percentages add up to 100."
+      - title: Group window and whole window together
+        sql: |
+          SELECT name, salary,
+                 AVG(salary) OVER (PARTITION BY dept_id) AS dept_avg,
+                 AVG(salary) OVER () AS company_avg
+          FROM employees;
+        note: "Every window function has its own OVER. Several partition columns are allowed: PARTITION BY a, b."
+
+  - id: m10-l03
+    title: "ROW_NUMBER, RANK & DENSE_RANK"
+    summary: Number and rank rows inside a window, and see exactly what each function does when two people tie.
+    minutes: 28
+    steps:
+      - type: read
+        title: A pay ladder for Sales
+        md: |
+          Tom from Sales Operations is building a "pay ladder" for the Sales team. He wants every person
+          numbered from the highest salary down: 1st, 2nd, 3rd...
+
+          Sounds easy, until you notice that some Sales people earn **exactly the same**. Does a tie share a
+          number? Do we skip one afterwards? SQL has **three** ranking functions, because the answer depends
+          on what the report is for.
+
+          > [!ANALOGY]
+          > Think of a race. If two runners cross the line together, they both win **gold**. Does the next
+          > runner get silver or bronze? In sports, bronze: nobody gets silver (that's `RANK`). A teacher
+          > making "levels" would say silver: no level is skipped (that's `DENSE_RANK`). And a referee who
+          > insists on a strict one-by-one order, even for a tie, is `ROW_NUMBER`.
+
+      - type: read
+        title: The three ranking functions
+        md: |
+          | Function | What it does with ties |
+          |---|---|
+          | `ROW_NUMBER()` | gives **different** numbers: 1, 2, 3, 4 |
+          | `RANK()` | ties **share** a rank, then it **skips**: 1, 2, 2, 4 |
+          | `DENSE_RANK()` | ties **share** a rank, **no skipping**: 1, 2, 2, 3 |
+
+          They all have empty brackets `()`, because the work is done by the `OVER` clause. Inside it you
+          **must** say how to order the rows:
+
+          ```sql
+          RANK() OVER (ORDER BY salary DESC)
+          ```
+
+          `ORDER BY salary DESC` means: highest salary first, so the highest salary gets number 1.
+
+      - type: example
+        title: "ROW_NUMBER: every row gets its own number"
+        md: The 12 people in Sales (`dept_id = 3`), numbered from the highest salary down.
+        sql: |
+          SELECT
+              emp_id,
+              salary,
+              ROW_NUMBER() OVER (ORDER BY salary DESC) AS row_no
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY row_no;
+        after: |
+          **12 rows**, numbered 1 to 12 with no repeats. Oscar and James both earn 185000, but one of them is
+          number 2 and the other number 3. Which is which is **not guaranteed** (we'll fix that soon).
+
+          Notice the window function inside `OVER` has its own `ORDER BY`. The `ORDER BY row_no` at the very end
+          is a separate thing: it only sorts the final result.
+
+      - type: example
+        title: All three side by side
+        md: |
+          The same 12 people with `ROW_NUMBER`, `RANK` and `DENSE_RANK`. Look at the rows where salaries are
+          equal.
+        sql: |
+          SELECT
+              emp_id,
+              salary,
+              ROW_NUMBER() OVER (ORDER BY salary DESC) AS row_no,
+              RANK() OVER (ORDER BY salary DESC) AS rnk,
+              DENSE_RANK() OVER (ORDER BY salary DESC) AS dense_rnk
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY salary DESC, emp_id;
+        after: |
+          Find the three Account Executives who earn **88000** (emp 40, 41, 42):
+
+          - `row_no`: 8, 9, 10 (all different)
+          - `rnk`: 8, 8, 8 (tied), and the next person is **11**, so 9 and 10 are skipped
+          - `dense_rnk`: 6, 6, 6 (tied), and the next person is **7**, with nothing skipped
+
+          The last person, Beatriz (62000), is 12th with `ROW_NUMBER` and `RANK`, but only **8th** with
+          `DENSE_RANK`, because there are only 8 different salaries.
+
+      - type: viz
+        viz: window
+        title: Watch the ties
+        md: |
+          Eight Sales salaries, with a tie of two, another tie of two, and a tie of three. Click
+          **ROW_NUMBER**, **RANK** and **DENSE_RANK** and compare the `result` column.
+
+          Click a row to light up the rows its calculation uses. The sort order of this demo is fixed, so
+          watch what the numbers do when two salaries are equal.
+        config:
+          table:
+            name: sales_team
+            columns: [emp_id, name, salary]
+            rows:
+              - [4, Amina, 245000]
+              - [11, Oscar, 185000]
+              - [12, James, 185000]
+              - [22, Mei, 118000]
+              - [23, Arthur, 118000]
+              - [40, Hana, 88000]
+              - [41, Mariana, 88000]
+              - [42, Tariq, 88000]
+          partitionBy: ""
+          orderBy: emp_id
+          value: salary
+          functions: [rank, dense_rank, row_number]
+
+      - type: predict
+        id: m10-l03-p1
+        question: |
+          This ranks Sales from the **lowest** salary up (no `DESC`). What `RANK` does Daichi (salary 92000)
+          get?
+        sql: |
+          SELECT emp_id, first_name, salary,
+                 RANK() OVER (ORDER BY salary) AS rnk
+          FROM employees
+          WHERE dept_id = 3;
+        options:
+          - "4"
+          - "5"
+          - "6"
+          - "7"
+        answer: 2
+        explanation: |
+          From the bottom, 62000 is 1st, 85000 is 2nd, and the three 88000 salaries all share 3rd. Those three
+          "use up" places 3, 4 and 5, so the next salary, 92000, gets rank **6**. (`DENSE_RANK` would say 4.)
+
+      - type: exercise
+        id: m10-l03-e1
+        title: The Marketing ladder
+        prompt: |
+          For Marketing (`dept_id = 4`), show `first_name`, `salary` and `place`: the position of the person
+          when you number them with `ROW_NUMBER`, highest salary first. Sort the result by `place`.
+        starter: |
+          SELECT first_name, salary
+          FROM employees
+          WHERE dept_id = 4;
+        solution: |
+          SELECT
+              first_name,
+              salary,
+              ROW_NUMBER() OVER (ORDER BY salary DESC) AS place
+          FROM employees
+          WHERE dept_id = 4
+          ORDER BY place;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You want to number the rows, highest salary first. Which ranking function gives plain 1, 2, 3...?"
+          - "ROW_NUMBER() OVER (ORDER BY salary DESC) AS place, then ORDER BY place at the end."
+          - "SELECT first_name, salary, ROW_NUMBER() OVER (ORDER BY ___ DESC) AS place FROM employees WHERE dept_id = 4 ORDER BY place;"
+        explanation: |
+          Isaac (225000) is number 1 and Scarlett (45000) is number 9. Nobody in Marketing shares a salary, so
+          there are no ties to worry about here.
+        difficulty: 1
+
+      - type: read
+        title: Tie-breakers keep ROW_NUMBER honest
+        md: |
+          When two rows tie, `ROW_NUMBER` still has to pick who comes first, and the database may pick
+          differently on different days or after the data changes.
+
+          The fix is to add a **tie-breaker**: a second column in the `ORDER BY` that makes every row's position
+          unique, such as the id.
+
+          ```sql
+          ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id)
+          ```
+
+          > [!MISTAKE]
+          > Using `ROW_NUMBER` with ties and no tie-breaker. The query runs happily, but the numbers given to
+          > tied people are not guaranteed to be the same next time. Always finish the `ORDER BY` with a unique
+          > column when you need repeatable numbers.
+
+      - type: example
+        title: ROW_NUMBER with a tie-breaker
+        md: Same Sales ranking, but ties are now settled by `emp_id`, the lower id first.
+        sql: |
+          SELECT
+              emp_id,
+              salary,
+              ROW_NUMBER() OVER (
+                  ORDER BY salary DESC, emp_id
+              ) AS row_no
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY row_no;
+        after: |
+          Now Oscar (emp 11) is always number 2 and James (emp 12) is always number 3. The three 88000 people
+          are 8, 9 and 10 in order of their ids: 40, 41, 42. Same data, same answer, every time.
+
+      - type: exercise
+        id: m10-l03-e2
+        title: Engineering with RANK
+        prompt: |
+          Show every Engineering employee (`dept_id = 2`): `emp_id`, `salary` and `salary_rank`, using `RANK`
+          with the highest salary ranked 1. Sort by `salary_rank`, then by `emp_id`.
+        starter: |
+          SELECT emp_id, salary
+          FROM employees
+          WHERE dept_id = 2;
+        solution: |
+          SELECT
+              emp_id,
+              salary,
+              RANK() OVER (ORDER BY salary DESC) AS salary_rank
+          FROM employees
+          WHERE dept_id = 2
+          ORDER BY salary_rank, emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Ties should share a rank and leave a gap afterwards. Which of the three functions does that?"
+          - "RANK() OVER (ORDER BY salary DESC) AS salary_rank, and sort by salary_rank, emp_id."
+          - "SELECT emp_id, salary, ___() OVER (ORDER BY salary DESC) AS salary_rank FROM employees WHERE dept_id = 2 ORDER BY salary_rank, emp_id;"
+        explanation: |
+          Engineering has **20 rows** and several ties: for example Olivia and Layla (emp 8 and 9) both
+          earn 198000, so both are **2nd** and the next person is **4th**. Rank 3 does not exist.
+        difficulty: 2
+
+      - type: example
+        title: What if you forget ORDER BY inside OVER?
+        md: |
+          There is no error here. Run it and look at the `rnk` column carefully.
+        sql: |
+          SELECT first_name, dept_id, salary,
+                 RANK() OVER (PARTITION BY dept_id) AS rnk
+          FROM employees
+          WHERE dept_id IN (5, 6);
+        after: |
+          Every single row has rank **1**. Without an `ORDER BY` inside `OVER`, there is no order, so the
+          database sees every row in the window as tied for first place.
+
+          > [!MISTAKE]
+          > Writing `RANK() OVER (PARTITION BY dept_id)` and forgetting `ORDER BY salary DESC` inside the
+          > brackets. It doesn't fail, it just quietly gives everybody rank 1. Ranking functions need an order.
+
+      - type: quiz
+        id: m10-l03-q1
+        question: |
+          Four salaries sorted from the highest are 90, 80, 80, 70. Which function numbers them **1, 2, 2, 3**?
+        options:
+          - "ROW_NUMBER()"
+          - "RANK()"
+          - "DENSE_RANK()"
+          - "COUNT()"
+        answer: 2
+        explanation: |
+          `DENSE_RANK` shares the rank for ties and never skips, so you get 1, 2, 2, 3. `RANK` gives 1, 2, 2, 4
+          and `ROW_NUMBER` gives 1, 2, 3, 4.
+
+      - type: read
+        title: Ranking inside each group
+        md: |
+          Combine both parts of `OVER`: `PARTITION BY` makes one window per group, and `ORDER BY` ranks inside
+          each window. The numbers **start again at 1** for every group.
+
+          ```sql
+          RANK() OVER (
+              PARTITION BY dept_id
+              ORDER BY salary DESC
+          )
+          ```
+
+          The order is always **PARTITION BY first, ORDER BY second**.
+
+      - type: example
+        title: A separate ladder for each department
+        md: Finance (5) and HR (6), ranked by salary inside their own department.
+        sql: |
+          SELECT
+              dept_id,
+              first_name,
+              salary,
+              RANK() OVER (
+                  PARTITION BY dept_id
+                  ORDER BY salary DESC
+              ) AS dept_rank
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, dept_rank;
+        after: |
+          **10 rows**. Yusuf is 1st in Finance and Valentina is 1st in HR: two different "number 1"s, because
+          each department has its own window. Lily, with the smallest Finance salary, is 5th in Finance,
+          just as Naledi is 5th in HR.
+
+      - type: fill
+        id: m10-l03-f1
+        prompt: Complete the query to rank Sales people from the highest salary down, sharing the rank on ties.
+        template: |
+          SELECT emp_id, salary,
+                 ___() OVER (___ BY salary DESC) AS rnk
+          FROM employees
+          WHERE dept_id = 3;
+        answers:
+          - ["RANK"]
+          - ["ORDER"]
+        explanation: |
+          `RANK() OVER (ORDER BY salary DESC)`. The ranking function names the numbering style, and the
+          `ORDER BY` inside `OVER` says who is first.
+
+      - type: exercise
+        id: m10-l03-e3
+        title: Salary levels per department
+        prompt: |
+          For Sales and Marketing (`dept_id IN (3, 4)`), show `emp_id`, `dept_id`, `salary` and
+          `salary_level`: the `DENSE_RANK` of the salary **inside the person's own department**, highest
+          salary = level 1. Sort by `dept_id`, then `salary_level`, then `emp_id`.
+        starter: |
+          SELECT emp_id, dept_id, salary
+          FROM employees
+          WHERE dept_id IN (3, 4);
+        solution: |
+          SELECT
+              emp_id,
+              dept_id,
+              salary,
+              DENSE_RANK() OVER (
+                  PARTITION BY dept_id
+                  ORDER BY salary DESC
+              ) AS salary_level
+          FROM employees
+          WHERE dept_id IN (3, 4)
+          ORDER BY dept_id, salary_level, emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Each department needs its own ranking, so the window needs PARTITION BY as well as ORDER BY."
+          - "DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS salary_level."
+          - "SELECT emp_id, dept_id, salary, DENSE_RANK() OVER (PARTITION BY ___ ORDER BY salary DESC) AS salary_level FROM employees WHERE dept_id IN (3, 4) ORDER BY dept_id, salary_level, emp_id;"
+        explanation: |
+          Sales has 8 different salary levels for its 12 people (the 88000 trio shares level 6). Marketing has
+          9 people with 9 different salaries, so its levels run 1 to 9.
+        difficulty: 2
+
+      - type: read
+        title: Which one should I use?
+        md: |
+          Ask what the report is for.
+
+          - **`ROW_NUMBER`**: you need a unique number per row, or you want to pick *exactly one* row per
+            group. Remember the tie-breaker.
+          - **`RANK`**: a competition-style position, where "tied for 2nd, next is 4th" is the right story.
+          - **`DENSE_RANK`**: "levels" or "the nth highest value", where you don't want gaps.
+
+          > [!REAL-WORLD]
+          > "Who is the second-highest paid person?" is a classic interview question. The answer depends on
+          > ties: do you mean the second person, or the second salary? `ROW_NUMBER` answers the first, and
+          > `DENSE_RANK` the second. Always ask which one is wanted!
+
+      - type: parsons
+        id: m10-l03-o1
+        prompt: |
+          Arrange the lines to rank the Sales team by salary (highest first), with the best-ranked person
+          at the top.
+        lines:
+          - "SELECT emp_id, salary,"
+          - "    RANK() OVER (ORDER BY salary DESC) AS rnk"
+          - "FROM employees"
+          - "WHERE dept_id = 3"
+          - "ORDER BY rnk, emp_id;"
+        distractors:
+          - "GROUP BY emp_id"
+        explanation: |
+          The ranking sits in `SELECT`, with its own `ORDER BY` inside `OVER`. The final `ORDER BY rnk, emp_id`
+          only sorts the output, and `emp_id` breaks ties in the display.
+
+      - type: exercise
+        id: m10-l03-e4
+        title: One query, three rankings
+        prompt: |
+          For Sales (`dept_id = 3`), show `emp_id`, `salary` and three ranking columns, all with the highest
+          salary first:
+
+          - `row_no`: `ROW_NUMBER`, with ties settled by the lower `emp_id` first
+          - `rnk`: `RANK`
+          - `dense_rnk`: `DENSE_RANK`
+
+          Sort the result by `row_no`.
+        starter: |
+          SELECT emp_id, salary
+          FROM employees
+          WHERE dept_id = 3;
+        solution: |
+          SELECT
+              emp_id,
+              salary,
+              ROW_NUMBER() OVER (
+                  ORDER BY salary DESC, emp_id
+              ) AS row_no,
+              RANK() OVER (ORDER BY salary DESC) AS rnk,
+              DENSE_RANK() OVER (ORDER BY salary DESC) AS dense_rnk
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY row_no;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You need three window functions in one SELECT, each with its own OVER (...)."
+          - "Only ROW_NUMBER needs the tie-breaker: ORDER BY salary DESC, emp_id."
+          - "SELECT emp_id, salary, ROW_NUMBER() OVER (ORDER BY salary DESC, ___) AS row_no, RANK() OVER (ORDER BY salary DESC) AS rnk, DENSE_RANK() OVER (ORDER BY salary DESC) AS dense_rnk FROM employees WHERE dept_id = 3 ORDER BY row_no;"
+        explanation: |
+          Every window function in a query has its own `OVER`, so each one can have its own ordering. The
+          tie-breaker belongs only where you need unique numbers: `RANK` and `DENSE_RANK` are *supposed* to
+          let ties share a number.
+        difficulty: 2
+
+      - type: exercise
+        id: m10-l03-e5
+        title: The company's top 10
+        prompt: |
+          Using the whole `employees` table, show the **10 highest salaries**: `emp_id`, `job_title`, `salary`
+          and two columns:
+
+          - `company_rank`: `RANK` of the salary across the whole company (highest = 1)
+          - `dept_rank`: `RANK` of the salary inside the person's own department (highest = 1)
+
+          Sort by `company_rank`, then `emp_id`, and keep the first 10 rows.
+        starter: |
+          SELECT emp_id, job_title, salary
+          FROM employees
+          ORDER BY salary DESC, emp_id
+          LIMIT 10;
+        solution: |
+          SELECT
+              emp_id,
+              job_title,
+              salary,
+              RANK() OVER (ORDER BY salary DESC) AS company_rank,
+              RANK() OVER (
+                  PARTITION BY dept_id
+                  ORDER BY salary DESC
+              ) AS dept_rank
+          FROM employees
+          ORDER BY company_rank, emp_id
+          LIMIT 10;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Two RANK() functions: one with just ORDER BY, and one with PARTITION BY dept_id as well."
+          - "Put ORDER BY company_rank, emp_id LIMIT 10 at the very end. LIMIT runs after the windows, so they see everyone."
+          - "SELECT emp_id, job_title, salary, RANK() OVER (ORDER BY salary DESC) AS company_rank, RANK() OVER (PARTITION BY ___ ORDER BY salary DESC) AS dept_rank FROM employees ORDER BY company_rank, emp_id LIMIT 10;"
+        explanation: |
+          The five VPs are each 1st in their own department, but only the CEO is 1st in the company. The two
+          Platform/Product directors (198000) tie for **7th** in the company and are both **2nd** in
+          Engineering. The 10th row is safe: the next salary, 175000, is lower than the 185000 pair.
+        difficulty: 3
+
+      - type: read
+        title: Ranks are ready, but not yet usable as a filter
+        md: |
+          You can now number and rank every row. A natural next question is *"show me only the **top 3** in
+          each department."*
+
+          Remember the rule from the first lesson: a window function can't live in `WHERE`. In the next
+          lesson you'll learn the standard pattern that gets around this: **rank first, filter second**.
+    cheatsheet:
+      - title: The three ranking functions
+        sql: |
+          SELECT emp_id, salary,
+            ROW_NUMBER() OVER (
+              ORDER BY salary DESC, emp_id) AS rn,
+            RANK() OVER (ORDER BY salary DESC) AS rnk,
+            DENSE_RANK() OVER (ORDER BY salary DESC) AS d
+          FROM employees;
+        note: "Ties: ROW_NUMBER 1,2,3,4. RANK 1,2,2,4. DENSE_RANK 1,2,2,3."
+      - title: Rank inside each group
+        sql: |
+          SELECT dept_id, emp_id, salary,
+                 RANK() OVER (
+                   PARTITION BY dept_id
+                   ORDER BY salary DESC) AS dept_rank
+          FROM employees;
+        note: "PARTITION BY first, ORDER BY second. Numbering restarts at 1 in every group."
+      - title: Tie-breaker for repeatable numbers
+        sql: |
+          ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id)
+        note: "Without ORDER BY inside OVER, RANK gives everybody 1."
+
+  - id: m10-l04
+    title: "Top-N per Group & Removing Duplicates"
+    summary: Rank rows in a CTE, then filter the ranks, to get the top few of each group or exactly one row per entity.
+    minutes: 30
+    steps:
+      - type: read
+        title: The best two in every department
+        md: |
+          Ming from the CEO's office sends you a short message:
+          *"For the leadership meeting, I need the **two best-paid people in each department**. Just two per
+          department, please."*
+
+          You now know how to number people inside each department. This is the moment that skill pays off,
+          but there is one small obstacle. Let's meet it first.
+
+      - type: example
+        title: The obvious attempt
+        md: Ranking in `WHERE` feels natural. Run it and read the message.
+        sql: |
+          SELECT dept_id, first_name, salary
+          FROM employees
+          WHERE ROW_NUMBER() OVER (
+                    PARTITION BY dept_id
+                    ORDER BY salary DESC
+                ) <= 2;
+        expectError: true
+        after: |
+          *"window functions are not allowed in WHERE"*. This is the rule from lesson 1: `WHERE` runs **before**
+          the window functions are calculated, so it can't see their results.
+
+          The fix is simple: **do it in two steps**. Rank in one query, filter in the next.
+
+      - type: read
+        title: Rank first, filter second
+        md: |
+          The standard pattern uses a CTE (or a subquery in `FROM`, which works exactly the same):
+
+          1. **Inside:** a query that adds the rank as a normal column, for example `rn`.
+          2. **Outside:** a query that reads that CTE and filters with `WHERE rn <= 2`.
+
+          Once the rank is a *column of the CTE*, the outer `WHERE` can use it like any other column.
+
+          > [!ANALOGY]
+          > A race organiser first **records everyone's finishing position**, and only then **picks the top
+          > three for the podium**. You can't pick the podium while the race is still running. The CTE is the
+          > results sheet, and the outer `WHERE` picks from it.
+
+      - type: stepper
+        title: Top 2 in Finance and HR, step by step
+        md: |
+          Click through the stages and run each one. Watch how the same ranking moves into a CTE and is then
+          filtered.
+        stages:
+          - label: Rank everyone
+            md: First, only the ranking. Each department gets its own 1, 2, 3...
+            sql: |
+              SELECT dept_id, first_name, salary,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY dept_id
+                         ORDER BY salary DESC
+                     ) AS rn
+              FROM employees
+              WHERE dept_id IN (5, 6)
+              ORDER BY dept_id, rn;
+          - label: Put it in a CTE
+            md: The same query, named `ranked`. The outer query now sees `rn` as an ordinary column.
+            sql: |
+              WITH ranked AS (
+                  SELECT dept_id, first_name, salary,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY dept_id
+                             ORDER BY salary DESC
+                         ) AS rn
+                  FROM employees
+                  WHERE dept_id IN (5, 6)
+              )
+              SELECT * FROM ranked
+              ORDER BY dept_id, rn;
+          - label: Filter the rank
+            md: Now `WHERE rn <= 2` works, because it runs on the CTE's output.
+            sql: |
+              WITH ranked AS (
+                  SELECT dept_id, first_name, salary,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY dept_id
+                             ORDER BY salary DESC
+                         ) AS rn
+                  FROM employees
+                  WHERE dept_id IN (5, 6)
+              )
+              SELECT * FROM ranked
+              WHERE rn <= 2
+              ORDER BY dept_id, rn;
+          - label: Tidy the columns
+            md: Choose the columns Ming wants. That's the finished pattern.
+            sql: |
+              WITH ranked AS (
+                  SELECT dept_id, first_name, salary,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY dept_id
+                             ORDER BY salary DESC
+                         ) AS rn
+                  FROM employees
+                  WHERE dept_id IN (5, 6)
+              )
+              SELECT dept_id, first_name, salary
+              FROM ranked
+              WHERE rn <= 2
+              ORDER BY dept_id, rn;
+
+      - type: example
+        title: Top 2 in every department
+        md: |
+          Same pattern for all departments. People without a department are left out, and `emp_id` is the
+          tie-breaker so the result is repeatable.
+        sql: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  emp_id,
+                  first_name,
+                  salary,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY salary DESC, emp_id
+                  ) AS rn
+              FROM employees
+              WHERE dept_id IS NOT NULL
+          )
+          SELECT dept_id, first_name, salary, rn
+          FROM ranked
+          WHERE rn <= 2
+          ORDER BY dept_id, rn;
+        after: |
+          **12 rows**: exactly 2 for each of the 6 departments. Ming gets her answer: the best-paid person in
+          Engineering is Thiago (265000), followed by Olivia (198000).
+
+          Olivia and Layla both earn 198000, but `ROW_NUMBER` with the `emp_id` tie-breaker keeps only
+          Olivia (emp 8). Layla is number 3.
+
+      - type: exercise
+        id: m10-l04-e1
+        title: The top earner of each department
+        prompt: |
+          Show the **single best-paid person** of each department. Ignore people without a department
+          (`dept_id IS NOT NULL`). Show `dept_id`, `emp_id`, `first_name` and `salary`.
+        starter: |
+          WITH ranked AS (
+              SELECT dept_id, emp_id, first_name, salary
+              FROM employees
+              WHERE dept_id IS NOT NULL
+          )
+          SELECT dept_id, emp_id, first_name, salary
+          FROM ranked;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  emp_id,
+                  first_name,
+                  salary,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY salary DESC, emp_id
+                  ) AS rn
+              FROM employees
+              WHERE dept_id IS NOT NULL
+          )
+          SELECT dept_id, emp_id, first_name, salary
+          FROM ranked
+          WHERE rn = 1;
+        hints:
+          - "Add a ROW_NUMBER column inside the CTE, then keep only the rows where it equals 1."
+          - "ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC, emp_id) AS rn inside, WHERE rn = 1 outside."
+          - "WITH ranked AS (SELECT dept_id, emp_id, first_name, salary, ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY salary DESC, emp_id) AS rn FROM employees WHERE dept_id IS NOT NULL) SELECT dept_id, emp_id, first_name, salary FROM ranked WHERE rn = 1;"
+        explanation: |
+          You get **6 rows**, one per department: Diego (Executive), Thiago, Amina, Isaac, Yusuf and Valentina.
+          `rn = 1` is the classic way to say "the top one in each group".
+        difficulty: 1
+
+      - type: quiz
+        id: m10-l04-q1
+        question: |
+          Why do we calculate `rn` in a CTE, instead of writing `WHERE rn <= 2` in the same query that
+          creates it?
+        options:
+          - "Because ROW_NUMBER only works inside a CTE"
+          - "Because WHERE runs before the window functions, so rn doesn't exist yet at that point"
+          - "Because rn has to be a text column"
+          - "Because WHERE can only use columns that are in GROUP BY"
+        answer: 1
+        explanation: |
+          `WHERE` is evaluated early, long before `SELECT` calculates window functions. Moving the ranking into
+          a CTE turns `rn` into a real column that the outer `WHERE` is allowed to use.
+
+      - type: read
+        title: Top 2 people, or top 2 salaries?
+        md: |
+          The ranking function you choose decides how **ties** are treated:
+
+          - `ROW_NUMBER <= 2` gives **exactly 2 rows** per group. Tied people are cut off arbitrarily (or by
+            your tie-breaker).
+          - `RANK <= 2` gives everyone who is in the top 2 **places**, so ties can add extra rows.
+          - `DENSE_RANK <= 2` gives everyone with one of the top 2 **different values**.
+
+          > [!MISTAKE]
+          > Forgetting `PARTITION BY` inside the CTE. Then the ranking runs over the whole company and
+          > `rn <= 2` returns just **2 rows in total**, not 2 per department.
+
+      - type: example
+        title: The RANK version
+        md: Same question with `RANK`. Compare the number of rows with the `ROW_NUMBER` version.
+        sql: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  emp_id,
+                  salary,
+                  RANK() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY salary DESC
+                  ) AS rnk
+              FROM employees
+              WHERE dept_id IS NOT NULL
+          )
+          SELECT dept_id, emp_id, salary, rnk
+          FROM ranked
+          WHERE rnk <= 2
+          ORDER BY dept_id, rnk, emp_id;
+        after: |
+          **14 rows** instead of 12. In Engineering, Olivia and Layla (198000) are both 2nd, so both appear.
+          The same happens in Sales with Oscar and James (185000).
+
+          Choose `ROW_NUMBER` when you need an exact count, and `RANK` when "everyone tied for the position
+          deserves to be included".
+
+      - type: predict
+        id: m10-l04-p1
+        question: |
+          In Sales (`dept_id = 3`) the salaries are 245000, 185000 (twice), 118000 (twice), 112000 and
+          lower. How many rows does this return?
+        sql: |
+          WITH ranked AS (
+              SELECT emp_id, salary,
+                     DENSE_RANK() OVER (
+                         ORDER BY salary DESC
+                     ) AS lvl
+              FROM employees
+              WHERE dept_id = 3
+          )
+          SELECT emp_id, salary
+          FROM ranked
+          WHERE lvl <= 3;
+        options:
+          - "3"
+          - "4"
+          - "5"
+          - "6"
+        answer: 2
+        explanation: |
+          The top 3 **different** salaries are 245000, 185000 and 118000. That means 1 person, then 2 people,
+          then 2 people: **5 rows**. (With `RANK <= 3` you would only get 3 rows, because the ties push
+          the next rank to 4 and 6.)
+
+      - type: exercise
+        id: m10-l04-e2
+        title: The top 3 salary levels
+        prompt: |
+          For Engineering and Sales (`dept_id IN (2, 3)`), keep everyone whose salary is among the **3 highest
+          different salaries of their own department** (use `DENSE_RANK`). Show `dept_id`, `emp_id`, `salary`
+          and `salary_level`. Sort by `dept_id`, `salary_level`, then `emp_id`.
+        starter: |
+          WITH ranked AS (
+              SELECT dept_id, emp_id, salary
+              FROM employees
+              WHERE dept_id IN (2, 3)
+          )
+          SELECT dept_id, emp_id, salary
+          FROM ranked
+          ORDER BY dept_id, emp_id;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  emp_id,
+                  salary,
+                  DENSE_RANK() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY salary DESC
+                  ) AS salary_level
+              FROM employees
+              WHERE dept_id IN (2, 3)
+          )
+          SELECT dept_id, emp_id, salary, salary_level
+          FROM ranked
+          WHERE salary_level <= 3
+          ORDER BY dept_id, salary_level, emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Ranking by different salaries with no gaps is the job of DENSE_RANK. Keep the rows with level 3 or lower."
+          - "DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS salary_level in the CTE, WHERE salary_level <= 3 outside."
+          - "WITH ranked AS (SELECT dept_id, emp_id, salary, DENSE_RANK() OVER (PARTITION BY ___ ORDER BY salary DESC) AS salary_level FROM employees WHERE dept_id IN (2, 3)) SELECT dept_id, emp_id, salary, salary_level FROM ranked WHERE salary_level <= 3 ORDER BY dept_id, salary_level, emp_id;"
+        explanation: |
+          Engineering gives **4 rows** (265000, then two people at 198000, then 168000) and Sales gives
+          **5 rows** (245000, two at 185000, two at 118000). `DENSE_RANK` counts levels, not people.
+        difficulty: 2
+
+      - type: read
+        title: "One row per thing: removing duplicates"
+        md: |
+          The same trick solves another everyday problem: **keep only one row per entity**.
+
+          The `salary_history` table has one row for *every* salary an employee ever had. What if HR asks for
+          each person's **latest** salary row? Partition by the entity (`emp_id`), order so that the row you
+          want comes first (newest date first), and keep `rn = 1`.
+
+          ```sql
+          ROW_NUMBER() OVER (
+              PARTITION BY emp_id
+              ORDER BY effective_date DESC
+          ) AS rn
+          ```
+
+          > [!TIP]
+          > PostgreSQL also has a special shortcut for "first row per group" called `DISTINCT ON`. You will
+          > meet it in module 16. The `ROW_NUMBER` pattern works in every database, so it's worth knowing well.
+
+      - type: example
+        title: Each employee's latest salary row
+        md: Employees 1 to 8 only, to keep the result short.
+        sql: |
+          WITH history AS (
+              SELECT
+                  emp_id,
+                  effective_date,
+                  salary,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY emp_id
+                      ORDER BY effective_date DESC
+                  ) AS rn
+              FROM salary_history
+              WHERE emp_id <= 8
+          )
+          SELECT emp_id, effective_date, salary
+          FROM history
+          WHERE rn = 1
+          ORDER BY emp_id;
+        after: |
+          **8 rows**, one per employee: the row with the newest `effective_date`. For emp 3 that is the
+          raise of 2019-02-18 to 265000, which is also his current salary in `employees`.
+
+          Every employee had several rows before, so this really did remove "duplicates" of the person.
+
+      - type: exercise
+        id: m10-l04-e3
+        title: The salary they started with
+        prompt: |
+          In `salary_history`, find each employee's **first** salary row (the **oldest** `effective_date`) for
+          employees 1 to 10 (`emp_id <= 10`). Show `emp_id`, `effective_date` and `salary`.
+        starter: |
+          SELECT emp_id, effective_date, salary
+          FROM salary_history
+          WHERE emp_id <= 10;
+        solution: |
+          WITH history AS (
+              SELECT
+                  emp_id,
+                  effective_date,
+                  salary,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY emp_id
+                      ORDER BY effective_date
+                  ) AS rn
+              FROM salary_history
+              WHERE emp_id <= 10
+          )
+          SELECT emp_id, effective_date, salary
+          FROM history
+          WHERE rn = 1;
+        hints:
+          - "Same pattern as the latest-salary example, but the OLDEST row must come first."
+          - "ORDER BY effective_date (ascending) inside the window, then keep rn = 1."
+          - "WITH history AS (SELECT emp_id, effective_date, salary, ROW_NUMBER() OVER (PARTITION BY emp_id ORDER BY ___) AS rn FROM salary_history WHERE emp_id <= 10) SELECT emp_id, effective_date, salary FROM history WHERE rn = 1;"
+        explanation: |
+          You get **10 rows**. Each first row is dated on the person's hire date, because the first
+          `salary_history` row is always the starting salary. Ascending order puts the oldest row first.
+        difficulty: 2
+
+      - type: fill
+        id: m10-l04-f1
+        prompt: Complete the pattern that keeps the 3 best-paid people of every department.
+        template: |
+          WITH ranked AS (
+              SELECT dept_id, emp_id, salary,
+                     ROW_NUMBER() OVER (
+                         ___ BY dept_id
+                         ORDER BY salary ___, emp_id
+                     ) AS rn
+              FROM employees
+          )
+          SELECT * FROM ranked WHERE rn <= 3;
+        answers:
+          - ["PARTITION"]
+          - ["DESC"]
+        explanation: |
+          `PARTITION BY dept_id` restarts the numbering for every department, and `ORDER BY salary DESC` puts
+          the highest salary at number 1. Then `rn <= 3` keeps the top three.
+
+      - type: read
+        title: The same pattern on the shop data
+        md: |
+          The recipe is always the same: **partition by the group, order by what makes a row "best", rank in a
+          CTE, filter outside**. It works on any table. Let's use the ShopSmart store for a moment.
+
+      - type: example
+        title: The two priciest products in each category
+        dataset: shop
+        md: We join `products` to `categories` to get the category names, then rank by price.
+        sql: |
+          WITH ranked AS (
+              SELECT
+                  c.name AS category,
+                  p.name AS product,
+                  p.price,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY p.category_id
+                      ORDER BY p.price DESC
+                  ) AS rn
+              FROM products p
+              JOIN categories c
+                  ON c.category_id = p.category_id
+          )
+          SELECT category, product, price
+          FROM ranked
+          WHERE rn <= 2
+          ORDER BY category, rn;
+        after: |
+          **22 rows**: 11 categories with products, 2 each. For example, `Computers` shows the Mini Desktop PC
+          Cube (649.99) and the 10-inch Tablet Lite (229.99).
+
+          There are no price ties in the top 3 of any category, so the answer is clear-cut.
+
+      - type: exercise
+        id: m10-l04-e4
+        title: Each customer's latest order
+        dataset: shop
+        prompt: |
+          For customers 1 to 6 (`customer_id <= 6`), show their **most recent order**: `customer_id`,
+          `order_id`, `order_date` and `status`. If a customer has two orders on the same date, the one with
+          the higher `order_id` counts as the most recent.
+        starter: |
+          SELECT customer_id, order_id, order_date, status
+          FROM orders
+          WHERE customer_id <= 6;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  customer_id,
+                  order_id,
+                  order_date,
+                  status,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY customer_id
+                      ORDER BY order_date DESC, order_id DESC
+                  ) AS rn
+              FROM orders
+              WHERE customer_id <= 6
+          )
+          SELECT customer_id, order_id, order_date, status
+          FROM ranked
+          WHERE rn = 1;
+        hints:
+          - "Partition by customer, newest order first, then keep the first row of each customer."
+          - "ORDER BY order_date DESC, order_id DESC makes the order total even when two orders share a date."
+          - "WITH ranked AS (SELECT customer_id, order_id, order_date, status, ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY order_date DESC, order_id DESC) AS rn FROM orders WHERE customer_id <= 6) SELECT customer_id, order_id, order_date, status FROM ranked WHERE rn = 1;"
+        explanation: |
+          You get **6 rows**. Customer 1's latest order is 811 (2024-11-30), customer 5's is 878 (2024-12-22).
+          The second sort column is the tie-breaker. Customer 5 even has two orders on 2024-04-12 (415 and 416)
+          in the past, which shows why it is a good habit.
+        difficulty: 2
+
+      - type: parsons
+        id: m10-l04-o1
+        prompt: |
+          Arrange the lines to show **every top-paid person of each department** (people who tie for first
+          place are all included).
+        lines:
+          - "WITH ranked AS ("
+          - "    SELECT dept_id, first_name, salary,"
+          - "        RANK() OVER (PARTITION BY dept_id"
+          - "                     ORDER BY salary DESC) AS rnk"
+          - "    FROM employees"
+          - ")"
+          - "SELECT * FROM ranked WHERE rnk = 1;"
+        distractors:
+          - "GROUP BY dept_id"
+        explanation: |
+          First the CTE ranks the people inside each department with `RANK`, then the outer query keeps rank 1.
+          Because `RANK` lets ties share a rank, all tied top earners are returned.
+
+      - type: exercise
+        id: m10-l04-e5
+        title: The three newest colleagues
+        prompt: |
+          For each department, show the **3 most recently hired current employees**. Only look at people with
+          `terminated_on IS NULL` and `dept_id IS NOT NULL`. Show `dept_id`, `first_name`, `hire_date` and
+          `recency` (1 = the newest hire in the department). Sort by `dept_id`, then `recency`.
+        starter: |
+          SELECT dept_id, first_name, hire_date
+          FROM employees
+          WHERE terminated_on IS NULL
+            AND dept_id IS NOT NULL;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  first_name,
+                  hire_date,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY hire_date DESC
+                  ) AS recency
+              FROM employees
+              WHERE terminated_on IS NULL
+                AND dept_id IS NOT NULL
+          )
+          SELECT dept_id, first_name, hire_date, recency
+          FROM ranked
+          WHERE recency <= 3
+          ORDER BY dept_id, recency;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The newest hire has the latest hire_date, so order the window by hire_date DESC."
+          - "Rank inside a CTE with PARTITION BY dept_id, then keep recency <= 3 outside."
+          - "WITH ranked AS (SELECT dept_id, first_name, hire_date, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY ___ DESC) AS recency FROM employees WHERE terminated_on IS NULL AND dept_id IS NOT NULL) SELECT dept_id, first_name, hire_date, recency FROM ranked WHERE recency <= 3 ORDER BY dept_id, recency;"
+        explanation: |
+          You get **17 rows**: 3 for each department, except the Executive department, which only has 2
+          current people. Everybody's `hire_date` is different, so there are no ties here.
+        difficulty: 2
+
+      - type: exercise
+        id: m10-l04-e6
+        title: First place vs. second place
+        prompt: |
+          For every department (ignore people without one), show `dept_id`, `top_salary` (the highest
+          salary), `second_salary` (the second-highest person's salary) and `gap` (`top_salary` minus
+          `second_salary`). Sort by `dept_id`.
+
+          Hint for the plan: rank in a CTE, keep ranks 1 and 2, then use `GROUP BY` with `FILTER` (or `CASE`)
+          to put both salaries on one line.
+        starter: |
+          SELECT dept_id, MAX(salary) AS top_salary
+          FROM employees
+          WHERE dept_id IS NOT NULL
+          GROUP BY dept_id
+          ORDER BY dept_id;
+        solution: |
+          WITH ranked AS (
+              SELECT
+                  dept_id,
+                  salary,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY dept_id
+                      ORDER BY salary DESC
+                  ) AS rn
+              FROM employees
+              WHERE dept_id IS NOT NULL
+          )
+          SELECT
+              dept_id,
+              MAX(salary) FILTER (WHERE rn = 1) AS top_salary,
+              MAX(salary) FILTER (WHERE rn = 2) AS second_salary,
+              MAX(salary) FILTER (WHERE rn = 1)
+                  - MAX(salary) FILTER (WHERE rn = 2) AS gap
+          FROM ranked
+          WHERE rn <= 2
+          GROUP BY dept_id
+          ORDER BY dept_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Two steps: ROW_NUMBER per department in a CTE, then one row per department with GROUP BY."
+          - "MAX(salary) FILTER (WHERE rn = 1) picks the first-place salary, MAX(salary) FILTER (WHERE rn = 2) the second."
+          - "WITH ranked AS (SELECT dept_id, salary, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rn FROM employees WHERE dept_id IS NOT NULL) SELECT dept_id, MAX(salary) FILTER (WHERE rn = 1) AS top_salary, MAX(salary) FILTER (WHERE ___) AS second_salary, ... FROM ranked WHERE rn <= 2 GROUP BY dept_id ORDER BY dept_id;"
+        explanation: |
+          You get **6 rows**. The biggest gap is in the Executive department (320000 vs. 175000 = **145000**),
+          and the smallest is in Sales (**60000**). If two people tie for second, the salary is the same
+          whichever one `ROW_NUMBER` picks, so the answer doesn't change.
+        difficulty: 3
+
+      - type: read
+        title: Pattern checklist
+        md: |
+          **Top-N per group**, remember the five parts:
+
+          1. A CTE (or subquery) that ranks the rows.
+          2. `PARTITION BY` the group you want "per".
+          3. `ORDER BY` what makes a row better, plus a tie-breaker when you use `ROW_NUMBER`.
+          4. `WHERE rn <= N` in the outer query.
+          5. Pick the function: `ROW_NUMBER` for exact counts, `RANK` or `DENSE_RANK` when ties should stay.
+
+          Next: **running totals**, where the order inside `OVER` makes the numbers *add up as you go*.
+    cheatsheet:
+      - title: Top-N per group
+        sql: |
+          WITH ranked AS (
+              SELECT dept_id, first_name, salary,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY dept_id
+                         ORDER BY salary DESC, emp_id
+                     ) AS rn
+              FROM employees
+          )
+          SELECT * FROM ranked WHERE rn <= 3;
+        note: "Rank in a CTE, filter outside. Window functions are not allowed in WHERE."
+      - title: Latest row per entity (deduplicate)
+        sql: |
+          WITH h AS (
+              SELECT *, ROW_NUMBER() OVER (
+                         PARTITION BY emp_id
+                         ORDER BY effective_date DESC) AS rn
+              FROM salary_history
+          )
+          SELECT * FROM h WHERE rn = 1;
+        note: "ORDER BY ... DESC puts the newest row at rn = 1. Use ASC for the oldest."
+      - title: Ties in a top-N
+        sql: |
+          WHERE rn  <= 2   -- exactly 2 rows per group
+          WHERE rnk <= 2   -- RANK: ties can add rows
+          WHERE lvl <= 2   -- DENSE_RANK: 2 different values
+        note: "Pick ROW_NUMBER, RANK or DENSE_RANK to match how ties should behave."
+
+  - id: m10-l05
+    title: "Running Totals"
+    summary: Add ORDER BY inside OVER to build cumulative sums and counts, and restart them for each group.
+    minutes: 28
+    steps:
+      - type: read
+        title: Sales so far this year
+        md: |
+          Aisha from the ShopSmart finance team has a question for you:
+          *"How much have we sold **so far this year**, at the end of every month?"*
+
+          By hand you'd do it like this: January. Then January + February. Then January + February + March...
+          Each line adds one more month to the line before. That is called a **running total** (or
+          **cumulative sum**), and it is one of the most useful things a window function can do.
+
+          Let's first build the monthly numbers she will start from.
+
+      - type: example
+        title: Delivered revenue per month in 2024
+        dataset: shop
+        md: |
+          A normal `GROUP BY` adds up the revenue of delivered orders for every month of 2024. (The money on
+          an order line is `quantity * unit_price * (1 - discount)`.)
+        sql: |
+          SELECT
+              date_trunc('month', o.order_date)::date AS month,
+              ROUND(SUM(i.quantity * i.unit_price
+                        * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+            AND o.order_date >= '2024-01-01'
+          GROUP BY 1
+          ORDER BY 1;
+        after: |
+          **12 rows**, one per month, from 7892.27 in January to 23367.47 in December. This is a normal
+          `GROUP BY` result. Now we need to add the months up as we go.
+
+      - type: read
+        title: ORDER BY inside OVER makes it run
+        md: |
+          Until now `OVER ()` gave every row the whole window. If you add `ORDER BY` inside it, the window
+          **grows row by row**: each row sees the first row, up to and including itself.
+
+          ```sql
+          SUM(revenue) OVER (ORDER BY month)
+          ```
+
+          For the March row that means: January + February + March. For the April row: January to April.
+
+          > [!ANALOGY]
+          > Think of the **balance column** on your bank statement. Every line shows the money you have *so
+          > far*: the previous balance plus this line. A running total is exactly that column.
+
+      - type: example
+        title: A running total of revenue
+        dataset: shop
+        md: |
+          The monthly numbers become a CTE called `monthly`. The window function sits in the query below it.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', o.order_date)::date AS month,
+                  ROUND(SUM(i.quantity * i.unit_price
+                            * (1 - i.discount)), 2) AS revenue
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+                AND o.order_date >= '2024-01-01'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              revenue,
+              SUM(revenue) OVER (ORDER BY month) AS running_total
+          FROM monthly
+          ORDER BY month;
+        after: |
+          The first row repeats January (7892.27). February shows 7892.27 + 4246.86 = **12139.13**. The last
+          row, December, shows **145872.39**, the revenue of the whole year.
+
+          That final number is a great sanity check: the last running total must equal the plain total.
+
+      - type: viz
+        viz: window
+        title: A running total, row by row
+        md: |
+          Click **Running SUM** and then click different rows: the highlighted rows are the ones added up for
+          that row's result. Tick or untick the **PARTITION BY region** box to see the total restart for each
+          region.
+        config:
+          table:
+            name: sales
+            columns: [region, month, amount]
+            rows:
+              - [East, 1, 100]
+              - [East, 2, 80]
+              - [East, 3, 120]
+              - [East, 4, 90]
+              - [West, 1, 50]
+              - [West, 2, 90]
+              - [West, 3, 70]
+              - [West, 4, 40]
+          partitionBy: region
+          orderBy: month
+          value: amount
+          functions: [running_sum, partition_sum]
+
+      - type: exercise
+        id: m10-l05-e1
+        title: Payroll as the company grew
+        prompt: |
+          For the first ten employees (`emp_id <= 10`), show `emp_id`, `hire_date`, `salary` and
+          `running_salary`: the total of the salaries of everyone hired up to and including this person,
+          counting in order of `hire_date`. Sort the result by `hire_date`.
+        starter: |
+          SELECT emp_id, hire_date, salary
+          FROM employees
+          WHERE emp_id <= 10
+          ORDER BY hire_date;
+        solution: |
+          SELECT
+              emp_id,
+              hire_date,
+              salary,
+              SUM(salary) OVER (ORDER BY hire_date) AS running_salary
+          FROM employees
+          WHERE emp_id <= 10
+          ORDER BY hire_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You want a total that grows with every row, in hire order. What goes inside OVER to make it grow?"
+          - "SUM(salary) OVER (ORDER BY hire_date) AS running_salary."
+          - "SELECT emp_id, hire_date, salary, SUM(salary) OVER (ORDER BY ___) AS running_salary FROM employees WHERE emp_id <= 10 ORDER BY hire_date;"
+        explanation: |
+          The CEO (hired 2012-03-05) is first with 320000, and by the tenth hire the running payroll has
+          reached **2249000**. Every hire date is different, so the order inside `OVER` is clear.
+        difficulty: 1
+
+      - type: quiz
+        id: m10-l05-q1
+        question: |
+          You write `SUM(revenue) OVER (ORDER BY month)`. Which rows are added up for the **March** row?
+        options:
+          - "Only March"
+          - "All twelve months"
+          - "January, February and March"
+          - "February and March"
+        answer: 2
+        explanation: |
+          With `ORDER BY` inside `OVER`, each row's window starts at the first row and ends at the current
+          row. So March adds January + February + March. Without the `ORDER BY`, it would add all twelve.
+
+      - type: read
+        title: Running totals and the grand total together
+        md: |
+          Every window function has its own `OVER`, so you can combine a running total with a plain total in
+          one query. Dividing one by the other gives the **percentage reached so far**:
+
+          ```sql
+          100.0 * SUM(revenue) OVER (ORDER BY month)
+                / SUM(revenue) OVER ()
+          ```
+
+          The top part grows row by row, the bottom part is the same everywhere. The last row always ends at
+          100%.
+
+      - type: example
+        title: How much of the year is done?
+        dataset: shop
+        md: The same monthly revenue, with the share of the year's revenue reached by the end of each month.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', o.order_date)::date AS month,
+                  ROUND(SUM(i.quantity * i.unit_price
+                            * (1 - i.discount)), 2) AS revenue
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+                AND o.order_date >= '2024-01-01'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              revenue,
+              ROUND(100.0 * SUM(revenue) OVER (ORDER BY month)
+                    / SUM(revenue) OVER (), 1) AS pct_so_far
+          FROM monthly
+          ORDER BY month;
+        after: |
+          By the end of August, **53.1%** of the year's revenue is in. The last three months (October to
+          December) bring in the remaining **39.9%**, because of the busy Black Friday season.
+
+      - type: read
+        title: A fresh start for every group
+        md: |
+          Add `PARTITION BY` before the `ORDER BY` and the running total **restarts** in every group. The
+          pattern is the same as for ranking:
+
+          ```sql
+          SUM(salary) OVER (
+              PARTITION BY dept_id
+              ORDER BY hire_date
+          )
+          ```
+
+          This reads: *"for each department, add up the salaries in hire order."*
+
+      - type: example
+        title: Payroll growing inside each department
+        md: "Finance (5) and HR (6): headcount and payroll after each hire."
+        sql: |
+          SELECT
+              dept_id,
+              first_name,
+              hire_date,
+              COUNT(*) OVER (
+                  PARTITION BY dept_id
+                  ORDER BY hire_date
+              ) AS hired_so_far,
+              SUM(salary) OVER (
+                  PARTITION BY dept_id
+                  ORDER BY hire_date
+              ) AS payroll_so_far
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        after: |
+          **10 rows**. In Finance the count goes 1, 2, 3, 4, 5 and the payroll climbs from 240000 to
+          **640000**. Then in HR everything restarts: the count begins again at 1 and the payroll at 215000,
+          and reaches **531000**.
+
+      - type: exercise
+        id: m10-l05-e2
+        title: How many people so far?
+        prompt: |
+          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `hire_date` and
+          `hired_so_far`: how many people of **that department** have been hired up to and including this
+          person's `hire_date`. Sort by `dept_id`, then `hire_date`.
+        starter: |
+          SELECT first_name, dept_id, hire_date
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        solution: |
+          SELECT
+              first_name,
+              dept_id,
+              hire_date,
+              COUNT(*) OVER (
+                  PARTITION BY dept_id
+                  ORDER BY hire_date
+              ) AS hired_so_far
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "A running count: COUNT(*) with a window that grows in hire order and restarts for every department."
+          - "COUNT(*) OVER (PARTITION BY dept_id ORDER BY hire_date) AS hired_so_far."
+          - "SELECT first_name, dept_id, hire_date, COUNT(*) OVER (PARTITION BY ___ ORDER BY hire_date) AS hired_so_far FROM employees WHERE dept_id IN (5, 6) ORDER BY dept_id, hire_date;"
+        explanation: |
+          Both departments end at 5, the number of people they have. A running count is the same idea as a
+          running sum: each row counts itself and all the rows before it.
+        difficulty: 2
+
+      - type: predict
+        id: m10-l05-p1
+        question: |
+          Three Sales people earn exactly 88000 (emp 40, 41 and 42). What does `running` show for those three
+          rows?
+        sql: |
+          SELECT emp_id, salary,
+                 SUM(salary) OVER (ORDER BY salary) AS running
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY salary, emp_id;
+        options:
+          - "235000, 323000, 411000"
+          - "411000 on all three rows"
+          - "88000 on all three rows"
+          - "62000, 147000, 235000"
+        answer: 1
+        explanation: |
+          Surprise! Rows that tie in the `ORDER BY` column are treated as **one step**, so the running total
+          adds all three 88000 salaries at once. The three rows each show 62000 + 85000 + 3 x 88000 = **411000**.
+
+      - type: read
+        title: The tie trap, and its easy fix
+        md: |
+          When several rows have the **same value** in the window's `ORDER BY` column, they are "peers", and
+          they all show the same running total, as if they were one row. That is rarely what you want.
+
+          The fix is the same habit as for `ROW_NUMBER`: finish the `ORDER BY` with a **unique column**. Then
+          every row is its own step.
+
+          ```sql
+          SUM(salary) OVER (ORDER BY salary, emp_id)
+          ```
+
+          > [!MISTAKE]
+          > Running totals ordered by a column that has duplicates (like a date with several orders, or a
+          > salary shared by several people). Tied rows get identical totals. Add the id as a tie-breaker.
+          > Module 11 explains exactly why this happens (the "default window frame").
+
+      - type: example
+        title: Same ladder, with a tie-breaker
+        md: The same Sales running total, now with `emp_id` to settle the ties.
+        sql: |
+          SELECT
+              emp_id,
+              salary,
+              SUM(salary) OVER (
+                  ORDER BY salary, emp_id
+              ) AS running
+          FROM employees
+          WHERE dept_id = 3
+          ORDER BY salary, emp_id;
+        after: |
+          The three 88000 rows now show **235000, 323000, 411000**: one new salary is added at each step.
+          The final row is still 1466000, the total Sales payroll, in both versions.
+
+      - type: exercise
+        id: m10-l05-e3
+        title: Engineering, top-down
+        prompt: |
+          List Engineering (`dept_id = 2`) from the **highest salary down**, with ties settled by the lower
+          `emp_id` first. Show `emp_id`, `salary` and `running_total`: the sum of the salaries from the top
+          of that list down to the current person. Sort in that same order.
+        starter: |
+          SELECT emp_id, salary
+          FROM employees
+          WHERE dept_id = 2
+          ORDER BY salary DESC, emp_id;
+        solution: |
+          SELECT
+              emp_id,
+              salary,
+              SUM(salary) OVER (
+                  ORDER BY salary DESC, emp_id
+              ) AS running_total
+          FROM employees
+          WHERE dept_id = 2
+          ORDER BY salary DESC, emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The window must order exactly like the list: highest salary first, then emp_id. Otherwise tied people get the same total."
+          - "SUM(salary) OVER (ORDER BY salary DESC, emp_id) AS running_total."
+          - "SELECT emp_id, salary, SUM(salary) OVER (ORDER BY salary DESC, ___) AS running_total FROM employees WHERE dept_id = 2 ORDER BY salary DESC, emp_id;"
+        explanation: |
+          Engineering has pairs of equal salaries (198000, 128000, 122000, 118000). Thanks to `emp_id` every
+          person gets their own step, and the last row reaches **2833000**, the whole department's payroll.
+        difficulty: 2
+
+      - type: example
+        title: A running total that restarts every year
+        dataset: shop
+        md: |
+          You can also partition by an **expression**. Here the running total of delivered revenue restarts
+          each January, because the year is the partition.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', o.order_date)::date AS month,
+                  ROUND(SUM(i.quantity * i.unit_price
+                            * (1 - i.discount)), 2) AS revenue
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              revenue,
+              SUM(revenue) OVER (
+                  PARTITION BY EXTRACT(YEAR FROM month)
+                  ORDER BY month
+              ) AS ytd_revenue
+          FROM monthly
+          ORDER BY month;
+        after: |
+          **24 rows**: 2023 and 2024. The 2023 column climbs to **83571.12** in December. In January 2024 the
+          total drops back to 7892.27 and starts climbing again. This "year to date" (YTD) number is a
+          favourite in business reports.
+
+      - type: fill
+        id: m10-l05-f1
+        prompt: Complete the query so that each HR person shows the payroll so far, in hire order.
+        template: |
+          SELECT first_name, hire_date, salary,
+                 ___(salary) OVER (___ BY hire_date) AS payroll_so_far
+          FROM employees
+          WHERE dept_id = 6;
+        answers:
+          - ["SUM"]
+          - ["ORDER"]
+        explanation: |
+          `SUM(salary) OVER (ORDER BY hire_date)`: the aggregate adds up, and the `ORDER BY` inside `OVER`
+          makes the total grow in hire order.
+
+      - type: exercise
+        id: m10-l05-e4
+        title: Orders so far in 2024
+        dataset: shop
+        prompt: |
+          Count the orders (any status) placed in each month of 2024 (`order_date >= '2024-01-01'`; the data
+          ends on 2024-12-31). Show `month` (the first day of the month, as a date), `orders` and
+          `running_orders` (the number of orders placed from January up to that month). Sort by `month`.
+        starter: |
+          SELECT
+              date_trunc('month', order_date)::date AS month,
+              COUNT(*) AS orders
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+          GROUP BY 1
+          ORDER BY 1;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', order_date)::date AS month,
+                  COUNT(*) AS orders
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              orders,
+              SUM(orders) OVER (ORDER BY month) AS running_orders
+          FROM monthly
+          ORDER BY month;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Two layers: a CTE that counts orders per month, then a running SUM of that count in the query below."
+          - "SUM(orders) OVER (ORDER BY month) AS running_orders, reading from the CTE."
+          - "WITH monthly AS (SELECT date_trunc('month', order_date)::date AS month, COUNT(*) AS orders FROM orders WHERE order_date >= '2024-01-01' GROUP BY 1) SELECT month, orders, SUM(orders) OVER (ORDER BY ___) AS running_orders FROM monthly ORDER BY month;"
+        explanation: |
+          You get **12 rows**. The running total ends at **572**, the number of orders placed in 2024. The
+          CTE does the counting and the window does the accumulating, which keeps each step easy to read.
+        difficulty: 2
+
+      - type: exercise
+        id: m10-l05-e5
+        title: Fix the flat total
+        prompt: |
+          This query should show the **payroll so far** for Finance and HR: growing person by person in
+          `hire_date` order, and restarting for each department. But `payroll_so_far` shows the same number
+          for everyone in a department. Fix it.
+        starter: |
+          SELECT first_name, dept_id, hire_date,
+                 SUM(salary) OVER (PARTITION BY dept_id)
+                     AS payroll_so_far
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        solution: |
+          SELECT first_name, dept_id, hire_date,
+                 SUM(salary) OVER (
+                     PARTITION BY dept_id
+                     ORDER BY hire_date
+                 ) AS payroll_so_far
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The window has groups but no order, so every row sees its whole department. What makes a window grow?"
+          - "Add ORDER BY hire_date inside the OVER brackets, after the PARTITION BY."
+          - "SUM(salary) OVER (PARTITION BY dept_id ORDER BY ___) AS payroll_so_far"
+        explanation: |
+          `PARTITION BY` alone gives every row its department's **full** total (640000 for Finance). Add
+          `ORDER BY hire_date` and the window grows with each hire. Remember: `PARTITION BY` = which group,
+          `ORDER BY` = in what sequence to accumulate.
+        difficulty: 2
+
+      - type: parsons
+        id: m10-l05-o1
+        prompt: |
+          Arrange the lines to show Finance and HR people with the payroll so far inside their own
+          department, in hire order.
+        lines:
+          - "SELECT dept_id, first_name, hire_date,"
+          - "    SUM(salary) OVER (PARTITION BY dept_id"
+          - "                      ORDER BY hire_date) AS payroll_so_far"
+          - "FROM employees"
+          - "WHERE dept_id IN (5, 6)"
+          - "ORDER BY dept_id, hire_date;"
+        distractors:
+          - "GROUP BY dept_id"
+        explanation: |
+          The window function has two parts inside `OVER`: `PARTITION BY` first, then `ORDER BY`. The final
+          `ORDER BY` only sorts the output rows, and doesn't affect the running total.
+
+      - type: exercise
+        id: m10-l05-e6
+        title: How close to the final payroll?
+        prompt: |
+          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `hire_date` and
+          `pct_reached`: the payroll so far in the department (hire order) as a **percentage of the
+          department's full payroll**, rounded to **1 decimal place**. The last hire of each department
+          should show 100.0. Sort by `dept_id`, then `hire_date`.
+        starter: |
+          SELECT first_name, dept_id, hire_date
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        solution: |
+          SELECT
+              first_name,
+              dept_id,
+              hire_date,
+              ROUND(100.0 * SUM(salary) OVER (
+                        PARTITION BY dept_id
+                        ORDER BY hire_date)
+                    / SUM(salary) OVER (PARTITION BY dept_id), 1)
+                  AS pct_reached
+          FROM employees
+          WHERE dept_id IN (5, 6)
+          ORDER BY dept_id, hire_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You need two windows: a running sum (PARTITION BY and ORDER BY) and a full department total (PARTITION BY only)."
+          - "100.0 * SUM(salary) OVER (PARTITION BY dept_id ORDER BY hire_date) / SUM(salary) OVER (PARTITION BY dept_id), then ROUND(..., 1)."
+          - "ROUND(100.0 * SUM(salary) OVER (PARTITION BY dept_id ORDER BY hire_date) / SUM(salary) OVER (PARTITION BY ___), 1) AS pct_reached"
+        explanation: |
+          Finance reaches 37.5% with its first hire (Yusuf) and 100.0% with the last (Sophia). HR starts at
+          40.5% (Valentina) and ends at 100.0% (Naledi). The two `OVER` clauses differ in just one word:
+          the running one has an `ORDER BY`, the total doesn't.
+        difficulty: 3
+
+      - type: read
+        title: Three windows, three meanings
+        md: |
+          | You write | The window for each row is |
+          |---|---|
+          | `OVER ()` | **all** the rows |
+          | `OVER (PARTITION BY dept_id)` | all the rows **of its group** |
+          | `OVER (PARTITION BY dept_id ORDER BY hire_date)` | its group's rows **from the start up to this row** |
+
+          That last form gives you running totals, running counts and running averages, restarting
+          for each group.
+
+          Next: looking at the **previous and next** rows with `LAG` and `LEAD`.
+    cheatsheet:
+      - title: Running total
+        sql: |
+          SELECT month, revenue,
+                 SUM(revenue) OVER (ORDER BY month)
+                     AS running_total
+          FROM monthly;
+        note: "ORDER BY inside OVER makes the window grow row by row."
+      - title: Restart for every group
+        sql: |
+          SUM(salary) OVER (
+              PARTITION BY dept_id
+              ORDER BY hire_date
+          )
+        note: "PARTITION BY = which group, ORDER BY = in what sequence to add."
+      - title: Percent reached
+        sql: |
+          100.0 * SUM(x) OVER (ORDER BY d)
+                / SUM(x) OVER ()
+        note: "The last row ends at 100. If the ORDER BY column can repeat, add a unique tie-breaker (like the id), or tied rows share one total."
+
+  - id: m10-l06
+    title: "LAG & LEAD: Looking at Neighbouring Rows"
+    summary: Pull the previous or next row's value onto the current row, to measure raises, changes and gaps.
+    minutes: 30
+    steps:
+      - type: read
+        title: How big was each raise?
+        md: |
+          Sofia from HR is back with a new question:
+          *"The `salary_history` table lists every salary an employee has had. For each row, **how much did the
+          salary go up** compared to the previous one?"*
+
+          Look at the problem. To calculate a raise you need **two rows at once**: the current salary and the
+          one **just before it**. Normal SQL looks at one row at a time, so this was painful for years.
+
+          Window functions have a pair of tools made for exactly this: **`LAG`** (look back) and **`LEAD`**
+          (look ahead).
+
+          > [!ANALOGY]
+          > You are standing in a queue. `LAG` is turning your head to see **the person behind you in line**
+          > (the one who arrived before you). `LEAD` is looking at **the person in front**, who is next to be
+          > served. The first person has nobody behind them, and the last has nobody ahead.
+
+      - type: read
+        title: LAG and LEAD in one minute
+        md: |
+          - `LAG(salary)`: the value of `salary` from the **previous** row.
+          - `LEAD(salary)`: the value of `salary` from the **next** row.
+
+          "Previous" and "next" depend on the order you give inside `OVER`, so `ORDER BY` is essential:
+
+          ```sql
+          LAG(salary) OVER (ORDER BY effective_date)
+          ```
+
+          When there is no previous row (the first one) or no next row (the last one), you get **NULL**.
+
+      - type: example
+        title: Each salary next to the one before it
+        md: The history of employee 10 (Arjun), oldest row first.
+        sql: |
+          SELECT
+              effective_date,
+              salary,
+              LAG(salary) OVER (
+                  ORDER BY effective_date
+              ) AS previous_salary
+          FROM salary_history
+          WHERE emp_id = 10
+          ORDER BY effective_date;
+        after: |
+          **4 rows**. The first row has `previous_salary = NULL`, because nothing comes before his starting
+          salary. From the second row on, `previous_salary` is simply the `salary` of the row above:
+          140500, 150500, 160500.
+
+          Now a raise is just `salary - previous_salary`.
+
+      - type: viz
+        viz: window
+        title: Looking back and ahead
+        md: |
+          Click **LAG** and **LEAD**, then click any row. The highlighted row is the neighbour that the
+          function looks at. Tick and untick **PARTITION BY region** and see what happens at the edge of each
+          group.
+        config:
+          table:
+            name: sales
+            columns: [region, month, amount]
+            rows:
+              - [East, 1, 100]
+              - [East, 2, 80]
+              - [East, 3, 120]
+              - [West, 1, 50]
+              - [West, 2, 90]
+              - [West, 3, 70]
+          partitionBy: region
+          orderBy: month
+          value: amount
+          functions: [lag, lead]
+
+      - type: exercise
+        id: m10-l06-e1
+        title: Layla's salary history
+        prompt: |
+          Employee 9 (`emp_id = 9`) has five rows in `salary_history`. Show `effective_date`, `salary` and
+          `previous_salary` (the salary of the row before, in date order). Sort by `effective_date`.
+        starter: |
+          SELECT effective_date, salary
+          FROM salary_history
+          WHERE emp_id = 9
+          ORDER BY effective_date;
+        solution: |
+          SELECT
+              effective_date,
+              salary,
+              LAG(salary) OVER (
+                  ORDER BY effective_date
+              ) AS previous_salary
+          FROM salary_history
+          WHERE emp_id = 9
+          ORDER BY effective_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You want the salary of the previous row. Which of LAG and LEAD looks backwards?"
+          - "LAG(salary) OVER (ORDER BY effective_date) AS previous_salary."
+          - "SELECT effective_date, salary, LAG(___) OVER (ORDER BY effective_date) AS previous_salary FROM salary_history WHERE emp_id = 9 ORDER BY effective_date;"
+        explanation: |
+          The first row has no previous salary (NULL). Then 155000, 165000, 181000 and 189500 follow. The last
+          row shows 189500 as the previous salary of the current 198000.
+        difficulty: 1
+
+      - type: read
+        title: A trap when there are several people
+        md: |
+          Our table has **many employees** mixed together. If the window has no `PARTITION BY`, `LAG` doesn't
+          know that one employee ended and another began, so it happily looks at the last row of the
+          *previous person*.
+
+          Let's see it with employees 9 and 10.
+
+      - type: example
+        title: Oops, the neighbour belongs to someone else
+        md: Look closely at the first row of employee 10.
+        sql: |
+          SELECT
+              emp_id,
+              effective_date,
+              salary,
+              LAG(salary) OVER (
+                  ORDER BY emp_id, effective_date
+              ) AS previous_salary
+          FROM salary_history
+          WHERE emp_id IN (9, 10)
+          ORDER BY emp_id, effective_date;
+        after: |
+          Employee 10's first row shows `previous_salary = 198000`, which is employee 9's **last** salary. That
+          is nonsense: Arjun's starting salary (140500) has no previous salary at all.
+
+          The query didn't fail. It just quietly told a wrong story.
+
+          > [!MISTAKE]
+          > Using `LAG` or `LEAD` on data with several entities (employees, customers, accounts) and no
+          > `PARTITION BY`. The first row of each entity then borrows a value from the previous entity.
+
+      - type: read
+        title: "The fix: PARTITION BY + ORDER BY"
+        md: |
+          Give each employee their own window, and order each window by date:
+
+          ```sql
+          LAG(salary) OVER (
+              PARTITION BY emp_id
+              ORDER BY effective_date
+          )
+          ```
+
+          Now every employee's first row gets NULL, and nobody borrows from anyone else.
+
+      - type: example
+        title: Raises for two employees
+        md: |
+          With `PARTITION BY emp_id` in place, we can also calculate the raise itself in the same query.
+        sql: |
+          SELECT
+              emp_id,
+              effective_date,
+              salary,
+              LAG(salary) OVER (
+                  PARTITION BY emp_id
+                  ORDER BY effective_date
+              ) AS previous_salary,
+              salary - LAG(salary) OVER (
+                  PARTITION BY emp_id
+                  ORDER BY effective_date
+              ) AS raise_amount
+          FROM salary_history
+          WHERE emp_id IN (9, 10)
+          ORDER BY emp_id, effective_date;
+        after: |
+          **9 rows**. Both employees now start with NULL. Layla's raises are 10000, 16000, 8500 and 8500,
+          and Arjun's are 10000, 10000 and 7500.
+
+          NULL minus anything is NULL, so the first row's `raise_amount` is NULL too. That is the right
+          answer: there was no raise on the day they were hired.
+
+      - type: exercise
+        id: m10-l06-e2
+        title: Fix the borrowed salary
+        prompt: |
+          This query should show the raise of each salary change for employees 8, 9 and 10, in a column
+          `raise_amount`. The first row of each employee should have **no raise (NULL)**, but employees 9 and
+          10 show a made-up number. Fix the query.
+        starter: |
+          SELECT
+              emp_id,
+              effective_date,
+              salary,
+              salary - LAG(salary) OVER (
+                  ORDER BY emp_id, effective_date
+              ) AS raise_amount
+          FROM salary_history
+          WHERE emp_id IN (8, 9, 10)
+          ORDER BY emp_id, effective_date;
+        solution: |
+          SELECT
+              emp_id,
+              effective_date,
+              salary,
+              salary - LAG(salary) OVER (
+                  PARTITION BY emp_id
+                  ORDER BY effective_date
+              ) AS raise_amount
+          FROM salary_history
+          WHERE emp_id IN (8, 9, 10)
+          ORDER BY emp_id, effective_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The window needs to know where one employee ends and the next begins."
+          - "Replace ORDER BY emp_id, effective_date with PARTITION BY emp_id ORDER BY effective_date."
+          - "salary - LAG(salary) OVER (PARTITION BY ___ ORDER BY effective_date) AS raise_amount"
+        explanation: |
+          With `PARTITION BY emp_id`, each employee's first row has no previous row and gets NULL. You get
+          **14 rows**, with 3 NULLs (one per employee).
+        difficulty: 2
+
+      - type: quiz
+        id: m10-l06-q1
+        question: |
+          `LAG(salary) OVER (PARTITION BY emp_id ORDER BY effective_date)` is used on the table. What does it
+          return on an employee's **first** row?
+        options:
+          - "0"
+          - "The same salary as the current row"
+          - "NULL"
+          - "An error, because there is no previous row"
+        answer: 2
+        explanation: |
+          There is nothing before the first row, so `LAG` returns **NULL**. No error. (You'll see in a moment
+          how to replace that NULL with a default value.)
+
+      - type: read
+        title: Going further back, and filling the gaps
+        md: |
+          `LAG` and `LEAD` accept two optional extras:
+
+          ```sql
+          LAG(expression, offset, default)
+          ```
+
+          - **offset**: how many rows to jump. The default is 1. `LAG(salary, 2)` looks two rows back.
+          - **default**: what to return instead of NULL when there's no such row. `LAG(salary, 1, 0)` returns 0.
+
+          The default must be the same kind of value as the column (a number for numbers, a date for dates).
+
+      - type: predict
+        id: m10-l06-p1
+        question: |
+          Employee 10 has four salary rows (140500, 150500, 160500 and 168000, oldest first). What does
+          `two_back` show on the **last** row?
+        sql: |
+          SELECT effective_date, salary,
+                 LAG(salary, 2) OVER (
+                     ORDER BY effective_date
+                 ) AS two_back
+          FROM salary_history
+          WHERE emp_id = 10
+          ORDER BY effective_date;
+        options:
+          - "160500"
+          - "150500"
+          - "140500"
+          - "NULL"
+        answer: 1
+        explanation: |
+          `LAG(salary, 2)` looks two rows up. From the 4th row, two rows up is the 2nd row, which is
+          **150500**. (The first two rows show NULL.)
+
+      - type: example
+        title: LEAD and a default value
+        md: |
+          How many days was each salary in force? `LEAD(effective_date)` is the date of the *next* change. For
+          the last row there is no next change, so we use `DATE '2024-12-31'` (the date of this dataset) as
+          the default.
+        sql: |
+          SELECT
+              effective_date,
+              salary,
+              LEAD(effective_date, 1, DATE '2024-12-31') OVER (
+                  ORDER BY effective_date
+              ) - effective_date AS days_in_force
+          FROM salary_history
+          WHERE emp_id = 10
+          ORDER BY effective_date;
+        after: |
+          The first salary lasted **498 days**, the second **519**, the third **739**. The last one is still in
+          force, so it is counted up to 2024-12-31: **1024 days**.
+
+          Subtracting one date from another gives a number of days.
+
+      - type: exercise
+        id: m10-l06-e3
+        title: Days until the next change
+        prompt: |
+          For employee 9 (`emp_id = 9`), show `effective_date`, `salary`, `next_date` (the `effective_date` of
+          the next row) and `days_to_next` (the number of days from this row's date to the next date). The
+          last row has no next change, so both `next_date` and `days_to_next` should be NULL. Sort by
+          `effective_date`.
+        starter: |
+          SELECT effective_date, salary
+          FROM salary_history
+          WHERE emp_id = 9
+          ORDER BY effective_date;
+        solution: |
+          SELECT
+              effective_date,
+              salary,
+              LEAD(effective_date) OVER (
+                  ORDER BY effective_date
+              ) AS next_date,
+              LEAD(effective_date) OVER (
+                  ORDER BY effective_date
+              ) - effective_date AS days_to_next
+          FROM salary_history
+          WHERE emp_id = 9
+          ORDER BY effective_date;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You need the date of the next row. Which function looks forward?"
+          - "LEAD(effective_date) OVER (ORDER BY effective_date) for next_date, then subtract effective_date for the day count."
+          - "SELECT effective_date, salary, LEAD(effective_date) OVER (ORDER BY effective_date) AS next_date, LEAD(effective_date) OVER (ORDER BY effective_date) - ___ AS days_to_next FROM salary_history WHERE emp_id = 9 ORDER BY effective_date;"
+        explanation: |
+          The first salary (155000) lasted **356 days**, and the last row has NULL in both columns, as there is
+          nothing after it. `LEAD` mirrors `LAG`: same arguments, opposite direction.
+        difficulty: 2
+
+      - type: fill
+        id: m10-l06-f1
+        prompt: |
+          Complete the query so that each employee's salary shows next to their previous salary.
+        template: |
+          SELECT emp_id, effective_date, salary,
+                 ___(salary) OVER (
+                     ___ BY emp_id
+                     ORDER BY effective_date
+                 ) AS previous_salary
+          FROM salary_history;
+        answers:
+          - ["LAG"]
+          - ["PARTITION"]
+        explanation: |
+          `LAG` looks at the previous row, and `PARTITION BY emp_id` stops it from crossing from one employee
+          to the next.
+
+      - type: read
+        title: Using the neighbour in a filter
+        md: |
+          Just like `ROW_NUMBER`, the result of `LAG` can't be used in `WHERE`. If you want to keep only the
+          rows where something changed, use the same two-step pattern you learned in lesson 4: **calculate in a
+          CTE, filter outside.**
+
+          For example: *"Which salary changes were pay cuts?"* is the question "is the salary lower than the
+          previous salary?"
+
+      - type: exercise
+        id: m10-l06-e4
+        title: Find the pay cuts
+        prompt: |
+          Find every salary change in `salary_history` that was a **decrease** compared to the same
+          employee's previous salary. Show `emp_id`, `effective_date`, `previous_salary`, `salary` and `cut`
+          (previous salary minus new salary). Sort by `emp_id`.
+        starter: |
+          SELECT emp_id, effective_date, salary
+          FROM salary_history
+          ORDER BY emp_id, effective_date;
+        solution: |
+          WITH steps AS (
+              SELECT
+                  emp_id,
+                  effective_date,
+                  salary,
+                  LAG(salary) OVER (
+                      PARTITION BY emp_id
+                      ORDER BY effective_date
+                  ) AS previous_salary
+              FROM salary_history
+          )
+          SELECT
+              emp_id,
+              effective_date,
+              previous_salary,
+              salary,
+              previous_salary - salary AS cut
+          FROM steps
+          WHERE salary < previous_salary
+          ORDER BY emp_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Step 1: a CTE that adds previous_salary with LAG. Step 2: filter the CTE where salary is lower than previous_salary."
+          - "LAG(salary) OVER (PARTITION BY emp_id ORDER BY effective_date) in the CTE, then WHERE salary < previous_salary outside."
+          - "WITH steps AS (SELECT emp_id, effective_date, salary, LAG(salary) OVER (PARTITION BY ___ ORDER BY effective_date) AS previous_salary FROM salary_history) SELECT emp_id, effective_date, previous_salary, salary, previous_salary - salary AS cut FROM steps WHERE salary < previous_salary ORDER BY emp_id;"
+        explanation: |
+          Exactly **2 rows**: employees 23 and 40 both took a temporary pay cut on 2020-04-01 (8000 and
+          6000). The first rows of each employee have a NULL `previous_salary`, and `salary < NULL` is
+          unknown, so they are filtered out automatically.
+        difficulty: 3
+
+      - type: example
+        title: Month-over-month change in orders
+        dataset: shop
+        md: |
+          The same idea on the ShopSmart store: orders per month in 2024, next to the previous month and the
+          change.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', order_date)::date AS month,
+                  COUNT(*) AS orders
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+              GROUP BY 1
+          )
+          SELECT
+              month,
+              orders,
+              LAG(orders) OVER (ORDER BY month) AS prev_orders,
+              orders - LAG(orders) OVER (ORDER BY month) AS change
+          FROM monthly
+          ORDER BY month;
+        after: |
+          **12 rows**. January has no previous month (NULL). February fell by 6 orders (23 vs. 29). The big
+          jump is in November: **+32** orders (91 vs. 59), thanks to Black Friday. December dipped slightly
+          by 5.
+
+          This "this month vs. last month" view is called **month-over-month** (MoM) change.
+
+      - type: parsons
+        id: m10-l06-o1
+        prompt: |
+          Arrange the lines to show employee 10's salary history with the previous salary next to each row.
+        lines:
+          - "SELECT effective_date, salary,"
+          - "    LAG(salary) OVER (ORDER BY effective_date)"
+          - "        AS previous_salary"
+          - "FROM salary_history"
+          - "WHERE emp_id = 10"
+          - "ORDER BY effective_date;"
+        distractors:
+          - "GROUP BY effective_date"
+        explanation: |
+          `LAG(...) OVER (ORDER BY ...)` is a column in the `SELECT` list. The final `ORDER BY` just sorts the
+          output. Window functions never need `GROUP BY`.
+
+      - type: exercise
+        id: m10-l06-e5
+        title: Revenue growth, month by month
+        dataset: shop
+        prompt: |
+          For delivered orders (`status = 'delivered'`) placed from 2024-01-01 on, first calculate the
+          revenue of each month, rounded to **2 decimals**: the sum of
+          `quantity * unit_price * (1 - discount)` over the order lines. Then show `month` (first day of the
+          month), `revenue`, `prev_revenue` (the previous month's rounded revenue) and `pct_change`: the
+          change compared to the previous month, as a percentage of the previous month, rounded to **1 decimal**.
+          Sort by `month`. January has no previous month, so its last two columns are NULL.
+        starter: |
+          SELECT
+              date_trunc('month', o.order_date)::date AS month,
+              ROUND(SUM(i.quantity * i.unit_price
+                        * (1 - i.discount)), 2) AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+            AND o.order_date >= '2024-01-01'
+          GROUP BY 1
+          ORDER BY 1;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  date_trunc('month', o.order_date)::date AS month,
+                  ROUND(SUM(i.quantity * i.unit_price
+                            * (1 - i.discount)), 2) AS revenue
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+                AND o.order_date >= '2024-01-01'
+              GROUP BY 1
+          ), steps AS (
+              SELECT
+                  month,
+                  revenue,
+                  LAG(revenue) OVER (ORDER BY month) AS prev_revenue
+              FROM monthly
+          )
+          SELECT
+              month,
+              revenue,
+              prev_revenue,
+              ROUND(100.0 * (revenue - prev_revenue)
+                    / prev_revenue, 1) AS pct_change
+          FROM steps
+          ORDER BY month;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Build it in layers: monthly revenue first (you have this in the starter), then LAG for the previous month, then the percentage."
+          - "pct_change = ROUND(100.0 * (revenue - prev_revenue) / prev_revenue, 1). Put LAG(revenue) OVER (ORDER BY month) in a CTE so you can reuse prev_revenue."
+          - "WITH monthly AS (<the starter query without ORDER BY>), steps AS (SELECT month, revenue, LAG(revenue) OVER (ORDER BY ___) AS prev_revenue FROM monthly) SELECT month, revenue, prev_revenue, ROUND(100.0 * (revenue - prev_revenue) / prev_revenue, 1) AS pct_change FROM steps ORDER BY month;"
+        explanation: |
+          The biggest rise is **+110.0%** in March (4246.86 to 8918.82) and the biggest fall is **-46.2%** in
+          February. Two CTEs keep each step readable: sums first, neighbours second, percentages last.
+        difficulty: 3
+
+      - type: exercise
+        id: m10-l06-e6
+        title: Days between orders
+        dataset: shop
+        prompt: |
+          For customers 3 and 4 (`customer_id IN (3, 4)`), show every order with `customer_id`, `order_id`,
+          `order_date` and `days_since_prev`: the number of days since **that customer's previous order**
+          (NULL for their first order). Order the customer's orders by `order_date`, then `order_id`. Sort the
+          result by `customer_id`, `order_date`, `order_id`.
+        starter: |
+          SELECT customer_id, order_id, order_date
+          FROM orders
+          WHERE customer_id IN (3, 4)
+          ORDER BY customer_id, order_date, order_id;
+        solution: |
+          SELECT
+              customer_id,
+              order_id,
+              order_date,
+              order_date - LAG(order_date) OVER (
+                  PARTITION BY customer_id
+                  ORDER BY order_date, order_id
+              ) AS days_since_prev
+          FROM orders
+          WHERE customer_id IN (3, 4)
+          ORDER BY customer_id, order_date, order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Look back one row per customer. The result of date minus date is a number of days."
+          - "order_date - LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date, order_id)."
+          - "SELECT customer_id, order_id, order_date, order_date - LAG(order_date) OVER (PARTITION BY ___ ORDER BY order_date, order_id) AS days_since_prev FROM orders WHERE customer_id IN (3, 4) ORDER BY customer_id, order_date, order_id;"
+        explanation: |
+          Customer 3 has 5 orders: their second order came 20 days after the first, and the next one 104 days
+          later. Customer 4 has 4 orders. Each customer's first order shows NULL, because `PARTITION BY`
+          stops customer 4 from borrowing customer 3's last order date.
+        difficulty: 3
+
+      - type: read
+        title: Module 10 so far
+        md: |
+          In six lessons you've learned the core of window functions:
+
+          - `OVER ()` and `PARTITION BY` give every row a group's answer without losing rows.
+          - `ROW_NUMBER`, `RANK` and `DENSE_RANK` rank rows, and a CTE turns ranks into top-N filters.
+          - `ORDER BY` inside `OVER` makes running totals.
+          - `LAG` and `LEAD` compare each row with its neighbours.
+
+          Time to use all of them together in the **Salary & Sales Insights** project. In module 11 you'll
+          learn to control exactly *which* neighbouring rows a window can see.
+    cheatsheet:
+      - title: Previous and next row
+        sql: |
+          LAG(salary) OVER (
+              PARTITION BY emp_id
+              ORDER BY effective_date)
+          LEAD(salary) OVER (
+              PARTITION BY emp_id
+              ORDER BY effective_date)
+        note: "NULL on the first row (LAG) or last row (LEAD) of each group."
+      - title: Offset and default
+        sql: |
+          LAG(salary, 2, 0) OVER (ORDER BY effective_date)
+        note: "LAG(value, how_many_rows_back, default_if_missing)"
+      - title: Change vs. previous row
+        sql: |
+          SELECT month, revenue,
+                 revenue - LAG(revenue) OVER (ORDER BY month)
+                     AS change
+          FROM monthly;
+        note: "Always add PARTITION BY when the table holds several people/accounts, or rows borrow from the wrong group. To filter on a LAG result, use a CTE."
+
 testPool:
   - type: quiz
     id: m10-t01

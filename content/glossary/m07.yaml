@@ -1,0 +1,53 @@
+glossary:
+  - term: Subquery
+    definition: A SELECT written inside another query, wrapped in parentheses. The inner query (the subquery) runs first and hands its result to the outer query, which uses it like a value, a list or a table.
+    example: "SELECT name FROM products WHERE price > (SELECT AVG(price) FROM products);"
+    module: m07
+  - term: Scalar subquery
+    definition: A subquery that returns exactly one value (one row and one column). You can use it anywhere you could type a single number, text or date, such as in WHERE, HAVING or the SELECT list. If it returns more than one row you get an error; if it returns no row the value is NULL.
+    example: "WHERE price = (SELECT MAX(price) FROM products)"
+    module: m07
+  - term: Inner and outer query
+    definition: The outer query is the main SELECT; the inner query is the subquery inside its parentheses. The outer query can use the inner query's result, but it cannot see the inner query's tables or aliases.
+    example: "SELECT ... FROM orders WHERE customer_id IN (SELECT customer_id FROM customers WHERE state = 'WA');  -- the part in parentheses is the inner query"
+    module: m07
+  - term: IN with a subquery
+    definition: A way to build the list for IN from another query. The subquery must return one column; the outer row is kept when its value appears anywhere in that list. Repeats in the list do not matter.
+    example: "WHERE customer_id IN (SELECT customer_id FROM orders WHERE status = 'returned')"
+    module: m07
+  - term: NOT IN trap
+    definition: If the list of a NOT IN contains even one NULL, the condition can never be TRUE, so the query returns no rows at all. Either filter NULLs out of the list with IS NOT NULL, or use NOT EXISTS instead.
+    example: "category_id NOT IN (SELECT parent_id FROM categories)  -- returns 0 rows because parent_id has NULLs"
+    module: m07
+  - term: EXISTS
+    definition: A test that is TRUE when the subquery returns at least one row. What the subquery selects does not matter, only whether a row is found, so SELECT 1 is the usual habit. It keeps each outer row once and stops looking at the first match.
+    example: "WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id)"
+    module: m07
+  - term: NOT EXISTS
+    definition: The opposite of EXISTS. It is TRUE when the subquery returns no row at all. It is the NULL-safe way to find rows with no match, such as customers who never ordered.
+    example: "WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id)"
+    module: m07
+  - term: Semi-join
+    definition: Keeping the rows of one table that have a match in another table, without bringing in the other table's columns or duplicate rows. In SQL it is written with EXISTS or IN.
+    example: "Customers that have at least one order: WHERE EXISTS (...) keeps each customer once."
+    module: m07
+  - term: Anti-join
+    definition: Keeping the rows of one table that have NO match in another table. It can be written with NOT EXISTS, with LEFT JOIN ... IS NULL, or (carefully) with NOT IN.
+    example: "SELECT c.first_name FROM customers c LEFT JOIN orders o ON o.customer_id = c.customer_id WHERE o.order_id IS NULL;"
+    module: m07
+  - term: Correlated subquery
+    definition: A subquery that refers to a column of the outer query, so it can give a different answer for every outer row. The link between inner and outer is usually a condition such as p2.category_id = p.category_id. Always use two different aliases.
+    example: "WHERE price > (SELECT AVG(p2.price) FROM products p2 WHERE p2.category_id = p.category_id)"
+    module: m07
+  - term: Derived table
+    definition: A subquery in the FROM clause that the outer query reads like a table. It exists only while the query runs and needs a name (alias). It lets you aggregate an aggregate, or filter on a computed column.
+    example: "SELECT AVG(n) FROM (SELECT COUNT(*) AS n FROM orders GROUP BY customer_id) AS per_customer;"
+    module: m07
+  - term: ANY
+    definition: Compares a value with a set of values and is TRUE when the comparison holds for at least one of them. "= ANY (list)" means the same as IN, and "> ANY (list)" means bigger than the smallest value.
+    example: "WHERE price > ANY (SELECT price FROM products WHERE category_id = 9)"
+    module: m07
+  - term: ALL
+    definition: Compares a value with a set of values and is TRUE only when the comparison holds for every value in the set. "> ALL (list)" means bigger than the largest value, and "<> ALL (list)" behaves like NOT IN. On an empty set it is TRUE.
+    example: "WHERE price > ALL (SELECT price FROM products WHERE category_id = 13)"
+    module: m07
