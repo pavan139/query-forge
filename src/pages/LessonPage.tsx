@@ -2,6 +2,7 @@ import { ArrowDown, ArrowRight, Bookmark, BookmarkCheck, CheckCircle2, ChevronLe
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CodeBlock } from '../components/CodeBlock.tsx';
+import { ErrorBoundary } from '../components/ErrorBoundary.tsx';
 import { STEP_LABEL, StepView } from '../components/steps/StepView.tsx';
 import { Page } from '../components/ui.tsx';
 import { lessonDataset, lessonLocation, nextLessonId, useModule, isGraded } from '../content/load.ts';
@@ -157,13 +158,15 @@ export default function LessonPage() {
                     {i + 1}/{total}
                   </span>
                 </div>
-                <StepView
-                  step={s}
-                  dataset={lessonDataset(mod, lesson, 'dataset' in s ? s : undefined)}
-                  done={done}
-                  draftKey={s.type === 'exercise' ? k : undefined}
-                  onDone={(r) => completeStep({ id: k, kind: s.type as StepKind, ref: lessonId, attempts: r.attempts, hints: r.hints, revealed: r.revealed })}
-                />
+                <ErrorBoundary resetKey={k} what="this step">
+                  <StepView
+                    step={s}
+                    dataset={lessonDataset(mod, lesson, 'dataset' in s ? s : undefined)}
+                    done={done}
+                    draftKey={s.type === 'exercise' ? k : undefined}
+                    onDone={(r) => completeStep({ id: k, kind: s.type as StepKind, ref: lessonId, attempts: r.attempts, hints: r.hints, revealed: r.revealed })}
+                  />
+                </ErrorBoundary>
                 {current && (
                   <div className="mt-5 flex items-center justify-end gap-3 border-t border-line pt-4">
                     {graded && !done && (

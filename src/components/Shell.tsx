@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { useDueCount, useTestBadges } from '../lib/hooks.ts';
 import { useStore } from '../state/store.ts';
 import { levelFromXp, titleFor } from '../state/xp.ts';
@@ -209,7 +210,17 @@ export function Shell({ children }: { children: ReactNode }) {
           </header>
         )}
         <main id="main-scroll" key={loc.pathname} className={`animate-fade-in min-w-0 flex-1 ${immersive ? '' : 'pb-tabbar'}`}>
-          {children}
+          <ErrorBoundary
+            resetKey={loc.pathname}
+            what="this page"
+            action={
+              <a className="btn btn-primary btn-sm" href="#/">
+                Go home
+              </a>
+            }
+          >
+            {children}
+          </ErrorBoundary>
         </main>
       </div>
 
