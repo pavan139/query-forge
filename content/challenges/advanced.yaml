@@ -904,3 +904,197 @@ challenges:
       Comparing each row with a single overall number is a common pattern. A CTE that returns one row can be joined with `CROSS JOIN` to give that number to every row.
 
       Doing the same thing with a subquery in `WHERE` works too: `WHERE revenue > (SELECT AVG(revenue) FROM product_revenue)`. The CTE version is easier to read and to test.
+
+  - id: ch-a-026
+    title: Reading four date styles
+    difficulty: expert
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, dates, case, regex]
+    prompt: |
+      The old CRM exported `signup_date` as **text**. The same column holds four styles:
+
+      - `2024-03-15` (year, month, day)
+      - `03/15/2024` (month first, then day, then year)
+      - `15-Mar-2024` (day, month name, year)
+      - `2024/3/5` (year, month, day, with no leading zeros)
+
+      Some rows have a NULL, an empty value or the word `unknown`. Leave those rows out.
+
+      Count the signups per year. Show `signup_year` (a whole number) and `signups`, sorted by `signup_year`.
+    solution: |
+      WITH parsed AS (
+          SELECT CASE
+                     WHEN signup_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN signup_date::date
+                     WHEN signup_date ~ '^\d{2}/\d{2}/\d{4}$'
+                         THEN to_date(signup_date, 'MM/DD/YYYY')
+                     WHEN signup_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                         THEN to_date(signup_date, 'DD-Mon-YYYY')
+                     WHEN signup_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                         THEN to_date(signup_date, 'YYYY/FMMM/FMDD')
+                 END AS signup
+          FROM raw_customers
+      )
+      SELECT EXTRACT(YEAR FROM signup)::int AS signup_year,
+             COUNT(*) AS signups
+      FROM parsed
+      WHERE signup IS NOT NULL
+      GROUP BY EXTRACT(YEAR FROM signup)
+      ORDER BY signup_year;
+    ordered: true
+    hints:
+      - "Each value is one of four shapes. Decide which shape a value has before you try to read it as a date."
+      - "Use CASE with a regular expression (`~`) for each shape. For the other two shapes, TO_DATE(text, format) reads the text. The format for 15-Mar-2024 is 'DD-Mon-YYYY'."
+      - "Put the CASE in a CTE called parsed. Then GROUP BY EXTRACT(YEAR FROM signup) and leave out the rows where signup IS NULL."
+    explanation: |
+      Text dates are the most common mess in real exports. You cannot cast `'unknown'::date`; the query fails. So you first **recognise the shape** of each value with a regular expression, and only then convert it.
+
+      `CASE` returns NULL when no `WHEN` matches, which takes care of the NULL, empty and `unknown` rows. `FM` in `'YYYY/FMMM/FMDD'` tells `TO_DATE` that the month and day may have no leading zero. When a file mixes `03/04/2024` styles, always agree on one rule (here: month first) and write it down.
+
+  - id: ch-a-027
+    title: Customers who appear twice
+    difficulty: expert
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, group-by, having, duplicates]
+    prompt: |
+      Some customers were typed into the old system twice, with different spelling. Clean each email first: remove the spaces at the start and end, and make every letter lowercase. Ignore rows where the email is NULL or blank.
+
+      Show each cleaned email that appears in **more than one row**, with three columns:
+
+      - `clean_email`: the cleaned email
+      - `rows_found`: how many rows have that email
+      - `first_row_id`: the lowest `row_id` among those rows
+
+      Sort by `clean_email`.
+    solution: |
+      SELECT LOWER(TRIM(email)) AS clean_email,
+             COUNT(*) AS rows_found,
+             MIN(row_id) AS first_row_id
+      FROM raw_customers
+      WHERE NULLIF(TRIM(email), '') IS NOT NULL
+      GROUP BY LOWER(TRIM(email))
+      HAVING COUNT(*) > 1
+      ORDER BY clean_email;
+    ordered: true
+    hints:
+      - "Compare emails only after cleaning them. TRIM removes spaces at the start and end; LOWER makes every letter small."
+      - "GROUP BY the cleaned email. HAVING COUNT(*) > 1 keeps only the emails that appear in more than one row."
+      - "NULLIF(TRIM(email), '') IS NOT NULL skips the blank and NULL emails. Group by the cleaned expression, not the raw email column."
+    explanation: |
+      Grouping by the raw `email` column would miss these duplicates, because `' Camila.Castillo@example.com'` and `'camila.castillo@example.com'` are different text to the database. **Clean first, then group.**
+
+      `WHERE` removes rows before grouping, and `HAVING` filters the groups afterwards. `MIN(row_id)` keeps one row id per person, which is handy when you decide which copy to keep.
+
+  - id: ch-a-028
+    title: Three headcount summaries in one query
+    difficulty: expert
+    dataset: company
+    module: m16
+    tags: [grouping-sets, aggregation, subtotals, nulls]
+    prompt: |
+      The HR team wants the current headcount in three views inside one result:
+
+      - one row for each department (the employment type is empty)
+      - one row for each employment type (the department is empty)
+      - one grand total row (the department and the employment type are both empty)
+
+      Count only **current** employees (their `terminated_on` is empty) who belong to a department. Show `department`, `employment_type` and `headcount`. Leave a cell empty (NULL) when the row is not about that column.
+    solution: |
+      SELECT d.name AS department,
+             e.employment_type,
+             COUNT(*) AS headcount
+      FROM employees e
+      JOIN departments d ON d.dept_id = e.dept_id
+      WHERE e.terminated_on IS NULL
+      GROUP BY GROUPING SETS ((d.name), (e.employment_type), ());
+    hints:
+      - "One GROUP BY can produce several summaries at once. Each summary is a set of columns to group by."
+      - "Write each summary as its own group in brackets: (d.name) is one, (e.employment_type) is another. The empty bracket () makes the grand total."
+      - "GROUP BY GROUPING SETS ((d.name), (e.employment_type), ())"
+    explanation: |
+      `GROUPING SETS` runs one aggregate and gives you several levels of totals. The columns that are not part of a level come back as NULL, which is why the subtotal rows have an empty department or employment type.
+
+      The same result could be built with three queries joined by `UNION ALL`, but that repeats the joins three times. `ROLLUP` and `CUBE` are shortcuts for common sets of levels. A real NULL in the data also looks empty, so `GROUPING(d.name) = 1` is the reliable way to spot a subtotal row.
+
+  - id: ch-a-029
+    title: The two best-rated films in every genre
+    difficulty: expert
+    dataset: movies
+    module: m16
+    tags: [lateral, top-n, join, aggregation]
+    prompt: |
+      The FlickNest programming team wants the two best-rated films in each genre.
+
+      - Use only films with **at least 10 ratings**.
+      - A film's score is the average of its `stars`, rounded to 2 decimals.
+      - A film with two genres counts in both genres.
+
+      Show `genre`, `title`, `avg_stars` (the rounded average) and `ratings_count` (how many ratings the film has). Show the 2 highest-scoring films in each genre. Sort by `genre`, then by `avg_stars` (highest first), then by `title`.
+    solution: |
+      WITH film_scores AS (
+          SELECT m.movie_id, m.title, g.name AS genre,
+                 ROUND(AVG(r.stars), 2) AS avg_stars,
+                 COUNT(*) AS ratings_count
+          FROM movies m
+          JOIN movie_genres mg ON mg.movie_id = m.movie_id
+          JOIN genres g ON g.genre_id = mg.genre_id
+          JOIN ratings r ON r.movie_id = m.movie_id
+          GROUP BY m.movie_id, m.title, g.name
+          HAVING COUNT(*) >= 10
+      )
+      SELECT f.genre, f.title, f.avg_stars, f.ratings_count
+      FROM genres g
+      CROSS JOIN LATERAL (
+          SELECT fs.genre, fs.title, fs.avg_stars, fs.ratings_count
+          FROM film_scores fs
+          WHERE fs.genre = g.name
+          ORDER BY fs.avg_stars DESC, fs.title
+          LIMIT 2
+      ) f
+      ORDER BY f.genre, f.avg_stars DESC, f.title;
+    ordered: true
+    hints:
+      - "First build one row per film and genre, with its average stars and its number of ratings. Keep only films with at least 10 ratings."
+      - "You need a separate top 2 for each genre. A LATERAL subquery runs once for every row of the genres table, so it can say WHERE genre = that row's name."
+      - "CROSS JOIN LATERAL (SELECT ... WHERE fs.genre = g.name ORDER BY avg_stars DESC, title LIMIT 2) f"
+    explanation: |
+      "Top N in each group" is one of the most asked questions in analysis. `LATERAL` lets a subquery look at the current row of the outer query, so each genre gets its own `ORDER BY ... LIMIT 2`.
+
+      A window function (`ROW_NUMBER() OVER (PARTITION BY genre ...)`, keeping rows 1 and 2) gives the same answer. Adding `title` to the `ORDER BY` is a tie-breaker: without it, two films with the same score could swap places from one run to the next.
+
+  - id: ch-a-030
+    title: Products that sell together
+    difficulty: expert
+    dataset: shop
+    module: m19
+    tags: [market-basket, self-join, pairs, aggregation]
+    prompt: |
+      The marketing team wants to run "customers who bought X also bought Y" campaigns. Find pairs of products that were in the **same order** at least 15 times. Count every order, whatever its status.
+
+      - List each pair only once. `product_a` is the product with the **lower** `product_id`, and `product_b` is the other one.
+      - Show `product_a` (its name), `product_b` (its name) and `orders_together` (how many orders contain both).
+      - Sort by `orders_together` (highest first), then by `product_a`, then by `product_b`.
+    solution: |
+      SELECT p1.name AS product_a,
+             p2.name AS product_b,
+             COUNT(*) AS orders_together
+      FROM order_items a
+      JOIN order_items b
+        ON b.order_id = a.order_id
+       AND b.product_id > a.product_id
+      JOIN products p1 ON p1.product_id = a.product_id
+      JOIN products p2 ON p2.product_id = b.product_id
+      GROUP BY p1.name, p2.name
+      HAVING COUNT(*) >= 15
+      ORDER BY orders_together DESC, product_a, product_b;
+    ordered: true
+    hints:
+      - "Join order_items to itself on the same order_id. One copy stands for product A and the other copy for product B."
+      - "To list each pair once, keep only the pairs where the second product_id is higher than the first: b.product_id > a.product_id."
+      - "Join products twice to get both names, GROUP BY both names and keep the groups with HAVING COUNT(*) >= 15."
+    explanation: |
+      This is **market basket analysis**, the idea behind "frequently bought together". A **self join** pairs every row of a table with other rows of the same table.
+
+      The `>` condition is the trick. Without it you would get every pair twice (A with B, and B with A), plus pairs of a product with itself. Each order holds a product at most once, so `COUNT(*)` counts orders correctly.

@@ -160,7 +160,7 @@ challenges:
     explanation: |
       `FILTER` is a short way to count only some rows in a group. It is the same idea as `SUM(CASE WHEN ... THEN 1 END)`, and it reads more clearly.
 
-      You can use the whole expression `EXTRACT(YEAR FROM hire_date)::int` in both `SELECT` and `GROUP BY`. The `::int` turns the year into a whole number, so it prints as `2019` and not `2019.0`.
+      You can use the whole expression `EXTRACT(YEAR FROM hire_date)::int` in both `SELECT` and `GROUP BY`. `EXTRACT` returns a `numeric` value, and `::int` turns it into a whole-number type, which is the normal type for a year.
 
   - id: ch-i-006
     title: Card spending by quarter
@@ -335,7 +335,7 @@ challenges:
     explanation: |
       Joins can be chained: `accounts` → `customers` and `accounts` → `branches`. Each `JOIN` adds the columns of one more table to every row.
 
-      Use table aliases (`a`, `c`, `b`) so each column name says which table it comes from. Two tables both have a `name` column in many databases, so the alias prevents confusion.
+      Use table aliases (`a`, `c`, `b`) so each column name says which table it comes from. Aliases are essential when two tables share a column name, such as `customer_id` in `accounts` and `customers`.
 
   - id: ch-i-011
     title: Seniors who have not joined a club
@@ -400,7 +400,7 @@ challenges:
       - "The discount is a fraction, so 1 - discount is the share you keep. Multiply it by quantity and unit_price."
       - "FROM orders o JOIN order_items i ON ___ JOIN products p ON ___ JOIN categories cat ON ___ WHERE o.status = 'delivered' GROUP BY ___;"
     explanation: |
-      Four tables are joined in a chain, and then one row per category is produced with `SUM`. The sum of all categories equals the total revenue of delivered orders.
+      Four tables are joined in a chain, and then one row per category is produced with `SUM`. The categories' totals add up to the total revenue of all delivered orders.
 
       Notice that the `status` filter is on `orders`, the table that holds the status. Filtering on the table that has the column is the safest way to avoid mistakes.
 
@@ -945,7 +945,7 @@ challenges:
     difficulty: hard
     dataset: movies
     module: m08
-    tags: [set-operations, union, intersect, except, correlated]
+    tags: [set-operations, union, intersect, except]
     prompt: |
       The product team is studying how users interact with films. For each user whose `user_id` is from 1 to 10, count the following, using **different** films each time:
 
@@ -1131,7 +1131,7 @@ challenges:
     difficulty: hard
     dataset: shop
     module: m09
-    tags: [cte, recursive, hierarchy, aggregation, left-join]
+    tags: [cte, recursive, hierarchy, left-join]
     prompt: |
       The catalog team groups the categories into departments. A department is a top-level category, which means a category with no parent. It includes its own products and the products of every sub-category below it, at any depth.
 
@@ -1168,7 +1168,7 @@ challenges:
     explanation: |
       The recursive CTE collects every category under each top-level department, at any depth. Then the products are joined to those categories.
 
-      `COUNT(p.product_id)` counts only real products, so a department with no matching products shows `0`. `COUNT(*)` would count the one row produced by the `LEFT JOIN` and show `1` by mistake.
+      `COUNT(p.product_id)` counts only real products, so a department with no matching products shows `0`. `COUNT(*)` would also count the empty rows that the `LEFT JOIN` keeps, giving a wrong number instead of `0`.
 
   - id: ch-i-033
     title: Quiet days on the tablet
@@ -1293,7 +1293,7 @@ challenges:
       - "The second CTE has a single row with the average of the first CTE. Attach that single row to every customer with CROSS JOIN."
       - "WHERE cs.spend > 2 * a.avg_spend compares each customer with the average."
     explanation: |
-      Averaging per-customer totals is different from averaging individual order lines. Here each customer counts once, so a big spender does not pull the average up in a misleading way.
+      The average here is the typical customer's delivered spend, because each customer counts once. Averaging individual order lines would give the typical line instead.
 
       `CROSS JOIN` pairs every row with a single-row CTE. It is safe here only because the average CTE has exactly one row.
 
@@ -1348,7 +1348,7 @@ challenges:
     difficulty: hard
     dataset: blank
     module: m09
-    tags: [cte, recursive, graph, cycle, array]
+    tags: [cte, recursive, graph, array]
     setup: |
       CREATE TABLE routes (
           from_city TEXT NOT NULL,
@@ -2190,7 +2190,7 @@ challenges:
     explanation: |
       `UPDATE` without a `WHERE` changes every row in the table, so always write the condition. The safest habit is to run the same `WHERE` as a `SELECT` first, to see which rows will change.
 
-      `expires_on < DATE '2024-06-01'` keeps the coupons that expired on or before 31 May. A coupon that already had `active = FALSE` is also updated to `FALSE`, which leaves it unchanged.
+      `expires_on < DATE '2024-06-01'` matches the coupons that expired on or before 31 May. Coupon 5 expires on 30 June, so it does not match and keeps its current value.
 
   - id: ch-i-058
     title: Archive the cancelled December orders
@@ -2439,7 +2439,7 @@ challenges:
     difficulty: hard
     dataset: blank
     module: m12
-    tags: [dml, delete, returning, cte, data-modifying]
+    tags: [dml, returning, cte, data-modifying]
     setup: |
       CREATE TABLE active_tickets (
           ticket_id INTEGER PRIMARY KEY,
@@ -2675,7 +2675,7 @@ challenges:
       - "A generated column is written as GENERATED ALWAYS AS (expression) STORED. The expression can use other columns in the same row."
       - "line_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, and line_total NUMERIC(10,2) GENERATED ALWAYS AS (___) STORED"
     explanation: |
-      `GENERATED ALWAYS AS IDENTITY` replaces the older `SERIAL` type. The database hands out the numbers, so two users never get the same id.
+      `GENERATED ALWAYS AS IDENTITY` is the modern way to get auto-numbered ids, and it is preferred over the older `SERIAL` type. The database hands out the numbers, so two rows never get the same id.
 
       `STORED` means the calculated value is saved with the row, so reads are fast. Because it is generated, you cannot insert or update it by hand.
 
@@ -2741,7 +2741,7 @@ challenges:
     difficulty: hard
     dataset: blank
     module: m13
-    tags: [ddl, alter-table, alter-column-type, using, nullif]
+    tags: [ddl, alter-table, using, nullif]
     setup: |
       CREATE TABLE sensor_readings (
           reading_id INTEGER PRIMARY KEY,
@@ -2783,7 +2783,7 @@ challenges:
     difficulty: hard
     dataset: blank
     module: m13
-    tags: [ddl, normalization, identity, insert-select, foreign-key]
+    tags: [ddl, normalization, identity, foreign-key]
     setup: |
       CREATE TABLE sales_flat (
           sale_id INTEGER PRIMARY KEY,

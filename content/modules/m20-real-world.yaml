@@ -536,19 +536,21 @@ lessons:
           The `c.customer_id` at the end of `ORDER BY` is a **tie-breaker**. It decides
           the order when two customers have the same number of orders.
 
-      - type: example
+      - type: read
         title: Names that explain themselves
         md: |
           Avoid names such as `t1`, `x` or `tmp`. Use `snake_case` for multi-word
           names, and use an alias such as `customer_count` to name a result.
-        sql: |
+
+          ```sql
           SELECT state,
                  COUNT(*) AS customer_count
           FROM customers
           GROUP BY state
           ORDER BY customer_count DESC, state
           LIMIT 3;
-        after: |
+          ```
+
           The column is called `customer_count`, so anyone reading the result knows
           what the number means. Without `AS`, PostgreSQL would name the column
           `count`, which says much less.
@@ -2517,6 +2519,945 @@ lessons:
           WHERE price_rank <= 4;
         note: "RANK() keeps tied rows. ROW_NUMBER() would cut one of them."
 
+  - id: m20-l06
+    title: "The SQL interview playbook"
+    summary: Learn a calm, repeatable way to solve an SQL interview problem out loud, then practise the classic questions, including the tie trap, top-N per group and "never happened".
+    minutes: 40
+    steps:
+      - type: read
+        title: The whiteboard moment
+        md: |
+          The interviewer smiles and says: "Write a query for the second highest value.
+          Talk me through it." Your mind goes blank. You know the SQL words, but not
+          where to start.
+
+          That is normal. Interviewers are not testing whether you remember every
+          keyword. They want to see how you think. A **playbook**, a set of steps you
+          repeat every time, gives your mind something to hold on to.
+
+      - type: read
+        title: The six-step playbook
+        md: |
+          1. **Restate the question** in your own words, and say it out loud.
+          2. **Clarify the grain and the output.** "One row per what? Which columns?
+             In which order?"
+          3. **Ask about edge cases.** Ties, NULLs, empty results, duplicates.
+          4. **Sketch the output** on paper: the column names and two example rows.
+          5. **Build step by step.** One table, then a filter, then a join, then a
+             group, then the sort. Check each step before you add the next.
+          6. **Test on a tiny example**, then explain the trade-offs you made.
+
+          > [!ANALOGY]
+          > Pilots run a checklist before every take-off, even when they have flown
+          > a thousand times. The checklist is not for beginners. It stops the big
+          > mistake when you are under pressure.
+
+      - type: example
+        title: The tie trap, part 1
+        md: "The interviewer asks for the **second highest** quantity on an order line. You write `OFFSET 1`."
+        sql: |
+          SELECT quantity
+          FROM order_items
+          ORDER BY quantity DESC
+          LIMIT 1 OFFSET 1;
+        after: |
+          The answer is `5`, which is the highest value, not the second. The second row
+          is also a 5, because many order lines have a quantity of 5. `OFFSET 1` skips
+          one **row**, not one **value**.
+
+          > [!MISTAKE]
+          > Whenever a question says "second", "third" or "Nth", ask whether the values
+          > can repeat. If they can, `DISTINCT` must come first.
+
+      - type: example
+        title: The tie trap, part 2
+        md: The fix is to remove the repeated values before you count places.
+        sql: |
+          SELECT DISTINCT quantity
+          FROM order_items
+          ORDER BY quantity DESC
+          LIMIT 1 OFFSET 1;
+        after: |
+          Now the answer is `4`. `DISTINCT` keeps one row for each quantity, so
+          `OFFSET 1` skips the top value and gives the second one. Say this out loud in
+          an interview: "I need distinct values, because I am ranking values, not
+          rows."
+
+      - type: stepper
+        title: The latest order per customer, step by step
+        md: |
+          The classic question: "For each customer, show their most recent order."
+          Here we look at one customer, with 13 orders, so each step stays small.
+          Click through the stages.
+        stages:
+          - label: Sort the orders
+            md: Start with every order of customer 1, newest first. The order_id breaks ties on the same date.
+            sql: |
+              SELECT customer_id, order_id, order_date
+              FROM orders
+              WHERE customer_id = 1
+              ORDER BY order_date DESC, order_id DESC;
+          - label: Number them
+            md: "ROW_NUMBER() gives 1 to the newest order of each customer, then 2, 3 and so on."
+            sql: |
+              SELECT customer_id, order_id, order_date,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY customer_id
+                         ORDER BY order_date DESC, order_id DESC
+                     ) AS rn
+              FROM orders
+              WHERE customer_id = 1
+              ORDER BY rn;
+          - label: Keep number 1
+            md: Wrap the numbering in a subquery, and keep the rows numbered 1.
+            sql: |
+              SELECT customer_id, order_id, order_date
+              FROM (
+                  SELECT customer_id, order_id, order_date,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY customer_id
+                             ORDER BY order_date DESC, order_id DESC
+                         ) AS rn
+                  FROM orders
+                  WHERE customer_id = 1
+              ) AS t
+              WHERE rn = 1;
+
+      - type: example
+        title: "Products never sold: NOT EXISTS"
+        md: "Which products have never appeared on an order line? Ask it in words first: no matching row exists."
+        sql: |
+          SELECT p.product_id,
+                 p.name
+          FROM products AS p
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM order_items AS i
+              WHERE i.product_id = p.product_id
+          )
+          ORDER BY p.product_id;
+        after: |
+          Five products have never been sold. `NOT EXISTS` reads almost like the
+          question, which makes it easy to explain to an interviewer. It also works
+          safely when the inner query can return NULL, unlike `NOT IN`.
+
+      - type: read
+        title: Practise the way you will be asked
+        md: |
+          In an interview, the same question appears in many forms. Practise the
+          patterns, not the exact answers:
+
+          - **Second highest, or the Nth:** `DISTINCT` plus `OFFSET`, or `DENSE_RANK()`.
+          - **Top N per group:** `ROW_NUMBER()` with `PARTITION BY`, filtered in a subquery.
+          - **Never happened:** `NOT EXISTS`, or a `LEFT JOIN` with `IS NULL`.
+          - **Happened in both periods:** `INTERSECT`, or two `EXISTS`.
+          - **Compared with an average:** a subquery that uses the group's own average.
+
+      - type: quiz
+        id: m20-l06-q1
+        question: "The interviewer asks a question you do not understand yet. What is the best first move?"
+        options:
+          - "Start typing a query, and fix it when it fails"
+          - "Restate the question and ask about the grain and the output"
+          - "Write the most complicated query you know"
+          - "Say nothing until the query is finished"
+        answer: 1
+        explanation: |
+          Restating the question shows you understand it, and asking about the output
+          prevents a wrong answer to the wrong question. Interviewers expect questions.
+
+      - type: predict
+        id: m20-l06-p1
+        question: "What does this query return?"
+        sql: |
+          SELECT DISTINCT discount
+          FROM order_items
+          ORDER BY discount DESC
+          LIMIT 1 OFFSET 2;
+        options: ["0.20", "0.15", "0.10", "0.05"]
+        answer: 2
+        explanation: |
+          The distinct discounts from highest to lowest are 0.20, 0.15, 0.10, 0.05 and
+          0.00. `OFFSET 2` skips two of them, so the third value, 0.10, is returned.
+
+      - type: fill
+        id: m20-l06-f1
+        prompt: "Complete the query. It keeps only the newest order of each customer 1 to 3."
+        template: |
+          SELECT customer_id, order_id, order_date
+          FROM (
+              SELECT customer_id, order_id, order_date,
+                     ___ OVER (
+                         PARTITION BY customer_id
+                         ORDER BY order_date DESC, order_id DESC
+                     ) AS rn
+              FROM orders
+              WHERE customer_id <= 3
+          ) AS t
+          WHERE rn = 1
+          ORDER BY customer_id;
+        answers:
+          - ["ROW_NUMBER()"]
+        explanation: "`ROW_NUMBER()` gives each row of a customer a number from 1 upwards. The `PARTITION BY` restarts the numbers for each customer, and `rn = 1` keeps the newest."
+
+      - type: exercise
+        id: m20-l06-e1
+        title: The second highest discount
+        prompt: |
+          Find the **second highest discount** that appears in `order_items`.
+
+          Show one column, `discount`, with one row. Count distinct discount values:
+          the highest is the first distinct value, and you want the next one.
+        solution: |
+          SELECT DISTINCT discount
+          FROM order_items
+          ORDER BY discount DESC
+          LIMIT 1 OFFSET 1;
+        columnNames: true
+        hints:
+          - Think about the values, not the rows. Many lines share the same discount.
+          - Use `DISTINCT` to keep one row for each discount.
+          - "SELECT DISTINCT discount FROM order_items ORDER BY discount ___ LIMIT 1 OFFSET ___;"
+        explanation: |
+          The discounts are 0.20, 0.15, 0.10, 0.05 and 0.00. The second highest is 0.15.
+          Without `DISTINCT`, the second row would still be 0.20, the same trap as in the
+          example.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l06-e2
+        title: The top two products in each category
+        prompt: |
+          For each category, show its **two most expensive products**.
+
+          Show four columns: `category_id`, `product_id`, `name` and `price`.
+
+          If two products in a category have the same price, the one with the lower
+          `product_id` ranks first. Sort the rows by `category_id`, then by `price` from
+          highest to lowest, then by `product_id`.
+        solution: |
+          SELECT category_id,
+                 product_id,
+                 name,
+                 price
+          FROM (
+              SELECT category_id,
+                     product_id,
+                     name,
+                     price,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY category_id
+                         ORDER BY price DESC, product_id
+                     ) AS rn
+              FROM products
+          ) AS t
+          WHERE rn <= 2
+          ORDER BY category_id, price DESC, product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Number the products in each category with `ROW_NUMBER()`, then keep the numbers 1 and 2."
+          - "`PARTITION BY category_id` restarts the numbers for each category."
+          - "...ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY price DESC, ___) AS rn ... WHERE rn <= ___ ORDER BY category_id, price DESC, ___;"
+        explanation: |
+          The tie-breaker `product_id` makes each category's top two products the same
+          every time. Each of the 11 categories that has products shows two rows, so
+          the result has 22 rows.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l06-e3
+        title: Customers who stopped ordering
+        prompt: |
+          Count the customers who placed at least one order in **2023**, but **no**
+          order in **2024**.
+
+          Show one column, `customers`, with one row. Use `NOT EXISTS` for the 2024
+          check.
+        solution: |
+          SELECT COUNT(*) AS customers
+          FROM customers AS c
+          WHERE EXISTS (
+                  SELECT 1
+                  FROM orders AS o
+                  WHERE o.customer_id = c.customer_id
+                    AND o.order_date < '2024-01-01'
+              )
+            AND NOT EXISTS (
+                  SELECT 1
+                  FROM orders AS o
+                  WHERE o.customer_id = c.customer_id
+                    AND o.order_date >= '2024-01-01'
+              );
+        columnNames: true
+        hints:
+          - You need two checks for each customer. One says "ordered in 2023", the other says "not ordered in 2024".
+          - Use `EXISTS` for the first check and `NOT EXISTS` for the second.
+          - "WHERE EXISTS (SELECT 1 FROM orders AS o WHERE o.customer_id = c.customer_id AND o.order_date < ___) AND ___ EXISTS (...);"
+        explanation: |
+          Six customers bought in 2023 and did not buy again in 2024. Interviewers like
+          this question because it is about business behaviour, and two `EXISTS`
+          checks answer it directly.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l06-e4
+        title: Customers who ordered in both years
+        prompt: |
+          Count the customers who placed at least one order in **2023** and at least
+          one order in **2024**.
+
+          Show one column, `customers`, with one row. Use `INTERSECT` on two lists of
+          `customer_id` values from `orders`.
+        solution: |
+          SELECT COUNT(*) AS customers
+          FROM (
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2023-01-01'
+                AND order_date < '2024-01-01'
+              INTERSECT
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+                AND order_date < '2025-01-01'
+          ) AS both_years;
+        columnNames: true
+        hints:
+          - Build one list of customers for 2023, and one list for 2024.
+          - "`INTERSECT` keeps only the values that appear in both lists."
+          - "SELECT COUNT(*) AS customers FROM (SELECT customer_id FROM orders WHERE ... INTERSECT SELECT customer_id FROM orders WHERE ...) AS both_years;"
+        explanation: |
+          `INTERSECT` removes duplicates, so each customer is counted once. 85 customers
+          ordered in both years. The previous exercise found 6 customers who ordered in
+          2023 but not in 2024.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l06-e5
+        title: Products priced above their category average
+        prompt: |
+          Show the products whose `price` is **higher than the average price of their
+          own category**. Compare each product with the average of its category only,
+          not with all products.
+
+          Show four columns: `product_id`, `name`, `category_id` and `price`. Sort the
+          rows by `product_id`.
+        solution: |
+          SELECT p.product_id,
+                 p.name,
+                 p.category_id,
+                 p.price
+          FROM products AS p
+          WHERE p.price > (
+              SELECT AVG(q.price)
+              FROM products AS q
+              WHERE q.category_id = p.category_id
+          )
+          ORDER BY p.product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - The inner query calculates an average. Make it match the category of the outer product.
+          - "`WHERE q.category_id = p.category_id` links the inner query to the current product."
+          - "...WHERE p.price > (SELECT AVG(q.price) FROM products AS q WHERE q.___ = p.category_id) ORDER BY p.product_id;"
+        explanation: |
+          This is a **correlated subquery**: the inner query depends on the outer row.
+          For each product it finds the average of that product's category. 24
+          products are priced above their category's average.
+        difficulty: 3
+
+      - type: exercise
+        id: m20-l06-e6
+        title: Running total of 2024 revenue
+        prompt: |
+          For every month of **2024**, show the revenue of **delivered** orders
+          (`status` is `'delivered'`).
+
+          Show three columns:
+
+          - `month`: the month as text in the form `YYYY-MM`, for example `2024-03`
+          - `revenue`: the revenue of that month, rounded to 2 decimal places
+          - `running_total`: the total of all months from January up to this month,
+            calculated from the unrounded amounts and then rounded to 2 decimal places
+
+          Each line's amount is `quantity * unit_price * (1 - discount)`. Sort the rows
+          by `month`.
+        solution: |
+          WITH monthly AS (
+              SELECT to_char(o.order_date, 'YYYY-MM') AS month,
+                     SUM(i.quantity * i.unit_price
+                         * (1 - i.discount)) AS raw_revenue
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+                AND o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+              GROUP BY to_char(o.order_date, 'YYYY-MM')
+          )
+          SELECT month,
+                 ROUND(raw_revenue, 2) AS revenue,
+                 ROUND(SUM(raw_revenue) OVER (ORDER BY month), 2)
+                     AS running_total
+          FROM monthly
+          ORDER BY month;
+        ordered: true
+        columnNames: true
+        hints:
+          - First group the delivered 2024 lines by month, in a CTE.
+          - "Use `SUM(...) OVER (ORDER BY month)` for the running total, in the outer query."
+          - "...SUM(raw_revenue) OVER (ORDER BY ___) ... FROM monthly ORDER BY ___;"
+        explanation: |
+          A window function with `ORDER BY` adds up every month so far. The running
+          total ends at 145,872.38, which matches the total for 2024. The amounts are
+          added before rounding, so the small cent differences do not build up.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Second highest value
+        sql: |
+          SELECT DISTINCT discount
+          FROM order_items
+          ORDER BY discount DESC
+          LIMIT 1 OFFSET 1;
+        note: "DISTINCT counts values, not rows, so OFFSET skips values."
+      - title: Top N per group
+        sql: |
+          SELECT *
+          FROM (
+              SELECT category_id, name, price,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY category_id
+                         ORDER BY price DESC, product_id
+                     ) AS rn
+              FROM products
+          ) AS t
+          WHERE rn <= 2;
+        note: "Filter the row numbers in an outer query, because WHERE runs before window functions."
+      - title: Never happened
+        sql: |
+          SELECT p.product_id
+          FROM products AS p
+          WHERE NOT EXISTS (
+              SELECT 1 FROM order_items AS i
+              WHERE i.product_id = p.product_id
+          );
+        note: "Reads like the question. Safer than NOT IN when NULLs are possible."
+      - title: Happened in both periods
+        sql: |
+          SELECT customer_id FROM orders WHERE order_date < '2024-01-01'
+          INTERSECT
+          SELECT customer_id FROM orders WHERE order_date >= '2024-01-01';
+        note: "INTERSECT keeps the values found in both lists."
+
+  - id: m20-l07
+    title: "SQL beyond the database"
+    summary: See where SQL goes after this course. Send queries from Python, give dashboards a saved view to read, and learn the ideas behind dbt and your next steps.
+    minutes: 35
+    steps:
+      - type: read
+        title: The query leaves the editor
+        md: |
+          Remember Sam, who pasted a query from the internet? Now he is building a
+          monthly report for ShopSmart. He does not type queries into SQL Quest every
+          month. He runs them from a Python script, and his dashboard reads the results
+          from the database.
+
+          SQL is the language that the database understands. The tools around it change,
+          but the query stays the same. Most analysts meet SQL in four places:
+
+          - **Application code**, such as a website that shows an order history
+          - **Notebooks and scripts**, such as Python, to analyse and clean the data
+          - **BI tools** (business intelligence), such as Tableau, Power BI, Looker or
+            Metabase, which draw charts from queries
+          - **Transformation tools**, such as dbt, which keep queries in files
+
+      - type: read
+        title: Python sends the query
+        md: |
+          Python connects to a database with a **driver**, a small library that knows
+          how to talk to PostgreSQL. `psycopg` is a popular driver for PostgreSQL.
+
+          The code below is shown to read, not to run. It does not run in SQL Quest.
+          Look at the three steps: connect, send the SQL, and get the rows back.
+
+          ```python
+          # Example only. This does not run in SQL Quest.
+          import psycopg
+
+          with psycopg.connect("dbname=shop user=analyst") as conn:
+              with conn.cursor() as cur:
+                  cur.execute(
+                      "SELECT state, COUNT(*) FROM customers GROUP BY state"
+                  )
+                  rows = cur.fetchall()
+          ```
+
+          The SQL inside the quotes is exactly what you have been writing. Python only
+          carries it to the database and brings back the answer.
+
+      - type: read
+        title: "Values from Python: use placeholders"
+        md: |
+          Often the value of the query comes from a user or from another part of the
+          program. For example, a report may ask for one state.
+
+          Do **not** glue the text together:
+
+          ```python
+          # Unsafe. Do not do this. Example only.
+          state = input("State? ")
+          cur.execute(
+              "SELECT COUNT(*) FROM customers WHERE state = '" + state + "'"
+          )
+          ```
+
+          If someone types `CA' OR '1'='1`, the query changes meaning. This is called
+          **SQL injection**. Instead, send the value as a separate parameter, marked
+          with a placeholder such as `%s`:
+
+          ```python
+          # Safe. Example only.
+          cur.execute(
+              "SELECT COUNT(*) FROM customers WHERE state = %s",
+              (state,),
+          )
+          ```
+
+          The driver sends the value separately, so it is never read as SQL commands.
+
+          > [!MISTAKE]
+          > Placeholders are for values only. You cannot use one for a table or a
+          > column name. Choose those names from a fixed list in your code.
+
+      - type: example
+        title: "The same idea inside SQL: a prepared query"
+        md: |
+          PostgreSQL has its own placeholder, `$1`. A `PREPARE` statement stores a query
+          with a slot in it. `EXECUTE` fills the slot with a value. Drivers use the same
+          idea behind the scenes.
+        sql: |
+          PREPARE state_count (text) AS
+              SELECT COUNT(*) AS customers
+              FROM customers
+              WHERE state = $1;
+
+          EXECUTE state_count ('CA');
+        after: |
+          36 customers live in California. Change `'CA'` to `'TX'` and you get the
+          count for Texas, without changing the query. This is what the `%s` in Python
+          does for you.
+
+      - type: read
+        title: "Pandas: let the database do the heavy work"
+        md: |
+          **pandas** is a Python library for tables. `pd.read_sql` runs a query and
+          puts the result in a table called a **DataFrame**.
+
+          ```python
+          # Example only. This does not run in SQL Quest.
+          import pandas as pd
+
+          df = pd.read_sql(
+              "SELECT state, COUNT(*) AS customers "
+              "FROM customers GROUP BY state",
+              conn,
+          )
+          print(df.head())
+          ```
+
+          > [!TIP]
+          > Do the heavy work in SQL: joins, filters and sums. Then pull only the small
+          > result into pandas. Downloading 2,296 order lines to add them up in Python
+          > is slower than one `SUM` in the database.
+
+      - type: example
+        title: A saved query for dashboards
+        md: |
+          BI tools work best when the hard query is saved in the database under a
+          simple name. A **view** is a saved `SELECT` that acts like a table. Each time
+          someone reads the view, the database runs the query again, so the numbers are
+          current.
+        sql: |
+          CREATE VIEW v_state_customers AS
+          SELECT state,
+                 COUNT(*) AS customers
+          FROM customers
+          GROUP BY state;
+
+          SELECT state, customers
+          FROM v_state_customers
+          ORDER BY customers DESC, state
+          LIMIT 3;
+        after: |
+          The dashboard only needs to read `v_state_customers`. It does not need to know
+          about `GROUP BY`. The top three states are California (36), Texas (21) and New
+          York (17).
+
+          > [!REAL-WORLD]
+          > Many teams create one view for each dashboard page. When a rule changes, such
+          > as "cancelled orders are excluded", they change the view, and every chart
+          > follows.
+
+      - type: example
+        title: Views can be built on views
+        md: A second view reads from the first one. Every query has explicit column names.
+        sql: |
+          CREATE VIEW v_state_customers AS
+          SELECT state,
+                 COUNT(*) AS customers
+          FROM customers
+          GROUP BY state;
+
+          CREATE VIEW v_big_states AS
+          SELECT state,
+                 customers
+          FROM v_state_customers
+          WHERE customers >= 15;
+
+          SELECT state, customers
+          FROM v_big_states
+          ORDER BY customers DESC, state;
+        after: |
+          Four states have at least 15 customers: CA, TX, NY and WA. Each layer adds one
+          rule with a clear name. A chart can use the top layer without repeating the
+          rules underneath it.
+
+      - type: read
+        title: "dbt: queries in files"
+        md: |
+          **dbt** (data build tool) is a popular tool for analytics teams. Each SQL
+          `SELECT` lives in its own file, called a **model**. A model can refer to other
+          models by name, and dbt builds them in the right order.
+
+          The file below is only an illustration of the idea. It is not runnable here.
+
+          ```sql
+          -- models/monthly_revenue.sql (illustration, dbt syntax)
+          SELECT month,
+                 SUM(line_amount) AS revenue
+          FROM {{ ref('delivered_lines') }}
+          GROUP BY month;
+          ```
+
+          The `{{ ref(...) }}` part is how dbt connects the models. Everything else is
+          the SQL you already know. Version control, tests and documentation are added
+          around those files.
+
+      - type: read
+        title: Where to go next
+        md: |
+          You now have the core of professional SQL. A practical path from here:
+
+          1. **Practise on real questions.** Pick a question from your work and answer it
+             with a query, a check and a short note.
+          2. **Read query plans.** Use `EXPLAIN` to see how the database runs a query, as
+             you did in the performance module.
+          3. **Learn one BI tool** and build one chart from a view.
+          4. **Learn Python with pandas**, or the tool your team already uses.
+          5. **Learn data modelling.** The star schema from earlier is a good start.
+
+          Keep the habits from this module: name your columns, add tie-breakers, test
+          the totals, and write comments that explain why.
+
+      - type: quiz
+        id: m20-l07-q1
+        question: "A Python script must put a user's text into a query. Which approach is safer?"
+        options:
+          - "Join the text to the SQL string with + or an f-string"
+          - "Pass the text as a parameter and use a placeholder such as %s"
+          - "Replace each quote with two quotes, then join the text"
+          - "Put the whole query inside a comment"
+        answer: 1
+        explanation: |
+          A placeholder sends the value separately, so the database never reads it as
+          SQL. Joining text into the query can let a user change the query (SQL
+          injection).
+
+      - type: predict
+        id: m20-l07-p1
+        question: "How many rows does the final query return?"
+        sql: |
+          CREATE VIEW v_state_customers AS
+          SELECT state,
+                 COUNT(*) AS customers
+          FROM customers
+          GROUP BY state;
+
+          SELECT COUNT(*) AS states
+          FROM v_state_customers;
+        options: ["12", "150", "140", "An error"]
+        answer: 0
+        explanation: |
+          The view has one row per state, and the customers live in 12 states. The
+          dashboard reads the view as a table with 12 rows, not 150 rows.
+
+      - type: fill
+        id: m20-l07-f1
+        prompt: "Save this query as a view named `v_state_customers`. Complete the first line."
+        template: |
+          CREATE ___ v_state_customers AS
+          SELECT state,
+                 COUNT(*) AS customers
+          FROM customers
+          GROUP BY state;
+        answers:
+          - ["VIEW"]
+        explanation: "`CREATE VIEW` saves the query under a name. After that, anyone can `SELECT` from `v_state_customers`."
+
+      - type: exercise
+        id: m20-l07-e1
+        title: A view of customers per city
+        prompt: |
+          Create a view named `v_city_customers` with two columns, `city` and
+          `customers`. `customers` is the number of customers in each city.
+
+          The view must have one row per city.
+        solution: |
+          CREATE VIEW v_city_customers AS
+          SELECT city,
+                 COUNT(*) AS customers
+          FROM customers
+          GROUP BY city;
+        check: |
+          SELECT city, customers
+          FROM v_city_customers
+          ORDER BY customers DESC, city
+          LIMIT 3;
+        columnNames: true
+        hints:
+          - "The view is a `CREATE VIEW name AS` followed by a `SELECT`."
+          - Group the customers by `city`, and count them with `COUNT(*)`.
+          - "CREATE VIEW v_city_customers AS SELECT city, COUNT(*) AS customers FROM customers ___ city;"
+        explanation: |
+          The check reads the three largest cities through the view. Los Angeles has 24
+          customers, New York 17 and Seattle 15. The view is saved, so the check (and
+          any dashboard) reads it as a table.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l07-e2
+        title: One view of delivered order lines
+        prompt: |
+          Create a view named `v_delivered_lines`. It has one row for each order line
+          that belongs to a **delivered** order. Its columns, in order, are:
+
+          - `order_item_id`
+          - `order_id`
+          - `product_id`
+          - `line_amount`: `quantity * unit_price * (1 - discount)`, with no rounding
+        solution: |
+          CREATE VIEW v_delivered_lines AS
+          SELECT i.order_item_id,
+                 i.order_id,
+                 i.product_id,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS line_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          WHERE o.status = 'delivered';
+        check: |
+          SELECT COUNT(*) AS lines,
+                 ROUND(SUM(line_amount), 2) AS total
+          FROM v_delivered_lines;
+        columnNames: true
+        hints:
+          - Join `order_items` to `orders`, so you can filter by status.
+          - Filter with `WHERE o.status = 'delivered'`.
+          - "...CREATE VIEW v_delivered_lines AS SELECT i.order_item_id, ... FROM order_items AS i JOIN orders AS o ON o.order_id = i.order_id ___ o.status = 'delivered';"
+        explanation: |
+          The view has 1,654 lines, and their total is 229,443.50, which matches the
+          delivered revenue you calculated earlier. Other reports can now start from
+          this view.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l07-e3
+        title: Top products from the view
+        prompt: |
+          The view `v_delivered_lines` already exists, because it was built in the
+          exercise above. Use it as a dashboard would.
+
+          Show the **4 products with the highest delivered revenue**. Show two columns,
+          `product_id` and `revenue`, where `revenue` is the sum of `line_amount`,
+          rounded to 2 decimal places.
+
+          Sort by `revenue` from highest to lowest, then by `product_id`.
+        setup: |
+          CREATE VIEW v_delivered_lines AS
+          SELECT i.order_item_id,
+                 i.order_id,
+                 i.product_id,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS line_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          WHERE o.status = 'delivered';
+        solution: |
+          SELECT product_id,
+                 ROUND(SUM(line_amount), 2) AS revenue
+          FROM v_delivered_lines
+          GROUP BY product_id
+          ORDER BY revenue DESC, product_id
+          LIMIT 4;
+        ordered: true
+        columnNames: true
+        hints:
+          - Group the view by `product_id`, then add up `line_amount`.
+          - Sort by revenue from highest to lowest before you keep the top four.
+          - "...FROM v_delivered_lines GROUP BY product_id ORDER BY ___ DESC, ___ LIMIT ___;"
+        explanation: |
+          The top product is 17, with $31,930.07. The fourth place (14, with $14,787.27)
+          is clearly ahead of the fifth, so the list has no tie at the edge. The
+          `product_id` tie-breaker keeps the order fixed anyway.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l07-e4
+        title: A monthly revenue view
+        prompt: |
+          Create a view named `v_monthly_revenue` with two columns, `month` and
+          `revenue`:
+
+          - `month`: the month of `order_date` as text in the form `YYYY-MM`
+          - `revenue`: the revenue of **delivered** orders in that month, using the
+            line formula `quantity * unit_price * (1 - discount)`, rounded to 2
+            decimal places
+
+          The view must have one row for each month that has delivered orders.
+        solution: |
+          CREATE VIEW v_monthly_revenue AS
+          SELECT to_char(o.order_date, 'YYYY-MM') AS month,
+                 ROUND(SUM(i.quantity * i.unit_price
+                           * (1 - i.discount)), 2) AS revenue
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY to_char(o.order_date, 'YYYY-MM');
+        check: |
+          SELECT month, revenue
+          FROM v_monthly_revenue
+          WHERE month IN ('2023-01', '2024-12')
+          ORDER BY month;
+        columnNames: true
+        hints:
+          - "`to_char(order_date, 'YYYY-MM')` turns a date into text such as 2024-03."
+          - Group by the same expression that you show as `month`.
+          - "CREATE VIEW v_monthly_revenue AS SELECT to_char(o.order_date, 'YYYY-MM') AS month, ... GROUP BY ___;"
+        explanation: |
+          January 2023 delivered $5,117.59, and December 2024 delivered $23,367.47. A
+          dashboard can now draw the whole time series from one small view.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l07-e5
+        title: A customer value view
+        prompt: |
+          Create a view named `v_customer_value` with four columns:
+          `customer_id`, `first_name`, `last_name` and `delivered_revenue`.
+
+          It must have **one row for every customer**, including customers who have
+          no delivered orders. For them, `delivered_revenue` must be `0`. The other
+          values are the sum of `quantity * unit_price * (1 - discount)` over their
+          delivered order lines, rounded to 2 decimal places.
+        solution: |
+          CREATE VIEW v_customer_value AS
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name,
+                 COALESCE(ROUND(SUM(i.quantity * i.unit_price
+                                    * (1 - i.discount)), 2), 0)
+                     AS delivered_revenue
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+                AND o.status = 'delivered'
+          LEFT JOIN order_items AS i
+                 ON i.order_id = o.order_id
+          GROUP BY c.customer_id, c.first_name, c.last_name;
+        check: |
+          SELECT customer_id, delivered_revenue
+          FROM v_customer_value
+          WHERE customer_id IN (6, 10, 141)
+          ORDER BY customer_id;
+        columnNames: true
+        hints:
+          - Start from `customers` and use LEFT JOINs, so no customer disappears.
+          - Put the `status` condition in the `ON` clause of the join to `orders`.
+          - "Wrap the rounded sum in COALESCE(..., 0) so customers with no orders show 0."
+        explanation: |
+          Customer 6 has $8,458.40 delivered, customer 10 has $7,227.87, and customer 141
+          has no orders, so the view shows 0. The condition is in `ON`, which keeps
+          every customer, the lesson from the debugging module.
+        difficulty: 3
+
+      - type: exercise
+        id: m20-l07-e6
+        title: The executive summary in one query
+        prompt: |
+          Write one query that returns **one row** with five columns:
+
+          - `total_orders`: the number of orders
+          - `delivered_orders`: the number of delivered orders
+          - `delivered_revenue`: the revenue of delivered orders, rounded to 2 decimal
+            places, using `quantity * unit_price * (1 - discount)`
+          - `customers_who_ordered`: the number of different customers with at least one order
+          - `customers_never_ordered`: the number of customers with no order
+
+          You may use subqueries or CTEs. Do not use `SELECT *`.
+        solution: |
+          SELECT (SELECT COUNT(*) FROM orders) AS total_orders,
+                 (SELECT COUNT(*) FROM orders
+                  WHERE status = 'delivered') AS delivered_orders,
+                 (SELECT ROUND(SUM(i.quantity * i.unit_price
+                                   * (1 - i.discount)), 2)
+                  FROM orders AS o
+                  JOIN order_items AS i
+                       ON i.order_id = o.order_id
+                  WHERE o.status = 'delivered') AS delivered_revenue,
+                 (SELECT COUNT(DISTINCT customer_id)
+                  FROM orders) AS customers_who_ordered,
+                 (SELECT COUNT(*) FROM customers)
+                 - (SELECT COUNT(DISTINCT customer_id)
+                    FROM orders) AS customers_never_ordered;
+        columnNames: true
+        hints:
+          - Each number can be one small subquery in the `SELECT` list.
+          - "Count customers who never ordered as all customers minus the customers who ordered."
+          - "Start with `SELECT (SELECT COUNT(*) FROM orders) AS total_orders, ...` and add the other columns the same way."
+        explanation: |
+          This is the kind of query a dashboard tile runs: 900 orders, 650 delivered,
+          revenue of $229,443.50, 140 customers who ordered and 10 who never did. Every
+          number is a checked result from earlier lessons, brought together in one row.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Save a query as a view
+        sql: |
+          CREATE VIEW v_state_customers AS
+          SELECT state, COUNT(*) AS customers
+          FROM customers
+          GROUP BY state;
+        note: "A view is a saved SELECT. Reading it runs the query again."
+      - title: A placeholder for a value
+        sql: |
+          PREPARE state_count (text) AS
+              SELECT COUNT(*) FROM customers WHERE state = $1;
+          EXECUTE state_count ('CA');
+        note: "In Python, use %s and pass the value separately. Never join text into the SQL."
+      - title: Keep every customer
+        sql: |
+          SELECT c.customer_id, COUNT(o.order_id) AS orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          GROUP BY c.customer_id;
+        note: "LEFT JOIN keeps customers with no orders, and COUNT(column) gives 0 for them."
+
   # @@NEXT_LESSON@@
 
 testPool:
@@ -2534,5 +3475,552 @@ testPool:
     explanation: |
       `string_agg(value, ', ')` is PostgreSQL's group text join. `GROUP_CONCAT` is MySQL,
       `TEXTJOIN` is an Excel function, and `CONCAT_GROUP` does not exist.
+
+  - type: exercise
+    id: m20-t02
+    lesson: m20-l01
+    difficulty: 2
+    prompt: |
+      Show the `name` of every product whose name contains the word "lamp",
+      whatever the capitals. Sort the rows by `name`.
+    solution: |
+      SELECT name
+      FROM products
+      WHERE name ILIKE '%lamp%'
+      ORDER BY name;
+    ordered: true
+    columnNames: true
+    hints:
+      - Use a pattern that finds "lamp" anywhere in the name.
+      - "`ILIKE` ignores capitals, and `%` matches any text."
+      - "SELECT name FROM products WHERE name ___ '%lamp%' ORDER BY name;"
+    explanation: |
+      `ILIKE` finds "Floor Lamp" and "Headlamp" even though their capital letters
+      differ from the pattern. With `LIKE` you would have to match the exact case.
+
+  - type: predict
+    id: m20-t03
+    lesson: m20-l01
+    difficulty: 2
+    question: "How many rows does this PostgreSQL query return?"
+    sql: |
+      SELECT name
+      FROM products
+      WHERE name ILIKE 'lumio%';
+    options: ["0", "2", "3", "An error"]
+    answer: 1
+    explanation: |
+      `ILIKE` ignores capitals, so "Lumio" matches "lumio%". Two products start with
+      Lumio. With `LIKE` the answer would be 0, because the pattern is lowercase.
+
+  - type: exercise
+    id: m20-t04
+    lesson: m20-l02
+    difficulty: 2
+    prompt: |
+      Show the three suppliers with the most order lines in **delivered** orders.
+
+      Show two columns: `supplier_name` and `delivered_lines`. `delivered_lines` is
+      the number of `order_items` rows in delivered orders for that supplier's
+      products.
+
+      Sort by `delivered_lines` from highest to lowest, then by `supplier_name`.
+    solution: |
+      SELECT s.name AS supplier_name,
+             COUNT(*) AS delivered_lines
+      FROM order_items AS i
+      JOIN orders AS o
+           ON o.order_id = i.order_id
+      JOIN products AS p
+           ON p.product_id = i.product_id
+      JOIN suppliers AS s
+           ON s.supplier_id = p.supplier_id
+      WHERE o.status = 'delivered'
+      GROUP BY s.name
+      ORDER BY delivered_lines DESC, supplier_name
+      LIMIT 3;
+    ordered: true
+    columnNames: true
+    hints:
+      - Join the order lines to their orders, then to products, then to suppliers.
+      - Keep only delivered orders, and group by the supplier's name.
+      - "...WHERE o.status = ___ GROUP BY s.name ORDER BY delivered_lines ___, supplier_name LIMIT 3;"
+    explanation: |
+      Name every column, and give the sort a tie-breaker, so the three rows never
+      change place. Jade River Manufacturing leads with 367 lines.
+
+  - type: quiz
+    id: m20-t05
+    lesson: m20-l02
+    difficulty: 1
+    question: "What is the best reason to avoid SELECT * in a finished report?"
+    options:
+      - "It is slower to type than a list of columns"
+      - "The result changes when someone adds a column to the table"
+      - "PostgreSQL does not allow it in a view"
+      - "It always returns NULL for the joined columns"
+    answer: 1
+    explanation: |
+      A report that uses SELECT * shows every column, including new ones added later.
+      Listing the columns keeps the result stable and easier to read.
+
+  - type: predict
+    id: m20-t06
+    lesson: m20-l02
+    difficulty: 2
+    question: "What does this query return?"
+    sql: |
+      SELECT COUNT(DISTINCT city) AS cities
+      FROM customers;
+    options: ["12", "14", "150", "An error"]
+    answer: 1
+    explanation: |
+      The customers live in 14 different cities. `DISTINCT` counts each city once,
+      and there are 150 customers, but 150 is not the number of cities.
+
+  - type: exercise
+    id: m20-t07
+    lesson: m20-l03
+    difficulty: 2
+    prompt: |
+      How many orders contain **more than one** product line? Show one column,
+      `multi_line_orders`, with one row.
+
+      Count orders, not lines: an order with three lines counts once.
+    starter: |
+      SELECT COUNT(*) AS multi_line_orders
+      FROM order_items
+      WHERE quantity > 1;
+    solution: |
+      SELECT COUNT(*) AS multi_line_orders
+      FROM (
+          SELECT order_id
+          FROM order_items
+          GROUP BY order_id
+          HAVING COUNT(*) > 1
+      ) AS t;
+    columnNames: true
+    hints:
+      - A line with `quantity > 1` is not the same as an order with more than one line.
+      - Group the lines by `order_id`, then keep the groups with more than one line.
+      - "SELECT order_id FROM order_items GROUP BY order_id HAVING COUNT(*) ___ 1;"
+    explanation: |
+      The starter counts lines that have a quantity above 1. The solution groups the
+      lines by order and keeps the orders with more than one line. 683 orders have
+      more than one product line.
+
+  - type: quiz
+    id: m20-t08
+    lesson: m20-l03
+    difficulty: 2
+    question: "A LEFT JOIN from customers to orders adds WHERE o.status <> 'delivered'. What happens to a customer with no orders?"
+    options:
+      - "The customer stays, with NULL in the order columns"
+      - "The customer is removed, because NULL <> 'delivered' is not TRUE"
+      - "The customer is counted as zero delivered orders"
+      - "The query stops with an error"
+    answer: 1
+    explanation: |
+      A customer with no orders has NULL in `o.status`. The comparison with NULL is
+      not TRUE, so the `WHERE` clause removes the row. The fix is to move the
+      condition into the `ON` clause.
+
+  - type: fill
+    id: m20-t09
+    lesson: m20-l03
+    difficulty: 1
+    prompt: "Count the orders that have not been shipped yet, which means no `shipped_date`. Complete the test."
+    template: |
+      SELECT COUNT(*)
+      FROM orders
+      WHERE shipped_date ___;
+    answers:
+      - ["IS NULL"]
+    explanation: "`IS NULL` finds the missing values. 134 orders have no shipped date."
+
+  - type: exercise
+    id: m20-t10
+    lesson: m20-l04
+    difficulty: 2
+    prompt: |
+      Create a table called `dim_supplier` with the columns `supplier_key`,
+      `supplier_id`, `supplier_name` and `country`, in that order.
+
+      `supplier_key` is 1 for the supplier with the lowest `supplier_id`, 2 for the
+      next one, and so on. Number them with `ROW_NUMBER()`, by `supplier_id`.
+    solution: |
+      CREATE TABLE dim_supplier AS
+      SELECT ROW_NUMBER() OVER (ORDER BY supplier_id) AS supplier_key,
+             supplier_id,
+             name AS supplier_name,
+             country
+      FROM suppliers;
+    check: |
+      SELECT supplier_key, supplier_id, supplier_name, country
+      FROM dim_supplier
+      WHERE supplier_key <= 3
+      ORDER BY supplier_key;
+    columnNames: true
+    hints:
+      - Use `CREATE TABLE dim_supplier AS SELECT ...`.
+      - "Give the supplier name the alias `supplier_name`."
+      - "SELECT ROW_NUMBER() OVER (ORDER BY ___) AS supplier_key, supplier_id, name AS supplier_name, country FROM suppliers;"
+    explanation: |
+      The check reads the first three keys. Build the dimension with the same pattern
+      as `dim_customer`: a surrogate key from `ROW_NUMBER()`, plus the descriptive
+      columns.
+
+  - type: exercise
+    id: m20-t11
+    lesson: m20-l04
+    difficulty: 3
+    dataset: blank
+    prompt: |
+      Ben (`customer_id` 2) moved from Boston to Chicago on **2023-06-01**. The
+      table `dim_customer_t2` already has his Boston row, which has no end yet.
+
+      Keep his history, Type 2 style. Write two statements:
+
+      1. Close the Boston row: set `valid_to` to `'2023-05-31'` and `is_current`
+         to `FALSE`.
+      2. Add a Chicago row for customer 2 with `valid_from` `'2023-06-01'`,
+         `valid_to` `'9999-12-31'` and `is_current` `TRUE`.
+    setup: |
+      CREATE TABLE dim_customer_t2 (
+          customer_sk INTEGER GENERATED ALWAYS AS IDENTITY
+              PRIMARY KEY,
+          customer_id INTEGER NOT NULL,
+          city        TEXT NOT NULL,
+          valid_from  DATE NOT NULL,
+          valid_to    DATE NOT NULL,
+          is_current  BOOLEAN NOT NULL
+      );
+
+      INSERT INTO dim_customer_t2
+          (customer_id, city, valid_from, valid_to, is_current)
+      VALUES (2, 'Boston', '2022-01-01', '9999-12-31', TRUE);
+    solution: |
+      UPDATE dim_customer_t2
+      SET valid_to = '2023-05-31',
+          is_current = FALSE
+      WHERE customer_id = 2
+        AND is_current;
+
+      INSERT INTO dim_customer_t2
+          (customer_id, city, valid_from, valid_to, is_current)
+      VALUES (2, 'Chicago', '2023-06-01', '9999-12-31', TRUE);
+    check: |
+      SELECT customer_id, city, valid_from, valid_to, is_current
+      FROM dim_customer_t2
+      ORDER BY valid_from;
+    columnNames: true
+    hints:
+      - Close the old row first, with an UPDATE, then add the new row with an INSERT.
+      - "The old row is the one where `is_current` is still TRUE."
+      - "UPDATE dim_customer_t2 SET valid_to = '2023-05-31', is_current = ___ WHERE customer_id = 2 AND is_current; INSERT ... VALUES (2, 'Chicago', '2023-06-01', '9999-12-31', TRUE);"
+    explanation: |
+      Type 2 closes the old row and adds a new one, so both cities remain in the
+      history. A Type 1 update would have overwritten Boston and lost it.
+
+  - type: quiz
+    id: m20-t12
+    lesson: m20-l04
+    difficulty: 1
+    question: "Which of these is best described as a dimension table?"
+    options:
+      - "payments: one row for each payment received"
+      - "order_items: one row for each product inside an order"
+      - "categories: one row for each product category, with its name"
+      - "reviews: one row for each review written"
+    answer: 2
+    explanation: |
+      A dimension describes things around the facts, such as a category's name. The
+      other three record events with numbers, so they are fact tables.
+
+  - type: exercise
+    id: m20-t13
+    lesson: m20-l05
+    difficulty: 1
+    prompt: |
+      From the `orders` table, show three columns, with one row:
+
+      - `total_orders`: the number of orders
+      - `shipped_dates`: the number of orders with a `shipped_date`
+      - `missing_dates`: the number of orders with no `shipped_date`
+    solution: |
+      SELECT COUNT(*) AS total_orders,
+             COUNT(shipped_date) AS shipped_dates,
+             COUNT(*) FILTER (WHERE shipped_date IS NULL)
+                 AS missing_dates
+      FROM orders;
+    columnNames: true
+    hints:
+      - "`COUNT(column)` skips the NULL values."
+      - "`COUNT(*) FILTER (WHERE shipped_date IS NULL)` counts only the missing dates."
+      - "SELECT COUNT(*) AS total_orders, COUNT(___) AS shipped_dates ... FROM orders;"
+    explanation: |
+      900 orders in total, 766 with a shipped date, and 134 without. The three numbers
+      must add up, which is a simple test you can always run.
+
+  - type: predict
+    id: m20-t14
+    lesson: m20-l05
+    difficulty: 2
+    question: "What does this query return?"
+    sql: |
+      SELECT COUNT(*) AS n,
+             MAX(price) AS biggest
+      FROM products
+      WHERE price > 5000;
+    options: ["0 and 0", "0 and NULL", "NULL and NULL", "An error"]
+    answer: 1
+    explanation: |
+      No product costs more than 5000, so `COUNT(*)` is 0. `MAX` of no rows is NULL,
+      not 0. Reports often need `COALESCE` for the second value.
+
+  - type: parsons
+    id: m20-t15
+    lesson: m20-l05
+    difficulty: 2
+    prompt: "Put the lines in the right order to count the products in each category that has at least two products. Sort by the count, then by category."
+    lines:
+      - SELECT c.name AS category, COUNT(*) AS products
+      - FROM categories AS c
+      - JOIN products AS p
+      -      ON p.category_id = c.category_id
+      - GROUP BY c.name
+      - HAVING COUNT(*) >= 2
+      - ORDER BY products DESC, category;
+    distractors:
+      - WHERE COUNT(*) >= 2
+
+  - type: exercise
+    id: m20-t16
+    lesson: m20-l06
+    difficulty: 2
+    prompt: |
+      Find the **third highest distinct price** in `products`.
+
+      Show one column, `price`, with one row. Count each price value once.
+    solution: |
+      SELECT DISTINCT price
+      FROM products
+      ORDER BY price DESC
+      LIMIT 1 OFFSET 2;
+    columnNames: true
+    hints:
+      - "Use `DISTINCT` so that each price counts once."
+      - "`OFFSET` skips a number of rows. Here it skips two distinct prices."
+      - "SELECT DISTINCT price FROM products ORDER BY price ___ LIMIT 1 OFFSET ___;"
+    explanation: |
+      The highest distinct prices are 1499.99, 1299.99 and then 1099.99. Skipping two
+      values leaves 1099.99. Without `DISTINCT`, the 899.99 pair would not matter here,
+      but a repeated top price would.
+
+  - type: fill
+    id: m20-t17
+    lesson: m20-l06
+    difficulty: 2
+    prompt: "Complete the query. It lists the products that are the most expensive in their own category."
+    template: |
+      SELECT p.product_id, p.name
+      FROM products AS p
+      WHERE p.price = (
+          SELECT ___(q.price)
+          FROM products AS q
+          WHERE q.category_id = p.category_id
+      )
+      ORDER BY p.product_id;
+    answers:
+      - ["MAX"]
+    explanation: "`MAX` finds the highest price in the category. The inner query is linked to the outer product by `category_id`, so it runs for each product."
+
+  - type: quiz
+    id: m20-t18
+    lesson: m20-l06
+    difficulty: 2
+    question: "Two products cost 899.99 and both are ranked 4th. Which window function gives both rows rank 4 and then skips to 6 for the next product?"
+    options:
+      - "ROW_NUMBER()"
+      - "RANK()"
+      - "NTILE(4)"
+      - "COUNT(*)"
+    answer: 1
+    explanation: |
+      `RANK()` gives tied rows the same number and leaves a gap after them. `ROW_NUMBER()`
+      would number the two rows 4 and 5, which hides the tie.
+
+  - type: parsons
+    id: m20-t19
+    lesson: m20-l07
+    difficulty: 2
+    prompt: "Put the lines in the right order to create a view of products per category, and then show the top three categories."
+    lines:
+      - CREATE VIEW v_category_products AS
+      - SELECT c.name AS category, COUNT(*) AS products
+      - FROM categories AS c
+      - JOIN products AS p
+      -      ON p.category_id = c.category_id
+      - GROUP BY c.name;
+      - SELECT category, products
+      - FROM v_category_products
+      - ORDER BY products DESC, category
+      - LIMIT 3;
+    distractors:
+      - WHERE products > 0 AND p.is_active
+
+  - type: exercise
+    id: m20-t20
+    lesson: m20-l07
+    difficulty: 2
+    prompt: |
+      Create a view named `v_supplier_products` with two columns, `supplier_name`
+      and `products`. `products` is the number of products each supplier provides.
+
+      Only suppliers with at least one product need to appear.
+    solution: |
+      CREATE VIEW v_supplier_products AS
+      SELECT s.name AS supplier_name,
+             COUNT(*) AS products
+      FROM suppliers AS s
+      JOIN products AS p
+           ON p.supplier_id = s.supplier_id
+      GROUP BY s.name;
+    check: |
+      SELECT supplier_name, products
+      FROM v_supplier_products
+      ORDER BY products DESC, supplier_name
+      LIMIT 3;
+    columnNames: true
+    hints:
+      - Use `CREATE VIEW v_supplier_products AS` and a `SELECT` with `GROUP BY`.
+      - Join `suppliers` to `products` on `supplier_id`.
+      - "...SELECT s.name AS supplier_name, COUNT(*) AS products FROM suppliers AS s JOIN products AS p ON p.supplier_id = s.supplier_id ___ s.name;"
+    explanation: |
+      The check reads the top three suppliers through the view: Jade River
+      Manufacturing with 17 products, Kestrel Supply GmbH with 9 and Tanuki Goods Ltd.
+      with 8.
+
+  - type: quiz
+    id: m20-t21
+    lesson: m20-l07
+    difficulty: 1
+    question: "What does a view store in the database?"
+    options:
+      - "A copy of the rows, refreshed every night"
+      - "A saved query, which runs again each time someone reads the view"
+      - "A list of the users who can read the data"
+      - "Only the names of the columns"
+    answer: 1
+    explanation: |
+      A view saves the `SELECT`, not the data. Each read runs the query against the
+      current tables, so the numbers are always up to date.
+
+  - type: predict
+    id: m20-t22
+    lesson: m20-l07
+    difficulty: 2
+    question: "What does the final query return?"
+    sql: |
+      CREATE VIEW v_category_products AS
+      SELECT c.name AS category,
+             COUNT(*) AS products
+      FROM categories AS c
+      JOIN products AS p
+           ON p.category_id = c.category_id
+      GROUP BY c.name;
+
+      SELECT COUNT(*) AS big_categories
+      FROM v_category_products
+      WHERE products >= 4;
+    options: ["3", "4", "8", "11"]
+    answer: 2
+    explanation: |
+      Eleven categories have products. Eight of them have four or more: Kitchen,
+      Peripherals, Phones, Books, Toys, Furniture, Laptops and Camping.
+
+  - type: exercise
+    id: m20-t23
+    lesson: m20-l07
+    difficulty: 3
+    prompt: |
+      Create a view named `v_order_totals` with one row for each order and three
+      columns: `order_id`, `customer_id` and `total`.
+
+      `total` is the sum of the order's lines (`quantity * unit_price * (1 - discount)`),
+      rounded to 2 decimal places **for each order**.
+    solution: |
+      CREATE VIEW v_order_totals AS
+      SELECT o.order_id,
+             o.customer_id,
+             ROUND(SUM(i.quantity * i.unit_price
+                       * (1 - i.discount)), 2) AS total
+      FROM orders AS o
+      JOIN order_items AS i
+           ON i.order_id = o.order_id
+      GROUP BY o.order_id, o.customer_id;
+    check: |
+      SELECT COUNT(*) AS orders,
+             ROUND(SUM(total), 2) AS revenue
+      FROM v_order_totals;
+    columnNames: true
+    hints:
+      - Group the order lines by order. Each order must appear once in the view.
+      - "`ROUND(SUM(...), 2)` rounds the total of one order."
+      - "...FROM orders AS o JOIN order_items AS i ON i.order_id = o.order_id GROUP BY o.order_id, o.customer_id;"
+    explanation: |
+      The view has one row for each of the 900 orders. Rounding each order first gives
+      a revenue of 314,851.15 for all orders together. Rounding only at the end would
+      give a slightly different cent value.
+
+  - type: fill
+    id: m20-t24
+    lesson: m20-l05
+    difficulty: 1
+    prompt: "Count the different states in the `customers` table. Complete the query."
+    template: |
+      SELECT ___(DISTINCT state) AS states
+      FROM customers;
+    answers:
+      - ["COUNT"]
+    explanation: "`COUNT(DISTINCT state)` counts each state once. The customers live in 12 states."
+
+  - type: exercise
+    id: m20-t25
+    lesson: m20-l06
+    difficulty: 3
+    prompt: |
+      For customers 1 to 10, show two columns: `customer_id` and `status`, where
+      `status` is the status of their **most recent** order.
+
+      Most recent means the latest `order_date`. If two orders share a date, the one
+      with the higher `order_id` is more recent.
+
+      Sort the rows by `customer_id`.
+    solution: |
+      SELECT customer_id,
+             status
+      FROM (
+          SELECT customer_id,
+                 status,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY customer_id
+                     ORDER BY order_date DESC, order_id DESC
+                 ) AS rn
+          FROM orders
+          WHERE customer_id <= 10
+      ) AS t
+      WHERE rn = 1
+      ORDER BY customer_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Number each customer's orders with `ROW_NUMBER()`, newest first."
+      - "`PARTITION BY customer_id` restarts the numbers for each customer."
+      - "...ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date ___, order_id ___) AS rn ... WHERE rn = 1 ORDER BY customer_id;"
+    explanation: |
+      Customer 5 has a shipped order as the newest, and customer 9 has a cancelled
+      one. The `order_id` tie-breaker makes the choice fixed even when two orders
+      share a date.
 
   # @@NEXT_TEST@@
