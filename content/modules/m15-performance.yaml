@@ -111,14 +111,14 @@ lessons:
         md: |
           Mia's official "order total" query is long, so let's build it one clause at a time before we save it. Click through the stages. Each one runs and shows its result.
         stages:
-          - "label: Orders"
+          - label: Orders
             md: Start with the orders themselves.
             sql: |
               SELECT order_id, customer_id, order_date, status
               FROM orders
               ORDER BY order_id
               LIMIT 5;
-          - "label: Join items"
+          - label: Join items
             md: Each order has one or more lines in `order_items`. Join them.
             sql: |
               SELECT o.order_id, i.quantity, i.unit_price, i.discount
@@ -126,7 +126,7 @@ lessons:
               JOIN order_items i ON i.order_id = o.order_id
               ORDER BY o.order_id
               LIMIT 6;
-          - "label: Line totals"
+          - label: Line totals
             md: A line is worth quantity times unit price, minus its discount.
             sql: |
               SELECT o.order_id,
@@ -135,7 +135,7 @@ lessons:
               JOIN order_items i ON i.order_id = o.order_id
               ORDER BY o.order_id
               LIMIT 6;
-          - "label: Group"
+          - label: Group
             md: Add the lines up with `SUM`, one row per order.
             sql: |
               SELECT o.order_id, o.customer_id, o.order_date, o.status,
@@ -145,7 +145,7 @@ lessons:
               GROUP BY o.order_id, o.customer_id, o.order_date, o.status
               ORDER BY o.order_id
               LIMIT 5;
-          - "label: Save it"
+          - label: Save it
             md: Put `CREATE VIEW order_totals AS` in front. The query inside has no `LIMIT` or `ORDER BY`, because the view should hold *all* orders.
             sql: |
               CREATE VIEW order_totals AS
@@ -232,9 +232,9 @@ lessons:
         prompt: |
           Create a view called `category_stats` with three columns, in this order:
 
-          - "`category`: the category name (`categories.name`)"
-          - "`products`: how many products are in that category"
-          - "`avg_price`: the average product price, rounded to 2 decimals"
+          - `category`: the category name (`categories.name`)
+          - `products`: how many products are in that category
+          - `avg_price`: the average product price, rounded to 2 decimals
 
           Only categories that have at least one product will appear.
         starter: |
@@ -462,7 +462,7 @@ lessons:
           SELECT * FROM product_catalog ORDER BY product_name LIMIT 10;
         columnNames: true
         hints:
-          - "'Read the error: column "name" specified more than once. A view needs distinct column names.'"
+          - 'Read the error: column "name" specified more than once. A view needs distinct column names.'
           - Give each `name` column its own alias with `AS`.
           - "SELECT p.name AS ___, c.name AS ___ FROM products p JOIN categories c ON ..."
         explanation: |
@@ -668,8 +668,8 @@ lessons:
           Create a materialized view called `mv_payment_methods` from the `payments` table with three columns, in this order:
 
           - `method`
-          - "`payments`: how many payments used that method"
-          - "`total`: the sum of `amount` for that method"
+          - `payments`: how many payments used that method
+          - `total`: the sum of `amount` for that method
         starter: |
           CREATE MATERIALIZED VIEW mv_payment_methods AS
           SELECT
@@ -857,9 +857,9 @@ lessons:
         prompt: |
           Create a materialized view called `mv_category_revenue` with three columns, in this order:
 
-          - "`category`: the category name"
-          - "`units`: total quantity sold"
-          - "`revenue`: total of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals"
+          - `category`: the category name
+          - `units`: total quantity sold
+          - `revenue`: total of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals
 
           Count only lines that belong to **delivered** orders.
         starter: |
@@ -1399,8 +1399,8 @@ lessons:
         prompt: |
           Compare the size of the `orders` table with the size of its primary key index. Show two columns:
 
-          - "`table_size`: `pg_size_pretty(pg_relation_size('orders'))`"
-          - "`index_size`: `pg_size_pretty(pg_relation_size('orders_pkey'))`"
+          - `table_size`: `pg_size_pretty(pg_relation_size('orders'))`
+          - `index_size`: `pg_size_pretty(pg_relation_size('orders_pkey'))`
         starter: |
           SELECT pg_size_pretty(pg_relation_size('orders')) AS table_size
         solution: |
@@ -1703,10 +1703,10 @@ lessons:
           EXPLAIN SELECT * FROM big_orders WHERE customer_id = 777;
           EXPLAIN SELECT * FROM big_orders WHERE order_id < 150000;
         after: |
-          - "**Result 1**: one specific order, so an **Index Scan**."
-          - "**Result 2**: the same lookup, but we only ask for `order_id`, which the index already holds. That allows an **Index Only Scan**."
-          - "**Result 3**: customer 777 has 40 orders spread all over the table, so PostgreSQL first builds a **Bitmap** of the right pages, then reads them."
-          - "**Result 4**: three quarters of the table matches. The planner decides that reading everything is cheaper than jumping through the index 150,000 times, so it uses a **Seq Scan even though an index exists**."
+          - **Result 1**: one specific order, so an **Index Scan**.
+          - **Result 2**: the same lookup, but we only ask for `order_id`, which the index already holds. That allows an **Index Only Scan**.
+          - **Result 3**: customer 777 has 40 orders spread all over the table, so PostgreSQL first builds a **Bitmap** of the right pages, then reads them.
+          - **Result 4**: three quarters of the table matches. The planner decides that reading everything is cheaper than jumping through the index 150,000 times, so it uses a **Seq Scan even though an index exists**.
 
           The planner compares the estimated cost of every option and picks the cheapest. That is why you never tell it which index to use.
 
@@ -1788,8 +1788,8 @@ lessons:
         prompt: |
           The planner's notes about each table are kept in the catalog `pg_class`. Show, for the table named `orders`, two columns:
 
-          - "`est_rows`: `reltuples` converted to an integer (`reltuples::int`)"
-          - "`pages`: `relpages` (the number of 8 kB pages)"
+          - `est_rows`: `reltuples` converted to an integer (`reltuples::int`)
+          - `pages`: `relpages` (the number of 8 kB pages)
         starter: |
           SELECT reltuples, relpages
           FROM pg_class;
@@ -1851,9 +1851,9 @@ lessons:
         prompt: |
           A DBA wants to know where to look first. Show every ordinary table in the `public` schema with three columns:
 
-          - "`table_name`: the table's name (`relname`)"
-          - "`pages`: `relpages`"
-          - "`est_rows`: `reltuples` as an integer"
+          - `table_name`: the table's name (`relname`)
+          - `pages`: `relpages`
+          - `est_rows`: `reltuples` as an integer
 
           Biggest first by `pages`, ties broken by `table_name`. Join `pg_class` (alias `c`) to `pg_namespace` (alias `n`) on `n.oid = c.relnamespace`, and keep only `c.relkind = 'r'` (ordinary tables) in the namespace named `public`.
         starter: |
@@ -2210,7 +2210,7 @@ lessons:
           The operators a GIN index understands include `@>`, which means "contains". For example:
 
           - `tags @> ARRAY['vintage']` finds rows whose array contains `'vintage'`.
-          - "`specs @> '{"recalled": true}'` finds JSON documents with that key and value."
+          - `specs @> '{"recalled": true}'` finds JSON documents with that key and value.
 
           > [!MISTAKE]
           > `'vintage' = ANY(tags)` and `specs->>'recalled' = 'true'` look right, but a default GIN index does not help them. PostgreSQL scans the whole table. Use the operator the index understands.

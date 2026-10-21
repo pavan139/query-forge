@@ -1,0 +1,75 @@
+glossary:
+  - term: View
+    definition: "A saved query with a name. You use it like a table, but it stores no rows of its own: each time you use it, PostgreSQL runs the saved SELECT again on the current data."
+    example: "CREATE VIEW us_west_customers AS SELECT * FROM customers WHERE state IN ('CA', 'OR', 'WA');"
+    module: m15
+
+  - term: Materialized view
+    definition: "A saved query whose result is stored on disk. Reading it is instant, but the stored result changes only when you run REFRESH MATERIALIZED VIEW."
+    example: "CREATE MATERIALIZED VIEW segment_totals AS SELECT segment, COUNT(*) AS customers FROM customers GROUP BY segment;"
+    module: m15
+
+  - term: Index (B-tree)
+    definition: "A sorted lookup structure built on one or more columns. Like the index at the back of a book, it lets PostgreSQL jump to the matching rows instead of reading the whole table. B-tree is the default type."
+    example: "CREATE INDEX idx_orders_customer ON orders (customer_id);"
+    module: m15
+
+  - term: Composite index
+    definition: "An index on more than one column. The first column decides the main sort order, so put the column you compare with = first and the range column last."
+    example: "CREATE INDEX idx_cust_date ON orders (customer_id, order_date);"
+    module: m15
+
+  - term: Partial index
+    definition: "An index that stores only the rows matching a WHERE condition. It is smaller, and a query can use it only when it repeats that condition."
+    example: "CREATE INDEX idx_open_orders ON orders (order_date) WHERE status = 'processing';"
+    module: m15
+
+  - term: Expression index
+    definition: "An index on the result of a function, such as lower(email). A query can use it only when it uses the same expression."
+    example: "CREATE INDEX idx_customers_lower_email ON customers (lower(email));"
+    module: m15
+
+  - term: Covering index
+    definition: "An index that also stores extra columns, added with INCLUDE. When it holds every column a query asks for, PostgreSQL can answer from the index alone (an Index Only Scan)."
+    example: "CREATE INDEX idx_cust_incl ON orders (customer_id) INCLUDE (order_date, status);"
+    module: m15
+
+  - term: GIN index
+    definition: "An index for values that hold many parts, such as arrays and jsonb documents. For each part it records which rows contain it, and it helps operators such as @> (contains)."
+    example: "CREATE INDEX idx_tags ON product_tags USING GIN (tags);"
+    module: m15
+
+  - term: Sargable
+    definition: "Short for search-argument-able: a condition the planner can use to search an index. A bare column compared with plain values is sargable. A column wrapped in a function usually is not."
+    example: "WHERE order_date >= '2024-01-01' is sargable; WHERE EXTRACT(YEAR FROM order_date) = 2024 is not."
+    module: m15
+
+  - term: Query planner
+    definition: "The part of PostgreSQL that decides how to run a query: which indexes to use, and which join method. It estimates the cost of each option, using its statistics, and picks the cheapest."
+    example: "EXPLAIN SELECT * FROM orders WHERE order_id = 7;"
+    module: m15
+
+  - term: EXPLAIN ANALYZE
+    definition: "Runs the query for real and shows the plan with the actual row counts and times, next to the planner's estimates. For INSERT, UPDATE or DELETE, wrap it in BEGIN and ROLLBACK."
+    example: "EXPLAIN ANALYZE SELECT * FROM orders WHERE order_id = 7;"
+    module: m15
+
+  - term: Keyset pagination
+    definition: "Paging by remembering the last row you showed and asking for the rows after it, instead of using OFFSET. It stays fast on deep pages. Include a unique column as the tie-breaker."
+    example: "WHERE (order_date, order_id) < (DATE '2024-12-27', 893) ORDER BY order_date DESC, order_id DESC LIMIT 3"
+    module: m15
+
+  - term: Nested loop
+    definition: "A join method that, for each row on one side, looks up the matching rows on the other side. It is fast when one side is small and the other side has an index on the join column."
+    example: "One customer row joined to orders through an index on orders (customer_id)."
+    module: m15
+
+  - term: Hash join
+    definition: "A join method that builds a hash table (a fast lookup table) from one side in memory, then reads the other side once and looks up each row. It works for equality joins (=) on large inputs."
+    example: "FROM orders AS o JOIN order_items AS i ON i.order_id = o.order_id"
+    module: m15
+
+  - term: VACUUM
+    definition: "Cleans up dead row versions left behind by UPDATE and DELETE, so their space can be reused, and updates the visibility map. Autovacuum runs it automatically. It cannot run inside BEGIN ... COMMIT."
+    example: "VACUUM ANALYZE reviews;"
+    module: m15

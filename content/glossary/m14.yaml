@@ -1,0 +1,61 @@
+glossary:
+  - term: Transaction
+    definition: A group of changes that the database treats as one unit. It starts with BEGIN and ends with COMMIT (all changes are saved) or ROLLBACK (all changes are thrown away).
+    example: "BEGIN; INSERT ... (-200.00 out); INSERT ... (200.00 in); COMMIT;"
+    module: m14
+  - term: Autocommit
+    definition: The behaviour where a single statement that is not inside BEGIN is wrapped in its own tiny transaction and saved immediately. It is why a transfer needs BEGIN and COMMIT around both of its rows.
+    example: "UPDATE accounts SET overdraft_limit = 750.00 WHERE account_id = 2;  -- saved at once"
+    module: m14
+  - term: COMMIT
+    definition: The statement that saves every change made since BEGIN, for good. END is a synonym for COMMIT in PostgreSQL.
+    example: "COMMIT;"
+    module: m14
+  - term: ROLLBACK
+    definition: The statement that throws away every change made since BEGIN, so the data goes back to how it was. It can also be used to cancel a transaction that has failed.
+    example: "BEGIN; UPDATE accounts SET overdraft_limit = 9999.00 WHERE account_id = 1; ROLLBACK;"
+    module: m14
+  - term: Savepoint
+    definition: A named bookmark inside a transaction. ROLLBACK TO SAVEPOINT undoes only the work done after the bookmark, and the transaction stays open. RELEASE SAVEPOINT removes the bookmark but keeps the work.
+    example: "SAVEPOINT before_fee; ... ROLLBACK TO SAVEPOINT before_fee;"
+    module: m14
+  - term: ACID
+    definition: The four promises of a transaction. Atomicity means all or nothing. Consistency means the table rules still hold. Isolation means transactions do not see each other's unfinished work. Durability means a committed change survives a crash.
+    example: "A transfer is atomic: both rows are saved, or neither is."
+    module: m14
+  - term: Isolation level
+    definition: The setting that decides what a transaction can see from other transactions running at the same time. PostgreSQL uses READ COMMITTED by default, and offers REPEATABLE READ and SERIALIZABLE for stronger promises.
+    example: "BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT ...; COMMIT;"
+    module: m14
+  - term: Dirty read
+    definition: Reading a change that another transaction made but has not committed yet. PostgreSQL never allows it, even at READ UNCOMMITTED.
+    example: "Session A updates a balance but does not commit. Session B must not see the new balance yet."
+    module: m14
+  - term: Lost update
+    definition: When two transactions read the same value, change it in their own program, and write it back, so one of the changes overwrites the other and is lost. Fix it by changing the value in one UPDATE, such as SET x = x + 250.
+    example: "UPDATE accounts SET overdraft_limit = overdraft_limit + 250.00 WHERE account_id = 1;"
+    module: m14
+  - term: Phantom read
+    definition: When a repeated query returns a new row that matches its WHERE, because another transaction inserted and committed it in between. PostgreSQL prevents it at REPEATABLE READ and above.
+    example: "SELECT COUNT(*) FROM transactions WHERE account_id = 1;  -- the count changes between two reads"
+    module: m14
+  - term: Row lock
+    definition: A reservation on a row, taken with SELECT ... FOR UPDATE. Other transactions that want to change or lock that row wait until your transaction ends. FOR UPDATE SKIP LOCKED skips rows that are already locked.
+    example: "SELECT * FROM accounts WHERE account_id = 1 FOR UPDATE;"
+    module: m14
+  - term: Deadlock
+    definition: A situation where two transactions each hold a lock the other needs, so neither can continue. PostgreSQL cancels one of them with error 40P01 after deadlock_timeout. Avoid it by locking rows in the same order everywhere.
+    example: "Session A locks account 1 then waits for 2, while session B locks 2 then waits for 1."
+    module: m14
+  - term: Advisory lock
+    definition: A lock on a number you choose, such as 42, instead of a table row. PostgreSQL does not know what the number means; your programs agree on it. pg_try_advisory_lock returns false at once if the lock is taken.
+    example: "SELECT pg_try_advisory_lock(42);"
+    module: m14
+  - term: Deferrable constraint
+    definition: A foreign key or unique rule created with DEFERRABLE INITIALLY DEFERRED. Its check waits until COMMIT, so you can insert a child before its parent inside one transaction.
+    example: "batch_id integer REFERENCES loan_batches (batch_id) DEFERRABLE INITIALLY DEFERRED"
+    module: m14
+  - term: Idempotent
+    definition: An operation that gives the same result whether it runs once or many times. A payment saved with a unique reference and ON CONFLICT (reference) DO NOTHING is idempotent, so a retry cannot pay twice.
+    example: "INSERT INTO payments VALUES (2, 'REF-2001', 250.00) ON CONFLICT (reference) DO NOTHING;"
+    module: m14

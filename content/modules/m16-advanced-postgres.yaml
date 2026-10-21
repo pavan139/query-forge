@@ -1,0 +1,2980 @@
+id: m16
+order: 16
+title: "Advanced PostgreSQL Features"
+subtitle: "JSON, arrays, date series, LATERAL, grouping and text search"
+icon: "🧩"
+level: advanced
+description: |
+  You already know how to write solid SQL. Now you will use the special tools that make PostgreSQL stand out.
+
+  You will read **JSON** stored inside a column, store and search **arrays**, build **date series** to fill gaps in a report, write **LATERAL** subqueries that run once per row, make **subtotals and grand totals** in one query, pick the **first row of each group**, match **regular expressions** and search **full text** the way a search engine does.
+
+  Every lesson starts with a real problem from FitTrack (a fitness app), ShopSmart or FlickNest, and every idea is practised with real data.
+dataset: app
+lessons:
+  - id: m16-l01
+    title: "JSON basics: reading details inside a column"
+    summary: Pull values out of a jsonb column with ->> and ->, and cast them to numbers.
+    minutes: 25
+    steps:
+      - type: read
+        title: "A column that holds a bundle of details"
+        md: |
+          Priya is a product analyst at FitTrack. Every time someone taps something in the app, one row is written to the `events` table. Each kind of event needs different details. An `app_open` has a `screen` and an `app_version`. A `subscription_started` has a `plan` and a `price`. A workout has a `workout_type`, a `duration_min` and `calories`.
+
+          Instead of adding a column for every possible detail, the team stores them in one column called `properties`. Its type is `jsonb`.
+
+          **JSON** (JavaScript Object Notation) is a text format for named values, written in curly brackets as `"key": value` pairs. `jsonb` is PostgreSQL's fast, tidied-up version of JSON. You can look inside it and read any key.
+
+          > [!ANALOGY]
+          > Think of `properties` as a **sticky note** on each event. The note holds a few named facts, such as "plan: annual, price: 79.99". The `events` table is the filing cabinet, and the note is the detail you read when you need it.
+
+      - type: example
+        title: Look inside the properties column
+        md: Press **Run** to see the `properties` of three subscription events.
+        sql: |
+          SELECT event_id,
+                 event_name,
+                 properties
+          FROM events
+          WHERE event_name = 'subscription_started'
+          ORDER BY event_id
+          LIMIT 3;
+        after: |
+          Each `properties` value is one JSON object: curly brackets around `"key": value` pairs. The first two rows show a `plan` and a `price`. The keys are different from event to event, but they all live in the same column.
+
+      - type: read
+        title: "The two arrows: -> and ->>"
+        md: |
+          To pull one value out of `properties`, write the column, then an **arrow**, then the key name in quotes.
+
+          - `->>` gives the value as **plain text**. You will use this one most.
+          - `->` gives the value **still as JSON**. Use it when you want to go deeper into the object.
+
+          > [!TIP]
+          > Read `->>` as "give me the value as text". Read `->` as "give me the JSON piece".
+
+      - type: example
+        title: Pull out the plan and price
+        md: Each `->>` becomes an ordinary column in your result.
+        sql: |
+          SELECT event_id,
+                 properties->>'plan'  AS plan,
+                 properties->>'price' AS price
+          FROM events
+          WHERE event_name = 'subscription_started'
+          ORDER BY event_id
+          LIMIT 3;
+        after: |
+          Now `plan` and `price` are normal columns. You can show them, sort them and filter them. Notice that `price` is text, even though it looks like a number. That matters in the next steps.
+
+      - type: quiz
+        id: m16-l01-q1
+        question: Which arrow gives you the value as plain text?
+        options:
+          - "->"
+          - "->>"
+          - "#>"
+          - "jsonb_build_object"
+        answer: 1
+        explanation: |
+          `->>` returns text. `->` returns JSON, and `#>` is the arrow for a path of several keys. `jsonb_build_object` builds new JSON rather than reading it.
+
+      - type: read
+        title: Turn text into a number with a cast
+        md: |
+          Text cannot be added up. To do maths on a JSON number, first turn the text into a number with `::`, the **cast** operator, followed by a type name such as `int` or `numeric`.
+
+          Write the cast around the whole arrow expression, like this: `(properties->>'calories')::int`. The brackets matter, as the next example shows.
+
+      - type: example
+        title: Average calories per workout type
+        md: Completed workouts store their calories in the JSON. Cast them to `int`, then average them for each workout type.
+        sql: |
+          SELECT properties->>'workout_type'                   AS workout_type,
+                 ROUND(AVG((properties->>'calories')::int), 1) AS avg_calories
+          FROM events
+          WHERE event_name = 'workout_completed'
+          GROUP BY 1
+          ORDER BY 1;
+        after: |
+          You get five rows, one per workout type, in alphabetical order. Run has the highest average (196.7 calories) and yoga the lowest (77.0). `GROUP BY 1` means "group by the first column".
+
+      - type: example
+        title: The bracket trap
+        md: This query looks sensible, but it fails. Press **Run** and read the error.
+        sql: |
+          SELECT properties->>'calories' + 1
+          FROM events
+          WHERE event_name = 'workout_completed'
+          LIMIT 1;
+        expectError: true
+        after: |
+          The error talks about the word `calories`, which is confusing. Here is why. The `+` sign binds more tightly than `->>`, so PostgreSQL works out `'calories' + 1` first. It tries to turn the word `calories` into a number and fails.
+
+          The fix is to put the arrow in brackets and cast it first: `(properties->>'calories')::int + 1`.
+
+      - type: read
+        title: Text is not a number
+        md: |
+          > [!MISTAKE]
+          > Comparing text with a number can give wrong answers **without any error**. `->>` returns text, and text is compared one character at a time. So `'93'` is bigger than `'100'`, because `'9'` comes after `'1'`.
+          >
+          > Always cast the value to a number before you compare it with a number.
+
+      - type: example
+        title: Same question, two answers
+        md: Both columns count completed workouts with more than 100 calories. Only one of them is right.
+        sql: |
+          SELECT SUM(CASE WHEN properties->>'calories' > '100'
+                          THEN 1 ELSE 0 END)  AS text_compare,
+                 SUM(CASE WHEN (properties->>'calories')::int > 100
+                          THEN 1 ELSE 0 END)  AS number_compare
+          FROM events
+          WHERE event_name = 'workout_completed';
+        after: |
+          The `text_compare` column is wrong: it counts almost every workout. The `number_compare` column, 663, is the right answer. The `CASE` part counts a 1 for each matching row, and the `SUM` adds those 1s together.
+
+      - type: example
+        title: Build JSON from ordinary columns
+        md: "`jsonb_build_object` takes pairs of `'key', value` and returns one JSON object."
+        sql: |
+          SELECT jsonb_build_object(
+                     'user',    user_id,
+                     'country', country
+                 ) AS summary
+          FROM users
+          WHERE user_id <= 2
+          ORDER BY user_id;
+        after: |
+          You get one JSON object per user. The keys are the names you typed, and the values come from the columns. To turn a whole row into one JSON object, use `to_jsonb(users)`, which makes one key for every column.
+
+      - type: read
+        title: json or jsonb?
+        md: |
+          PostgreSQL has two JSON types.
+
+          - `json` stores the text exactly as you typed it.
+          - `jsonb` stores a tidied copy. It sorts the keys, removes extra spaces and is much faster to search.
+
+          For nearly all work, use `jsonb`. FitTrack stores `properties` as `jsonb`, and you should too.
+
+      - type: read
+        title: Nested JSON and paths
+        md: |
+          Some JSON is nested: an object inside another object. For a path several levels deep, list the keys in braces, separated by commas. The path `'{device,os}'` means "go into `device`, then take `os`".
+
+          `#>` returns JSON. `#>>` returns text.
+
+      - type: predict
+        id: m16-l01-p1
+        question: What will this query return?
+        sql: |
+          SELECT '{"device": {"os": "ios"}}'::jsonb #>> '{device,os}';
+        options:
+          - "ios"
+          - "{\"os\": \"ios\"}"
+          - "device"
+          - "NULL"
+        answer: 0
+        explanation: |
+          `#>>` follows the path `device` then `os`, and returns the value as text, which is `ios`. Use `#>` instead to get the JSON `{"os": "ios"}`.
+
+      - type: predict
+        id: m16-l01-p2
+        question: Event 1 is an `app_open`. What will this query show?
+        sql: |
+          SELECT properties->>'plan'
+          FROM events
+          WHERE event_id = 1;
+        options:
+          - "app_open"
+          - "An empty string"
+          - "NULL"
+          - "An error"
+        answer: 2
+        explanation: |
+          The `app_open` details have no `plan` key. A missing key is not an error. The arrow returns NULL, which means "nothing here".
+
+      - type: fill
+        id: m16-l01-f1
+        prompt: Complete the query so that `workout_type` comes out as text and `minutes` comes out as a whole number.
+        template: |
+          SELECT event_id,
+                 properties ___ 'workout_type' AS workout_type,
+                 (properties ___ 'duration_min')::___ AS minutes
+          FROM events
+          WHERE event_name = 'workout_completed'
+          ORDER BY event_id
+          LIMIT 2;
+        answers:
+          - ["->>"]
+          - ["->>"]
+          - ["int", "integer"]
+        explanation: |
+          `->>` gives text for both keys. `::int` casts the duration text into a whole number. Use `numeric` instead when a value can have decimals, such as a price.
+
+      - type: exercise
+        id: m16-l01-e1
+        title: Which workouts were completed?
+        difficulty: 1
+        prompt: |
+          Show `event_id` and `workout_type` (as plain text) for every `workout_completed` event with an `event_id` up to 60. Sort by `event_id`.
+        starter: |
+          SELECT event_id
+          FROM events
+          WHERE event_name = 'workout_completed';
+        solution: |
+          SELECT event_id,
+                 properties->>'workout_type' AS workout_type
+          FROM events
+          WHERE event_name = 'workout_completed'
+            AND event_id <= 60
+          ORDER BY event_id;
+        hints:
+          - Start from the first example. `->>` gives you plain text for one key.
+          - "Add `properties->>'workout_type'` as a second column, and keep the `event_name` filter."
+          - "SELECT event_id, properties->>'___' AS workout_type FROM events WHERE event_name = '___' AND event_id <= 60 ORDER BY event_id;"
+        explanation: |
+          There are 10 rows, one for each completed workout up to event 60. Sorting by the unique `event_id` makes the order fixed, so the answer is always the same.
+        ordered: true
+
+      - type: exercise
+        id: m16-l01-e2
+        title: The annual plans
+        difficulty: 2
+        prompt: |
+          Show `event_id`, `plan` (as text) and `price` (as a number) for every `subscription_started` event whose price is **more than 50**. Sort by `event_id`.
+        starter: |
+          SELECT event_id, properties->>'plan'
+          FROM events
+          WHERE event_name = 'subscription_started';
+        solution: |
+          SELECT event_id,
+                 properties->>'plan'             AS plan,
+                 (properties->>'price')::numeric AS price
+          FROM events
+          WHERE event_name = 'subscription_started'
+            AND (properties->>'price')::numeric > 50
+          ORDER BY event_id;
+        hints:
+          - Use the cast from the lesson, `(properties->>'price')::numeric`, both in the columns and in the filter.
+          - Filter with `WHERE` and compare the cast price with 50.
+          - "... WHERE event_name = 'subscription_started' AND (properties->>'price')::numeric > ___ ORDER BY event_id;"
+        explanation: |
+          There are 33 annual plans at 79.99. The 72 monthly plans at 9.99 are left out. The comparison works only because the price is a real number. If you compared the text `'9.99'` with `'50'`, the monthly plans would be wrongly included.
+        ordered: true
+
+      - type: exercise
+        id: m16-l01-e3
+        title: Minutes per workout type
+        difficulty: 2
+        prompt: |
+          For every `workout_completed` event, group by `workout_type` and show three columns in this order: `workout_type`, `workouts` (the number of workouts) and `avg_minutes` (the average `duration_min`, rounded to 1 decimal place). Sort by `workout_type`.
+        starter: |
+          SELECT properties->>'workout_type'
+          FROM events
+          WHERE event_name = 'workout_completed';
+        solution: |
+          SELECT properties->>'workout_type'  AS workout_type,
+                 COUNT(*)                     AS workouts,
+                 ROUND(AVG((properties->>'duration_min')::int), 1)
+                                              AS avg_minutes
+          FROM events
+          WHERE event_name = 'workout_completed'
+          GROUP BY 1
+          ORDER BY 1;
+        hints:
+          - Group by the workout type text, the same way as the average-calories example.
+          - Use COUNT(*) for `workouts` and AVG on the cast duration for `avg_minutes`.
+          - "SELECT properties->>'workout_type' AS workout_type, COUNT(*) AS workouts, ROUND(AVG((properties->>'___')::int), 1) AS avg_minutes FROM events WHERE event_name = '___' GROUP BY 1 ORDER BY 1;"
+        explanation: |
+          There are five rows: cycling, run, strength, swim and yoga. Strength has the most workouts (222), and cycling and yoga average close to 20 minutes each.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l01-e4
+        title: Calories per minute
+        difficulty: 3
+        prompt: |
+          For every `workout_completed` event, show `workout_type` and `calories_per_minute`. Calories per minute is the total calories of that type divided by its total minutes, rounded to 1 decimal place.
+
+          Sort by `calories_per_minute` from highest to lowest, then by `workout_type` from A to Z.
+        starter: |
+          SELECT properties->>'workout_type' AS workout_type
+          FROM events
+          WHERE event_name = 'workout_completed';
+        solution: |
+          SELECT properties->>'workout_type' AS workout_type,
+                 ROUND(
+                     SUM((properties->>'calories')::int)::numeric
+                     / SUM((properties->>'duration_min')::int),
+                     1
+                 ) AS calories_per_minute
+          FROM events
+          WHERE event_name = 'workout_completed'
+          GROUP BY 1
+          ORDER BY calories_per_minute DESC, workout_type;
+        hints:
+          - Total calories is a `SUM` of the cast calories. Total minutes is a `SUM` of the cast duration.
+          - Divide one total by the other, then wrap the division in `ROUND(..., 1)`.
+          - "Whole numbers divide with the decimals removed, so cast the top sum with ::numeric first."
+        explanation: |
+          Running gives the most calories per minute (10.6), and yoga the least (4.0). Dividing two whole numbers chops off the decimals (7 / 2 is 3), so the total calories are cast to `numeric` before the division.
+        ordered: true
+        columnNames: true
+
+      - type: parsons
+        id: m16-l01-o1
+        prompt: Put the lines in the right order to show the average calories for each workout type, from highest to lowest average.
+        lines:
+          - SELECT properties->>'workout_type' AS workout_type,
+          - ROUND(AVG((properties->>'calories')::int), 1) AS avg_calories
+          - FROM events
+          - WHERE event_name = 'workout_completed'
+          - GROUP BY 1
+          - ORDER BY avg_calories DESC;
+        distractors:
+          - HAVING event_name = 'workout_completed'
+        explanation: |
+          The query reads in the order SELECT, FROM, WHERE, GROUP BY, ORDER BY. The `HAVING` line is a distractor: it filters groups after they are made, and this query has no such filter.
+
+    cheatsheet:
+      - title: Value as text
+        sql: |
+          properties->>'workout_type'
+        note: "->> returns plain text"
+      - title: Value as JSON
+        sql: |
+          properties->'calories'
+        note: "-> keeps the JSON type, so you can go deeper"
+      - title: Follow a nested path
+        sql: |
+          '{"device": {"os": "ios"}}'::jsonb #>> '{device,os}'
+        note: "#>> returns text; #> returns JSON"
+      - title: Text to number
+        sql: |
+          (properties->>'calories')::int
+        note: "Put the arrow in brackets before the cast and the maths"
+
+  - id: m16-l02
+    title: "Querying JSONB: search, unfold and build"
+    summary: Search inside JSON with @> and ?, unfold objects into rows, and build JSON with aggregates.
+    minutes: 25
+    steps:
+      - type: read
+        title: Finding things inside the bundle
+        md: |
+          Priya's team wants to know how many people chose each fitness goal. Every `goal_set` event stores its goal inside `properties`. To find only the "lose weight" goals, you have to search **inside** the JSON.
+
+          The `@>` operator asks one question: does the left side **contain** the right side? The right side is a small JSON object with the keys and values you want to match. Extra keys in the event do not matter. `@>` only checks the pieces you wrote.
+
+      - type: example
+        title: Find the build-muscle goals
+        md: "Press **Run**. Each row is a `goal_set` event whose JSON contains `\"goal\": \"build_muscle\"`."
+        sql: |
+          SELECT event_id,
+                 user_id,
+                 properties
+          FROM events
+          WHERE event_name = 'goal_set'
+            AND properties @> '{"goal": "build_muscle"}'
+          ORDER BY event_id
+          LIMIT 5;
+        after: |
+          Every row has a `goal` of `build_muscle`. The event also has a `target_per_week` key, which the search ignores, because the search only asked about `goal`.
+
+      - type: read
+        title: Does the key exist? The ? operator
+        md: |
+          Sometimes you do not care what the value is, only whether the key is there at all. The `?` operator asks: "does this JSON have a key called...?" It returns `true` or `false`.
+
+          It is the quickest way to find out which events carry a detail at all.
+
+      - type: example
+        title: Count the events that have calories
+        md: Only workout events store calories. Count them for each event name.
+        sql: |
+          SELECT event_name,
+                 COUNT(*) AS with_calories
+          FROM events
+          WHERE properties ? 'calories'
+          GROUP BY event_name
+          ORDER BY event_name;
+        after: |
+          Two event names have a `calories` key. `workout_completed` has 923 rows with the real calories, and `workout_started` has 1,413 rows with the estimated calories. Every other event returns `false` and is left out.
+
+      - type: read
+        title: Open an object into rows
+        md: |
+          `jsonb_each` takes a JSON object and returns **one row per key**, with two columns: `key` and `value`. A function that returns rows can sit in the `FROM` clause, just like a table.
+
+          > [!TIP]
+          > `value` is still JSON, so text values keep their double quotes.
+
+      - type: example
+        title: Unfold one subscription event
+        md: Press **Run**. The subquery picks event 2, and `jsonb_each` turns its properties into rows.
+        sql: |
+          SELECT kv.key,
+                 kv.value
+          FROM jsonb_each(
+                   (SELECT properties
+                    FROM events
+                    WHERE event_id = 2)
+               ) AS kv
+          ORDER BY kv.key;
+        after: |
+          Two rows: `plan` with `"annual"` and `price` with `79.99`. Each key from the JSON became a row you can filter and sort like any other table.
+
+      - type: read
+        title: Build arrays and objects with aggregates
+        md: |
+          Aggregates from lesson m05 have JSON versions too.
+
+          - `jsonb_agg(value)` gathers values into one **JSON array**.
+          - `jsonb_object_agg(key, value)` gathers key and value pairs into one **JSON object**.
+
+          The reverse of `jsonb_agg` is `jsonb_array_elements`, which turns an array back into rows.
+
+      - type: example
+        title: Gather a user's events, then unfold them again
+        md: Press **Run**. The inner query builds one JSON array of user 1's event names. The outer query turns that array back into rows.
+        sql: |
+          SELECT elem AS event_name
+          FROM jsonb_array_elements(
+                   (SELECT jsonb_agg(event_name ORDER BY event_id)
+                    FROM events
+                    WHERE user_id = 1)
+               ) AS elem;
+        after: |
+          User 1 has two events, `app_open` and `subscription_started`, in the order they happened. The `ORDER BY` inside `jsonb_agg` controls the order of the array, the same way it controls the order of rows in a normal query.
+
+      - type: read
+        title: Change one value with jsonb_set
+        md: |
+          `jsonb_set(target, path, new_value)` returns a **copy** of the JSON with one value replaced. The original is untouched. The new value must be valid JSON, so a text value needs double quotes inside the single quotes, like `'"monthly"'`.
+
+          The path is written the same way as `#>`: `'{plan}'` means the `plan` key.
+
+      - type: example
+        title: Switch a plan to monthly
+        md: Press **Run**. The price stays the same, only `plan` changes.
+        sql: |
+          SELECT jsonb_set(
+                     '{"plan": "annual", "price": 79.99}'::jsonb,
+                     '{plan}',
+                     '"monthly"'
+                 ) AS changed;
+        after: |
+          You get `{"plan": "monthly", "price": 79.99}`. Remember that `jsonb_set` does not change the table. To save the change you would use `UPDATE`, which you will meet in module m12.
+
+      - type: read
+        title: "JSON_TABLE: turn JSON into normal columns"
+        md: |
+          `JSON_TABLE` describes the columns you want, and each `PATH` says which key fills each column. It makes the JSON look like an ordinary table. It arrived in PostgreSQL 17, so you can use it in PostgreSQL 18.
+
+          > [!MISTAKE]
+          > JSON needs **double quotes** around keys and text values. `{plan: annual}` is not valid JSON and fails with `invalid input syntax for type json`. Write the whole JSON inside single quotes in SQL, like `'{"plan": "annual"}'`.
+
+      - type: example
+        title: Subscriptions as a table
+        md: Press **Run**. The `JSON_TABLE` call turns the `plan` and `price` keys into two columns.
+        sql: |
+          SELECT jt.plan,
+                 jt.price
+          FROM events e,
+               JSON_TABLE(
+                   e.properties,
+                   '$'
+                   COLUMNS (
+                       plan  text    PATH '$.plan',
+                       price numeric PATH '$.price'
+                   )
+               ) AS jt
+          WHERE e.event_name = 'subscription_started'
+            AND e.event_id <= 6
+          ORDER BY e.event_id;
+        after: |
+          Two rows, one per subscription: `annual` at 79.99, then `monthly` at 9.99. Now `plan` and `price` are normal columns, ready to filter, sort and join.
+
+      - type: read
+        title: Speed up searches with a GIN index
+        md: |
+          On a big table, searching inside `jsonb` is much faster with a **GIN index**. GIN is an index type made for values that hold many parts, such as JSON and arrays.
+
+          ```sql
+          CREATE INDEX events_props_gin
+              ON events USING GIN (properties);
+          ```
+
+          You will learn how indexes work in module m15. For now, remember that this one line helps `@>` and `?` searches on `properties`.
+
+      - type: quiz
+        id: m16-l02-q1
+        question: "What does `properties @> '{\"goal\": \"lose_weight\"}'` ask?"
+        options:
+          - "Does the left side contain everything in the right side?"
+          - "Are the two sides exactly equal?"
+          - "Is the right side the first key of the left side?"
+          - "Is the left side NULL?"
+        answer: 0
+        explanation: |
+          `@>` means "contains". The left JSON must include the key and value on the right. Extra keys on the left are allowed.
+
+      - type: predict
+        id: m16-l02-p1
+        question: What does this query return?
+        sql: |
+          SELECT '{"a": 1, "b": 2}'::jsonb @> '{"a": 1}' AS result;
+        options:
+          - "true"
+          - "false"
+          - "NULL"
+          - "An error"
+        answer: 0
+        explanation: |
+          The left side has `"a": 1` and an extra key `b`. Containment only needs the right side's pieces to be present, so the answer is `true`.
+
+      - type: fill
+        id: m16-l02-f1
+        prompt: Complete the query to count the events that have a `price` key.
+        template: |
+          SELECT COUNT(*)
+          FROM events
+          WHERE properties ___ 'price';
+        answers:
+          - ["?"]
+        explanation: |
+          `?` checks whether the key exists. The answer is 105, the number of `subscription_started` events.
+
+      - type: exercise
+        id: m16-l02-e1
+        title: Lose-weight goals
+        difficulty: 1
+        prompt: |
+          Show `event_id` and `user_id` for every `goal_set` event whose goal is `lose_weight` **and** whose `event_id` is 300 or less. Sort by `event_id`.
+        starter: |
+          SELECT event_id, user_id
+          FROM events
+          WHERE event_name = 'goal_set';
+        solution: |
+          SELECT event_id,
+                 user_id
+          FROM events
+          WHERE event_name = 'goal_set'
+            AND properties @> '{"goal": "lose_weight"}'
+            AND event_id <= 300
+          ORDER BY event_id;
+        hints:
+          - Copy the `@>` line from the first example, and change the goal.
+          - "Add `AND event_id <= 300` to the list of conditions."
+          - "WHERE event_name = 'goal_set' AND properties @> '{\"goal\": \"___\"}' AND event_id <= ___"
+        explanation: |
+          Seven goals match. The `@>` check keeps only the events whose goal is `lose_weight`, and the extra `event_id` filter keeps the list short.
+        ordered: true
+
+      - type: exercise
+        id: m16-l02-e2
+        title: Which events carry a workout type?
+        difficulty: 2
+        prompt: |
+          For each `event_name` whose properties have a `workout_type` key, count the events. Show `event_name` and `events`, sorted by `event_name`.
+        starter: |
+          SELECT event_name
+          FROM events
+          GROUP BY event_name;
+        solution: |
+          SELECT event_name,
+                 COUNT(*) AS events
+          FROM events
+          WHERE properties ? 'workout_type'
+          GROUP BY event_name
+          ORDER BY event_name;
+        hints:
+          - Use `?` with the key `workout_type` in the `WHERE` clause.
+          - Group by `event_name` and use `COUNT(*)`.
+          - "SELECT event_name, COUNT(*) AS events FROM events WHERE properties ? '___' GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          Two event names carry a workout type: `workout_completed` (923) and `workout_started` (1,413). The `?` operator filters first, then `GROUP BY` counts.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l02-e3
+        title: One summary object per platform
+        difficulty: 2
+        prompt: |
+          For each `platform` in `users`, show `platform` and a JSON object called `sources`. The object maps each `referral_source` to the number of users from that platform who came from it.
+
+          Use `jsonb_object_agg`. Sort by `platform`.
+        starter: |
+          SELECT platform
+          FROM users
+          GROUP BY platform;
+        solution: |
+          SELECT platform,
+                 jsonb_object_agg(referral_source, n) AS sources
+          FROM (
+              SELECT platform,
+                     referral_source,
+                     COUNT(*) AS n
+              FROM users
+              GROUP BY platform, referral_source
+          ) AS per_source
+          GROUP BY platform
+          ORDER BY platform;
+        hints:
+          - First count users per platform and referral source in a subquery.
+          - "`jsonb_object_agg(key, value)` needs a key first, then a value."
+          - "SELECT platform, jsonb_object_agg(referral_source, n) AS sources FROM (...) AS per_source GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          There are three platforms, so three rows. The subquery makes one row per platform and source. `jsonb_object_agg` then gathers those rows into one object per platform. Objects are stored in jsonb's sorted key order.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l02-e4
+        title: Change the plan with jsonb_set
+        difficulty: 2
+        prompt: |
+          Use `jsonb_set` on the `properties` of event 2. Change `plan` to `"monthly"` and leave everything else as it is. Show `event_id` and the new `properties` (named `new_properties`).
+        starter: |
+          SELECT event_id,
+                 properties AS new_properties
+          FROM events
+          WHERE event_id = 2;
+        solution: |
+          SELECT event_id,
+                 jsonb_set(properties, '{plan}', '"monthly"') AS new_properties
+          FROM events
+          WHERE event_id = 2;
+        hints:
+          - Start from the `jsonb_set` example. The table is not changed, so you only need to show the result.
+          - "Use `jsonb_set(properties, '{plan}', ___)`, and remember the new value must be valid JSON."
+          - "The new value is the text \"monthly\" wrapped in single quotes: '\"monthly\"'."
+        explanation: |
+          The result is `{"plan": "monthly", "price": 79.99}`. The `price` is untouched because `jsonb_set` changes only the path you name.
+        columnNames: true
+
+      - type: exercise
+        id: m16-l02-e5
+        title: Which keys do events use?
+        difficulty: 3
+        prompt: |
+          Count how many events contain each key in `properties`. Show `property_key` and `events`. Sort by `events` from highest to lowest, then by `property_key` from A to Z.
+
+          Hint: `jsonb_object_keys(properties)` returns one row per key.
+        starter: |
+          SELECT event_name
+          FROM events
+          GROUP BY event_name;
+        solution: |
+          SELECT prop AS property_key,
+                 COUNT(*) AS events
+          FROM events,
+               jsonb_object_keys(properties) AS prop
+          GROUP BY prop
+          ORDER BY events DESC, prop;
+        hints:
+          - "`jsonb_object_keys(properties)` in the `FROM` clause gives one row per key for each event."
+          - Group the rows by the key, and count them with `COUNT(*)`.
+          - "SELECT prop AS property_key, COUNT(*) AS events FROM events, jsonb_object_keys(properties) AS prop GROUP BY ___ ORDER BY ___ DESC, ___;"
+        explanation: |
+          Twelve keys appear. `app_version` and `screen` appear on all 4,122 `app_open` events, and `calories`, `duration_min` and `workout_type` on 2,336 workouts. The second `ORDER BY` column (`prop`) breaks ties, so the list always comes out in the same order.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Contains a piece of JSON
+        sql: |
+          WHERE properties @> '{"goal": "lose_weight"}'
+        note: "@> asks: does the left side contain the right side?"
+      - title: Key exists
+        sql: |
+          WHERE properties ? 'calories'
+        note: "? returns true when the key is present"
+      - title: Summary object per group
+        sql: |
+          jsonb_object_agg(referral_source, n)
+        note: "jsonb_agg makes an array; jsonb_object_agg makes an object"
+      - title: Change one value
+        sql: |
+          jsonb_set(properties, '{plan}', '"monthly"')
+        note: "Returns a changed copy; use UPDATE to save it"
+
+  - id: m16-l03
+    title: "Arrays: lists inside one cell"
+    summary: Store several values in one column, search them with ANY and @>, and turn them back into rows.
+    minutes: 25
+    dataset: movies
+    steps:
+      - type: read
+        title: A list inside one cell
+        md: |
+          FlickNest's catalog team tags every film with its genres. A film can have one, two or three genres. In a normal table that means a separate row for each genre. Sometimes you want the whole list in **one** cell instead.
+
+          A PostgreSQL **array** holds several values of the same type in one column. It looks like `{Drama,Comedy,Thriller}`. You make one with `ARRAY[...]`.
+
+          > [!ANALOGY]
+          > An array is like a **shopping list written on one sticky note**. Everything is on the same note, and you can still read item number 2 on its own.
+
+      - type: example
+        title: Build an array and read one item
+        md: Press **Run**. The first column is the whole array. The second column is one item from it.
+        sql: |
+          SELECT ARRAY['Drama', 'Comedy', 'Thriller'] AS genres,
+                 (ARRAY['Drama', 'Comedy', 'Thriller'])[2] AS second_genre;
+        after: |
+          The array is shown in curly brackets. Positions start at **1**, so `[2]` is `Comedy`. Put the array in brackets before you add `[2]`, as shown here.
+
+      - type: read
+        title: "ARRAY_AGG: many rows into one array"
+        md: |
+          `ARRAY_AGG` works like `GROUP BY` with one difference. Instead of counting or adding up the rows in a group, it gathers the values into one array. You can sort the values inside the array with `ORDER BY`.
+
+      - type: example
+        title: Each movie with its genres
+        md: Press **Run**. The three joins connect each movie to its genre names, then `ARRAY_AGG` puts those names into one list per movie.
+        sql: |
+          SELECT m.movie_id,
+                 m.title,
+                 ARRAY_AGG(g.name ORDER BY g.name) AS genres
+          FROM movies m
+          JOIN movie_genres mg ON mg.movie_id = m.movie_id
+          JOIN genres g ON g.genre_id = mg.genre_id
+          WHERE m.movie_id <= 6
+          GROUP BY m.movie_id, m.title
+          ORDER BY m.movie_id;
+        after: |
+          Six movies, one row each. "The Iron Orchard" shows `{Crime,Drama}`, because its two genres are gathered and sorted into one list.
+
+      - type: read
+        title: Searching inside arrays with ANY and @>
+        md: |
+          `value = ANY(array)` is true when the value equals **any** item in the array. The array goes on the right.
+
+          `array @> ARRAY[...]` is true when the array **contains all** the items you list. For example, `ARRAY['Drama', 'Thriller'] @> ARRAY['Drama']` is `true`.
+
+      - type: example
+        title: Find the Sci-Fi movies
+        md: Press **Run**. The inner query builds one genre list per movie. The outer query keeps the lists that contain `Sci-Fi`.
+        sql: |
+          SELECT tagged.movie_id,
+                 tagged.title
+          FROM (
+              SELECT m.movie_id,
+                     m.title,
+                     ARRAY_AGG(g.name ORDER BY g.name) AS genres
+              FROM movies m
+              JOIN movie_genres mg ON mg.movie_id = m.movie_id
+              JOIN genres g ON g.genre_id = mg.genre_id
+              GROUP BY m.movie_id, m.title
+          ) AS tagged
+          WHERE 'Sci-Fi' = ANY(tagged.genres)
+          ORDER BY tagged.movie_id;
+        after: |
+          Fourteen films have `Sci-Fi` in their genre list. The inner query is the same as the example before, and the new part is the `WHERE` line, which searches inside the array with `= ANY`.
+
+      - type: read
+        title: "unnest: an array back into rows"
+        md: |
+          `unnest` does the reverse of `ARRAY_AGG`. It turns one array into one row per item. Add `WITH ORDINALITY` to get a position number for each item as well, counting from 1.
+
+      - type: example
+        title: Unnest with position numbers
+        md: Press **Run**. Each array item becomes a row, and `WITH ORDINALITY` numbers them.
+        sql: |
+          SELECT g.genre,
+                 g.pos
+          FROM unnest(ARRAY['Drama', 'Comedy', 'Thriller'])
+               WITH ORDINALITY AS g(genre, pos);
+        after: |
+          Three rows: Drama at position 1, Comedy at position 2, Thriller at position 3. Each row keeps its place in the original list, which matters when the order of a list means something.
+
+      - type: example
+        title: Turn text into an array and back
+        md: Press **Run**. `string_to_array` splits text at each comma. `array_to_string` glues the items back together with a separator you choose.
+        sql: |
+          SELECT string_to_array('Drama,Comedy,Thriller', ',') AS as_array,
+                 array_to_string(
+                     string_to_array('Drama,Comedy', ','),
+                     ' | '
+                 ) AS joined;
+        after: |
+          The first column is the array `{Drama,Comedy,Thriller}`. The second is the text `Drama | Comedy`. Splitting and joining are handy when a cell holds a comma-separated list from a spreadsheet export.
+
+      - type: read
+        title: Counting items, and the position trap
+        md: |
+          `cardinality(array)` returns the **total number of items** in the array. `array_length(array, 1)` returns the length of the first dimension. For a normal list like the ones here, both give the same number. The `1` means "dimension 1", so always write it.
+
+          > [!MISTAKE]
+          > Array positions start at **1**, not 0. `(ARRAY['Drama', 'Comedy'])[0]` does not fail. It returns `NULL`, which means "nothing here", so a wrong position can hide a bug quietly.
+
+      - type: example
+        title: The empty list
+        md: Press **Run**. Both functions read an empty array, which has no items at all.
+        sql: |
+          SELECT cardinality(ARRAY[]::int[]) AS total_items,
+                 array_length(ARRAY[]::int[], 1) AS first_dimension;
+        after: |
+          `cardinality` says 0 and `array_length` says `NULL`. When you count items, use `cardinality`. It never returns `NULL` for an array that exists, even an empty one.
+
+      - type: quiz
+        id: m16-l03-q1
+        question: Which function gathers many rows into one array?
+        options:
+          - "ARRAY_AGG"
+          - "unnest"
+          - "cardinality"
+          - "string_to_array"
+        answer: 0
+        explanation: |
+          `ARRAY_AGG` gathers values from many rows into one array. `unnest` does the reverse, and `string_to_array` splits text into an array.
+
+      - type: predict
+        id: m16-l03-p1
+        question: What does this query return?
+        sql: |
+          SELECT (ARRAY[10, 20, 30])[4] AS fourth;
+        options:
+          - "30"
+          - "NULL"
+          - "0"
+          - "An error"
+        answer: 1
+        explanation: |
+          The array has only three items, so position 4 does not exist. PostgreSQL returns `NULL` instead of an error.
+
+      - type: fill
+        id: m16-l03-f1
+        prompt: Complete the query so that it checks whether the value `'Drama'` is one of the items in the array.
+        template: |
+          SELECT 'Drama' ___ ___(ARRAY['Comedy', 'Drama']) AS found;
+        answers:
+          - ["="]
+          - ["any"]
+        explanation: |
+          `= ANY(array)` is true when the value equals any item. The result is `true`.
+
+      - type: exercise
+        id: m16-l03-e1
+        title: Genres for four films
+        difficulty: 1
+        prompt: |
+          For the movies with `movie_id` from 7 to 10, show `movie_id`, `title` and `genres`, where `genres` is one array of the genre names sorted A to Z. Sort by `movie_id`.
+        starter: |
+          SELECT m.movie_id,
+                 m.title
+          FROM movies m
+          WHERE m.movie_id BETWEEN 7 AND 10;
+        solution: |
+          SELECT m.movie_id,
+                 m.title,
+                 ARRAY_AGG(g.name ORDER BY g.name) AS genres
+          FROM movies m
+          JOIN movie_genres mg ON mg.movie_id = m.movie_id
+          JOIN genres g ON g.genre_id = mg.genre_id
+          WHERE m.movie_id BETWEEN 7 AND 10
+          GROUP BY m.movie_id, m.title
+          ORDER BY m.movie_id;
+        hints:
+          - Start from the "Each movie with its genres" example. Only the movie range changes.
+          - "Keep the three joins, then `ARRAY_AGG(g.name ORDER BY g.name)` with `GROUP BY` on the movie."
+          - "SELECT m.movie_id, m.title, ARRAY_AGG(g.name ORDER BY g.name) AS genres FROM movies m JOIN movie_genres mg ON mg.movie_id = m.movie_id JOIN genres g ON g.genre_id = mg.genre_id WHERE m.movie_id BETWEEN ___ AND ___ GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          Four films. `Quantum Tea Party` has `{Comedy,Sci-Fi}`, and `Ashes and Orchards` has a single genre, `{Drama}`. An array with one item is still an array.
+        ordered: true
+
+      - type: exercise
+        id: m16-l03-e2
+        title: Sci-Fi films
+        difficulty: 2
+        prompt: |
+          Show `movie_id` and `title` for every film whose genres include `Sci-Fi`. Use one genre list per film, built with `ARRAY_AGG` and sorted A to Z. Sort the result by `movie_id`.
+        starter: |
+          SELECT movie_id,
+                 title
+          FROM movies;
+        solution: |
+          SELECT tagged.movie_id,
+                 tagged.title
+          FROM (
+              SELECT m.movie_id,
+                     m.title,
+                     ARRAY_AGG(g.name ORDER BY g.name) AS genres
+              FROM movies m
+              JOIN movie_genres mg ON mg.movie_id = m.movie_id
+              JOIN genres g ON g.genre_id = mg.genre_id
+              GROUP BY m.movie_id, m.title
+          ) AS tagged
+          WHERE 'Sci-Fi' = ANY(tagged.genres)
+          ORDER BY tagged.movie_id;
+        hints:
+          - Copy the "Find the Sci-Fi movies" example. It already does the job.
+          - "The condition in `WHERE` is `'Sci-Fi' = ANY(tagged.genres)`."
+          - "SELECT tagged.movie_id, tagged.title FROM (...) AS tagged WHERE '___' = ANY(tagged.___) ORDER BY tagged.movie_id;"
+        explanation: |
+          Fourteen films. The genre list has to be built first, because `= ANY` needs the whole array to exist before it can search it. Writing the search directly in the join would not work.
+        ordered: true
+
+      - type: exercise
+        id: m16-l03-e3
+        title: Films with three genres
+        difficulty: 2
+        prompt: |
+          Show `movie_id`, `title` and `genre_count` for every film with exactly three genres. `genre_count` is the number of items in the film's genre list. Sort by `movie_id`.
+        starter: |
+          SELECT movie_id,
+                 title
+          FROM movies;
+        solution: |
+          SELECT tagged.movie_id,
+                 tagged.title,
+                 cardinality(tagged.genres) AS genre_count
+          FROM (
+              SELECT m.movie_id,
+                     m.title,
+                     ARRAY_AGG(g.name ORDER BY g.name) AS genres
+              FROM movies m
+              JOIN movie_genres mg ON mg.movie_id = m.movie_id
+              JOIN genres g ON g.genre_id = mg.genre_id
+              GROUP BY m.movie_id, m.title
+          ) AS tagged
+          WHERE cardinality(tagged.genres) = 3
+          ORDER BY tagged.movie_id;
+        hints:
+          - Build the genre list first, as in the Sci-Fi example.
+          - "`cardinality(tagged.genres)` counts the items in the list."
+          - "SELECT tagged.movie_id, tagged.title, cardinality(tagged.___) AS genre_count FROM (...) AS tagged WHERE cardinality(tagged.___) = ___ ORDER BY tagged.movie_id;"
+        explanation: |
+          Eleven films have three genres. `cardinality` counts the items; it is the right tool for "how many" inside an array, and it returns 0 for an empty list.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l03-e4
+        title: Movies per genre
+        difficulty: 3
+        prompt: |
+          For each genre, count the films that have it. Show `genre` and `movies`, sorted by `movies` from highest to lowest, then by `genre` from A to Z.
+
+          Build one genre list per film with `ARRAY_AGG`, then use `unnest` to turn each list back into rows before you count.
+        starter: |
+          SELECT name AS genre
+          FROM genres;
+        solution: |
+          SELECT g.name AS genre,
+                 COUNT(*) AS movies
+          FROM (
+              SELECT m.movie_id,
+                     ARRAY_AGG(gn.name) AS genres
+              FROM movies m
+              JOIN movie_genres mg ON mg.movie_id = m.movie_id
+              JOIN genres gn ON gn.genre_id = mg.genre_id
+              GROUP BY m.movie_id
+          ) AS tagged,
+               unnest(tagged.genres) AS g(name)
+          GROUP BY g.name
+          ORDER BY movies DESC, genre;
+        hints:
+          - The inner query is the same as the genre lists in the earlier examples, with one column less.
+          - "`unnest(tagged.genres) AS g(name)` gives one row per genre in each film."
+          - "SELECT g.name AS genre, COUNT(*) AS movies FROM (...) AS tagged, unnest(tagged.___) AS g(name) GROUP BY ___ ORDER BY ___ DESC, ___;"
+        explanation: |
+          Drama tops the list with 32 films. Animation and Romance both have 13 films, and the second sort key (the genre name) puts Animation first. The two sort keys make the order fixed.
+        ordered: true
+        columnNames: true
+
+      - type: parsons
+        id: m16-l03-o1
+        prompt: Put the lines in the right order to show one genre list per film, for films 1 to 3 only.
+        lines:
+          - SELECT m.movie_id,
+          - ARRAY_AGG(g.name ORDER BY g.name) AS genres
+          - FROM movies m
+          - JOIN movie_genres mg ON mg.movie_id = m.movie_id
+          - JOIN genres g ON g.genre_id = mg.genre_id
+          - WHERE m.movie_id <= 3
+          - GROUP BY m.movie_id
+          - ORDER BY m.movie_id;
+        distractors:
+          - GROUP BY g.name
+        explanation: |
+          The lines run SELECT, FROM, JOINs, WHERE, GROUP BY, ORDER BY. `GROUP BY g.name` is a distractor: grouping by genre would make one row per genre, not one list per film.
+
+    cheatsheet:
+      - title: Build a list per group
+        sql: |
+          ARRAY_AGG(g.name ORDER BY g.name)
+        note: "One array per group, with the items sorted inside it"
+      - title: Is a value in an array?
+        sql: |
+          WHERE 'Sci-Fi' = ANY(genres)
+        note: "Put the array on the right of ANY"
+      - title: Array back into rows
+        sql: |
+          unnest(genres) WITH ORDINALITY AS g(genre, pos)
+        note: "pos starts at 1 and tells you the position"
+      - title: Count items
+        sql: |
+          cardinality(genres)
+        note: "Use cardinality for the number of items"
+
+  - id: m16-l04
+    title: "generate_series: date spines that fill the gaps"
+    summary: Make a list of numbers or dates on the fly, then join your data to it so no day goes missing.
+    minutes: 25
+    steps:
+      - type: read
+        title: The report with holes
+        md: |
+          Priya is checking the step tracker for user 2 in March 2024. Her chart has one point for each day the tracker sent data. The chart jumps over the days with no data, so she cannot tell "no data" from "a quiet day" at a glance.
+
+          She needs a row for **every** day. The table cannot give her that, because a missing day simply has no row. PostgreSQL can make the list of days for her with `generate_series`.
+
+          `generate_series(start, stop, step)` produces a list of values, from `start` up to and including `stop`. You can use it in `FROM` like a table.
+
+      - type: example
+        title: A list of numbers
+        md: Press **Run** to see the numbers 1 to 5, one per row.
+        sql: |
+          SELECT n
+          FROM generate_series(1, 5) AS n;
+        after: |
+          Five rows. The series includes both ends, so `5` is in the list. Without a step, the series goes up by 1.
+
+      - type: read
+        title: A list of dates
+        md: |
+          Give `generate_series` two dates and the step `'1 day'`, and it returns one date after another. The result of adding a day to a `date` is a timestamp, so cast the value to `date` with `::date` to see only the day.
+
+          > [!REAL-WORLD]
+          > Analysts call this list a **date spine**. Every report that shows "per day" or "per month" should start from one, so that quiet days still appear.
+
+      - type: example
+        title: A date spine for the first week of March
+        md: Press **Run**. The `::date` cast turns each timestamp into a plain day.
+        sql: |
+          SELECT d::date AS day
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-07'::date,
+                   '1 day'
+               ) AS d;
+        after: |
+          Seven days, from 1 March to 7 March. The last day is included, because `stop` is part of the series.
+
+      - type: read
+        title: The spine with holes filled in
+        md: |
+          Put the date spine on the **left** of a `LEFT JOIN` to your data. Every day in the spine stays in the result. If the data has no row for that day, the columns from the data show `NULL`, which means "nothing here".
+
+          `NULL` is not the same as `0`. A `NULL` steps value means "the tracker sent nothing". A `0` would mean "she walked zero steps". `COALESCE(s.steps, 0)` shows a zero when the value is missing, so use it only when a zero is the right answer for your report.
+
+      - type: example
+        title: User 2 in the first ten days of March
+        md: Press **Run**. The `steps` column shows the raw value, and `steps_or_zero` uses `COALESCE`.
+        sql: |
+          SELECT d::date AS day,
+                 s.steps,
+                 COALESCE(s.steps, 0) AS steps_or_zero
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-10'::date,
+                   '1 day'
+               ) AS d
+          LEFT JOIN daily_steps s
+                 ON s.day = d::date
+                AND s.user_id = 2
+          ORDER BY day;
+        after: |
+          Ten rows, one per day. Six days have real steps. From 7 March on, `steps` is `NULL` because the tracker sent nothing, while `steps_or_zero` shows 0. The `s.user_id = 2` filter belongs in the `ON` clause, so that it does not remove the empty days.
+
+      - type: read
+        title: Counting the rows that really matched
+        md: |
+          > [!MISTAKE]
+          > `COUNT(*)` counts **rows**, and a `LEFT JOIN` row with no match still counts as one row. To count the events that really happened, count a column from the joined table, such as `COUNT(e.event_id)`. That column is `NULL` for an empty slot, and `COUNT` skips `NULL`s.
+
+      - type: example
+        title: Events per hour, with empty hours
+        md: Press **Run**. The first column is the wrong way to count. The second column is the right way.
+        sql: |
+          SELECT h::timestamp AS hour_start,
+                 COUNT(*) AS wrong_count,
+                 COUNT(e.event_id) AS events
+          FROM generate_series(
+                   '2024-01-01 06:00'::timestamp,
+                   '2024-01-01 10:00'::timestamp,
+                   '1 hour'
+               ) AS h
+          LEFT JOIN events e
+                 ON e.event_time >= h
+                AND e.event_time < h + interval '1 hour'
+          GROUP BY h
+          ORDER BY h;
+        after: |
+          The hour from 07:00 had no events. `wrong_count` says 1, because the empty hour still produced one row. `events` says 0, which is correct. Hours with no events are the reason for a spine.
+
+      - type: quiz
+        id: m16-l04-q1
+        question: "How many rows does `generate_series('2024-03-01'::date, '2024-03-31'::date, '1 day')` return?"
+        options:
+          - "30"
+          - "31"
+          - "32"
+          - "An error"
+        answer: 1
+        explanation: |
+          Both ends are included, so 1 March to 31 March gives 31 rows, one for each day of March.
+
+      - type: predict
+        id: m16-l04-p1
+        question: What does this query return?
+        sql: |
+          SELECT COUNT(*) AS items
+          FROM generate_series(1, 10, 3);
+        options:
+          - "3"
+          - "4"
+          - "10"
+          - "An error"
+        answer: 1
+        explanation: |
+          The series is 1, 4, 7 and 10. Each step adds 3, and the stop value 10 is included because it is exactly reached.
+
+      - type: fill
+        id: m16-l04-f1
+        prompt: Complete the query so that it returns the even numbers from 2 to 10.
+        template: |
+          SELECT n
+          FROM generate_series(2, 10, ___) AS n;
+        answers:
+          - ["2"]
+        explanation: |
+          A step of 2 gives 2, 4, 6, 8 and 10. The step can be any number, and it can be negative for a countdown.
+
+      - type: parsons
+        id: m16-l04-o1
+        prompt: Put the lines in the right order to show user 2's steps for 1 to 3 March, with 0 for any day that has no data.
+        lines:
+          - SELECT d::date AS day,
+          - COALESCE(s.steps, 0) AS steps
+          - FROM generate_series('2024-03-01'::date, '2024-03-03'::date, '1 day') AS d
+          - LEFT JOIN daily_steps s
+          - ON s.day = d::date AND s.user_id = 2
+          - ORDER BY day;
+        distractors:
+          - INNER JOIN daily_steps s
+        explanation: |
+          `LEFT JOIN` keeps every day of the spine. `INNER JOIN` would drop the days with no data, which is exactly what the date spine is meant to prevent.
+
+      - type: exercise
+        id: m16-l04-e1
+        title: Every day of March
+        difficulty: 1
+        prompt: |
+          Make a list of all 31 days of March 2024. Show one column called `day` (as a date), sorted by `day`.
+        starter: |
+          SELECT d
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-07'::date,
+                   '1 day'
+               ) AS d;
+        solution: |
+          SELECT d::date AS day
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-31'::date,
+                   '1 day'
+               ) AS d
+          ORDER BY day;
+        hints:
+          - Start from the date spine example. Only the stop date changes.
+          - "Use `'2024-03-31'` as the stop value. It is included in the series."
+          - "SELECT d::date AS day FROM generate_series('___'::date, '___'::date, '1 day') AS d ORDER BY day;"
+        explanation: |
+          There are 31 rows, from 2024-03-01 to 2024-03-31. The `::date` cast removes the time part, so the result shows dates only.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l04-e2
+        title: Steps with zeros
+        difficulty: 2
+        prompt: |
+          For user 2, show every day from 2024-03-01 to 2024-03-10. Show two columns: `day` (as a date) and `steps`, where `steps` is 0 on days the tracker sent nothing. Sort by `day`.
+        starter: |
+          SELECT d::date AS day
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-10'::date,
+                   '1 day'
+               ) AS d;
+        solution: |
+          SELECT d::date AS day,
+                 COALESCE(s.steps, 0) AS steps
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-10'::date,
+                   '1 day'
+               ) AS d
+          LEFT JOIN daily_steps s
+                 ON s.day = d::date
+                AND s.user_id = 2
+          ORDER BY day;
+        hints:
+          - Use the spine as the left side of a `LEFT JOIN` to `daily_steps`.
+          - "Put `s.user_id = 2` in the `ON` clause, next to the day match."
+          - "... LEFT JOIN daily_steps s ON s.day = d::date AND s.user_id = ___ ..., and wrap `s.steps` in COALESCE(..., 0)."
+        explanation: |
+          Six days have real steps, and the last four days show 0. Keeping the `user_id` test in `ON` matters: in `WHERE` it would throw away the empty days again.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l04-e3
+        title: Workouts per day in January
+        difficulty: 2
+        prompt: |
+          For each day from 2024-01-01 to 2024-01-07, count the `workout_completed` events. Show `day` (as a date) and `workouts`. Days with no workouts must show 0. Sort by `day`.
+        starter: |
+          SELECT d::date AS day
+          FROM generate_series(
+                   '2024-01-01'::date,
+                   '2024-01-07'::date,
+                   '1 day'
+               ) AS d;
+        solution: |
+          SELECT d::date AS day,
+                 COUNT(e.event_id) AS workouts
+          FROM generate_series(
+                   '2024-01-01'::date,
+                   '2024-01-07'::date,
+                   '1 day'
+               ) AS d
+          LEFT JOIN events e
+                 ON e.event_time::date = d::date
+                AND e.event_name = 'workout_completed'
+          GROUP BY d
+          ORDER BY day;
+        hints:
+          - Join the day spine to `events` with `LEFT JOIN`, and group by the day.
+          - "Put the event name test in the `ON` clause, and count `e.event_id`."
+          - "... LEFT JOIN events e ON e.event_time::date = d::date AND e.event_name = '___' GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          Days 1, 3 and 6 have no completed workouts, so they show 0. Days 2 and 4 to 7 have one or more. `COUNT(e.event_id)` is the safe choice, because empty days count as 0 instead of 1.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l04-e4
+        title: Weekly steps for user 2
+        difficulty: 3
+        prompt: |
+          For user 2, show the total steps for each week in March 2024. Use every day from 2024-03-01 to 2024-03-31, and count missing days as 0. Show three columns, in this order: `week_start` (the Monday of that week, as a date), `total_steps` and `days_with_data` (how many days had a real value). Sort by `week_start`.
+
+          Hint: `date_trunc('week', day)` gives the Monday of the week.
+        starter: |
+          SELECT d::date AS day
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-31'::date,
+                   '1 day'
+               ) AS d;
+        solution: |
+          SELECT date_trunc('week', d)::date AS week_start,
+                 SUM(COALESCE(s.steps, 0)) AS total_steps,
+                 COUNT(s.steps) AS days_with_data
+          FROM generate_series(
+                   '2024-03-01'::date,
+                   '2024-03-31'::date,
+                   '1 day'
+               ) AS d
+          LEFT JOIN daily_steps s
+                 ON s.day = d::date
+                AND s.user_id = 2
+          GROUP BY 1
+          ORDER BY 1;
+        hints:
+          - Build the spine first, then join `daily_steps` as in the earlier examples.
+          - "`GROUP BY date_trunc('week', d)` puts each day into its week. The first week starts on Monday 26 February, because 1 March 2024 is a Friday."
+          - "SELECT date_trunc('week', d)::date AS week_start, SUM(COALESCE(s.steps, 0)) AS total_steps, COUNT(s.___) AS days_with_data FROM ... GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          Five weeks come out. The first row starts on Monday 26 February, but only 1 to 3 March are inside the spine, so its totals cover just those three days. `COUNT(s.steps)` counts only the days with a real value, while `SUM` adds the zeros for the rest.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Number list
+        sql: |
+          SELECT n FROM generate_series(1, 10, 3) AS n;
+        note: "Start, stop and step; both ends are included"
+      - title: Date spine
+        sql: |
+          SELECT d::date
+          FROM generate_series('2024-03-01'::date, '2024-03-31'::date, '1 day') AS d;
+        note: "Cast to date to drop the time part"
+      - title: Fill the gaps
+        sql: |
+          FROM spine d LEFT JOIN daily_steps s ON s.day = d::date AND s.user_id = 2
+        note: "Keep the filter in ON so empty days survive"
+      - title: Count real matches
+        sql: |
+          COUNT(e.event_id)
+        note: "COUNT(*) counts the empty LEFT JOIN row too"
+
+  - id: m16-l05
+    title: "LATERAL joins: a small query for every row"
+    summary: Use LATERAL to run a per-row subquery, get the top N per group, and call functions with the row's own values.
+    minutes: 25
+    dataset: shop
+    steps:
+      - type: read
+        title: The catalog page that needs three products per category
+        md: |
+          Mia runs ShopSmart's catalog. The website wants a "most expensive" block under each category: the top two products in every category, with their prices.
+
+          A normal `GROUP BY` can only show one row per category. A **LATERAL** join lets each row of one table run its own small query against another table. The word means "sideways": for every row on the left, PostgreSQL runs the subquery on the right, using that row's values.
+
+          > [!ANALOGY]
+          > Imagine each category is a clerk at a desk. Each clerk walks to the filing cabinet of products, asks for "my category's two most expensive products", and writes the answer on their own desk. Then the clerks hand in their results together.
+
+      - type: example
+        title: Top two products per category
+        md: Press **Run**. The subquery in the brackets runs once for each category.
+        sql: |
+          SELECT c.name AS category,
+                 top.name AS product,
+                 top.price
+          FROM categories c
+          CROSS JOIN LATERAL (
+              SELECT p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 2
+          ) AS top
+          ORDER BY c.name, top.price DESC;
+        after: |
+          Twenty-two rows: two per category, the most expensive first. `Electronics`, `Home` and `Sports` are missing. They are parent categories with no products of their own, and `CROSS JOIN` drops a row when the subquery finds nothing.
+
+      - type: read
+        title: CROSS or LEFT, and what happens to empty results
+        md: |
+          `CROSS JOIN LATERAL` keeps a left row only when the subquery returns something. `LEFT JOIN LATERAL ... ON TRUE` keeps **every** left row, and fills the columns from the subquery with `NULL` when nothing comes back. `ON TRUE` is required, because the join has no other condition to check.
+
+      - type: example
+        title: Every category, even the empty ones
+        md: Press **Run**. This version keeps all fourteen categories and shows the single most expensive product of each.
+        sql: |
+          SELECT c.name AS category,
+                 top.name AS product
+          FROM categories c
+          LEFT JOIN LATERAL (
+              SELECT p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 1
+          ) AS top ON TRUE
+          ORDER BY c.category_id;
+        after: |
+          Fourteen rows. `Electronics`, `Home` and `Sports` show `NULL`, which means "no product here". Every other category shows its best seller.
+
+      - type: read
+        title: LATERAL with a function
+        md: |
+          The right side does not have to be a `SELECT`. It can be a **function** that uses the left row's values. `unnest` and `generate_series` are common choices. `unnest` breaks an array into rows, and `string_to_array` (from lesson m16-l03) creates the array.
+
+      - type: example
+        title: Split product names into words
+        md: Press **Run**. For each of the first two products, the function breaks its name into one row per word.
+        sql: |
+          SELECT p.product_id,
+                 p.name,
+                 w.word
+          FROM products p
+          CROSS JOIN LATERAL
+              unnest(string_to_array(p.name, ' ')) AS w(word)
+          WHERE p.product_id <= 2
+          ORDER BY p.product_id, w.word;
+        after: |
+          Seven rows. `Aurora 14-inch Laptop` gives three words, and `Aurora 16-inch Pro Laptop` gives four. The function is called once per product, using that product's own name.
+
+      - type: read
+        title: The subquery cannot see the table on its left
+        md: |
+          > [!MISTAKE]
+          > A subquery in `FROM` normally cannot refer to a table listed before it. If you want it to use the left row's values, you must write `LATERAL` in front of the subquery. Without it, PostgreSQL says the table is an invalid reference.
+
+      - type: example
+        title: The missing LATERAL
+        md: Press **Run**. The subquery refers to `c.category_id` but is missing the `LATERAL` keyword.
+        sql: |
+          SELECT c.name,
+                 top.name
+          FROM categories c,
+               (
+                   SELECT p.name
+                   FROM products p
+                   WHERE p.category_id = c.category_id
+                   ORDER BY p.price DESC
+                   LIMIT 1
+               ) AS top;
+        expectError: true
+        after: |
+          The error says `invalid reference to FROM-clause entry for table "c"`. The fix is to add `LATERAL` before the bracket, as in the first example. This is the most common LATERAL error, so remember it.
+
+      - type: read
+        title: When to reach for LATERAL
+        md: |
+          > [!REAL-WORLD]
+          > Analysts use LATERAL for "the latest N rows for each customer" and for "the top N per group" when they also need a `LIMIT`. Window functions from module m10 can also do top N per group. Try both on big tables and compare their speed.
+
+      - type: quiz
+        id: m16-l05-q1
+        question: What is the main difference between `CROSS JOIN LATERAL` and `LEFT JOIN LATERAL ... ON TRUE`?
+        options:
+          - "CROSS JOIN LATERAL is always faster."
+          - "LEFT JOIN LATERAL keeps the left row when the subquery returns nothing, with NULLs."
+          - "LEFT JOIN LATERAL does not allow LIMIT."
+          - "CROSS JOIN LATERAL can only use literal values."
+        answer: 1
+        explanation: |
+          `LEFT JOIN LATERAL` keeps every left row, filling in NULLs when the subquery is empty. `CROSS JOIN LATERAL` drops those left rows. Both allow `LIMIT`.
+
+      - type: predict
+        id: m16-l05-p1
+        question: What does this query return?
+        sql: |
+          SELECT COUNT(*) AS total
+          FROM generate_series(1, 3) AS a(x)
+          CROSS JOIN LATERAL generate_series(1, a.x);
+        options:
+          - "3"
+          - "6"
+          - "9"
+          - "An error"
+        answer: 1
+        explanation: |
+          For each `x` in 1, 2 and 3, the function makes a series from 1 up to `x`. That gives 1 + 2 + 3 = 6 rows in total.
+
+      - type: fill
+        id: m16-l05-f1
+        prompt: Complete the query so that every category appears, including the ones with no products.
+        template: |
+          SELECT c.name,
+                 top.name
+          FROM categories c
+          ___ JOIN LATERAL (
+              SELECT p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 1
+          ) AS top ON TRUE
+          ORDER BY c.name;
+        answers:
+          - ["LEFT"]
+        explanation: |
+          `LEFT` keeps the categories with no matching product, showing `NULL` for the product. `CROSS` would drop them.
+
+      - type: parsons
+        id: m16-l05-o1
+        prompt: Put the lines in the right order to show the top two products per category, most expensive first.
+        lines:
+          - SELECT c.name AS category, top.name AS product, top.price
+          - FROM categories c
+          - CROSS JOIN LATERAL (
+          - SELECT p.name, p.price
+          - FROM products p
+          - WHERE p.category_id = c.category_id
+          - ORDER BY p.price DESC
+          - LIMIT 2
+          - ) AS top
+          - ORDER BY c.name, top.price DESC;
+        distractors:
+          - HAVING COUNT(*) > 2
+        explanation: |
+          The subquery must sort and limit to two rows before its results join back. `HAVING` filters groups after a `GROUP BY`, and this query does not group, so that line does not belong here.
+
+      - type: exercise
+        id: m16-l05-e1
+        title: The best seller of each category
+        difficulty: 1
+        prompt: |
+          For every category that has products, show the most expensive product. Show three columns: `category`, `product` and `price`. Sort by `category` from A to Z.
+        starter: |
+          SELECT c.name AS category
+          FROM categories c
+          ORDER BY c.name;
+        solution: |
+          SELECT c.name AS category,
+                 top.name AS product,
+                 top.price
+          FROM categories c
+          CROSS JOIN LATERAL (
+              SELECT p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 1
+          ) AS top
+          ORDER BY c.name;
+        hints:
+          - Start from the first example, and change the `LIMIT` to 1.
+          - "`CROSS JOIN` drops the three parent categories, which have no products."
+          - "SELECT c.name AS category, top.name AS product, top.price FROM categories c CROSS JOIN LATERAL (SELECT p.name, p.price FROM products p WHERE p.category_id = c.category_id ORDER BY p.price DESC LIMIT ___) AS top ORDER BY c.name;"
+        explanation: |
+          Eleven categories have products, so eleven rows come back. Each product price is different within its category, so the top product is never a tie.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l05-e2
+        title: Top three in categories 4 to 8
+        difficulty: 2
+        prompt: |
+          For the categories with `category_id` from 4 to 8, show the top three most expensive products in each. Show `category`, `product` and `price`. Sort by `category` A to Z, then by `price` from highest to lowest.
+        starter: |
+          SELECT c.name AS category
+          FROM categories c
+          WHERE c.category_id BETWEEN 4 AND 8;
+        solution: |
+          SELECT c.name AS category,
+                 top.name AS product,
+                 top.price
+          FROM categories c
+          CROSS JOIN LATERAL (
+              SELECT p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 3
+          ) AS top
+          WHERE c.category_id BETWEEN 4 AND 8
+          ORDER BY c.name, top.price DESC;
+        hints:
+          - Use the first example, but change `LIMIT 2` to `LIMIT 3`.
+          - "Add `WHERE c.category_id BETWEEN 4 AND 8` to keep only those categories."
+          - "... LIMIT ___ ) AS top WHERE c.category_id BETWEEN ___ AND ___ ORDER BY c.name, top.price DESC;"
+        explanation: |
+          Fifteen rows, three per category. Beauty's third product is the Natural Bamboo Hairbrush at 12.49. Sorting by price inside each category keeps the most expensive product first.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l05-e3
+        title: Two latest orders per customer
+        difficulty: 2
+        prompt: |
+          For customers 1 to 5, show their two most recent orders. Show three columns: `customer_id`, `order_id` and `order_date`. Use `customer_id` from `customers`, and keep every one of those customers even if they have no orders.
+
+          Sort by `customer_id`, then by `order_date` from newest to oldest, then by `order_id` from highest to lowest.
+        starter: |
+          SELECT customer_id
+          FROM customers
+          WHERE customer_id BETWEEN 1 AND 5;
+        solution: |
+          SELECT cu.customer_id,
+                 o.order_id,
+                 o.order_date
+          FROM customers cu
+          LEFT JOIN LATERAL (
+              SELECT r.order_id,
+                     r.order_date
+              FROM orders r
+              WHERE r.customer_id = cu.customer_id
+              ORDER BY r.order_date DESC, r.order_id DESC
+              LIMIT 2
+          ) AS o ON TRUE
+          WHERE cu.customer_id BETWEEN 1 AND 5
+          ORDER BY cu.customer_id, o.order_date DESC, o.order_id DESC;
+        hints:
+          - Each customer's orders must be sorted newest first inside the subquery, before `LIMIT`.
+          - "Use `LEFT JOIN LATERAL ... ON TRUE`, so that a customer without orders would still show up."
+          - "... ORDER BY r.order_date DESC, r.order_id ___ LIMIT ___ ) AS o ON TRUE ..."
+        explanation: |
+          Ten rows, two for each of the five customers. The `order_id` tie-breaker makes the choice fixed even when two orders share a date. `LEFT JOIN LATERAL` is the right join here: it keeps a customer whose orders list is empty.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l05-e4
+        title: Best seller and its reviews
+        difficulty: 3
+        prompt: |
+          For every category that has products, show the most expensive product, its price and the number of reviews it has. Show four columns: `category`, `product`, `price` and `reviews`. Use `0` when a product has no reviews. Sort by `category` from A to Z.
+
+          Hint: a `COUNT(*)` in a subquery always returns one row, even when nothing matches.
+        starter: |
+          SELECT c.name AS category,
+                 top.name AS product
+          FROM categories c
+          CROSS JOIN LATERAL (
+              SELECT p.name, p.price, p.product_id
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 1
+          ) AS top;
+        solution: |
+          SELECT c.name AS category,
+                 top.name AS product,
+                 top.price,
+                 rv.reviews
+          FROM categories c
+          CROSS JOIN LATERAL (
+              SELECT p.product_id,
+                     p.name,
+                     p.price
+              FROM products p
+              WHERE p.category_id = c.category_id
+              ORDER BY p.price DESC
+              LIMIT 1
+          ) AS top
+          CROSS JOIN LATERAL (
+              SELECT COUNT(*) AS reviews
+              FROM reviews r
+              WHERE r.product_id = top.product_id
+          ) AS rv
+          ORDER BY c.name;
+        hints:
+          - Start from the exercise "The best seller of each category" and keep its `product_id`.
+          - "A second `CROSS JOIN LATERAL` can count the reviews for `top.product_id`."
+          - "`COUNT(*)` returns 0 when nothing matches, so you do not need COALESCE."
+        explanation: |
+          Eleven rows. `Mini Desktop PC Cube` has three reviews, and `Standing Desk 140cm` has none. The second LATERAL runs once per category, and its `COUNT` always returns a number, even 0.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Top N per group
+        sql: |
+          CROSS JOIN LATERAL (
+              SELECT ... ORDER BY ... DESC LIMIT 3
+          ) AS top
+        note: "The LIMIT runs inside the subquery, once per row"
+      - title: Keep rows with no match
+        sql: |
+          LEFT JOIN LATERAL ( ... LIMIT 1 ) AS top ON TRUE
+        note: "ON TRUE is required; NULLs fill the empty result"
+      - title: Function per row
+        sql: |
+          CROSS JOIN LATERAL unnest(string_to_array(p.name, ' ')) AS w(word)
+        note: "A function can use the left row's columns"
+      - title: Forgetting LATERAL
+        sql: |
+          FROM categories c, LATERAL ( SELECT ... WHERE p.category_id = c.category_id ) AS top
+        note: "Without the word LATERAL, the subquery cannot see c"
+
+  - id: m16-l06
+    title: "ROLLUP, CUBE and GROUPING SETS: subtotals in one query"
+    summary: Get subtotals and a grand total from one GROUP BY, and label the total rows with GROUPING().
+    minutes: 25
+    dataset: shop
+    steps:
+      - type: read
+        title: Three reports in one query
+        md: |
+          Mia needs a revenue report with three levels: one row per category, a subtotal for the whole store, and no other clutter. The usual way is three queries stuck together with `UNION ALL`. That works, but it is long, and every copy can drift apart.
+
+          PostgreSQL has a better way. One `GROUP BY` can ask for several groupings at once.
+
+          - `ROLLUP (a, b)` makes three levels: rows for each `(a, b)` pair, subtotals for each `a`, and one grand total.
+          - `CUBE (a, b)` makes every combination: `(a, b)`, `(a)`, `(b)` and one grand total.
+          - `GROUPING SETS (...)` lets you list exactly the levels you want.
+
+          > [!ANALOGY]
+          > A school report card shows each class's total, then the total for the whole school. `ROLLUP` builds that report: the class rows come first, then the subtotals, then the final line.
+
+      - type: example
+        title: Revenue per category with a grand total
+        md: Press **Run**. Only delivered orders count. Each order line's money is `quantity * unit_price * (1 - discount)`.
+        sql: |
+          SELECT c.name AS category,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2)
+                     AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          JOIN products p ON p.product_id = i.product_id
+          JOIN categories c ON c.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY ROLLUP (c.name)
+          ORDER BY c.name;
+        after: |
+          Twelve rows: eleven categories, then one extra row at the bottom with the grand total of $229,443.50. `ROLLUP` added that row by itself, without a second query.
+
+      - type: read
+        title: What does the empty label mean?
+        md: |
+          On the grand total row, the `category` column shows `NULL`. That is `ROLLUP` marking "this row covers all categories". `GROUPING(column)` gives you a clear test for it: it returns `1` on a total row and `0` on a normal row.
+
+          > [!MISTAKE]
+          > If the data itself contains a real `NULL`, a `NULL` in the output is ambiguous: it could be a real missing value or a total. Use `GROUPING()` to tell them apart, not the `NULL` itself. Our order statuses have no real `NULL`, so the examples here are safe, but the habit matters.
+
+      - type: example
+        title: Orders by year and status, with subtotals
+        md: Press **Run**. The year comes from `order_date` through a subquery, so the `GROUP BY` can use a plain column name.
+        sql: |
+          SELECT x.yr,
+                 x.status,
+                 COUNT(*) AS orders
+          FROM (
+              SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr,
+                     o.status
+              FROM orders o
+          ) AS x
+          GROUP BY ROLLUP (x.yr, x.status)
+          ORDER BY x.yr, x.status;
+        after: |
+          Each year has its status rows, followed by a subtotal row where `status` is `NULL`. The last row is the grand total, with both columns `NULL`. The count of 900 matches the number of orders.
+
+      - type: read
+        title: CUBE tries every combination
+        md: |
+          `CUBE (a, b)` is greedier than `ROLLUP`. It makes a row for every combination of `a` and `b`, plus each one on its own, plus the grand total. With two columns that is four levels of groups. With three columns it is eight.
+
+          Use `CUBE` when you want to see every angle. Use `ROLLUP` when the columns form a clear hierarchy, such as year and then month.
+
+      - type: example
+        title: Every combination with CUBE
+        md: Press **Run**. The same orders, now with every combination of year and status.
+        sql: |
+          SELECT x.yr,
+                 x.status,
+                 COUNT(*) AS orders
+          FROM (
+              SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr,
+                     o.status
+              FROM orders o
+          ) AS x
+          GROUP BY CUBE (x.yr, x.status)
+          ORDER BY x.yr, x.status;
+        after: |
+          Seventeen rows. You can see the status totals across both years (rows with `yr` as `NULL`), as well as each year's totals. `CUBE` gave you the extra per-status rows that `ROLLUP` skipped.
+
+      - type: read
+        title: Labels with GROUPING()
+        md: |
+          Nobody wants to read `NULL` in a report. Wrap `GROUPING()` in a `CASE` to replace the total labels with words.
+
+          The pattern is `CASE WHEN GROUPING(column) = 1 THEN 'All ...' ELSE column END`. Cast numbers to `text` when the other branch is text.
+
+      - type: example
+        title: A report with friendly total labels
+        md: Press **Run**. The total row now says "All categories".
+        sql: |
+          SELECT CASE
+                     WHEN GROUPING(c.name) = 1 THEN 'All categories'
+                     ELSE c.name
+                 END AS category_label,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2)
+                     AS revenue
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          JOIN products p ON p.product_id = i.product_id
+          JOIN categories c ON c.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY ROLLUP (c.name)
+          ORDER BY GROUPING(c.name), c.name;
+        after: |
+          The same twelve rows, but the last one reads "All categories" instead of `NULL`. `ORDER BY GROUPING(c.name)` puts the total last, because normal rows have `GROUPING` 0 and come first.
+
+      - type: quiz
+        id: m16-l06-q1
+        question: Which grouping sets does `GROUP BY ROLLUP (year, month)` create?
+        options:
+          - "(year, month) and (month) only"
+          - "(year, month), (year) and the grand total"
+          - "every combination of year and month"
+          - "only (year, month)"
+        answer: 1
+        explanation: |
+          `ROLLUP` works from left to right. It creates `(year, month)`, then `(year)`, then the grand total `()`. It does not create `(month)` alone, which is the difference from `CUBE`.
+
+      - type: predict
+        id: m16-l06-p1
+        question: How many rows does this query return?
+        sql: |
+          SELECT status,
+                 COUNT(*) AS orders
+          FROM orders
+          GROUP BY ROLLUP (status);
+        options:
+          - "5"
+          - "6"
+          - "10"
+          - "900"
+        answer: 1
+        explanation: |
+          There are five statuses, so five normal rows. `ROLLUP` adds one grand total row, which makes six.
+
+      - type: fill
+        id: m16-l06-f1
+        prompt: Complete the query so that it adds a grand total row for each status count.
+        template: |
+          SELECT o.status,
+                 COUNT(*) AS orders
+          FROM orders o
+          GROUP BY ___ (o.status)
+          ORDER BY o.status;
+        answers:
+          - ["ROLLUP"]
+        explanation: |
+          `ROLLUP (o.status)` keeps one row per status and adds a grand total row with `status` as `NULL`. The result has six rows.
+
+      - type: parsons
+        id: m16-l06-o1
+        prompt: Put the lines in the right order to count orders per year, with a grand total row.
+        lines:
+          - SELECT x.yr,
+          - COUNT(*) AS orders
+          - FROM (
+          - SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr
+          - FROM orders o
+          - ) AS x
+          - GROUP BY ROLLUP (x.yr)
+          - ORDER BY x.yr;
+        distractors:
+          - GROUP BY x.yr
+        explanation: |
+          `GROUP BY ROLLUP (x.yr)` gives one row per year and the grand total. A plain `GROUP BY x.yr` would leave the total row out, so it is a distractor.
+
+      - type: exercise
+        id: m16-l06-e1
+        title: Delivered revenue by year
+        difficulty: 1
+        prompt: |
+          For delivered orders, show the revenue for each year, plus one grand total row. Show two columns: `year` and `revenue`, with `revenue` rounded to 2 decimal places. On the grand total row, leave `year` empty (`NULL`). Sort by `year`, with the total row last.
+
+          Calculate each order line's money as `quantity * unit_price * (1 - discount)`.
+        starter: |
+          SELECT EXTRACT(YEAR FROM o.order_date)::int AS year
+          FROM orders o
+          WHERE o.status = 'delivered'
+          GROUP BY 1;
+        solution: |
+          SELECT x.yr AS year,
+                 ROUND(SUM(x.money), 2) AS revenue
+          FROM (
+              SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr,
+                     i.quantity * i.unit_price * (1 - i.discount) AS money
+              FROM orders o
+              JOIN order_items i ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+          ) AS x
+          GROUP BY ROLLUP (x.yr)
+          ORDER BY x.yr;
+        hints:
+          - Start from the first example, but roll up by the year instead of the category.
+          - "`GROUP BY ROLLUP (x.yr)` gives one row per year and one total row."
+          - "SELECT x.yr AS year, ROUND(SUM(x.money), 2) AS revenue FROM (...) AS x GROUP BY ___ (x.yr) ORDER BY x.yr;"
+        explanation: |
+          There are three rows: 2023 at 83,571.12, 2024 at 145,872.38, and the grand total at 229,443.50 with `year` set to `NULL`. Sorting by `year` puts the `NULL` total last.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l06-e2
+        title: Orders by status and by year
+        difficulty: 2
+        prompt: |
+          Count the orders in three levels with one query: one row for each `status`, one row for each `year`, and one grand total row. Show three columns: `status`, `year` and `orders`.
+
+          On each row, leave the column that does not apply as `NULL`. Use `GROUPING SETS`. Sort by `status` from A to Z with `NULL`s last, then by `year` from lowest to highest, also with `NULL`s last.
+        starter: |
+          SELECT o.status,
+                 COUNT(*) AS orders
+          FROM orders o
+          GROUP BY o.status;
+        solution: |
+          SELECT x.status,
+                 x.yr AS year,
+                 COUNT(*) AS orders
+          FROM (
+              SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr,
+                     o.status
+              FROM orders o
+          ) AS x
+          GROUP BY GROUPING SETS ((x.status), (x.yr), ())
+          ORDER BY x.status, x.yr;
+        hints:
+          - Use `GROUP BY GROUPING SETS (...)` and list the three levels inside it.
+          - "Each set in the list is one level, for example `(x.status)`. The empty set `()` is the grand total."
+          - "GROUP BY GROUPING SETS ((x.___), (x.___), ())"
+        explanation: |
+          Eight rows: five status rows, two year rows and the grand total. The `NULL`s on each row mark the column that does not apply. `ORDER BY` puts the `NULL`s last by default, which matches the prompt.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l06-e3
+        title: Units and orders by status
+        difficulty: 2
+        prompt: |
+          For all orders, show each `status` with two numbers: `orders` (the number of different orders) and `units` (the total quantity of items). Add one total row with `status` as `NULL`. Sort by `status`, with the total row last.
+        starter: |
+          SELECT o.status,
+                 COUNT(*) AS orders
+          FROM orders o
+          GROUP BY o.status;
+        solution: |
+          SELECT o.status,
+                 COUNT(DISTINCT o.order_id) AS orders,
+                 SUM(i.quantity) AS units
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          GROUP BY ROLLUP (o.status)
+          ORDER BY o.status;
+        hints:
+          - Join `order_items` to `orders`, then add `SUM(i.quantity)`.
+          - "Count `DISTINCT o.order_id` because an order can have several lines."
+          - "GROUP BY ___ (o.status)"
+        explanation: |
+          Six rows: five statuses and the total. The total row has 900 orders and 3,428 units. `COUNT(DISTINCT ...)` matters here, because an order with three lines would otherwise be counted three times.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l06-e4
+        title: Friendly labels for year and status
+        difficulty: 3
+        prompt: |
+          Count the orders for each year and status, with subtotals for each year and a grand total. Use `ROLLUP` on the year and then the status.
+
+          Show three columns: `year_label`, `status_label` and `orders`.
+          - `year_label` is the year as text. On the grand total row it reads `All years`.
+          - `status_label` is the status. On a year's subtotal row it reads `All statuses`.
+
+          Sort by `year_label`, then by `status_label`, both as plain text (A to Z).
+        starter: |
+          SELECT EXTRACT(YEAR FROM o.order_date)::int AS year_label,
+                 o.status AS status_label,
+                 COUNT(*) AS orders
+          FROM orders o
+          GROUP BY 1, 2;
+        solution: |
+          SELECT CASE
+                     WHEN GROUPING(x.yr) = 1 THEN 'All years'
+                     ELSE x.yr::text
+                 END AS year_label,
+                 CASE
+                     WHEN GROUPING(x.status) = 1 THEN 'All statuses'
+                     ELSE x.status
+                 END AS status_label,
+                 COUNT(*) AS orders
+          FROM (
+              SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr,
+                     o.status
+              FROM orders o
+          ) AS x
+          GROUP BY ROLLUP (x.yr, x.status)
+          ORDER BY year_label, status_label;
+        hints:
+          - Use the year and status query from the example, and rename the columns with `CASE`.
+          - "`GROUPING(x.yr) = 1` is true on the grand total row, and `GROUPING(x.status) = 1` is true on each year's subtotal row."
+          - "Cast the year to text in the ELSE branch so that both branches of each CASE are text."
+        explanation: |
+          Twelve rows: a subtotal row per year, a status row for each combination, and the grand total. Sorting text in PostgreSQL uses character codes, so `All years` comes after `2024`, and `All statuses` comes before the lowercase statuses.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Subtotals and a grand total
+        sql: |
+          GROUP BY ROLLUP (year, status)
+        note: "Hierarchy: (year, status), (year), then ()"
+      - title: Every combination
+        sql: |
+          GROUP BY CUBE (year, status)
+        note: "All combinations, including each column alone"
+      - title: Choose the levels
+        sql: |
+          GROUP BY GROUPING SETS ((status), (year), ())
+        note: "() is the grand total"
+      - title: Label the total rows
+        sql: |
+          CASE WHEN GROUPING(status) = 1 THEN 'All statuses' ELSE status END
+        note: "GROUPING returns 1 on a total row, 0 otherwise"
+
+  - id: m16-l07
+    title: "DISTINCT ON: the first row of each group"
+    summary: Keep one row per group, chosen by an ORDER BY, with PostgreSQL's DISTINCT ON.
+    minutes: 20
+    steps:
+      - type: read
+        title: One row per user, the right one
+        md: |
+          Priya's support team opens a customer's page and needs **one** row: that user's latest subscription, with its plan and start date. A user can have several subscriptions, because some cancel and come back.
+
+          `GROUP BY` cannot show the plan of "the latest" row, because the plan is not a total. `DISTINCT ON (user_id)` solves it: it keeps only the **first row** for each user, and "first" is decided by the `ORDER BY`.
+
+          > [!ANALOGY]
+          > Imagine a pile of receipts for each customer, sorted by date. `DISTINCT ON` lets you pick the top receipt from each pile and throw the rest away.
+
+      - type: example
+        title: The latest subscription of each user
+        md: Press **Run**. The `ORDER BY` sorts each user's subscriptions newest first, so the top row of each user is the latest one.
+        sql: |
+          SELECT DISTINCT ON (user_id)
+                 user_id,
+                 subscription_id,
+                 plan,
+                 started_at
+          FROM subscriptions
+          WHERE user_id <= 25
+          ORDER BY user_id,
+                   started_at DESC,
+                   subscription_id DESC;
+        after: |
+          Eleven rows, one per user who subscribed. The `DISTINCT ON` columns (`user_id`) come first in `ORDER BY`, and the rest of the `ORDER BY` decides which row is first.
+
+      - type: read
+        title: "The rule: ORDER BY starts with the same columns"
+        md: |
+          Three rules make `DISTINCT ON` work.
+
+          1. The expressions in `DISTINCT ON (...)` must match the **first** items in `ORDER BY`.
+          2. The rest of the `ORDER BY` picks the winner: the first row after sorting.
+          3. Add a unique last sort key, such as `subscription_id`, so that ties cannot change the answer from one run to the next.
+
+          `DISTINCT ON` is a PostgreSQL feature. Most other databases, such as MySQL and SQL Server, do not have it. They use `ROW_NUMBER()`, which you met in module m10.
+
+      - type: example
+        title: The same answer with ROW_NUMBER
+        md: Press **Run**. A window function numbers each user's subscriptions, and the outer query keeps number 1.
+        sql: |
+          SELECT t.user_id,
+                 t.subscription_id,
+                 t.plan,
+                 t.started_at
+          FROM (
+              SELECT s.*,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY s.user_id
+                         ORDER BY s.started_at DESC,
+                                  s.subscription_id DESC
+                     ) AS rn
+              FROM subscriptions s
+              WHERE s.user_id <= 25
+          ) AS t
+          WHERE t.rn = 1
+          ORDER BY t.user_id;
+        after: |
+          The same eleven rows as the `DISTINCT ON` example. `DISTINCT ON` is shorter, but `ROW_NUMBER` works in more databases and lets you keep more than one row per group, for example `rn <= 3`.
+
+      - type: read
+        title: The most common DISTINCT ON error
+        md: |
+          > [!MISTAKE]
+          > If the `ORDER BY` does not start with the `DISTINCT ON` columns, PostgreSQL refuses to run the query. Here the order is by `event_time`, not `user_id`, so the query breaks the first rule.
+
+      - type: example
+        title: DISTINCT ON with the wrong ORDER BY
+        md: Press **Run**. The query should keep one event per user, but the sort does not start with `user_id`.
+        sql: |
+          SELECT DISTINCT ON (user_id)
+                 user_id,
+                 event_time
+          FROM events
+          ORDER BY event_time;
+        expectError: true
+        after: |
+          The error says `SELECT DISTINCT ON expressions must match initial ORDER BY expressions`. The fix is to start the sort with `user_id`, then add `event_time` after it.
+
+      - type: read
+        title: More than one column in DISTINCT ON
+        md: |
+          You can list several columns in `DISTINCT ON`. Then you get one row for each **combination**. For example, `DISTINCT ON (user_id, event_name)` keeps the first event of each type for each user.
+
+      - type: example
+        title: The first event of each type for two users
+        md: Press **Run**. Each user gets one row per event name, and the earliest `event_id` wins for each name.
+        sql: |
+          SELECT DISTINCT ON (user_id, event_name)
+                 user_id,
+                 event_name,
+                 event_id
+          FROM events
+          WHERE user_id <= 2
+          ORDER BY user_id,
+                   event_name,
+                   event_id;
+        after: |
+          Seven rows: two for user 1 and five for user 2. For user 1 the first `app_open` is event 1, because the lowest `event_id` is the earliest event.
+
+      - type: quiz
+        id: m16-l07-q1
+        question: With `DISTINCT ON (user_id) ... ORDER BY user_id, started_at DESC`, which row does PostgreSQL keep for each user?
+        options:
+          - "The first row that comes out of the ORDER BY for that user"
+          - "A random row"
+          - "The row with the highest user_id"
+          - "The row inserted last into the table"
+        answer: 0
+        explanation: |
+          For each `DISTINCT ON` value, PostgreSQL keeps the first row after sorting. Here that is the newest subscription of the user.
+
+      - type: predict
+        id: m16-l07-p1
+        question: What is the first row this query returns?
+        sql: |
+          SELECT DISTINCT ON (n % 3) n
+          FROM generate_series(1, 6) AS n
+          ORDER BY n % 3, n;
+        options:
+          - "1"
+          - "3"
+          - "6"
+          - "An error"
+        answer: 1
+        explanation: |
+          The groups are the remainders of `n % 3`. The remainder 0 comes first, and its smallest value is 3. So the first row is 3, then 1, then 2.
+
+      - type: fill
+        id: m16-l07-f1
+        prompt: Complete the query to keep one subscription row per user.
+        template: |
+          SELECT ___ ON (user_id)
+                 user_id,
+                 plan
+          FROM subscriptions
+          ORDER BY user_id, started_at DESC;
+        answers:
+          - ["DISTINCT"]
+        explanation: |
+          `SELECT DISTINCT ON (user_id)` keeps the first row for each user. Without `DISTINCT`, the query would not compile.
+
+      - type: parsons
+        id: m16-l07-o1
+        prompt: Put the lines in the right order to show the latest subscription for each user from 1 to 25.
+        lines:
+          - SELECT DISTINCT ON (user_id) user_id, plan, price
+          - FROM subscriptions
+          - WHERE user_id <= 25
+          - ORDER BY user_id, started_at DESC, subscription_id DESC;
+        distractors:
+          - GROUP BY user_id
+        explanation: |
+          The `DISTINCT ON` line picks the rows, and the `ORDER BY` line decides which one is first. `GROUP BY user_id` cannot return the plan for one row per user, so it does not belong in this query.
+
+      - type: exercise
+        id: m16-l07-e1
+        title: The first subscription of each user
+        difficulty: 1
+        prompt: |
+          For users 1 to 25, show each user's **first** subscription, meaning the earliest start date. Show three columns: `user_id`, `plan` and `started_at`. Sort by `user_id`.
+        starter: |
+          SELECT user_id,
+                 plan,
+                 started_at
+          FROM subscriptions
+          WHERE user_id <= 25;
+        solution: |
+          SELECT DISTINCT ON (user_id)
+                 user_id,
+                 plan,
+                 started_at
+          FROM subscriptions
+          WHERE user_id <= 25
+          ORDER BY user_id,
+                   started_at ASC,
+                   subscription_id ASC;
+        hints:
+          - Start from the first example, and sort the dates in the other direction.
+          - "`ASC` puts the earliest start date first."
+          - "... ORDER BY user_id, started_at ___, subscription_id ___;"
+        explanation: |
+          Eleven users. Each user has only one subscription in this range, so the first and the latest are the same. The `subscription_id` tie-breaker is there for users with two subscriptions on the same day.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l07-e2
+        title: Users whose latest plan is still active
+        difficulty: 2
+        prompt: |
+          For users 1 to 25, find each user's **latest** subscription (the most recent `started_at`). Keep only the users whose latest subscription has not been cancelled (`cancelled_at` is empty). Show `user_id`, `plan`, `price` and `started_at`. Sort by `user_id`.
+
+          Hint: first find the latest row per user, then filter the result.
+        starter: |
+          SELECT user_id,
+                 plan,
+                 price,
+                 started_at
+          FROM subscriptions
+          WHERE user_id <= 25;
+        solution: |
+          SELECT latest.user_id,
+                 latest.plan,
+                 latest.price,
+                 latest.started_at
+          FROM (
+              SELECT DISTINCT ON (user_id)
+                     user_id,
+                     plan,
+                     price,
+                     started_at,
+                     cancelled_at
+              FROM subscriptions
+              WHERE user_id <= 25
+              ORDER BY user_id,
+                       started_at DESC,
+                       subscription_id DESC
+          ) AS latest
+          WHERE latest.cancelled_at IS NULL
+          ORDER BY latest.user_id;
+        hints:
+          - Put the `DISTINCT ON` query in a subquery, and give it a name such as `latest`.
+          - "Filter with `WHERE latest.cancelled_at IS NULL` **outside** the subquery, so the filter runs after the latest row is chosen."
+          - "Filtering inside the subquery first would pick an old, still-active subscription by mistake."
+        explanation: |
+          Six users. Their newest subscription has no cancellation date. The filter comes after `DISTINCT ON`, because filtering first would keep an older active subscription that is not the latest.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l07-e3
+        title: First workout of each user
+        difficulty: 2
+        prompt: |
+          For users 1 to 10, show the first `workout_started` event of each user, meaning the earliest `event_time` (use `event_id` to break ties). Show three columns: `user_id`, `event_id` and `event_time`. Sort by `user_id`.
+
+          Users with no workout in this range should not appear.
+        starter: |
+          SELECT user_id,
+                 event_id,
+                 event_time
+          FROM events
+          WHERE event_name = 'workout_started'
+            AND user_id <= 10;
+        solution: |
+          SELECT DISTINCT ON (user_id)
+                 user_id,
+                 event_id,
+                 event_time
+          FROM events
+          WHERE event_name = 'workout_started'
+            AND user_id <= 10
+          ORDER BY user_id,
+                   event_time,
+                   event_id;
+        hints:
+          - Filter to `workout_started` events first, in the `WHERE` clause.
+          - "Sort by `event_time` in the order given by the `ORDER BY` after `user_id`."
+          - "... WHERE event_name = '___' AND user_id <= 10 ORDER BY user_id, event_time, ___;"
+        explanation: |
+          Five users have a workout in the range, so five rows come back. The earliest event is the first in `ORDER BY`, and the `event_id` tie-breaker keeps the choice fixed even if two events share a timestamp.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l07-e4
+        title: Active subscription first, otherwise the latest
+        difficulty: 3
+        prompt: |
+          For users 1 to 25, show one subscription per user. If the user has a subscription that is still active (`cancelled_at` is empty), show that one. Otherwise show the user's latest subscription (by `started_at`, then `subscription_id`).
+
+          Show four columns: `user_id`, `subscription_id`, `plan` and `cancelled_at`. Sort by `user_id`.
+        starter: |
+          SELECT user_id,
+                 subscription_id,
+                 plan,
+                 cancelled_at
+          FROM subscriptions
+          WHERE user_id <= 25;
+        solution: |
+          SELECT DISTINCT ON (user_id)
+                 user_id,
+                 subscription_id,
+                 plan,
+                 cancelled_at
+          FROM subscriptions
+          WHERE user_id <= 25
+          ORDER BY user_id,
+                   (cancelled_at IS NOT NULL),
+                   started_at DESC,
+                   subscription_id DESC;
+        hints:
+          - "Put the active-or-not test in the `ORDER BY`, right after `user_id`."
+          - "`cancelled_at IS NOT NULL` is `false` for active rows, and `false` sorts before `true`."
+          - "... ORDER BY user_id, (cancelled_at IS NOT NULL), started_at ___, subscription_id ___;"
+        explanation: |
+          Eleven users. For users such as 1 and 15 the active subscription wins, and for users such as 3 and 9, whose subscriptions have all been cancelled, the latest one wins. The sort does both jobs in one `ORDER BY`.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: First row per user
+        sql: |
+          SELECT DISTINCT ON (user_id) *
+          FROM subscriptions
+          ORDER BY user_id, started_at DESC, subscription_id DESC;
+        note: "ORDER BY must start with the DISTINCT ON columns"
+      - title: The portable version
+        sql: |
+          ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY started_at DESC)
+        note: "Filter rn = 1 in an outer query"
+      - title: Filter after the pick
+        sql: |
+          SELECT ... FROM (SELECT DISTINCT ON (...) ...) AS latest WHERE ...
+        note: "Filter the chosen row, not the rows before it"
+
+  - id: m16-l08
+    title: "Regular expressions: searching text by pattern"
+    summary: Match, find, extract and clean text with patterns using ~, ~*, regexp_substr and regexp_replace.
+    minutes: 25
+    dataset: shop
+    steps:
+      - type: read
+        title: Searching for a shape, not a word
+        md: |
+          The support team at ShopSmart gets messages about product codes, phone numbers and emails. They want to find every product whose name **starts with a number**, or every phone number that has letters in it by mistake.
+
+          A **regular expression** (regex) is a small language for describing a pattern in text. You will write patterns like "starts with a digit" or "ends with `Laptop`". PostgreSQL uses the operators below to match a pattern against a column.
+
+          | operator | meaning |
+          |---|---|
+          | `~` | matches, **case-sensitive** |
+          | `~*` | matches, **ignoring** upper and lower case |
+          | `!~` | does **not** match, case-sensitive |
+          | `!~*` | does not match, ignoring case |
+
+          > [!ANALOGY]
+          > A regex is like the search box with wildcards in a file manager. `report_*.pdf` finds every file with that shape, not one exact name.
+
+      - type: example
+        title: Case matters with ~
+        md: Press **Run**. The same pattern gives two different answers, depending on the operator.
+        sql: |
+          SELECT SUM(CASE WHEN name ~ 'pro' THEN 1 ELSE 0 END)
+                     AS case_sensitive,
+                 SUM(CASE WHEN name ~* 'pro' THEN 1 ELSE 0 END)
+                     AS any_case
+          FROM products;
+        after: |
+          `case_sensitive` is 0, because every product spells it `Pro` with a capital P. `any_case` is 4, because `~*` ignores the capital. Which one you need depends on whether the capitals matter for your question.
+
+      - type: read
+        title: Anchors and character classes
+        md: |
+          Three building blocks cover most patterns.
+
+          - `^` means "the start of the text", and `$` means "the end of the text".
+          - `[0-9]` is one character from the range 0 to 9. `[^0-9]` means one character that is **not** a digit.
+          - `.` matches any single character, and `+` means "one or more of the thing before it".
+
+          So `'^[0-9]'` means "starts with a digit", and `'Laptop$'` means "ends with Laptop".
+
+      - type: example
+        title: Product names that start with a number
+        md: Press **Run**. The pattern `^[0-9]` only matches a digit at the very start of the name.
+        sql: |
+          SELECT product_id,
+                 name
+          FROM products
+          WHERE name ~ '^[0-9]'
+          ORDER BY product_id;
+        after: |
+          Four products, such as `27-inch 4K Monitor` and `2-Person Camping Tent`. Products like `Aurora 14-inch Laptop` contain digits, but not at the start, so they are not included.
+
+      - type: read
+        title: Extracting and replacing text
+        md: |
+          Matching gives you yes or no. To **pull out** a piece of text, use `regexp_substr(text, pattern)`, which returns the first match. To **change** text, use `regexp_replace(text, pattern, replacement)`. Add `'g'` as a fourth argument to replace every match, not only the first.
+
+      - type: example
+        title: The size in each product name
+        md: Press **Run**. `regexp_substr` returns the first run of digits in each name that contains the word `inch`.
+        sql: |
+          SELECT product_id,
+                 name,
+                 regexp_substr(name, '[0-9]+') AS first_number
+          FROM products
+          WHERE name ~ 'inch'
+          ORDER BY product_id;
+        after: |
+          Six products. `Aurora 14-inch Laptop` gives `14`, and `27-inch 4K Monitor` gives `27`. The result is still text, so cast it to `int` if you want to do maths with it.
+
+      - type: example
+        title: Keep only the digits of a phone number
+        md: Press **Run**. The pattern `[^0-9]` means "anything that is not a digit", and `regexp_replace` replaces each of those with nothing.
+        sql: |
+          SELECT customer_id,
+                 phone,
+                 regexp_replace(phone, '[^0-9]', '', 'g') AS phone_digits
+          FROM customers
+          WHERE customer_id BETWEEN 3 AND 5
+          ORDER BY customer_id;
+        after: |
+          `(213) 555-0100` becomes `2135550100`. The `'g'` flag replaces every match, so all the brackets, spaces and dashes disappear at once. A missing phone stays `NULL`.
+
+      - type: read
+        title: Special characters need escaping
+        md: |
+          Some characters have a special meaning in patterns: `( ) . * + ? [ ] ^ $ \`. To search for the real character, put a backslash in front of it, as in `\.` for a full stop. A broken pattern does not match nothing: it stops with an error.
+
+          > [!MISTAKE]
+          > An opening bracket `(` must have a closing `)`. A pattern like `'(Pro'` is not valid, and PostgreSQL reports that the parentheses are not balanced. Check your brackets when a query fails.
+
+      - type: example
+        title: A broken pattern
+        md: Press **Run**. The pattern opens a bracket and never closes it.
+        sql: |
+          SELECT name
+          FROM products
+          WHERE name ~ '(Pro';
+        expectError: true
+        after: |
+          The error says `invalid regular expression: parentheses () not balanced`. The fix is to close the bracket, such as `'(Pro)'`, or to escape a literal bracket with a backslash, `'\(Pro'`.
+
+      - type: read
+        title: SIMILAR TO is a different style
+        md: |
+          PostgreSQL also has `SIMILAR TO`, which uses `%` and `_` like `LIKE`, and accepts a few regex pieces. It is less powerful than `~`, so most people use `~` for patterns. You will see `LIKE` in module m02.
+
+      - type: quiz
+        id: m16-l08-q1
+        question: Which operator matches a pattern **regardless of upper or lower case**?
+        options:
+          - "~"
+          - "~*"
+          - "!~"
+          - "="
+        answer: 1
+        explanation: |
+          `~*` is the case-insensitive match. `~` is case-sensitive, `!~` means "does not match", and `=` checks for exact equality, not patterns.
+
+      - type: predict
+        id: m16-l08-p1
+        question: What does this query return?
+        sql: |
+          SELECT 'Aurora 16-inch Pro Laptop' ~ 'pro' AS result;
+        options:
+          - "true"
+          - "false"
+          - "NULL"
+          - "An error"
+        answer: 1
+        explanation: |
+          The text contains `Pro` with a capital P, but `~` is case-sensitive, and the pattern is lowercase `pro`. The answer is `false`. Use `~*` to find it.
+
+      - type: fill
+        id: m16-l08-f1
+        prompt: Complete the query so that it finds the product names that start with a digit.
+        template: |
+          SELECT name
+          FROM products
+          WHERE name ___ '^[0-9]'
+          ORDER BY name;
+        answers:
+          - ["~"]
+        explanation: |
+          `~` checks whether the pattern matches. Here the pattern is anchored with `^`, so only names that start with a digit match.
+
+      - type: parsons
+        id: m16-l08-o1
+        prompt: Put the lines in the right order to show the first number in every product name that contains `inch`.
+        lines:
+          - SELECT product_id,
+          - name,
+          - regexp_substr(name, '[0-9]+') AS first_number
+          - FROM products
+          - WHERE name ~ 'inch'
+          - ORDER BY product_id;
+        distractors:
+          - WHERE name !~ 'inch'
+        explanation: |
+          `!~` means "does not match", so `WHERE name !~ 'inch'` would show the products without `inch`. That is the opposite of what the task asks for.
+
+      - type: exercise
+        id: m16-l08-e1
+        title: Names that end with Laptop
+        difficulty: 1
+        prompt: |
+          Show `product_id` and `name` for every product whose name ends with the word `Laptop` (capital L, at the very end). Sort by `product_id`.
+        starter: |
+          SELECT product_id,
+                 name
+          FROM products
+          WHERE name ~ 'Laptop';
+        solution: |
+          SELECT product_id,
+                 name
+          FROM products
+          WHERE name ~ 'Laptop$'
+          ORDER BY product_id;
+        hints:
+          - The `$` sign means "at the end of the text".
+          - "Compare the starter query. It matches `Laptop` anywhere, but the prompt asks for the end only."
+          - "WHERE name ~ 'Laptop___';"
+        explanation: |
+          Two products: `Aurora 14-inch Laptop` and `Aurora 16-inch Pro Laptop`. `Laptop Stand, Aluminum` is not included, because its name ends with `Aluminum`.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l08-e2
+        title: Any laptop, in any case
+        difficulty: 2
+        prompt: |
+          Show `product_id` and `name` for every product whose name contains the word `laptop` in **any** capitals or lower case. Sort by `product_id`.
+        starter: |
+          SELECT product_id,
+                 name
+          FROM products
+          WHERE name ~ 'laptop';
+        solution: |
+          SELECT product_id,
+                 name
+          FROM products
+          WHERE name ~* 'laptop'
+          ORDER BY product_id;
+        hints:
+          - The starter searches for a lowercase `laptop`, but no product name is written that way.
+          - "Use the operator that ignores case."
+          - "WHERE name ___ 'laptop' ORDER BY product_id;"
+        explanation: |
+          Five products. A case-sensitive search for the lowercase word finds none, because every name spells it `Laptop`. `~*` ignores the capital and finds all five, including `Laptop Stand, Aluminum`.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l08-e3
+        title: Customers on the example.org domain
+        difficulty: 2
+        prompt: |
+          For customers with a `customer_id` from 1 to 40 whose email ends with `@example.org`, show `customer_id` and `email`. Sort by `customer_id`.
+        starter: |
+          SELECT customer_id,
+                 email
+          FROM customers
+          WHERE customer_id BETWEEN 1 AND 40;
+        solution: |
+          SELECT customer_id,
+                 email
+          FROM customers
+          WHERE customer_id BETWEEN 1 AND 40
+            AND email ~ '@example\.org$'
+          ORDER BY customer_id;
+        hints:
+          - Use `~` with the end-of-text sign `$`.
+          - "A full stop means any character in a pattern, so escape it as `\\.` to match a real dot."
+          - "... AND email ~ '@example___org$' ORDER BY customer_id;"
+        explanation: |
+          Thirteen customers. The `\.` escapes the dot, so `example.org` matches literally. Without the backslash, the dot would also match `exampleXorg`.
+        ordered: true
+        columnNames: true
+
+      - type: exercise
+        id: m16-l08-e4
+        title: Clean phone numbers
+        difficulty: 3
+        prompt: |
+          For customers 1 to 12 who have a phone number, show `customer_id` and `phone_digits`. `phone_digits` is the phone number with every character that is not a digit removed. Sort by `customer_id`.
+        starter: |
+          SELECT customer_id,
+                 phone
+          FROM customers
+          WHERE customer_id <= 12
+            AND phone IS NOT NULL;
+        solution: |
+          SELECT customer_id,
+                 regexp_replace(phone, '[^0-9]', '', 'g') AS phone_digits
+          FROM customers
+          WHERE customer_id <= 12
+            AND phone IS NOT NULL
+          ORDER BY customer_id;
+        hints:
+          - Use `regexp_replace` with the pattern `[^0-9]`, replaced by nothing.
+          - "The `'g'` flag replaces every match, not only the first one."
+          - "... regexp_replace(phone, '___', '', 'g') AS phone_digits ..."
+        explanation: |
+          Eight customers. `(213) 555-0100` becomes `2135550100`. The `IS NOT NULL` test keeps the customers without a phone out of the list, because cleaning `NULL` gives `NULL` again.
+        ordered: true
+        columnNames: true
+
+    cheatsheet:
+      - title: Match a pattern
+        sql: |
+          WHERE name ~ '^[0-9]'
+        note: "~ is case-sensitive; ~* ignores case"
+      - title: Ignore case
+        sql: |
+          WHERE name ~* 'laptop'
+        note: "Use ~* when the capitals do not matter"
+      - title: Pull out a match
+        sql: |
+          regexp_substr(name, '[0-9]+')
+        note: "Returns the first match as text"
+      - title: Replace every match
+        sql: |
+          regexp_replace(phone, '[^0-9]', '', 'g')
+        note: "The 'g' flag replaces all matches"
+
+# @@LESSONS_END@@
+testPool:
+  # ------------------------------------------------ l01 JSON basics
+  - type: quiz
+    id: m16-t01
+    lesson: m16-l01
+    difficulty: 1
+    question: |
+      What does `properties->>'screen'` return for a `workout_started` event?
+    options:
+      - "NULL, because only app_open events have a screen key"
+      - "The text 'workouts'"
+      - "The whole JSON object"
+      - "An error, because the key is missing"
+    answer: 0
+    explanation: |
+      A missing key does not stop the query. The arrow returns NULL. Only `app_open` events store a `screen`.
+  - type: exercise
+    id: m16-t02
+    lesson: m16-l01
+    difficulty: 1
+    prompt: |
+      Show `event_id` and `screen` (as text) for every `app_open` event with an `event_id` up to 8. Sort by `event_id`.
+    starter: |
+      SELECT event_id
+      FROM events
+      WHERE event_name = 'app_open';
+    solution: |
+      SELECT event_id,
+             properties->>'screen' AS screen
+      FROM events
+      WHERE event_name = 'app_open'
+        AND event_id <= 8
+      ORDER BY event_id;
+    hints:
+      - Use `->>` with the key `screen`.
+      - "Keep the filter `event_name = 'app_open'` and add `event_id <= 8`."
+      - "SELECT event_id, properties->>'___' AS screen FROM events WHERE event_name = '___' AND event_id <= 8 ORDER BY event_id;"
+    ordered: true
+  - type: predict
+    id: m16-t03
+    lesson: m16-l01
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT '100' > '93' AS bigger;
+    options:
+      - "true"
+      - "false"
+      - "NULL"
+      - "An error"
+    answer: 1
+    explanation: |
+      Both values are text, so they are compared one character at a time. The first characters are '1' and '9', and '1' comes before '9', so '100' is smaller. As numbers, 100 would be bigger than 93.
+  - type: fill
+    id: m16-t04
+    lesson: m16-l01
+    difficulty: 2
+    prompt: |
+      Complete the query so that `price` comes out as a number.
+    template: |
+      SELECT (properties ___ 'price')::___ AS price
+      FROM events
+      WHERE event_name = 'subscription_started'
+      ORDER BY event_id
+      LIMIT 1;
+    answers:
+      - ["->>"]
+      - ["numeric", "decimal"]
+    explanation: |
+      `->>` gets the price as text, then `::numeric` turns it into an exact decimal number.
+  # ------------------------------------------------ l02 Querying JSONB
+  - type: exercise
+    id: m16-t05
+    lesson: m16-l02
+    difficulty: 2
+    prompt: |
+      Show `event_id` and `price` (as a number) for every `subscription_started` event with an `event_id` of 40 or less whose properties contain `"plan": "monthly"`. Sort by `event_id`.
+    starter: |
+      SELECT event_id
+      FROM events
+      WHERE event_name = 'subscription_started';
+    solution: |
+      SELECT event_id,
+             (properties->>'price')::numeric AS price
+      FROM events
+      WHERE event_name = 'subscription_started'
+        AND properties @> '{"plan": "monthly"}'
+        AND event_id <= 40
+      ORDER BY event_id;
+    hints:
+      - Use `@>` with the plan you want, as in the first example.
+      - "Cast the price with `::numeric` so that it shows as a number."
+      - "SELECT event_id, (properties->>'___')::numeric AS price FROM events WHERE event_name = '___' AND properties @> '{\"plan\": \"___\"}' AND event_id <= 40 ORDER BY event_id;"
+    ordered: true
+  - type: quiz
+    id: m16-t06
+    lesson: m16-l02
+    difficulty: 1
+    question: |
+      Which function opens a JSON object into one row per key, with the columns `key` and `value`?
+    options:
+      - "jsonb_each"
+      - "jsonb_agg"
+      - "jsonb_set"
+      - "jsonb_build_object"
+    answer: 0
+    explanation: |
+      `jsonb_each` returns one row for each key. `jsonb_agg` does the opposite, gathering rows into an array, and `jsonb_set` changes one value.
+  - type: predict
+    id: m16-t07
+    lesson: m16-l02
+    difficulty: 2
+    question: |
+      What does this query return?
+    sql: |
+      SELECT '{"a": {"b": 2}}'::jsonb ? 'b' AS found;
+    options:
+      - "true"
+      - "false"
+      - "NULL"
+      - "An error"
+    answer: 1
+    explanation: |
+      The `?` operator looks only at the **top-level** keys. Here the top-level key is `a`, and `b` is nested one level down, so the answer is `false`.
+  - type: fill
+    id: m16-t08
+    lesson: m16-l02
+    difficulty: 2
+    prompt: |
+      Complete the query so that all of user 2's event names come out as one JSON array, in time order.
+    template: |
+      SELECT ___(event_name ORDER BY event_id)
+      FROM events
+      WHERE user_id = 2;
+    answers:
+      - ["jsonb_agg"]
+    explanation: |
+      `jsonb_agg` gathers the values into one JSON array. The `ORDER BY` inside the function keeps the order of the events.
+  # ------------------------------------------------ l03 Arrays
+  - type: exercise
+    id: m16-t09
+    lesson: m16-l03
+    difficulty: 2
+    prompt: |
+      Show `movie_id` and `title` for every film whose genres include **both** `Crime` and `Drama`. Build one genre list per film with `ARRAY_AGG`, then test it with `@>`. Sort by `movie_id`.
+    starter: |
+      SELECT movie_id,
+             title
+      FROM movies;
+    solution: |
+      SELECT tagged.movie_id,
+             tagged.title
+      FROM (
+          SELECT m.movie_id,
+                 m.title,
+                 ARRAY_AGG(g.name ORDER BY g.name) AS genres
+          FROM movies m
+          JOIN movie_genres mg ON mg.movie_id = m.movie_id
+          JOIN genres g ON g.genre_id = mg.genre_id
+          GROUP BY m.movie_id, m.title
+      ) AS tagged
+      WHERE tagged.genres @> ARRAY['Crime', 'Drama']
+      ORDER BY tagged.movie_id;
+    hints:
+      - "`@>` checks that the array contains every item on its right side."
+      - "Put both genres in the array on the right: `ARRAY['Crime', 'Drama']`."
+      - "WHERE tagged.genres @> ARRAY['___', '___'] ORDER BY tagged.movie_id;"
+    ordered: true
+  - type: quiz
+    id: m16-t10
+    lesson: m16-l03
+    difficulty: 1
+    question: |
+      Which function counts every item in an array, and gives 0 for an empty array?
+    options:
+      - "cardinality(array)"
+      - "array_length(array, 1)"
+      - "unnest(array)"
+      - "ARRAY_AGG(value)"
+    answer: 0
+    explanation: |
+      `cardinality` counts all the items. For an empty array `array_length` gives `NULL`, not 0, so `cardinality` is the safer choice for counting.
+  # ------------------------------------------------ l04 generate_series
+  - type: exercise
+    id: m16-t11
+    lesson: m16-l04
+    difficulty: 2
+    prompt: |
+      For user 2, show every day from 2024-03-04 to 2024-03-08. Show two columns: `day` (as a date) and `has_data`. `has_data` is `true` when the tracker sent a steps value that day, and `false` when it did not. Sort by `day`.
+    starter: |
+      SELECT d::date AS day
+      FROM generate_series(
+               '2024-03-04'::date,
+               '2024-03-08'::date,
+               '1 day'
+           ) AS d;
+    solution: |
+      SELECT d::date AS day,
+             s.steps IS NOT NULL AS has_data
+      FROM generate_series(
+               '2024-03-04'::date,
+               '2024-03-08'::date,
+               '1 day'
+           ) AS d
+      LEFT JOIN daily_steps s
+             ON s.day = d::date
+            AND s.user_id = 2
+      ORDER BY day;
+    hints:
+      - Use the date spine with a `LEFT JOIN` to `daily_steps`, as in the example.
+      - "`s.steps IS NOT NULL` is true when the join found a row."
+      - "SELECT d::date AS day, s.steps ___ NULL AS has_data FROM ... LEFT JOIN daily_steps s ON s.day = d::date AND s.user_id = 2 ORDER BY day;"
+    ordered: true
+  - type: quiz
+    id: m16-t12
+    lesson: m16-l04
+    difficulty: 2
+    question: |
+      Which join keeps every day of a date spine, even when the data has no row for that day?
+    options:
+      - "INNER JOIN with the data on the left"
+      - "LEFT JOIN with the spine on the left"
+      - "UNION of the spine and the data"
+      - "SELECT DISTINCT on the data"
+    answer: 1
+    explanation: |
+      A `LEFT JOIN` keeps every row from its left table. Put the spine on the left, and the days without data stay in the result with `NULL` values.
+  - type: predict
+    id: m16-t13
+    lesson: m16-l04
+    difficulty: 3
+    question: |
+      How many rows does this query return? (2024 is a leap year.)
+    sql: |
+      SELECT COUNT(*) AS days
+      FROM generate_series(
+               '2024-02-28'::date,
+               '2024-03-01'::date,
+               '1 day'
+           ) AS d;
+    options:
+      - "2"
+      - "3"
+      - "4"
+      - "An error"
+    answer: 1
+    explanation: |
+      The series is 28 February, 29 February and 1 March. February has 29 days in 2024, so the leap day counts, and both ends are included.
+  # ------------------------------------------------ l05 LATERAL
+  - type: exercise
+    id: m16-t14
+    lesson: m16-l05
+    difficulty: 2
+    prompt: |
+      For the categories with `category_id` from 4 to 6, show the cheapest product in each category. Show three columns: `category`, `product` and `price`. Sort by `category` from A to Z.
+    starter: |
+      SELECT c.name AS category
+      FROM categories c
+      WHERE c.category_id BETWEEN 4 AND 6;
+    solution: |
+      SELECT c.name AS category,
+             cheap.name AS product,
+             cheap.price
+      FROM categories c
+      CROSS JOIN LATERAL (
+          SELECT p.name,
+                 p.price
+          FROM products p
+          WHERE p.category_id = c.category_id
+          ORDER BY p.price ASC
+          LIMIT 1
+      ) AS cheap
+      WHERE c.category_id BETWEEN 4 AND 6
+      ORDER BY c.name;
+    hints:
+      - Use the top-N example, but sort the products from cheapest to most expensive.
+      - "`ORDER BY p.price ASC` puts the lowest price first, and `LIMIT 1` keeps one row."
+      - "... ORDER BY p.price ___ LIMIT ___ ) AS cheap WHERE c.category_id BETWEEN 4 AND 6 ORDER BY c.name;"
+    ordered: true
+  - type: quiz
+    id: m16-t15
+    lesson: m16-l05
+    difficulty: 1
+    question: |
+      Which keyword must appear before a subquery in `FROM` when that subquery refers to a table listed before it?
+    options:
+      - "LATERAL"
+      - "DISTINCT"
+      - "EXISTS"
+      - "UNNEST"
+    answer: 0
+    explanation: |
+      Only `LATERAL` lets a subquery see the columns of the tables to its left. Without it, PostgreSQL reports an invalid reference.
+  # ------------------------------------------------ l06 ROLLUP, CUBE, GROUPING SETS
+  - type: exercise
+    id: m16-t16
+    lesson: m16-l06
+    difficulty: 2
+    prompt: |
+      For cancelled orders only, count the orders per year, with a grand total row. Show two columns: `year` and `cancelled_orders`. Leave `year` as `NULL` on the grand total row. Sort by `year`, with the total row last.
+    starter: |
+      SELECT EXTRACT(YEAR FROM o.order_date)::int AS year
+      FROM orders o
+      WHERE o.status = 'cancelled'
+      GROUP BY 1;
+    solution: |
+      SELECT x.yr AS year,
+             COUNT(*) AS cancelled_orders
+      FROM (
+          SELECT EXTRACT(YEAR FROM o.order_date)::int AS yr
+          FROM orders o
+          WHERE o.status = 'cancelled'
+      ) AS x
+      GROUP BY ROLLUP (x.yr)
+      ORDER BY x.yr;
+    hints:
+      - Use the yearly ROLLUP from the exercises, and add a filter for cancelled orders.
+      - "The filter `WHERE o.status = 'cancelled'` belongs inside the subquery, next to the year."
+      - "GROUP BY ___ (x.yr) ORDER BY x.yr;"
+    ordered: true
+    columnNames: true
+  - type: quiz
+    id: m16-t17
+    lesson: m16-l06
+    difficulty: 1
+    question: |
+      In a `ROLLUP` result, what does `GROUPING(c.name)` return on the grand total row?
+    options:
+      - "0"
+      - "1"
+      - "NULL"
+      - "The text 'All categories'"
+    answer: 1
+    explanation: |
+      `GROUPING` returns 1 when the column was rolled up, which is the grand total row. Normal rows return 0.
+  - type: parsons
+    id: m16-t18
+    lesson: m16-l06
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show the total units sold for each order status, with a grand total row. Sort by `status`, with the total row last.
+    lines:
+      - SELECT o.status,
+      - SUM(i.quantity) AS units
+      - FROM orders o
+      - JOIN order_items i ON i.order_id = o.order_id
+      - GROUP BY ROLLUP (o.status)
+      - ORDER BY o.status;
+    distractors:
+      - WHERE o.status = 'delivered'
+    explanation: |
+      The `WHERE` line would keep only delivered orders, so the statuses other than delivered would disappear. It does not belong in this report.
+# @@TESTPOOL_END@@

@@ -2403,7 +2403,6 @@ lessons:
           INSERT INTO payments VALUES (2, 'REF-2001', 250.00)
           ON CONFLICT (reference) DO NOTHING;
         note: A retry with the same reference saves nothing new.
-  # @@MORE@@
 testPool:
   - type: exercise
     id: m14-t01
@@ -2922,3 +2921,292 @@ testPool:
     explanation: |
       Account 1 has 260.79, which is less than 1000.00, so nothing is saved. The count is 0. The balance check and the
       `ON CONFLICT` together make the insert safe to repeat.
+project:
+  id: m14-proj
+  title: "Harbor Bank Transfers"
+  icon: "🏦"
+  dataset: bank
+  md: |
+    Harbor Bank has opened a new **Transfer Desk**. From today, every customer transfer is posted as one
+    transaction: the money goes out, the money comes in, and nothing is saved unless every rule holds.
+
+    Your first customer is **Sneha Khan**, who has a checking account (account 1), and she wants to pay
+    **Nils Larsen** (account 2) $200. Over six tasks you will check the balances, post the transfer, fix a fee
+    mistake with a savepoint, refuse a transfer the account cannot cover, take jobs from the queue safely, and
+    finally prove that the books balance.
+
+    The desk uses the same conventions as the lessons. A transfer is two rows in `transactions` with the time
+    `'2025-01-02 09:00:00'`. Money out is negative, money in is positive, and a balance is the sum of an
+    account's amounts. Each task starts from the bank's data as it was on 31 December 2024. Where a task needs
+    the earlier transfers to be in place already, the table is set up for you.
+  tasks:
+    - type: exercise
+      id: m14-proj-1
+      title: "Task 1: Check the balances first"
+      prompt: |
+        Before any transfer, the desk checks both balances. Show `account_id` and `balance` (the rounded sum of
+        the amounts) for accounts 1 and 2, ordered by `account_id`.
+      solution: |
+        SELECT account_id, ROUND(SUM(amount), 2) AS balance
+        FROM transactions
+        WHERE account_id IN (1, 2)
+        GROUP BY account_id
+        ORDER BY account_id;
+      columnNames: true
+      ordered: true
+      hints:
+        - You need the sum of `amount` for each account, so use `GROUP BY account_id`.
+        - "`ROUND(SUM(amount), 2)` gives the balance to two decimals."
+        - "Skeleton: `SELECT account_id, ROUND(SUM(amount), 2) AS balance FROM transactions WHERE ___ GROUP BY ___ ORDER BY ___;`"
+      explanation: |
+        Account 1 has 260.79 and account 2 has 6983.12. These are the numbers the transfer will change.
+      difficulty: 1
+    - type: exercise
+      id: m14-proj-2
+      title: "Task 2: Post the transfer in one transaction"
+      prompt: |
+        Sneha pays Nils $200. Write one transaction that:
+
+        1. Inserts a `transfer_out` row: txn_id 3675, account 1, amount -200.00, description `Transfer to Nils`.
+        2. Inserts a `transfer_in` row: txn_id 3676, account 2, amount 200.00, description `Transfer from Sneha`.
+        3. Saves both rows with `COMMIT`.
+
+        Use txn_time `'2025-01-02 09:00:00'` for both rows. Then show `account_id` and `balance` for accounts 1 and
+        2, ordered by `account_id`, the same way as Task 1.
+      starter: |
+        BEGIN;
+
+        -- Post the two transfer rows here.
+
+        COMMIT;
+      solution: |
+        BEGIN;
+
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3675, 1, '2025-01-02 09:00:00',
+             -200.00, 'transfer_out', 'Transfer to Nils'),
+            (3676, 2, '2025-01-02 09:00:00',
+             200.00, 'transfer_in', 'Transfer from Sneha');
+
+        COMMIT;
+
+        SELECT account_id, ROUND(SUM(amount), 2) AS balance
+        FROM transactions
+        WHERE account_id IN (1, 2)
+        GROUP BY account_id
+        ORDER BY account_id;
+      columnNames: true
+      ordered: true
+      hints:
+        - Both rows go in one `INSERT`, between `BEGIN` and `COMMIT`.
+        - Money out is negative. Keep the same txn_ids as the task says.
+        - "Skeleton: `BEGIN; INSERT INTO transactions (...) VALUES (3675, 1, ..., -200.00, ...), (3676, 2, ..., 200.00, ...); COMMIT; SELECT ...;`"
+      explanation: |
+        Account 1 goes down to 60.79 and account 2 goes up to 7183.12. Both changes were saved together.
+      difficulty: 1
+    - type: exercise
+      id: m14-proj-3
+      title: "Task 3: Fix a fee mistake with a savepoint"
+      prompt: |
+        The transfer from Task 2 is already posted, so the table starts with rows 3675 and 3676.
+
+        A wire fee of $25.00 must be charged to account 1, as txn 3677, type `fee`, description `Wire fee`, time
+        `'2025-01-02 09:00:00'`. The clerk first typed -250.00 by mistake. Write one transaction that:
+
+        1. Places a savepoint named `before_fee`.
+        2. Inserts the wrong fee: txn 3677, account 1, amount -250.00.
+        3. Rolls back to `before_fee`, which removes the wrong fee.
+        4. Inserts the correct fee: txn 3677, account 1, amount -25.00.
+        5. Commits.
+
+        Then show `txn_id`, `account_id`, `amount` and `txn_type` for every row with `txn_id >= 3675`, ordered by
+        `txn_id`.
+      setup: |
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3675, 1, '2025-01-02 09:00:00',
+             -200.00, 'transfer_out', 'Transfer to Nils'),
+            (3676, 2, '2025-01-02 09:00:00',
+             200.00, 'transfer_in', 'Transfer from Sneha');
+      solution: |
+        BEGIN;
+
+        SAVEPOINT before_fee;
+
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3677, 1, '2025-01-02 09:00:00',
+             -250.00, 'fee', 'Wire fee');
+
+        ROLLBACK TO SAVEPOINT before_fee;
+
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3677, 1, '2025-01-02 09:00:00',
+             -25.00, 'fee', 'Wire fee');
+
+        COMMIT;
+
+        SELECT txn_id, account_id, amount, txn_type
+        FROM transactions
+        WHERE txn_id >= 3675
+        ORDER BY txn_id;
+      columnNames: true
+      ordered: true
+      hints:
+        - The savepoint must come before the wrong fee, so the rollback removes only the wrong fee.
+        - After `ROLLBACK TO SAVEPOINT before_fee`, the id 3677 is free, so you can insert the correct fee with it.
+        - "Skeleton: `BEGIN; SAVEPOINT before_fee; INSERT ... (3677, 1, ..., -250.00, ...); ___ TO SAVEPOINT before_fee; INSERT ... (3677, 1, ..., -25.00, ...); COMMIT; SELECT ...;`"
+      explanation: |
+        The three rows are the transfer, its receiving side and the correct fee. The wrong fee was undone by the
+        savepoint, and the rest of the transaction was kept.
+      difficulty: 2
+    - type: exercise
+      id: m14-proj-4
+      title: "Task 4: Only transfer when the money is there"
+      prompt: |
+        Sneha now asks to send Nils $500. Account 1 cannot cover that. The desk must refuse it without saving half
+        a transfer.
+
+        The table already holds the Task 3 rows, so account 1 has 35.79. Write **one** `INSERT` that adds both
+        rows of a $500.00 transfer (txn 3678 out of account 1, txn 3679 into account 2, txn_time
+        `'2025-01-02 10:00:00'`) only when account 1's balance (the sum of its amounts) is at least 500.00.
+
+        Use a `WHERE` on the balance check, and put the two rows in one statement. Then show the number of rows whose
+        txn_id is at least 3678, in a column named `new_rows`.
+      setup: |
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3675, 1, '2025-01-02 09:00:00',
+             -200.00, 'transfer_out', 'Transfer to Nils'),
+            (3676, 2, '2025-01-02 09:00:00',
+             200.00, 'transfer_in', 'Transfer from Sneha'),
+            (3677, 1, '2025-01-02 09:00:00',
+             -25.00, 'fee', 'Wire fee');
+      solution: |
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        SELECT v.txn_id, v.account_id, v.txn_time,
+               v.amount, v.txn_type, v.description
+        FROM (VALUES
+            (3678, 1, '2025-01-02 10:00:00'::timestamp,
+             -500.00, 'transfer_out', 'Transfer to Nils'),
+            (3679, 2, '2025-01-02 10:00:00'::timestamp,
+             500.00, 'transfer_in', 'Transfer from Sneha')
+        ) AS v (txn_id, account_id, txn_time,
+                amount, txn_type, description)
+        WHERE (SELECT SUM(amount)
+               FROM transactions
+               WHERE account_id = 1) >= 500.00;
+
+        SELECT COUNT(*) AS new_rows
+        FROM transactions
+        WHERE txn_id >= 3678;
+      columnNames: true
+      hints:
+        - One `INSERT ... SELECT` can hold both rows, read from `(VALUES ...)`.
+        - The balance check goes in the `WHERE`. Because the rows are in one statement, the check runs once, before anything is written.
+        - "Skeleton: `INSERT INTO transactions (...) SELECT ... FROM (VALUES (3678, ...), (3679, ...)) AS v (...) WHERE (SELECT SUM(amount) ...) >= 500.00;`"
+      explanation: |
+        The balance is 35.79, which is less than 500.00, so no row is saved and the count is 0. Putting both rows in
+        one statement is the safe design: the balance is checked once, so a half-finished transfer cannot happen.
+      difficulty: 2
+    - type: exercise
+      id: m14-proj-5
+      title: "Task 5: Process the first two queued jobs"
+      prompt: |
+        The desk keeps a queue in the table `transfer_queue` (columns `queue_id`, `from_account`, `to_account`,
+        `amount` and `status`). Three jobs are waiting, all with status `queued`.
+
+        Two workers must never take the same job. Lock the two oldest queued jobs with `FOR UPDATE SKIP LOCKED` and
+        set their `status` to `'done'` in one `UPDATE`. Then show `queue_id` and `status` for all jobs, ordered by
+        `queue_id`.
+      setup: |
+        CREATE TABLE transfer_queue (
+            queue_id integer PRIMARY KEY,
+            from_account integer,
+            to_account integer,
+            amount numeric(10,2),
+            status text
+        );
+
+        INSERT INTO transfer_queue VALUES
+            (1, 1, 2, 50.00, 'queued'),
+            (2, 2, 1, 20.00, 'queued'),
+            (3, 1, 2, 75.00, 'queued');
+      solution: |
+        UPDATE transfer_queue
+        SET status = 'done'
+        WHERE queue_id IN (
+            SELECT queue_id
+            FROM transfer_queue
+            WHERE status = 'queued'
+            ORDER BY queue_id
+            LIMIT 2
+            FOR UPDATE SKIP LOCKED
+        );
+
+        SELECT queue_id, status
+        FROM transfer_queue
+        ORDER BY queue_id;
+      columnNames: true
+      ordered: true
+      hints:
+        - The sub-query picks the two oldest queued jobs. Put the locking clause at its end.
+        - "Use `LIMIT 2` and `ORDER BY queue_id` inside the sub-query."
+        - "Skeleton: `UPDATE transfer_queue SET status = 'done' WHERE queue_id IN (SELECT queue_id FROM transfer_queue WHERE ___ ORDER BY queue_id LIMIT 2 FOR UPDATE SKIP LOCKED); SELECT ...;`"
+      explanation: |
+        Jobs 1 and 2 are done, and job 3 is still queued. A second worker running the same statement at the same
+        moment would skip the locked rows and take job 3.
+      difficulty: 2
+    - type: exercise
+      id: m14-proj-6
+      title: "Task 6: Prove that the books balance"
+      prompt: |
+        The auditor wants proof. The table now holds the Task 3 rows, which include the wire fee, and nothing else.
+
+        For 2025, look only at the transfer rows (`txn_type` `transfer_in` or `transfer_out`). Show one row with:
+
+        - `transfer_rows`: the number of transfer rows,
+        - `money_out`: the total money out, as a positive number, rounded to 2 decimals,
+        - `money_in`: the total money in, rounded to 2 decimals,
+        - `net_total`: the sum of all those transfer amounts, rounded to 2 decimals.
+
+        The fee is not a transfer, so it must not be counted.
+      setup: |
+        INSERT INTO transactions
+            (txn_id, account_id, txn_time, amount, txn_type, description)
+        VALUES
+            (3675, 1, '2025-01-02 09:00:00',
+             -200.00, 'transfer_out', 'Transfer to Nils'),
+            (3676, 2, '2025-01-02 09:00:00',
+             200.00, 'transfer_in', 'Transfer from Sneha'),
+            (3677, 1, '2025-01-02 09:00:00',
+             -25.00, 'fee', 'Wire fee');
+      solution: |
+        SELECT COUNT(*) AS transfer_rows,
+               ROUND(-SUM(amount) FILTER (WHERE txn_type = 'transfer_out'), 2)
+                   AS money_out,
+               ROUND(SUM(amount) FILTER (WHERE txn_type = 'transfer_in'), 2)
+                   AS money_in,
+               ROUND(SUM(amount), 2) AS net_total
+        FROM transactions
+        WHERE txn_type IN ('transfer_in', 'transfer_out')
+          AND txn_time >= '2025-01-01'
+          AND txn_time < '2026-01-01';
+      columnNames: true
+      hints:
+        - Filter the rows first, with `WHERE txn_type IN (...)` and the two dates for 2025.
+        - "`SUM(...) FILTER (WHERE ...)` adds up only the rows that match. Money out is negative, so negate it."
+        - "Skeleton: `SELECT COUNT(*) AS transfer_rows, ROUND(-SUM(amount) FILTER (WHERE txn_type = 'transfer_out'), 2) AS money_out, ... FROM transactions WHERE ___;`"
+      explanation: |
+        Two transfer rows, 200.00 out and 200.00 in, and a net total of 0.00. Money was moved, not created or lost.
+        The fee is left out because it is not a transfer. This is the kind of check the auditor runs at the end
+        of every day.
+      difficulty: 3

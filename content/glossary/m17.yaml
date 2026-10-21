@@ -1,0 +1,70 @@
+glossary:
+  - term: Function
+    definition: A named, reusable piece of SQL that takes inputs and returns a value or a table. You call it inside a query, just like a column.
+    example: "SELECT account_balance(1) AS balance;"
+    module: m17
+
+  - term: PL/pgSQL
+    definition: PostgreSQL's built-in programming language. It is SQL with variables, IF decisions and loops added, and it is used for functions, procedures, triggers and DO blocks.
+    example: "IF v_total < 0 THEN RAISE NOTICE 'overdrawn'; END IF;"
+    module: m17
+
+  - term: Parameter
+    definition: An input that you pass to a function or procedure. Each parameter has a name and a type. Starting its name with p_ helps you tell it apart from a column.
+    example: "CREATE FUNCTION account_balance(p_account_id INTEGER) ..."
+    module: m17
+
+  - term: Volatility
+    definition: A label on a function (IMMUTABLE, STABLE or VOLATILE) that tells PostgreSQL how stable its answer is. Choose the strongest label that is still true.
+    example: "CREATE FUNCTION f(p_x NUMERIC) RETURNS NUMERIC LANGUAGE sql IMMUTABLE AS $$ SELECT p_x * 2 $$;"
+    module: m17
+
+  - term: DO block
+    definition: An unnamed PL/pgSQL block that runs once. It does not return rows, so you see its results through messages or through the tables it changes.
+    example: "DO $$ BEGIN RAISE NOTICE 'hello'; END; $$;"
+    module: m17
+
+  - term: Set-returning function
+    definition: A function that returns many rows, declared with RETURNS TABLE(...) or RETURNS SETOF table_name. You call it in FROM, like a table.
+    example: "SELECT * FROM big_debits(10000);"
+    module: m17
+
+  - term: Procedure
+    definition: A named routine that does a job and is run with CALL. Unlike a function, it can use COMMIT and ROLLBACK inside its body and cannot be used inside a query.
+    example: "CALL post_fee(2, 15.00);"
+    module: m17
+
+  - term: Trigger
+    definition: A function that PostgreSQL runs by itself when rows are inserted, updated or deleted. It can record changes, set values or refuse a bad change.
+    example: "CREATE TRIGGER accounts_audit AFTER UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION log_account_update();"
+    module: m17
+
+  - term: NEW and OLD
+    definition: Inside a row trigger, NEW is the row after the change and OLD is the row before it. OLD is available for UPDATE and DELETE, and NEW for INSERT and UPDATE.
+    example: "INSERT INTO log (old_status, new_status) VALUES (OLD.status, NEW.status);"
+    module: m17
+
+  - term: EXCEPTION block
+    definition: The EXCEPTION part of a block. It catches a named kind of error, such as unique_violation, and lets the block handle it. Work done inside the block is undone when an error is caught.
+    example: "EXCEPTION WHEN unique_violation THEN RAISE NOTICE 'already exists';"
+    module: m17
+
+  - term: SQLSTATE
+    definition: A standard five-character code for an error. The code stays the same even when the wording of the message changes. For example, 23505 means a duplicate key.
+    example: "GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;"
+    module: m17
+
+  - term: Role
+    definition: An account that can be given permissions. Roles are created with CREATE ROLE, and they receive or lose rights with GRANT and REVOKE.
+    example: "CREATE ROLE teller NOLOGIN;"
+    module: m17
+
+  - term: Row-level security (RLS)
+    definition: A rule on a table that decides which rows a role may see. A policy holds the condition, and each row must pass it to be visible.
+    example: "CREATE POLICY teller_branch_only ON transactions FOR SELECT TO teller USING (account_id IN (SELECT account_id FROM accounts WHERE branch_id = 2));"
+    module: m17
+
+  - term: SQL injection
+    definition: A security problem where user text is read as SQL because it was joined into a query. The fix is a parameter, which is always treated as data and never as SQL.
+    example: "EXECUTE 'SELECT COUNT(*) FROM customers WHERE full_name = $1' INTO v_count USING p_name;"
+    module: m17

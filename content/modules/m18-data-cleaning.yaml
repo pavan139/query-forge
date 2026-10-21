@@ -1,0 +1,2448 @@
+id: m18
+order: 18
+title: "Data Cleaning & Wrangling"
+subtitle: Turn messy exports into tables you can trust
+icon: "🧹"
+level: advanced
+description: |
+  Real data rarely arrives clean. Exports from old systems mix up capital
+  letters, extra spaces, date formats and money symbols. The same customer
+  appears twice. One column says "N/A" where another says nothing at all.
+  A report built on that data can look perfect and still be wrong.
+
+  This module teaches a routine you can repeat on any messy export: find the
+  duplicates, standardize the text, parse dates and numbers safely, handle
+  missing values and outliers, reshape tables with pivot and unpivot, and
+  check the result with quality tests before anyone trusts it.
+
+  Everything runs on **Messy Data Co.**, a company whose exports are full of
+  mess. You practice on the same raw tables an analyst would receive, and the
+  module ends with a project that cleans a whole CRM export from start to finish.
+dataset: messy
+lessons:
+  - id: m18-l01
+    title: "Finding duplicates: one order, many rows"
+    summary: Count repeated rows, find the copies, and keep exactly one of each.
+    minutes: 25
+    steps:
+      - type: read
+        title: The report that counted too much
+        md: |
+          Your manager, Dana, opens the orders report and frowns. "It says 300
+          orders. We only took 284 different orders. Something is counting the
+          same order twice."
+
+          She is right. The export from Messy Data Co. has **300 rows**, but some
+          rows are copies of other rows. Before you can count, sum or join anything,
+          you must find those copies and decide which one to keep.
+
+          > [!ANALOGY]
+          > Think of a paper order book where two clerks wrote the same order on
+          > two lines. Adding up both lines charges the customer twice. A duplicate
+          > is a row that describes something you already have.
+
+      - type: read
+        title: Two kinds of duplicate
+        md: |
+          Messy Data Co. has two kinds of repeated rows:
+
+          - **Exact copies**: every business column is identical. Only `row_id`
+            (the import row number) is different.
+          - **Conflicting copies**: the same `order_ref` appears twice, but the
+            `order_date`, `amount` or `status` is different.
+
+          To find duplicates you first decide which column should be **unique**.
+          For orders that column is `order_ref`, the reference such as `ORD-1001`.
+          If a value that should be unique appears more than once, you have
+          duplicates.
+
+          > [!TIP]
+          > Always ask: "What should identify one real thing in this table?" The
+          > answer is the key you check for duplicates.
+
+      - type: example
+        title: How many rows, how many orders?
+        md: Compare the number of rows with the number of different order references.
+        sql: |
+          SELECT count(*) AS total_rows,
+                 count(DISTINCT order_ref) AS distinct_refs
+          FROM raw_orders;
+        after: |
+          There are **300 rows** but only **284 distinct order references**, so
+          16 rows are extra copies. `count(DISTINCT ...)` counts each value once,
+          however many rows it appears in.
+
+      - type: read
+        title: GROUP BY finds repeats
+        md: |
+          You met `GROUP BY` in the aggregation module. It puts rows with the same
+          value into one group. If a group holds more than one row, that value is
+          repeated. `HAVING count(*) > 1` keeps only the repeated groups.
+
+          Group by **the columns that must match**. For exact copies, that means
+          every business column.
+
+          > [!MISTAKE]
+          > Grouping by a raw text column can miss real duplicates. Two rows with
+          > `Ana@Example.com` and `ana@example.com` look different to `GROUP BY`
+          > until you clean them. Clean first, then group.
+
+      - type: example
+        title: Find the exact copies
+        md: Group by every business column. Any group with more than one row is an exact copy.
+        sql: |
+          SELECT order_ref,
+                 count(*) AS copies
+          FROM raw_orders
+          GROUP BY order_ref, customer_email, order_date,
+                   amount, currency, status
+          HAVING count(*) > 1
+          ORDER BY order_ref;
+        after: |
+          You get **10 orders**, each with 2 copies. These are the exact duplicates.
+
+          `GROUP BY` treats two NULLs as the same value, so the copies still match
+          even when `customer_email` is NULL. The `=` operator cannot do that,
+          because `NULL = NULL` is not true.
+
+      - type: read
+        title: Same order, different spelling
+        md: |
+          An order can also arrive with a different spelling of its reference:
+          `ORD-1001`, `ORD1001` or `ord-1001`. These are the same order.
+
+          In this export, the copies of an order are spelled the same way. Another
+          export might not be, so it is a good habit to **clean the key before you
+          compare it**. Cleaning means removing spaces at both ends with `btrim`,
+          making capitals with `upper`, and removing dashes with `replace`. You will
+          learn these tools in the next lesson.
+
+      - type: example
+        title: Clean the key, then group
+        md: Apply the cleaning to `order_ref` first, then group by the cleaned version.
+        sql: |
+          SELECT upper(replace(btrim(order_ref), '-', '')) AS clean_ref,
+                 count(*) AS rows_for_order
+          FROM raw_orders
+          GROUP BY 1
+          HAVING count(*) > 1
+          ORDER BY 1;
+        after: |
+          **16 orders** have more than one row: the 10 exact copies plus 6 conflicting
+          pairs. `GROUP BY 1` is a shortcut that means "group by the first column in
+          the SELECT list". It is handy, but for long queries write the expression out.
+
+      - type: read
+        title: Numbering the copies with ROW_NUMBER
+        md: |
+          Finding duplicates shows you **which** orders are repeated. To **keep one**
+          copy you must decide which copy. `ROW_NUMBER()` (from the window functions
+          modules) gives each row a number inside its group:
+
+          - `PARTITION BY` chooses the groups. Here, one group per order.
+          - `ORDER BY row_id DESC` decides the numbering. The copy with the highest
+            `row_id` gets number 1.
+
+          In this export a higher `row_id` means the row was imported later. So
+          number 1 is the **latest** copy, and that is the copy you keep.
+
+      - type: example
+        title: Number the copies of one order
+        md: Look at the two copies of order ORD-1013 and see which one is number 1.
+        sql: |
+          SELECT row_id,
+                 order_ref,
+                 order_date,
+                 amount,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY upper(replace(order_ref, '-', ''))
+                     ORDER BY row_id DESC
+                 ) AS copy_number
+          FROM raw_orders
+          WHERE upper(replace(order_ref, '-', '')) = 'ORD1013';
+        after: |
+          Row 15 gets copy number 1 because it has the higher `row_id`. Row 14 gets
+          copy number 2. The two copies **disagree** on the order date (2023-11-20
+          and 2023-11-30), so this is a conflicting pair. Keeping copy 1 keeps the
+          later record.
+
+      - type: example
+        title: Keep one row per order
+        md: Put the numbering in a CTE, then keep only copy number 1. This is the standard deduplicate pattern.
+        sql: |
+          WITH numbered AS (
+              SELECT *,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+          )
+          SELECT count(*) AS orders_after_cleanup
+          FROM numbered
+          WHERE copy_number = 1;
+        after: |
+          The answer is **284**, one row for each real order. The `WITH` block (a CTE)
+          gives the numbered rows a name, so the outer query can filter them.
+
+      - type: quiz
+        id: m18-l01-q1
+        question: In `ROW_NUMBER() OVER (PARTITION BY order_ref ORDER BY row_id DESC)`, what does `PARTITION BY order_ref` do?
+        options:
+          - It deletes rows whose order_ref is repeated.
+          - It restarts the numbering for each different order_ref.
+          - It sorts the whole table by order_ref.
+          - It adds up the rows for each order_ref.
+        answer: 1
+        explanation: |
+          `PARTITION BY` splits the rows into groups, and `ROW_NUMBER` starts again at 1
+          inside each group. It does not delete or sort anything. Sorting for the
+          numbering comes from `ORDER BY` inside the `OVER` brackets.
+
+      - type: exercise
+        id: m18-l01-e1
+        title: Count the exact copies
+        prompt: |
+          List each order reference that has **exact copies**. Compare `order_ref`,
+          `customer_email`, `order_date`, `amount`, `currency` and `status`.
+
+          Show the `order_ref` and the number of rows in its group, as `copies`.
+          Sort by `order_ref`.
+        starter: |
+          SELECT order_ref
+          FROM raw_orders;
+        solution: |
+          SELECT order_ref,
+                 count(*) AS copies
+          FROM raw_orders
+          GROUP BY order_ref, customer_email, order_date,
+                   amount, currency, status
+          HAVING count(*) > 1
+          ORDER BY order_ref;
+        ordered: true
+        columnNames: true
+        hints:
+          - Group by all the business columns, not just `order_ref`.
+          - Keep only the groups that have more than one row with `HAVING`.
+          - "SELECT order_ref, count(*) AS copies FROM raw_orders GROUP BY ___ HAVING ___ ORDER BY order_ref;"
+        explanation: |
+          Each exact copy group has 2 rows, so 10 orders appear. Because all six
+          business columns must match, one changed amount would remove that order
+          from the list. That is exactly what you want: it is not an exact copy.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l01-e2
+        title: Which orders have conflicting copies?
+        prompt: |
+          Some repeated orders are **not** exact copies. Their copies disagree about
+          the `order_date`, the `amount` or the `status`.
+
+          Clean the reference with `upper(replace(order_ref, '-', ''))` and show it
+          as `clean_ref`. Include only the cleaned references whose copies do not all
+          have the same `order_date`, `amount` and `status`. Sort by `clean_ref`.
+        starter: |
+          SELECT upper(replace(order_ref, '-', '')) AS clean_ref
+          FROM raw_orders;
+        solution: |
+          SELECT upper(replace(order_ref, '-', '')) AS clean_ref
+          FROM raw_orders
+          GROUP BY upper(replace(order_ref, '-', ''))
+          HAVING count(DISTINCT (order_date, amount, status)) > 1
+          ORDER BY clean_ref;
+        ordered: true
+        columnNames: true
+        hints:
+          - Group by the cleaned reference, the same way as the example.
+          - "`count(DISTINCT ...)` counts how many different combinations exist in each group."
+          - "SELECT ___ AS clean_ref FROM raw_orders GROUP BY ___ HAVING count(DISTINCT (order_date, amount, status)) > 1 ORDER BY clean_ref;"
+        explanation: |
+          Six orders have copies that disagree. If a group has more than one distinct
+          combination of date, amount and status, the copies conflict. Someone must
+          decide which version is right. In the next lessons you will learn how to
+          write that rule down.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l01-e3
+        title: Remove the exact copies
+        prompt: |
+          Delete the **exact** extra copies from `raw_orders`. For each exact-copy
+          group, keep the row with the **lowest** `row_id` and delete the others.
+          Compare `order_ref`, `customer_email`, `order_date`, `amount`, `currency`
+          and `status`.
+
+          The check then counts the rows that are left.
+        starter: |
+          -- Write a DELETE that removes the extra exact copies.
+        solution: |
+          DELETE FROM raw_orders
+          WHERE row_id IN (
+              SELECT row_id
+              FROM (
+                  SELECT row_id,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY order_ref, customer_email,
+                                          order_date, amount,
+                                          currency, status
+                             ORDER BY row_id
+                         ) AS copy_number
+                  FROM raw_orders
+              ) AS numbered
+              WHERE copy_number > 1
+          );
+        check: |
+          SELECT count(*) AS rows_left
+          FROM raw_orders;
+        hints:
+          - Number the copies inside each exact-copy group with ROW_NUMBER, the same way as the example.
+          - "Number 1 is the lowest row_id here, so use ORDER BY row_id (no DESC)."
+          - "DELETE FROM raw_orders WHERE row_id IN (SELECT row_id FROM ___ WHERE copy_number > 1);"
+        explanation: |
+          Ten extra rows are removed, so 290 rows remain. Always write the matching
+          `SELECT` first and check what it returns before you run a `DELETE`. In real
+          work you would also wrap changes in a transaction so you can roll back.
+        difficulty: 2
+
+      - type: example
+        title: Delete safely, with a SELECT first
+        md: The same numbering can drive a DELETE. This example keeps the copy with the highest row_id.
+        sql: |
+          WITH numbered AS (
+              SELECT row_id,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+          )
+          DELETE FROM raw_orders
+          WHERE row_id IN (
+              SELECT row_id
+              FROM numbered
+              WHERE copy_number > 1
+          );
+
+          SELECT count(*) AS rows_left
+          FROM raw_orders;
+        after: |
+          Every run starts from the original data, so 284 rows are left. The last
+          `SELECT` shows the result.
+
+          > [!MISTAKE]
+          > A `DELETE` with a wrong `WHERE` can remove far more than you meant.
+          > Run the `WITH ... SELECT` part on its own first, count the rows,
+          > and only then add the `DELETE`.
+
+      - type: predict
+        id: m18-l01-p1
+        question: This query keeps only copy number 1 of each order. How many rows does it return?
+        sql: |
+          WITH numbered AS (
+              SELECT ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number
+              FROM raw_orders
+          )
+          SELECT count(*)
+          FROM numbered
+          WHERE copy_number = 1;
+        options: ["300", "290", "284", "16"]
+        answer: 2
+        explanation: |
+          Each order has exactly one copy number 1, so the answer is the number of
+          distinct orders, 284. The 300 is the raw row count, 290 is what you get
+          after removing only the exact copies, and 16 is how many orders had
+          more than one row.
+
+      - type: predict
+        id: m18-l01-p2
+        question: Grouping the **raw** customer emails, how many rows does this query return?
+        sql: |
+          SELECT email,
+                 count(*) AS n
+          FROM raw_customers
+          GROUP BY email
+          HAVING count(*) > 1;
+        options: ["8", "15", "2", "0"]
+        answer: 2
+        explanation: |
+          Only the blank values repeat in the raw column: 7 rows are NULL and 5 rows
+          are an empty string, which gives 2 groups. The 8 real duplicate emails are
+          hidden, because they differ in capital letters or spaces. This is why you
+          clean the text before you group it.
+
+      - type: fill
+        id: m18-l01-f1
+        prompt: Complete the query so it lists the cleaned order references that appear in more than one row.
+        template: |
+          SELECT upper(replace(order_ref, '-', '')) AS clean_ref
+          FROM raw_orders
+          GROUP BY ___
+          HAVING ___ > 1;
+        answers:
+          - ["upper(replace(order_ref, '-', ''))", "1"]
+          - ["count(*)"]
+        explanation: |
+          `GROUP BY` must use the same cleaned expression as the `SELECT`, or the
+          number 1 (the first column). `HAVING` runs after the groups are formed, so
+          it is the place for `count(*) > 1`.
+
+      - type: exercise
+        id: m18-l01-e4
+        title: Latest copy, only for repeated orders (stretch)
+        prompt: |
+          Find the **latest** row for each order that had more than one row.
+
+          Use the cleaned reference `upper(replace(order_ref, '-', ''))`. Latest
+          means the highest `row_id`. Only include orders that have more than one
+          row in total.
+
+          Show three columns, in this order: `clean_ref`, `row_id` and `status`.
+          Sort by `clean_ref`.
+        starter: |
+          SELECT upper(replace(order_ref, '-', '')) AS clean_ref,
+                 row_id,
+                 status
+          FROM raw_orders;
+        solution: |
+          WITH numbered AS (
+              SELECT upper(replace(order_ref, '-', '')) AS clean_ref,
+                     row_id,
+                     status,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                         ORDER BY row_id DESC
+                     ) AS copy_number,
+                     COUNT(*) OVER (
+                         PARTITION BY upper(replace(order_ref, '-', ''))
+                     ) AS copies
+              FROM raw_orders
+          )
+          SELECT clean_ref, row_id, status
+          FROM numbered
+          WHERE copy_number = 1
+            AND copies > 1
+          ORDER BY clean_ref;
+        ordered: true
+        columnNames: true
+        hints:
+          - "You need two window functions: one numbers the copies and one counts them."
+          - "`COUNT(*) OVER (PARTITION BY ...)` counts the rows in each group without collapsing them."
+          - "WITH numbered AS (SELECT ___, ROW_NUMBER() OVER (...) AS copy_number, COUNT(*) OVER (...) AS copies FROM raw_orders) SELECT ___ FROM numbered WHERE ___;"
+        explanation: |
+          `ROW_NUMBER` picks the latest copy and `COUNT(*) OVER` tells you how many
+          copies the order had. Keeping rows where both conditions hold gives 16
+          orders. Window functions keep every row, so you can filter on the count
+          without losing the detail.
+        difficulty: 3
+    cheatsheet:
+      - title: Find repeated rows
+        sql: |
+          SELECT key_col, count(*) AS n
+          FROM tbl
+          GROUP BY key_col
+          HAVING count(*) > 1;
+        note: HAVING keeps only the groups that repeat.
+      - title: Number the copies
+        sql: |
+          ROW_NUMBER() OVER (
+              PARTITION BY key_col
+              ORDER BY row_id DESC
+          ) AS copy_number
+        note: Number 1 is the copy you keep. Here it is the highest row_id, the latest import.
+      - title: Keep one row per key
+        sql: |
+          WITH numbered AS (
+              SELECT *, ROW_NUMBER() OVER (...) AS copy_number
+              FROM tbl
+          )
+          SELECT * FROM numbered
+          WHERE copy_number = 1;
+        note: The CTE gives the numbered rows a name so the outer query can filter them.
+  - id: m18-l02
+    title: "Standardizing text: one customer, one spelling"
+    summary: Remove hidden spaces, fix capitals, keep only digits, and map many spellings to one value.
+    minutes: 30
+    steps:
+      - type: read
+        title: Same person, five different looks
+        md: |
+          Dana has a new request. "The marketing team wants to send our newsletter,
+          but the customer list looks wrong. Some names are in capitals, some have
+          double spaces, and one says `Okafor, Ayodele`. Can you make them consistent?"
+
+          Text in a database is compared **exactly**. `'Ana'`, `'ANA'` and `'ana '`
+          (with a space at the end) are three different values. Before you can group,
+          join or count text, you must **standardize** it: one agreed form for each
+          thing.
+
+          > [!REAL-WORLD]
+          > Data analysts spend a large share of their time on text clean-up. Most
+          > of it is a short list of functions applied in a fixed order, like the
+          > steps in this lesson.
+
+      - type: read
+        title: The text toolkit
+        md: |
+          These are the functions you will use:
+
+          | function | what it does | example | result |
+          |---|---|---|---|
+          | `btrim(x)` | removes spaces at both ends (`trim(x)` does the same) | `btrim('  ana ')` | `'ana'` |
+          | `lower(x)` | makes every letter lowercase | `lower('ANA')` | `'ana'` |
+          | `upper(x)` | makes every letter uppercase | `upper('ana')` | `'ANA'` |
+          | `initcap(x)` | capitalizes the first letter of each word | `initcap('mARY')` | `'Mary'` |
+          | `replace(x, a, b)` | swaps every `a` for `b` (plain text) | `replace('a-b', '-', ' ')` | `'a b'` |
+          | `regexp_replace(x, pattern, b, 'g')` | swaps every match of a pattern | `regexp_replace('a1b2', '\D', '', 'g')` | `'12'` |
+          | `split_part(x, sep, n)` | returns the nth piece when `x` is split by `sep` | `split_part('Lee, Ana', ',', 1)` | `'Lee'` |
+
+          Notice that `btrim` removes only **spaces** by default. That is enough for
+          this export.
+
+      - type: example
+        title: Remove hidden spaces and fix the capitals
+        md: Four customers' emails are shown with their hidden spaces and capital letters, then cleaned.
+        sql: |
+          SELECT row_id,
+                 email,
+                 lower(btrim(email)) AS clean_email
+          FROM raw_customers
+          WHERE row_id IN (4, 8, 17, 46)
+          ORDER BY row_id;
+        after: |
+          Row 4 `AYODELE.OKAFOR@EXAMPLE.COM` becomes `ayodele.okafor@example.com`.
+          Rows 17 and 46 lost their leading space.
+
+          Row 8 still looks wrong: `dmitri pham@example.com` has a **space in the
+          middle** of the address. Trimming and lowercasing cannot fix that. It is an
+          invalid email, and you will flag it in the data quality lesson rather than
+          guess what was meant.
+
+      - type: read
+        title: See the invisible spaces
+        md: |
+          You cannot see a space at the end of a cell. A trick helps: wrap the value
+          in square brackets with `'[' || value || ']'`. Any space then shows up
+          between the bracket and the text.
+
+          > [!MISTAKE]
+          > Spaces break comparisons. `'  ana  ' = 'ana'` is **false**, so a filter
+          > such as `WHERE status = 'delivered'` misses `' delivered'`. Clean the
+          > column before you compare it, or compare `btrim(status) = 'delivered'`.
+
+      - type: example
+        title: Collapse double spaces and capitalize names
+        md: Some names have several spaces between words. Shrink them to one space, trim the ends, then capitalize each word.
+        sql: |
+          SELECT row_id,
+                 full_name,
+                 INITCAP(
+                     btrim(regexp_replace(full_name, '\s+', ' ', 'g'))
+                 ) AS tidy_name
+          FROM raw_customers
+          WHERE row_id IN (2, 5, 6)
+          ORDER BY row_id;
+        after: |
+          `'  camila   castillo '` becomes `'Camila Castillo'`. `\s+` means "one or more
+          space-like characters", and the `'g'` flag replaces **every** match, not just
+          the first one.
+
+          `INITCAP` capitalizes each word. The result is consistent, even though the
+          input was not.
+
+      - type: read
+        title: The regular expression flag that matters
+        md: |
+          `regexp_replace` takes a pattern written as a **regular expression**. A
+          regular expression is a short code for text patterns. Three patterns cover
+          most cleaning work:
+
+          - `\s+` means one or more spaces (or tabs).
+          - `\D` means any character that is **not** a digit.
+          - `\d` means any digit.
+
+          > [!MISTAKE]
+          > Without the `'g'` flag, `regexp_replace` changes only the **first** match.
+          > `regexp_replace('a-b-c', '-', '')` gives `ab-c`. Add `'g'` to change every
+          > match, which gives `abc`.
+
+      - type: example
+        title: Keep only the digits of a phone number
+        md: Phone numbers arrive as `(555) 123-4567`, `+1 602 555 0167` and `416.555.0191`. Strip everything that is not a digit.
+        sql: |
+          SELECT row_id,
+                 phone,
+                 regexp_replace(phone, '\D', '', 'g') AS digits
+          FROM raw_customers
+          WHERE row_id IN (1, 3, 4, 6)
+          ORDER BY row_id;
+        after: |
+          `+1 602 555 0167` becomes `16025550167`. Row 4 keeps the UK country code,
+          giving `442079460770`.
+
+          The digits are now comparable. A next step would be to remove a leading `1`
+          from 11-digit North American numbers, which you can do with a `CASE` on
+          `length(digits)`.
+
+      - type: read
+        title: One spelling for many variants
+        md: |
+          The `country` column has 14 different spellings of only four countries: for
+          example `U.S.`, `US`, `USA`, `us` and `United States of America` all mean the
+          United States.
+
+          You have two good tools for this:
+
+          - **`CASE`** is best when the list is short and the rules are simple.
+          - **A lookup table** (a small table of `VALUES` you join to) is best when the
+            list is long, because it is easy to read and easy to change.
+
+          Both start by making the key lowercase and trimmed, so `US` and `us` match.
+
+      - type: example
+        title: Map spellings with CASE
+        md: Turn every spelling of a country into one name, then count the customers for each.
+        sql: |
+          SELECT CASE
+                     WHEN lower(btrim(country))
+                          IN ('us', 'usa', 'u.s.', 'united states',
+                              'united states of america')
+                         THEN 'United States'
+                     WHEN lower(btrim(country)) IN ('ca', 'canada')
+                         THEN 'Canada'
+                     WHEN lower(btrim(country))
+                          IN ('uk', 'united kingdom')
+                         THEN 'United Kingdom'
+                     WHEN lower(btrim(country)) IN ('de', 'germany')
+                         THEN 'Germany'
+                     ELSE 'Unknown'
+                 END AS country_clean,
+                 count(*) AS customers
+          FROM raw_customers
+          GROUP BY 1
+          ORDER BY customers DESC;
+        after: |
+          Five groups come out: **United States 73**, **Canada 25**, **Unknown 10**,
+          **United Kingdom 8** and **Germany 4**. `Unknown` catches NULL and empty
+          values, because `ELSE` matches anything the list did not.
+
+          The customers add up to 120, every raw row. `CASE` is the first `WHEN` that
+          matches, so put the most specific checks first.
+
+      - type: example
+        title: The same mapping as a lookup table
+        md: A lookup table of `VALUES` is easier to extend. Each row says "this spelling means that name".
+        sql: |
+          SELECT c.row_id,
+                 c.country,
+                 COALESCE(m.clean_country, 'Unknown') AS country_clean
+          FROM raw_customers AS c
+          LEFT JOIN (
+              VALUES ('us', 'United States'),
+                     ('usa', 'United States'),
+                     ('u.s.', 'United States'),
+                     ('united states', 'United States'),
+                     ('united states of america', 'United States'),
+                     ('ca', 'Canada'),
+                     ('canada', 'Canada'),
+                     ('uk', 'United Kingdom'),
+                     ('united kingdom', 'United Kingdom'),
+                     ('de', 'Germany'),
+                     ('germany', 'Germany')
+          ) AS m (country_key, clean_country)
+            ON m.country_key = lower(btrim(c.country))
+          WHERE c.row_id BETWEEN 1 AND 6
+          ORDER BY c.row_id;
+        after: |
+          Row 1 has an empty country, so nothing matches. The `LEFT JOIN` keeps the row
+          and `COALESCE` turns the missing match into `Unknown`. An inner `JOIN` would
+          have dropped the row.
+
+          To add a new spelling, add one line to the `VALUES` list. You never touch
+          the query.
+
+      - type: example
+        title: Standardize the order statuses
+        md: The status column has 17 spellings. Clean them into six values, treating NULL as unknown.
+        sql: |
+          SELECT COALESCE(
+                     replace(lower(btrim(status)), 'canceled', 'cancelled'),
+                     'unknown'
+                 ) AS status_clean,
+                 count(*) AS orders
+          FROM raw_orders
+          GROUP BY 1
+          ORDER BY 1;
+        after: |
+          The result has six rows: `cancelled` 38, `delivered` 179, `pending` 17,
+          `returned` 16, `shipped` 45 and `unknown` 5. Together they make all 300 rows.
+
+          `replace` merges the two spellings `canceled` and `cancelled` into one value.
+          Note that `COALESCE` only runs after the cleaning, so a NULL status stays
+          NULL until the last step.
+
+      - type: stepper
+        title: Building a name tidy-up one step at a time
+        md: Each stage adds one cleaning rule. Click through the stages and run each one. The last stage is the result.
+        stages:
+          - label: Start with the raw names
+            md: "Three rows: a name in `Last, First` form, a name with extra spaces, and a name in lowercase."
+            sql: |
+              SELECT row_id, full_name
+              FROM raw_customers
+              WHERE row_id IN (4, 6, 9)
+              ORDER BY row_id;
+          - label: Collapse the spaces
+            md: "`regexp_replace` with `\\s+` shrinks every run of spaces to one space."
+            sql: |
+              SELECT row_id,
+                     regexp_replace(full_name, '\s+', ' ', 'g') AS step1
+              FROM raw_customers
+              WHERE row_id IN (4, 6, 9)
+              ORDER BY row_id;
+          - label: Turn Last, First into First Last
+            md: "A name with a comma is split at the comma, then the two parts are swapped."
+            sql: |
+              SELECT row_id,
+                     CASE
+                         WHEN full_name LIKE '%,%'
+                         THEN btrim(split_part(full_name, ',', 2))
+                              || ' '
+                              || btrim(split_part(full_name, ',', 1))
+                         ELSE regexp_replace(full_name, '\s+', ' ', 'g')
+                     END AS step2
+              FROM raw_customers
+              WHERE row_id IN (4, 6, 9)
+              ORDER BY row_id;
+          - label: Capitalize each word
+            md: "`btrim` removes any leftover spaces, then `INITCAP` capitalizes each word. This is the tidy name."
+            sql: |
+              SELECT row_id,
+                     INITCAP(btrim(
+                         CASE
+                             WHEN full_name LIKE '%,%'
+                             THEN btrim(split_part(full_name, ',', 2))
+                                  || ' '
+                                  || btrim(split_part(full_name, ',', 1))
+                             ELSE regexp_replace(full_name, '\s+', ' ', 'g')
+                         END
+                     )) AS tidy_name
+              FROM raw_customers
+              WHERE row_id IN (4, 6, 9)
+              ORDER BY row_id;
+      - type: quiz
+        id: m18-l02-q1
+        question: What does `INITCAP('mARY-jANE')` return?
+        options:
+          - "'MARY-JANE'"
+          - "'mary-jane'"
+          - "'Mary-Jane'"
+          - "'Mary-jane'"
+        answer: 2
+        explanation: |
+          `INITCAP` capitalizes the first letter of each word, and a hyphen starts a
+          new word. Every other letter becomes lowercase, which is why the `A` in
+          `mARY` is not capitalized. So the answer is `'Mary-Jane'`.
+
+      - type: exercise
+        id: m18-l02-e1
+        title: Clean the emails of the first five customers
+        prompt: |
+          For customers with `row_id` from 1 to 5, show the `row_id` and a cleaned
+          email called `clean_email`. The cleaned email has no leading or trailing
+          spaces and is all lowercase. Sort by `row_id`.
+        starter: |
+          SELECT row_id, email
+          FROM raw_customers
+          WHERE row_id BETWEEN 1 AND 5;
+        solution: |
+          SELECT row_id,
+                 lower(btrim(email)) AS clean_email
+          FROM raw_customers
+          WHERE row_id BETWEEN 1 AND 5
+          ORDER BY row_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Trim the spaces and make the text lowercase, in either order.
+          - Put both functions around `email` in the `SELECT` list.
+          - "SELECT row_id, lower(btrim(___)) AS clean_email FROM raw_customers WHERE row_id BETWEEN 1 AND 5 ORDER BY row_id;"
+        explanation: |
+          `lower(btrim(email))` and `btrim(lower(email))` give the same result, because
+          trimming and lowercasing do not interfere with each other. Remember that the
+          NULL and empty emails in this table need their own rule.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l02-e2
+        title: How many delivered orders?
+        prompt: |
+          Count the orders whose status means "delivered", whatever the capitals or
+          spaces. Show one number, called `delivered_orders`.
+        starter: |
+          SELECT count(*) AS delivered_orders
+          FROM raw_orders
+          WHERE status = 'delivered';
+        solution: |
+          SELECT count(*) AS delivered_orders
+          FROM raw_orders
+          WHERE lower(btrim(status)) = 'delivered';
+        columnNames: true
+        hints:
+          - The starter misses spellings like `DELIVERED` and `' delivered'`. Clean the status first.
+          - Clean the status with `lower` and `btrim` inside the `WHERE`.
+          - "SELECT count(*) AS delivered_orders FROM raw_orders WHERE ___(___(status)) = 'delivered';"
+        explanation: |
+          179 orders are delivered in total. The starter returns fewer because it
+          compares the raw text, so the other spellings are not counted. Cleaning the
+          column in the `WHERE` clause fixes that without changing the data.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l02-e3
+        title: Tidy the names of the first six customers
+        prompt: |
+          For customers with `row_id` from 1 to 6, show `row_id` and `tidy_name`.
+          The tidy name has single spaces only, no spaces at the ends, and each word
+          capitalized. A name written as `Last, First` must become `First Last`.
+          Sort by `row_id`.
+        starter: |
+          SELECT row_id, full_name AS tidy_name
+          FROM raw_customers
+          WHERE row_id BETWEEN 1 AND 6;
+        solution: |
+          SELECT row_id,
+                 INITCAP(btrim(
+                     CASE
+                         WHEN full_name LIKE '%,%'
+                         THEN btrim(split_part(full_name, ',', 2))
+                              || ' '
+                              || btrim(split_part(full_name, ',', 1))
+                         ELSE regexp_replace(full_name, '\s+', ' ', 'g')
+                     END
+                 )) AS tidy_name
+          FROM raw_customers
+          WHERE row_id BETWEEN 1 AND 6
+          ORDER BY row_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use the stepper above as your guide. It shows each cleaning rule.
+          - Use `CASE WHEN full_name LIKE '%,%'` to find names written as `Last, First`.
+          - "Skeleton: SELECT row_id, INITCAP(btrim(CASE WHEN ___ THEN ___ ELSE regexp_replace(full_name, '\\s+', ' ', 'g') END)) AS tidy_name FROM raw_customers WHERE row_id BETWEEN 1 AND 6 ORDER BY row_id;"
+        explanation: |
+          Row 4 `Okafor, Ayodele` is turned around by splitting at the comma. All the
+          other names only need the spaces collapsed and the capitals fixed. Choosing
+          one rule per shape of input, with `CASE`, is the core idea of cleaning.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l02-e4
+        title: Customers per clean country (stretch)
+        prompt: |
+          Group the customers into clean countries. Use these rules:
+
+          - `us`, `usa`, `u.s.`, `united states` and `united states of america`
+            (in any capitals or spaces) become `United States`.
+          - `ca` and `canada` become `Canada`. `uk` and `united kingdom` become
+            `United Kingdom`. `de` and `germany` become `Germany`.
+          - Anything else, including NULL and empty values, becomes `Unknown`.
+
+          Show `country_clean` and `customers` (the number of customers). Sort by
+          `customers` from highest to lowest, then by `country_clean` from A to Z.
+        starter: |
+          SELECT country AS country_clean,
+                 count(*) AS customers
+          FROM raw_customers
+          GROUP BY country
+          ORDER BY customers DESC;
+        solution: |
+          SELECT CASE
+                     WHEN lower(btrim(country))
+                          IN ('us', 'usa', 'u.s.', 'united states',
+                              'united states of america')
+                         THEN 'United States'
+                     WHEN lower(btrim(country)) IN ('ca', 'canada')
+                         THEN 'Canada'
+                     WHEN lower(btrim(country))
+                          IN ('uk', 'united kingdom')
+                         THEN 'United Kingdom'
+                     WHEN lower(btrim(country)) IN ('de', 'germany')
+                         THEN 'Germany'
+                     ELSE 'Unknown'
+                 END AS country_clean,
+                 count(*) AS customers
+          FROM raw_customers
+          GROUP BY 1
+          ORDER BY customers DESC, country_clean;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use the same `CASE` as the example, and group by its result.
+          - "Two columns: the CASE expression AS country_clean, and count(*) AS customers."
+          - "SELECT CASE WHEN lower(btrim(country)) IN (...) THEN ___ ... ELSE 'Unknown' END AS country_clean, count(*) AS customers FROM raw_customers GROUP BY 1 ORDER BY customers DESC, country_clean;"
+        explanation: |
+          The counts are 73, 25, 10, 8 and 4, so there are no ties and the order is
+          fully decided by `customers`. The second sort key only matters when two
+          groups have the same count. Adding one is good practice for any sorted
+          report that people will read.
+        difficulty: 3
+
+      - type: predict
+        id: m18-l02-p1
+        question: What does this query return?
+        sql: |
+          SELECT regexp_replace('a-b-c', '-', '') AS result;
+        options: ["'abc'", "'ab-c'", "'a-b-c'", "An error"]
+        answer: 1
+        explanation: |
+          Without the `'g'` flag, only the first match is replaced, so the first dash
+          goes and the other two stay. Add `'g'` to replace every match, which gives
+          `'abc'`.
+
+      - type: fill
+        id: m18-l02-f1
+        prompt: Complete the query so that each email is trimmed of spaces, then made lowercase.
+        template: |
+          SELECT lower(___(email)) AS clean_email
+          FROM raw_customers;
+        answers:
+          - ["btrim", "trim"]
+        explanation: |
+          `btrim` (or the standard `trim`) removes the spaces, and `lower` then makes
+          the text lowercase. Read inside out: the innermost function runs first.
+    cheatsheet:
+      - title: Trim and lowercase
+        sql: |
+          SELECT lower(btrim(email)) AS clean_email
+          FROM raw_customers;
+        note: btrim removes spaces at both ends. lower makes the text lowercase.
+      - title: Collapse repeated spaces
+        sql: |
+          SELECT regexp_replace(full_name, '\s+', ' ', 'g')
+          FROM raw_customers;
+        note: The 'g' flag replaces every match, not just the first one.
+      - title: Keep only digits
+        sql: |
+          SELECT regexp_replace(phone, '\D', '', 'g')
+          FROM raw_customers;
+        note: \D means "not a digit", so everything else is removed.
+      - title: Map many spellings to one value
+        sql: |
+          SELECT CASE
+                     WHEN lower(btrim(country)) IN ('us', 'usa')
+                         THEN 'United States'
+                     ELSE 'Unknown'
+                 END AS country_clean
+          FROM raw_customers;
+        note: Put the most specific rules first, and end with ELSE for anything else.
+  - id: m18-l03
+    title: "Parsing messy dates and numbers safely"
+    summary: Turn text into real dates and numbers without letting one bad value break the whole query.
+    minutes: 30
+    steps:
+      - type: read
+        title: Dates that look like dates, but are text
+        md: |
+          Dana's monthly revenue chart has a problem. Some orders are missing from
+          the months they belong to. Looking closer, the `order_date` column holds
+          five different date styles, such as `2024-03-15`, `03/15/2024` and
+          `15-Mar-2024`. The `amount` column has dollar signs, commas and words such as
+          `N/A`.
+
+          To a computer, all of this is **text**. Text is compared letter by letter,
+          so `'10'` sorts before `'9'`, and you cannot add 7 days to `'03/15/2024'`.
+          Once the values are a real **date** or a real **number**, sorting, grouping
+          and arithmetic work properly.
+
+      - type: read
+        title: "Casting: asking for a real type"
+        md: |
+          **Casting** converts a value from one type to another. There are two
+          spellings, and they do the same thing:
+
+          - `value::numeric` (PostgreSQL's short form)
+          - `CAST(value AS numeric)` (the standard form)
+
+          Casting only works when the text **looks exactly like** the new type. A
+          number must contain only digits, a decimal point and an optional minus
+          sign. Anything else is an error.
+
+      - type: example
+        title: What happens when a value is not a number?
+        md: The `amount` column is text. Try to cast it to a number for the first ten rows.
+        sql: |
+          SELECT row_id,
+                 amount::numeric AS amount_num
+          FROM raw_orders
+          WHERE row_id <= 10;
+        expectError: true
+        after: |
+          PostgreSQL stops with `invalid input syntax for type numeric: "$20.94"`.
+          The dollar sign is not allowed, and the error stops the **whole query**,
+          so you get no rows at all, not even the good ones.
+
+          You need to tell PostgreSQL which values are safe to convert before you
+          cast them.
+
+      - type: read
+        title: "The guard: test first, then cast"
+        md: |
+          A **guard** is a test that runs before the cast. The pattern is always the
+          same: `CASE WHEN <test> THEN <cast> END`. If the test is false, the row gets
+          NULL instead of an error.
+
+          The test is often a **regular expression** checked with the `~` operator.
+          For dates, these pieces are enough:
+
+          | piece | meaning |
+          |---|---|
+          | `^` | the start of the text |
+          | `$` | the end of the text |
+          | `\d` | one digit |
+          | `{4}` | exactly four of the thing before it |
+          | `-` or `/` | a literal dash or slash |
+
+          So `'^\d{4}-\d{2}-\d{2}$'` means "exactly four digits, a dash, two digits, a
+          dash, two digits, and nothing else".
+
+          > [!MISTAKE]
+          > Always include `^` and `$`. Without them, a test for `\d{4}-\d{2}-\d{2}`
+          > also passes for `note 2024-03-15 sent`, and the cast then fails on the
+          > extra text.
+
+      - type: example
+        title: Convert only the ISO dates
+        md: The ISO format `YYYY-MM-DD` is the one that needs no help. Only those rows are converted.
+        sql: |
+          SELECT row_id,
+                 order_date,
+                 CASE
+                     WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN to_date(order_date, 'YYYY-MM-DD')
+                 END AS iso_day
+          FROM raw_orders
+          WHERE row_id BETWEEN 1 AND 5
+          ORDER BY row_id;
+        after: |
+          Rows 1 to 3 are ISO dates and become real dates. Row 4 `11/07/2024` is
+          not ISO, so it is NULL here. Row 5 is an empty string, so it is NULL too.
+          Nothing fails.
+
+          `to_date(text, format)` converts text using a **format pattern**. `YYYY`
+          is a four-digit year, `MM` a two-digit month and `DD` a two-digit day.
+
+      - type: example
+        title: Parse all five date styles
+        md: Put one guard per style in the same CASE. Each row matches exactly one WHEN.
+        sql: |
+          SELECT row_id,
+                 order_date,
+                 CASE
+                     WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN to_date(order_date, 'YYYY-MM-DD')
+                     WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                         THEN to_date(order_date, 'MM/DD/YYYY')
+                     WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                         THEN to_date(order_date, 'DD-Mon-YYYY')
+                     WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                         THEN to_date(order_date, 'YYYY/MM/DD')
+                     WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                         THEN to_date(order_date, 'FMMonth DD, YYYY')
+                 END AS order_day
+          FROM raw_orders
+          WHERE row_id IN (1, 4, 8, 128, 239)
+          ORDER BY row_id;
+        after: |
+          Every style now shows the same `YYYY-MM-DD` form: `11/07/2024` becomes
+          `2024-11-07`, `13-Jun-2023` becomes `2023-06-13`, and `December 19, 2023`
+          becomes `2023-12-19`.
+
+          `FMMonth` means "Month without padding spaces" so the month name fits. `Mon`
+          in `DD-Mon-YYYY` matches the short month name such as `Mar`.
+
+      - type: read
+        title: Read the slash dates the American way
+        md: |
+          `03/15/2024` could mean March 15 or 15 March. Messy Data Co. is a US company,
+          so this course reads `MM/DD/YYYY` as **month first**. In this export, 31 of the
+          67 slash dates could be read either way, and this rule settles them.
+
+          A rule you cannot defend in a meeting is a warning sign. Write the rule
+          down, put it in a comment, and tell the people who read the report.
+
+      - type: read
+        title: A pattern is not a guarantee
+        md: |
+          A regular expression checks the **shape** of the text. It cannot know whether
+          the date is real. `02/30/2024` has the right shape, but February has no 30th,
+          so `to_date` still fails:
+
+          `date/time field value out of range: "02/30/2024"`
+
+          PostgreSQL can answer the question for you. The function `pg_input_is_valid`
+          returns `true` or `false` and never an error. It is available in PostgreSQL 16
+          and later.
+
+      - type: example
+        title: Ask PostgreSQL before you cast
+        md: Check which amounts PostgreSQL can read as numbers, without causing an error.
+        sql: |
+          SELECT row_id,
+                 amount,
+                 pg_input_is_valid(amount, 'numeric') AS is_number
+          FROM raw_orders
+          WHERE row_id IN (21, 153, 184, 210, 232, 265)
+          ORDER BY row_id;
+        after: |
+          `999999.99`, `-10.04` and `-70` are plain numbers, so they are `true`.
+          `$3,655.83`, `$2,664.74` and `(2760.95)` are `false`: PostgreSQL does not read
+          dollar signs, commas or brackets.
+
+          The check does not clean anything. It only tells you what needs cleaning.
+
+      - type: read
+        title: Cleaning money text
+        md: |
+          To clean an amount you remove the characters that do not belong in a number,
+          then cast:
+
+          1. `btrim` removes spaces at the ends.
+          2. `replace(..., '$', '')` removes the dollar sign.
+          3. `replace(..., ',', '')` removes the thousands separators.
+          4. The guard lets only values that look like money through.
+          5. `::numeric` converts the clean text to a number.
+
+          Negative amounts such as `-10.04` pass the guard. The accounting form
+          `(2760.95)` does not, so it becomes NULL. You would need an extra `WHEN` to
+          read it as a negative number. That is a business decision, so flag it for
+          Dana rather than guess.
+
+      - type: stepper
+        title: Cleaning one amount step by step
+        md: Each stage adds one rule. Run them in order and watch the value change.
+        stages:
+          - label: The raw text
+            md: The amounts as they arrive. Note the dollar sign, the comma and the accounting bracket.
+            sql: |
+              SELECT row_id, amount
+              FROM raw_orders
+              WHERE row_id IN (153, 184, 265)
+              ORDER BY row_id;
+          - label: Remove spaces and the dollar sign
+            md: "`btrim` then `replace(..., '$', '')`. The value is still text."
+            sql: |
+              SELECT row_id,
+                     replace(btrim(amount), '$', '') AS step1
+              FROM raw_orders
+              WHERE row_id IN (153, 184, 265)
+              ORDER BY row_id;
+          - label: Remove the commas
+            md: The thousands separators go too. Now the text only has digits, a dot and an optional minus.
+            sql: |
+              SELECT row_id,
+                     replace(replace(btrim(amount), '$', ''), ',', '') AS step2
+              FROM raw_orders
+              WHERE row_id IN (153, 184, 265)
+              ORDER BY row_id;
+          - label: Guard and cast
+            md: "Only values that match the money pattern are cast. The bracketed value becomes NULL."
+            sql: |
+              SELECT row_id,
+                     CASE
+                         WHEN amount ~ '^\s*-?\$?-?[0-9][0-9,]*(\.[0-9]+)?\s*$'
+                         THEN replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                     END AS amount_clean
+              FROM raw_orders
+              WHERE row_id IN (153, 184, 265)
+              ORDER BY row_id;
+
+      - type: example
+        title: Count orders per year, after parsing
+        md: With clean dates you can group by year. Rows whose date could not be read form their own NULL group.
+        sql: |
+          SELECT EXTRACT(YEAR FROM
+                     CASE
+                         WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                             THEN to_date(order_date, 'YYYY-MM-DD')
+                         WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                             THEN to_date(order_date, 'MM/DD/YYYY')
+                         WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                             THEN to_date(order_date, 'DD-Mon-YYYY')
+                         WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                             THEN to_date(order_date, 'YYYY/MM/DD')
+                         WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                             THEN to_date(order_date, 'FMMonth DD, YYYY')
+                     END)::int AS yr,
+                 count(*) AS orders
+          FROM raw_orders
+          GROUP BY 1
+          ORDER BY 1;
+        after: |
+          The result has three rows: **2023 has 80 orders**, **2024 has 203** and
+          **NULL has 17**. The NULL group holds the 14 missing dates and the 3 empty
+          strings, so the total is still 300.
+
+          Nothing was hidden. A NULL group is how you see exactly what you could not
+          read, so never drop it without a reason.
+
+      - type: exercise
+        id: m18-l03-e1
+        title: Convert three amounts
+        prompt: |
+          For the orders with `row_id` 153, 210 and 244, show `row_id` and the
+          amount as a number called `amount_num`. Remove the dollar signs and commas
+          first. Sort by `row_id`.
+        starter: |
+          SELECT row_id,
+                 amount::numeric AS amount_num
+          FROM raw_orders
+          WHERE row_id IN (153, 210, 244);
+        solution: |
+          SELECT row_id,
+                 replace(replace(amount, '$', ''), ',', '')::numeric AS amount_num
+          FROM raw_orders
+          WHERE row_id IN (153, 210, 244)
+          ORDER BY row_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter fails because of the dollar signs and commas. Remove them first.
+          - "Two `replace` calls remove `$` and `,`. Then cast the result with `::numeric`."
+          - "SELECT row_id, replace(replace(amount, '___', ''), '___', '')::numeric AS amount_num FROM raw_orders WHERE row_id IN (153, 210, 244) ORDER BY row_id;"
+        explanation: |
+          Each amount now behaves like a number. You can add them up, compare them,
+          and sort them in the right order. Notice that the rows all had dollar signs
+          and commas, which is why the starter failed.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l03-e2
+        title: Count the ISO dates
+        prompt: |
+          Count how many orders have an order date in the ISO format `YYYY-MM-DD`,
+          with exactly four digits, a dash, two digits, a dash and two digits.
+          Show one number called `iso_orders`.
+        starter: |
+          SELECT count(*) AS iso_orders
+          FROM raw_orders;
+        solution: |
+          SELECT count(*) AS iso_orders
+          FROM raw_orders
+          WHERE order_date ~ '^\d{4}-\d{2}-\d{2}$';
+        columnNames: true
+        hints:
+          - The starter counts every row. You need a `WHERE` that keeps only the ISO dates.
+          - Use the `~` operator with a regular expression that starts with `^` and ends with `$`.
+          - "SELECT count(*) AS iso_orders FROM raw_orders WHERE order_date ~ '___';"
+        explanation: |
+          128 orders are in ISO format. A regular expression is the right tool here
+          because it checks the exact shape, not just the first few characters.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l03-e3
+        title: Parse the dates of the first eight orders
+        prompt: |
+          For the orders with `row_id` from 1 to 8, show `row_id` and `order_day`.
+          Convert each date in `order_date` into a real date, whatever its format.
+          Rows that cannot be read show NULL. Read slash dates as month first. Sort
+          by `row_id`.
+        starter: |
+          SELECT row_id,
+                 order_date AS order_day
+          FROM raw_orders
+          WHERE row_id BETWEEN 1 AND 8;
+        solution: |
+          SELECT row_id,
+                 CASE
+                     WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                         THEN to_date(order_date, 'YYYY-MM-DD')
+                     WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                         THEN to_date(order_date, 'MM/DD/YYYY')
+                     WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                         THEN to_date(order_date, 'DD-Mon-YYYY')
+                     WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                         THEN to_date(order_date, 'YYYY/MM/DD')
+                     WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                         THEN to_date(order_date, 'FMMonth DD, YYYY')
+                 END AS order_day
+          FROM raw_orders
+          WHERE row_id BETWEEN 1 AND 8
+          ORDER BY row_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Copy the five-style CASE from the example, and keep only the rows from 1 to 8.
+          - Each `WHEN` needs its own regular expression and its own format pattern.
+          - "CASE WHEN order_date ~ '___' THEN to_date(order_date, '___') ... END AS order_day"
+        explanation: |
+          Row 5 is an empty string, so it stays NULL. The other rows come out as
+          `2024-11-10`, `2024-11-04`, and so on. Because the results are real dates,
+          `ORDER BY` would now sort them by calendar order, not alphabetical order.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l03-e4
+        title: Orders per month in 2024
+        prompt: |
+          Count the orders for each month of 2024, using the readable order dates
+          from all five styles. Rows whose date cannot be read are left out.
+
+          Show `month_no` (the month number from 1 to 12) and `orders`. Sort by
+          `month_no`.
+        starter: |
+          SELECT 1 AS month_no,
+                 count(*) AS orders
+          FROM raw_orders;
+        solution: |
+          WITH parsed AS (
+              SELECT CASE
+                         WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                             THEN to_date(order_date, 'YYYY-MM-DD')
+                         WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                             THEN to_date(order_date, 'MM/DD/YYYY')
+                         WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                             THEN to_date(order_date, 'DD-Mon-YYYY')
+                         WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                             THEN to_date(order_date, 'YYYY/MM/DD')
+                         WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                             THEN to_date(order_date, 'FMMonth DD, YYYY')
+                     END AS order_day
+              FROM raw_orders
+          )
+          SELECT EXTRACT(MONTH FROM order_day)::int AS month_no,
+                 count(*) AS orders
+          FROM parsed
+          WHERE EXTRACT(YEAR FROM order_day) = 2024
+          GROUP BY 1
+          ORDER BY 1;
+        ordered: true
+        columnNames: true
+        hints:
+          - Parse the date in a CTE first, then group the readable dates by month.
+          - "`EXTRACT(MONTH FROM order_day)` gives the month number. Keep only 2024 with `WHERE EXTRACT(YEAR FROM order_day) = 2024`."
+          - "WITH parsed AS (SELECT CASE ... END AS order_day FROM raw_orders) SELECT EXTRACT(MONTH FROM order_day)::int AS month_no, count(*) AS orders FROM parsed WHERE ___ GROUP BY 1 ORDER BY 1;"
+        explanation: |
+          Eleven months have readable 2024 dates, from January to November. December
+          2024 does not occur because the data ends on 2024-11-30. Grouping on the
+          month number works, but `GROUP BY 1` is short for the first column, so
+          write it out in longer queries.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l03-e5
+        title: Delivered orders per month in 2024 (stretch)
+        prompt: |
+          For each month of 2024, count the **delivered** orders. Use the same readable
+          dates as before. Treat a status as delivered when it is `delivered` in any
+          capitals and with or without spaces around it.
+
+          Show `month_no` and `delivered_orders`. Sort by `month_no`.
+        starter: |
+          SELECT 1 AS month_no,
+                 count(*) AS delivered_orders
+          FROM raw_orders
+          WHERE status = 'delivered';
+        solution: |
+          WITH parsed AS (
+              SELECT status,
+                     CASE
+                         WHEN order_date ~ '^\d{4}-\d{2}-\d{2}$'
+                             THEN to_date(order_date, 'YYYY-MM-DD')
+                         WHEN order_date ~ '^\d{2}/\d{2}/\d{4}$'
+                             THEN to_date(order_date, 'MM/DD/YYYY')
+                         WHEN order_date ~ '^\d{2}-[A-Za-z]{3}-\d{4}$'
+                             THEN to_date(order_date, 'DD-Mon-YYYY')
+                         WHEN order_date ~ '^\d{4}/\d{1,2}/\d{1,2}$'
+                             THEN to_date(order_date, 'YYYY/MM/DD')
+                         WHEN order_date ~ '^[A-Za-z]+ \d{1,2}, \d{4}$'
+                             THEN to_date(order_date, 'FMMonth DD, YYYY')
+                     END AS order_day
+              FROM raw_orders
+          )
+          SELECT EXTRACT(MONTH FROM order_day)::int AS month_no,
+                 count(*) AS delivered_orders
+          FROM parsed
+          WHERE EXTRACT(YEAR FROM order_day) = 2024
+            AND lower(btrim(status)) = 'delivered'
+          GROUP BY 1
+          ORDER BY 1;
+        ordered: true
+        columnNames: true
+        hints:
+          - Combine the date parsing from the previous exercise with a cleaned status test.
+          - "Use `lower(btrim(status)) = 'delivered'` in the `WHERE` clause."
+          - "WITH parsed AS (SELECT status, CASE ... END AS order_day FROM raw_orders) SELECT ___ AS month_no, count(*) AS delivered_orders FROM parsed WHERE ___ GROUP BY 1 ORDER BY 1;"
+        explanation: |
+          Two cleaning steps are combined here: the date guard and the status clean-up.
+          The starter misses most of the delivered rows because it compares the raw
+          text. Keeping the cleaning in the CTE keeps the final `SELECT` simple.
+        difficulty: 3
+
+      - type: quiz
+        id: m18-l03-q1
+        question: Why does the guard use `CASE WHEN ... THEN to_date(...) END` instead of casting the whole column directly?
+        options:
+          - It makes the query run faster.
+          - One bad value would stop the whole query with an error, but CASE gives NULL for values that do not match.
+          - PostgreSQL cannot cast text to a date at all.
+          - It removes duplicate rows automatically.
+        answer: 1
+        explanation: |
+          Casting the whole column fails on the first value that does not match the
+          format. The `CASE` test runs first, so only matching rows are converted, and
+          the rest become NULL. You then decide what NULL should mean.
+
+      - type: predict
+        id: m18-l03-p1
+        question: What does this query return?
+        sql: |
+          SELECT to_date('03/15/2024', 'DD/MM/YYYY') AS day_value;
+        options: ["2024-03-15", "2024-15-03", "An error", "NULL"]
+        answer: 2
+        expectError: true
+        explanation: |
+          `DD/MM/YYYY` reads the first two digits as the day, so the day is 03 and the
+          month is 15. There is no month 15, so PostgreSQL stops with
+          `date/time field value out of range`. The format must match how the text is
+          written.
+
+      - type: fill
+        id: m18-l03-f1
+        prompt: Complete the format pattern so that `to_date` reads the text `15-Mar-2024` correctly.
+        template: |
+          SELECT to_date('15-Mar-2024', '___');
+        answers:
+          - ["DD-Mon-YYYY"]
+        explanation: |
+          `DD` is the day, `Mon` is the short month name, and `YYYY` is the four-digit
+          year. Each piece of the format must match a piece of the text, in order.
+
+      - type: parsons
+        id: m18-l03-o1
+        prompt: Put the lines in the correct order to show the ISO dates of rows 1 to 3 as real dates.
+        lines:
+          - "SELECT row_id,"
+          - "       CASE"
+          - '           WHEN order_date ~ ''^\d{4}-\d{2}-\d{2}$'''
+          - "               THEN to_date(order_date, 'YYYY-MM-DD')"
+          - "       END AS order_day"
+          - "FROM raw_orders"
+          - "WHERE row_id BETWEEN 1 AND 3"
+          - "ORDER BY row_id;"
+        distractors:
+          - "GROUP BY order_day;"
+        explanation: |
+          The `CASE` goes between the `SELECT` and the `FROM`. The `WHERE` and the
+          `ORDER BY` come last, in that order. `GROUP BY` would collapse the rows and
+          is not needed here.
+    cheatsheet:
+      - title: Guard before you cast
+        sql: |
+          CASE
+              WHEN text_col ~ '^\d{4}-\d{2}-\d{2}$'
+                  THEN text_col::date
+          END
+        note: The regular expression checks the shape. Rows that fail become NULL.
+      - title: Parse a date with a format
+        sql: |
+          to_date('03/15/2024', 'MM/DD/YYYY')
+        note: The format must match the text. Check that each part (day, month, year) lines up.
+      - title: Clean money text
+        sql: |
+          replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+        note: Removes spaces, the dollar sign and commas, then casts to a number.
+      - title: Ask before you cast
+        sql: |
+          SELECT pg_input_is_valid(amount, 'numeric');
+        note: Returns true or false instead of an error (PostgreSQL 16 and later).
+  - id: m18-l04
+    title: "Missing values and outliers"
+    summary: Tell NULL, empty text and "N/A" apart, unify them, and find the amounts that are far too big or small.
+    minutes: 30
+    steps:
+      - type: read
+        title: Blank, missing, or wrong?
+        md: |
+          Dana looks at the customer list again. "Some customers have no email. Some
+          orders say N/A for the amount. One order is for $999,999.99. Which of these
+          are missing, which are typos, and which are real?"
+
+          Two different problems hide in messy data. A **missing** value means nothing
+          was recorded. An **outlier** is a value that was recorded, but is far away
+          from the rest. They need different fixes, so you find them separately.
+
+      - type: read
+        title: Three ways to say "nothing"
+        md: |
+          In Messy Data Co.'s export, "no value" appears in three forms:
+
+          | form | what it is | how it looks | how to test it |
+          |---|---|---|---|
+          | `NULL` | the database has no value at all | `NULL` | `IS NULL` |
+          | `''` | an empty piece of text | nothing between two quotes | `= ''` |
+          | `'N/A'` | someone typed "not available" | `N/A` | `= 'N/A'` |
+
+          The first form is the cleanest. The other two are **text** that means
+          "missing". Before you count or average the column, turn them into real NULLs.
+
+          > [!MISTAKE]
+          > `WHERE email = NULL` returns **no rows**, even when emails are missing,
+          > because NULL is never equal to anything. Always write `IS NULL` or
+          > `IS NOT NULL`.
+
+      - type: example
+        title: Count, count(column), and the usable rows
+        md: Three counts of the same column. Watch which rows each one skips.
+        sql: |
+          SELECT count(*) AS all_rows,
+                 count(email) AS not_null,
+                 count(NULLIF(btrim(email), '')) AS usable
+          FROM raw_customers;
+        after: |
+          `count(*)` counts every row, **120**. `count(email)` skips NULLs but still
+          counts the empty strings, so you get **113**. `count(NULLIF(btrim(email), ''))`
+          turns empty and space-only emails into NULL first, so only real emails are
+          counted: **108**.
+
+          The gap between 113 and 108 is the five empty emails that look filled in but
+          are not.
+
+      - type: read
+        title: "NULLIF and COALESCE: the two missing-value tools"
+        md: |
+          Two functions do most of the work:
+
+          - **`NULLIF(a, b)`** returns NULL when `a` equals `b`, and otherwise returns `a`.
+            `NULLIF(email, '')` turns an empty email into NULL.
+          - **`COALESCE(a, b, ...)`** returns the first value that is not NULL. It gives
+            you a default: `COALESCE(email, 'no email')`.
+
+          Put them together: `COALESCE(NULLIF(btrim(email), ''), 'no email')` cleans the
+          spaces, treats an empty email as missing, and then shows a default.
+
+          > [!MISTAKE]
+          > `COALESCE` only replaces NULL. It does not replace `''`. If you forget the
+          > `NULLIF` step, the empty strings pass straight through unchanged.
+
+      - type: example
+        title: Show a default for missing emails
+        md: Four customers. Two have a real email, one is NULL and one is an empty string.
+        sql: |
+          SELECT row_id,
+                 email,
+                 COALESCE(NULLIF(btrim(email), ''), 'no email')
+                     AS email_or_default
+          FROM raw_customers
+          WHERE row_id IN (2, 10, 16, 21)
+          ORDER BY row_id;
+        after: |
+          Rows 2 and 10 keep their emails. Row 16 is NULL and row 21 is an empty
+          string, and both now show `no email`. The original column is unchanged,
+          because you only changed the result, not the data.
+
+      - type: example
+        title: Unify three kinds of missing amount
+        md: Chain two NULLIF calls to treat both the empty string and N/A as NULL.
+        sql: |
+          SELECT row_id,
+                 '[' || amount || ']' AS amount_raw,
+                 NULLIF(NULLIF(btrim(amount), ''), 'N/A') AS amount_or_null
+          FROM raw_orders
+          WHERE row_id IN (1, 20, 78, 91)
+          ORDER BY row_id;
+        after: |
+          Row 1 is a real amount and stays as `66.09`. Row 20 `[N/A]`, row 78 (a
+          true NULL) and row 91 `[]` all become NULL. The brackets in `amount_raw`
+          show the hidden spaces.
+
+          Across the table, 24 orders have a missing amount: 10 NULL, 6 empty and
+          8 N/A.
+
+      - type: read
+        title: What is an outlier?
+        md: |
+          An **outlier** is a value that sits far away from most of the others. Most
+          orders at Messy Data Co. are below about $250, so a single $999,999.99 stands
+          out at once.
+
+          An outlier can have three causes:
+
+          - a **typo** (an extra zero or a missing decimal point),
+          - a **test** or internal record,
+          - or a **real** but unusual order.
+
+          You cannot tell which from the number alone. The job of a data analyst is to
+          **flag** outliers, look at them and ask the business, not to delete them.
+
+          > [!REAL-WORLD]
+          > Fraud teams and finance teams both look at outliers first. The same rule
+          > that finds a typo also finds a suspicious payment. Flag them and keep them.
+
+      - type: stepper
+        title: Finding the upper fence step by step
+        md: The IQR method draws a fence around the middle half of the values. Anything beyond the fence is flagged. Click through the stages.
+        stages:
+          - label: Start with a few raw amounts
+            md: The first twelve rows. Some are plain money, some are N/A, some are blank.
+            sql: |
+              SELECT row_id, amount
+              FROM raw_orders
+              WHERE row_id <= 12
+              ORDER BY row_id;
+          - label: Keep only plain money values
+            md: "A plain money value is an optional `$`, digits, optional commas and an optional decimal part. Negatives, brackets and N/A are dropped."
+            sql: |
+              SELECT row_id, btrim(amount) AS amount_text
+              FROM raw_orders
+              WHERE row_id <= 12
+                AND btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+              ORDER BY row_id;
+          - label: Turn the text into numbers
+            md: "`replace` removes the `$` and the commas, then `::numeric` casts the value."
+            sql: |
+              SELECT row_id,
+                     replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                         AS amount_num
+              FROM raw_orders
+              WHERE row_id <= 12
+                AND btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+              ORDER BY row_id;
+          - label: Find the quartiles of all plain amounts
+            md: "`percentile_cont(0.25)` is the value 25% of the way up the sorted list, and `0.75` is the value 75% of the way up. Together they bracket the middle half."
+            sql: |
+              SELECT round(percentile_cont(0.25) WITHIN GROUP (
+                         ORDER BY replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                     )::numeric, 2) AS q1,
+                     round(percentile_cont(0.75) WITHIN GROUP (
+                         ORDER BY replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                     )::numeric, 2) AS q3
+              FROM raw_orders
+              WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$';
+
+      - type: example
+        title: The fence in one row
+        md: The middle half runs from q1 to q3. The upper fence is q3 plus 1.5 times that width.
+        sql: |
+          WITH plain AS (
+              SELECT replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                         AS amt
+              FROM raw_orders
+              WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+          ),
+          quartiles AS (
+              SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY amt)::numeric
+                         AS q1,
+                     percentile_cont(0.75) WITHIN GROUP (ORDER BY amt)::numeric
+                         AS q3
+              FROM plain
+          )
+          SELECT round(q1, 2) AS q1,
+                 round(q3, 2) AS q3,
+                 round(q3 + 1.5 * (q3 - q1), 2) AS upper_fence
+          FROM quartiles;
+        after: |
+          The result is one row: q1 **33.90**, q3 **122.99** and an upper fence of
+          **256.62**. Any plain amount above 256.62 is flagged.
+
+          The fence is calculated **from the data**, so it moves when the data
+          changes. That is why it is better than a fixed rule such as "over $1000".
+
+          `percentile_cont` returns a decimal value that PostgreSQL computes between
+          two sorted amounts, so it needs a `::numeric` cast before `round` works.
+
+      - type: example
+        title: Look at the extremes first
+        md: Sorting from the largest value down is the quickest way to spot outliers.
+        sql: |
+          SELECT row_id,
+                 replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                     AS amount_num
+          FROM raw_orders
+          WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+          ORDER BY amount_num DESC
+          LIMIT 3;
+        after: |
+          The top three are row 22 (**1000000**), row 21 (**999999.99**) and row 11
+          (**3754.55**). The first two look like typing errors, with too many zeros or
+          nines. The third may be real, but it is still far above the upper fence of
+          256.62, so it is worth a look.
+
+      - type: example
+        title: Flag each order as normal or outlier
+        md: Use the fence to label each row. The label is added to the result, and the data is not changed.
+        sql: |
+          WITH plain AS (
+              SELECT row_id,
+                     replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                         AS amt
+              FROM raw_orders
+              WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+          )
+          SELECT row_id,
+                 amt,
+                 CASE
+                     WHEN amt > 256.62 THEN 'outlier'
+                     ELSE 'normal'
+                 END AS flag
+          FROM plain
+          WHERE row_id IN (1, 11, 21, 22)
+          ORDER BY row_id;
+        after: |
+          Row 1 (66.09) is normal. Rows 11, 21 and 22 are flagged as outliers. The
+          value 256.62 is typed in directly here for clarity. In a report you would
+          compute it from the quartiles, as in the previous example.
+
+          > [!MISTAKE]
+          > Do not delete flagged rows or replace them with an average. Keep them,
+          > report them, and ask the business what the value should be.
+
+      - type: exercise
+        id: m18-l04-e1
+        title: How many customers have a usable email?
+        prompt: |
+          Count the customers in `raw_customers` whose email is usable. An email is
+          not usable when it is NULL, empty, or only spaces. Show one number, called
+          `usable_emails`.
+        starter: |
+          SELECT count(email) AS usable_emails
+          FROM raw_customers;
+        solution: |
+          SELECT count(NULLIF(btrim(email), '')) AS usable_emails
+          FROM raw_customers;
+        columnNames: true
+        hints:
+          - The starter counts the empty strings too. Turn them into NULL first.
+          - "`NULLIF(btrim(email), '')` makes an empty or space-only email NULL."
+          - "SELECT count(___(btrim(email), '')) AS usable_emails FROM raw_customers;"
+        explanation: |
+          108 customers have a usable email. `count` skips NULL, so once the empty
+          strings become NULL they drop out of the count as well.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l04-e2
+        title: Missing amounts, three ways
+        prompt: |
+          Count the orders whose amount is missing, in any of its three forms: NULL,
+          empty text or `N/A`, with or without spaces around it. Show one number,
+          called `missing_amounts`.
+        starter: |
+          SELECT count(*) AS missing_amounts
+          FROM raw_orders
+          WHERE amount IS NULL;
+        solution: |
+          SELECT count(*) AS missing_amounts
+          FROM raw_orders
+          WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL;
+        columnNames: true
+        hints:
+          - The starter only catches the true NULLs. Two other forms also count as missing.
+          - Chain two `NULLIF` calls, one for the empty text and one for `'N/A'`.
+          - "WHERE NULLIF(NULLIF(btrim(amount), ''), '___') IS ___;"
+        explanation: |
+          24 orders are missing an amount: 10 NULL, 6 empty and 8 N/A. The starter
+          finds only 10 of them. Checking all three forms is the difference between a
+          correct count and one that quietly under-reports.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l04-e3
+        title: Fix the missing-email count
+        prompt: |
+          The starter below is meant to count the customers with **no usable email**
+          (NULL, empty or only spaces). It returns the wrong number. Fix it, so that it
+          shows one number called `missing_emails`.
+        starter: |
+          SELECT count(*) AS missing_emails
+          FROM raw_customers
+          WHERE email = '';
+        solution: |
+          SELECT count(*) AS missing_emails
+          FROM raw_customers
+          WHERE NULLIF(btrim(email), '') IS NULL;
+        columnNames: true
+        hints:
+          - "`email = ''` misses the NULL emails, because NULL is never equal to anything."
+          - "Use `IS NULL` for the NULL rows, and `NULLIF(btrim(email), '')` for the empty ones."
+          - "WHERE NULLIF(btrim(email), '') IS ___;"
+        explanation: |
+          12 customers have no usable email: 7 are NULL and 5 are empty. The broken
+          starter found only the 5 empty strings. The fix treats both kinds of missing
+          value in one expression.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l04-e4
+        title: Quartiles and the upper fence
+        prompt: |
+          Use only the **plain money** amounts: an optional `$`, digits, optional
+          commas and an optional decimal part. Ignore everything else, such as negative
+          numbers, brackets, N/A and blanks.
+
+          Compute the first quartile (`q1`) and the third quartile (`q3`) with
+          `percentile_cont`. Then compute `upper_fence` as `q3 + 1.5 * (q3 - q1)`.
+          Round all three to 2 decimals. Show one row.
+        starter: |
+          SELECT 0 AS q1, 0 AS q3, 0 AS upper_fence;
+        solution: |
+          WITH plain AS (
+              SELECT replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                         AS amt
+              FROM raw_orders
+              WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+          ),
+          quartiles AS (
+              SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY amt)::numeric
+                         AS q1,
+                     percentile_cont(0.75) WITHIN GROUP (ORDER BY amt)::numeric
+                         AS q3
+              FROM plain
+          )
+          SELECT round(q1, 2) AS q1,
+                 round(q3, 2) AS q3,
+                 round(q3 + 1.5 * (q3 - q1), 2) AS upper_fence
+          FROM quartiles;
+        columnNames: true
+        hints:
+          - Build the plain money values first in a CTE, then find the quartiles in a second CTE.
+          - "`percentile_cont(0.25) WITHIN GROUP (ORDER BY amt)` gives q1. Cast it with `::numeric` before you round it."
+          - "WITH plain AS (SELECT ... FROM raw_orders WHERE ___), quartiles AS (SELECT ___ AS q1, ___ AS q3 FROM plain) SELECT ___ FROM quartiles;"
+        explanation: |
+          The result is q1 33.90, q3 122.99 and an upper fence of 256.62. A learner
+          who uses all the amounts, including negative and bracketed ones, gets
+          different numbers. Stating exactly which values count is part of writing a
+          rule people can check.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l04-e5
+        title: Flag the outliers (stretch)
+        prompt: |
+          List every plain money order above the upper fence from the previous
+          exercise (256.62). Use the same definition of plain money.
+
+          Show `row_id` and the amount as a number called `amount_num`. Sort by
+          `amount_num` from highest to lowest. For equal amounts, sort by `row_id`
+          from lowest to highest.
+        starter: |
+          SELECT row_id,
+                 amount AS amount_num
+          FROM raw_orders
+          WHERE row_id = 22;
+        solution: |
+          WITH plain AS (
+              SELECT row_id,
+                     replace(replace(btrim(amount), '$', ''), ',', '')::numeric
+                         AS amount_num
+              FROM raw_orders
+              WHERE btrim(amount) ~ '^\$?[0-9][0-9,]*(\.[0-9]+)?$'
+          ),
+          quartiles AS (
+              SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY amount_num)::numeric
+                         AS q1,
+                     percentile_cont(0.75) WITHIN GROUP (ORDER BY amount_num)::numeric
+                         AS q3
+              FROM plain
+          )
+          SELECT p.row_id,
+                 p.amount_num
+          FROM plain AS p
+          CROSS JOIN quartiles AS f
+          WHERE p.amount_num > f.q3 + 1.5 * (f.q3 - f.q1)
+          ORDER BY p.amount_num DESC, p.row_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Reuse the fence calculation from the previous exercise, and compare each amount with it.
+          - "Put the quartiles in their own CTE, then `CROSS JOIN` them to the plain amounts."
+          - "SELECT p.row_id, p.amount_num FROM plain AS p CROSS JOIN quartiles AS f WHERE p.amount_num > ___ ORDER BY p.amount_num DESC, p.row_id;"
+        explanation: |
+          Twenty-six orders are flagged. The top three are 1000000, 999999.99 and
+          3754.55. The sort has a second key, `row_id`, so two orders with the same
+          amount always come out in the same order.
+        difficulty: 3
+
+      - type: quiz
+        id: m18-l04-q1
+        question: Which expression turns an empty string into NULL?
+        options:
+          - "`COALESCE('', NULL)`"
+          - "`NULLIF(email, '')`"
+          - "`email IS NULL`"
+          - "`btrim(email)`"
+        answer: 1
+        explanation: |
+          `NULLIF(a, b)` returns NULL when `a` equals `b`. Here `b` is the empty string,
+          so the empty email becomes NULL. `COALESCE('', NULL)` returns the empty string
+          unchanged, because it is not NULL. `IS NULL` only tests, it does not change the value.
+
+      - type: predict
+        id: m18-l04-p1
+        question: How many rows does this query return?
+        sql: |
+          SELECT count(*) AS n
+          FROM raw_customers
+          WHERE email IS NOT NULL;
+        options: ["120", "113", "108", "0"]
+        answer: 1
+        explanation: |
+          `IS NOT NULL` keeps the empty strings, because they are not NULL. That gives
+          120 minus the 7 NULLs, which is 113. Adding `AND btrim(email) <> ''` would
+          give the usable count of 108.
+
+      - type: fill
+        id: m18-l04-f1
+        prompt: Complete the query so that a missing currency (NULL or empty) shows as `unknown`.
+        template: |
+          SELECT COALESCE(NULLIF(btrim(___), ''), '___') AS currency_clean
+          FROM raw_orders;
+        answers:
+          - ["currency"]
+          - ["unknown"]
+        explanation: |
+          `NULLIF` makes an empty currency NULL. `COALESCE` then replaces every NULL with
+          the default text. Together they handle both kinds of missing value in one line.
+
+      - type: parsons
+        id: m18-l04-o1
+        prompt: Put the lines in the correct order to count the orders whose amount is missing in any form.
+        lines:
+          - "SELECT count(*) AS missing_amounts"
+          - "FROM raw_orders"
+          - "WHERE NULLIF(NULLIF(btrim(amount), ''), 'N/A') IS NULL;"
+        distractors:
+          - "WHERE amount = 'N/A';"
+        explanation: |
+          The query has three lines: the `SELECT`, then the `FROM`, then the `WHERE`
+          that checks all three missing forms. The distractor only checks one form,
+          so it would miss the empty strings and the true NULLs.
+    cheatsheet:
+      - title: Count usable values
+        sql: |
+          SELECT count(NULLIF(btrim(email), ''))
+          FROM raw_customers;
+        note: count skips NULL. NULLIF turns empty or space-only text into NULL first.
+      - title: Show a default
+        sql: |
+          SELECT COALESCE(NULLIF(btrim(email), ''), 'no email')
+          FROM raw_customers;
+        note: NULLIF creates the NULL, COALESCE replaces it with the default.
+      - title: Test for NULL correctly
+        sql: |
+          SELECT *
+          FROM raw_orders
+          WHERE amount IS NULL;
+        note: Use IS NULL and IS NOT NULL. Never write = NULL, which is never true.
+      - title: Upper fence (IQR)
+        sql: |
+          WITH q AS (
+              SELECT percentile_cont(0.25) WITHIN GROUP (ORDER BY amt)::numeric AS q1,
+                     percentile_cont(0.75) WITHIN GROUP (ORDER BY amt)::numeric AS q3
+              FROM t
+          )
+          SELECT q3 + 1.5 * (q3 - q1) AS upper_fence FROM q;
+        note: Values above the upper fence are outliers. Flag them and ask before you remove anything.
+  - id: m18-l05
+    title: "Pivot and unpivot: turning rows into columns and back"
+    summary: Reshape a table from long to wide and from wide to long, with FILTER, crosstab, LATERAL and unnest.
+    minutes: 30
+    steps:
+      - type: read
+        title: The same numbers, two shapes
+        md: |
+          Dana's sales team sends two files. One has a row for each product and month,
+          which is easy for a database to store. The other has one row per product and
+          one column per month, which is easy for a person to read in a spreadsheet.
+
+          The first shape is called **long**. The second is called **wide**. Both hold
+          the same 60 numbers, and you will need to switch between them many times.
+
+          | shape | one row per | columns | table in this module |
+          |---|---|---|---|
+          | long | product and month | product, month, revenue | `monthly_sales_long` |
+          | wide | product | product, jan, feb, ... jun | `product_sales_wide` |
+
+      - type: read
+        title: Pivot and unpivot
+        md: |
+          Turning **long into wide** is called a **pivot**. Each value in one column
+          (the months) becomes the name of a new column.
+
+          Turning **wide into long** is called an **unpivot**. Each column (the months)
+          becomes a value in a new column, and each row is repeated once per column.
+
+          > [!ANALOGY]
+          > A pivot is like sorting a list of receipts into one envelope per month.
+          > An unpivot is like emptying all the envelopes back into one long list.
+
+      - type: example
+        title: Pivot with FILTER
+        md: "`FILTER (WHERE ...)` adds up only the rows that match. Each month gets its own column."
+        sql: |
+          SELECT product,
+                 SUM(revenue) FILTER (WHERE month = 'Jan') AS jan,
+                 SUM(revenue) FILTER (WHERE month = 'Feb') AS feb,
+                 SUM(revenue) FILTER (WHERE month = 'Mar') AS mar
+          FROM monthly_sales_long
+          GROUP BY product
+          ORDER BY product
+          LIMIT 4;
+        after: |
+          Four products, one row each, and one column per month. `GROUP BY product`
+          decides the rows. Each `FILTER` decides which numbers go into its column.
+
+          `Cleaning Kit` shows January 1772.65, February 1492.55 and March 1618.51.
+          That is the same wide shape as `product_sales_wide`, built from long data.
+
+      - type: read
+        title: The CASE version of the same pivot
+        md: |
+          Older code and some other databases do not support `FILTER`. The same result
+          comes from a `CASE` inside the aggregate:
+
+          `SUM(CASE WHEN month = 'Jan' THEN revenue END) AS jan`
+
+          `CASE` returns NULL for the rows it does not want, and `SUM` ignores NULLs, so
+          only the January rows are added up. Both methods give identical results.
+
+          > [!MISTAKE]
+          > A pivot needs you to name every value you want as a column. If a new month
+          > appears in the data, nothing creates a new column for it. Check that your
+          > list of months is complete.
+
+      - type: example
+        title: A pivot with crosstab
+        md: "`crosstab` is a built-in function from the tablefunc extension. It builds the pivot for you, but needs two queries and a list of the column names."
+        sql: |
+          CREATE EXTENSION IF NOT EXISTS tablefunc;
+
+          SELECT *
+          FROM crosstab(
+              'SELECT product, month, revenue
+               FROM monthly_sales_long
+               WHERE month IN (''Jan'', ''Feb'', ''Mar'')
+               ORDER BY 1, 2',
+              'SELECT m FROM unnest(ARRAY[''Jan'', ''Feb'', ''Mar'']) AS m'
+          ) AS ct (product text, jan numeric, feb numeric, mar numeric)
+          ORDER BY product;
+        after: |
+          The first text is the data, sorted by product and then by month. The second
+          text is the list of months, in the order of the columns. The `AS ct (...)`
+          part names the output columns and their types.
+
+          You get 10 rows. Every single quote inside the text is doubled (`''Jan''`)
+          because the whole query is itself inside single quotes.
+
+      - type: read
+        title: Unpivot with LATERAL and VALUES
+        md: |
+          To unpivot a row, you need several output rows made from one input row. Two
+          tools make this easy:
+
+          - **`VALUES`** makes a small table from a list, such as `('Jan', p.jan)`.
+          - **`LATERAL`** lets that list use the columns of the row on its left, so
+            `p.jan` refers to the current product's January revenue.
+
+          `CROSS JOIN LATERAL (VALUES ...)` gives one output row for each pair in the
+          list. Put a month number first in each pair, so you can sort the months in
+          calendar order.
+
+      - type: example
+        title: Unpivot one product
+        md: Six columns become six rows. The month number keeps January first.
+        sql: |
+          SELECT p.product,
+                 v.month,
+                 v.revenue
+          FROM product_sales_wide AS p
+          CROSS JOIN LATERAL (
+              VALUES (1, 'Jan', p.jan),
+                     (2, 'Feb', p.feb),
+                     (3, 'Mar', p.mar),
+                     (4, 'Apr', p.apr),
+                     (5, 'May', p.may),
+                     (6, 'Jun', p.jun)
+          ) AS v (month_no, month, revenue)
+          WHERE p.product = 'Espresso Machine'
+          ORDER BY v.month_no;
+        after: |
+          The single row for Espresso Machine became six rows, one for each month. The
+          `ORDER BY v.month_no` sorts by the calendar, which the text month names alone
+          would not do.
+
+          The result is the long shape again, so you can now group, filter and join it.
+
+      - type: example
+        title: The same unpivot with unnest
+        md: "`unnest` turns an array into rows. Passing two arrays at once keeps the month and the revenue side by side."
+        sql: |
+          SELECT p.product,
+                 u.month,
+                 u.revenue
+          FROM product_sales_wide AS p,
+               unnest(
+                   ARRAY['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                   ARRAY[p.jan, p.feb, p.mar, p.apr, p.may, p.jun]
+               ) AS u (month, revenue)
+          WHERE p.product = 'Cleaning Kit';
+        after: |
+          The same six rows for `Cleaning Kit`: Jan 1772.65, Feb 1492.55, Mar 1618.51,
+          Apr 1118.79, May 1277.93 and Jun 1172.70. Both arrays must have the same
+          number of items, or PostgreSQL stops with an error.
+
+          Notice that the rows come out in the order of the arrays, not sorted. This
+          method needs no month number, but if you want calendar order you still
+          have to add a sort.
+
+      - type: example
+        title: Check that a round trip changes nothing
+        md: Unpivot the wide table, then compare the result with the long table. Any difference would appear as a row.
+        sql: |
+          SELECT count(*) AS differences
+          FROM (
+              SELECT p.product,
+                     v.month,
+                     v.revenue
+              FROM product_sales_wide AS p
+              CROSS JOIN LATERAL (
+                  VALUES ('Jan', p.jan), ('Feb', p.feb), ('Mar', p.mar),
+                         ('Apr', p.apr), ('May', p.may), ('Jun', p.jun)
+              ) AS v (month, revenue)
+              EXCEPT
+              SELECT product, month, revenue
+              FROM monthly_sales_long
+          ) AS d;
+        after: |
+          The answer is **0 differences**. `EXCEPT` (from the set operations module)
+          keeps the rows of the first query that are not in the second. Nothing is
+          left, so the two tables hold exactly the same numbers.
+
+          This is a good habit after any reshaping. If a single revenue were typed
+          wrong, that one row would show up here.
+
+      - type: stepper
+        title: Pivoting one product, step by step
+        md: Start with the long rows for one product, then turn them into columns, one idea at a time.
+        stages:
+          - label: The long rows
+            md: Six rows for one product, one per month.
+            sql: |
+              SELECT product, month, revenue
+              FROM monthly_sales_long
+              WHERE product = 'Cleaning Kit';
+          - label: Group the rows
+            md: "`GROUP BY product` collapses the six rows into one, and `SUM` adds them up."
+            sql: |
+              SELECT product,
+                     SUM(revenue) AS half_year
+              FROM monthly_sales_long
+              WHERE product = 'Cleaning Kit'
+              GROUP BY product;
+          - label: Make a column per month
+            md: "Each `FILTER` adds a column that only counts one month."
+            sql: |
+              SELECT product,
+                     SUM(revenue) FILTER (WHERE month = 'Jan') AS jan,
+                     SUM(revenue) FILTER (WHERE month = 'Feb') AS feb,
+                     SUM(revenue) FILTER (WHERE month = 'Mar') AS mar
+              FROM monthly_sales_long
+              WHERE product = 'Cleaning Kit'
+              GROUP BY product;
+          - label: Add the second quarter
+            md: "One `FILTER` can match several months. Here the April to June revenue is one column."
+            sql: |
+              SELECT product,
+                     SUM(revenue) FILTER (WHERE month = 'Jan') AS jan,
+                     SUM(revenue) FILTER (WHERE month IN ('Apr', 'May', 'Jun'))
+                         AS apr_to_jun
+              FROM monthly_sales_long
+              WHERE product = 'Cleaning Kit'
+              GROUP BY product;
+
+      - type: exercise
+        id: m18-l05-e1
+        title: Pivot three months of the second half
+        prompt: |
+          For every product in `monthly_sales_long`, show `product`, `apr`, `may` and
+          `jun` as the revenue for each of those months. Show one row per product and
+          sort by `product`.
+        starter: |
+          SELECT product, revenue AS apr
+          FROM monthly_sales_long
+          WHERE month = 'Apr'
+          ORDER BY product;
+        solution: |
+          SELECT product,
+                 SUM(revenue) FILTER (WHERE month = 'Apr') AS apr,
+                 SUM(revenue) FILTER (WHERE month = 'May') AS may,
+                 SUM(revenue) FILTER (WHERE month = 'Jun') AS jun
+          FROM monthly_sales_long
+          GROUP BY product
+          ORDER BY product;
+        ordered: true
+        columnNames: true
+        hints:
+          - Use one `FILTER` per month, the same way as the example.
+          - Each `FILTER` goes inside a `SUM`, and the rows are grouped by `product`.
+          - "SELECT product, SUM(revenue) FILTER (WHERE month = '___') AS apr, ... FROM monthly_sales_long GROUP BY product ORDER BY product;"
+        explanation: |
+          Ten products, one row each. The `GROUP BY` sets the rows and each `FILTER`
+          sets a column. This is the most common pivot you will write, and the pattern
+          stays the same no matter how many months you add.
+        difficulty: 1
+
+      - type: exercise
+        id: m18-l05-e2
+        title: Quarter totals per product
+        prompt: |
+          For every product, show `product`, `q1_revenue` (the total from January to
+          March) and `q2_revenue` (the total from April to June). Use
+          `monthly_sales_long`, show one row per product and sort by `product`.
+        starter: |
+          SELECT product,
+                 SUM(revenue) AS q1_revenue
+          FROM monthly_sales_long
+          GROUP BY product
+          ORDER BY product;
+        solution: |
+          SELECT product,
+                 SUM(revenue) FILTER (WHERE month IN ('Jan', 'Feb', 'Mar'))
+                     AS q1_revenue,
+                 SUM(revenue) FILTER (WHERE month IN ('Apr', 'May', 'Jun'))
+                     AS q2_revenue
+          FROM monthly_sales_long
+          GROUP BY product
+          ORDER BY product;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter adds up all six months. Split the months into two groups with `FILTER`.
+          - "`WHERE month IN ('Jan', 'Feb', 'Mar')` is one kind of filter. Use it inside `FILTER`."
+          - "SELECT product, SUM(revenue) FILTER (WHERE month IN (___)) AS q1_revenue, SUM(revenue) FILTER (WHERE month IN (___)) AS q2_revenue FROM monthly_sales_long GROUP BY product ORDER BY product;"
+        explanation: |
+          Two `FILTER` clauses in one `SELECT` give two columns from one pass over the
+          table. The starter added everything into one number, so it could not tell the
+          quarters apart.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l05-e3
+        title: Unpivot one product in calendar order
+        prompt: |
+          Using `product_sales_wide`, show one row per month for `Espresso Machine`.
+          Show `product`, `month` (the three-letter name) and `revenue`. Sort the rows
+          from January to June.
+        starter: |
+          SELECT product, jan, feb
+          FROM product_sales_wide
+          WHERE product = 'Espresso Machine';
+        solution: |
+          SELECT p.product,
+                 v.month,
+                 v.revenue
+          FROM product_sales_wide AS p
+          CROSS JOIN LATERAL (
+              VALUES (1, 'Jan', p.jan), (2, 'Feb', p.feb), (3, 'Mar', p.mar),
+                     (4, 'Apr', p.apr), (5, 'May', p.may), (6, 'Jun', p.jun)
+          ) AS v (month_no, month, revenue)
+          WHERE p.product = 'Espresso Machine'
+          ORDER BY v.month_no;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter shows only two months. You need six.
+          - "Use `CROSS JOIN LATERAL (VALUES ...)` with one pair for each month."
+          - "CROSS JOIN LATERAL (VALUES (1, 'Jan', p.jan), (2, 'Feb', p.feb), ___) AS v (month_no, month, revenue) ... ORDER BY v.month_no;"
+        explanation: |
+          Six rows, one per month, in the calendar order. The month number is there only
+          for sorting, so it is not in the output list.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l05-e4
+        title: Crosstab of the first quarter
+        prompt: |
+          Use `crosstab` (from the tablefunc extension) to show every product with its
+          January, February and March revenue. Use the `monthly_sales_long` table. Show
+          the columns `product`, `jan`, `feb` and `mar`, sorted by `product`.
+
+          Start your SQL with `CREATE EXTENSION IF NOT EXISTS tablefunc;`.
+        starter: |
+          SELECT product, month, revenue
+          FROM monthly_sales_long
+          WHERE month IN ('Jan', 'Feb', 'Mar');
+        solution: |
+          CREATE EXTENSION IF NOT EXISTS tablefunc;
+
+          SELECT *
+          FROM crosstab(
+              'SELECT product, month, revenue
+               FROM monthly_sales_long
+               WHERE month IN (''Jan'', ''Feb'', ''Mar'')
+               ORDER BY 1, 2',
+              'SELECT m FROM unnest(ARRAY[''Jan'', ''Feb'', ''Mar'']) AS m'
+          ) AS ct (product text, jan numeric, feb numeric, mar numeric)
+          ORDER BY product;
+        ordered: true
+        columnNames: true
+        hints:
+          - Copy the crosstab example, and keep only the three months.
+          - "The first text is the data sorted by product and month. The second text lists the months in column order."
+          - "SELECT * FROM crosstab('SELECT product, month, revenue FROM monthly_sales_long ___ ORDER BY 1, 2', 'SELECT m FROM unnest(ARRAY[___]) AS m') AS ct (product text, jan numeric, feb numeric, mar numeric) ORDER BY product;"
+        explanation: |
+          Crosstab works, but it is strict. It reads the data in order, so the data must
+          be sorted by the row label and the column label, and the column list must match
+          the output. Without `ORDER BY 1, 2` this table may still look right, because its
+          rows happen to be stored in order. Another table can come out mixed up, with no
+          error to warn you, so always include the sort.
+        difficulty: 2
+
+      - type: exercise
+        id: m18-l05-e5
+        title: Best month for each product (stretch)
+        prompt: |
+          Unpivot `product_sales_wide` into one row per product and month, with the
+          revenue. For each product, find the month with the **highest** revenue.
+
+          Show `product`, `best_month` and `revenue`, with one row per product. Sort by
+          `revenue` from highest to lowest.
+        starter: |
+          SELECT product,
+                 'Jan' AS best_month,
+                 jan AS revenue
+          FROM product_sales_wide
+          ORDER BY revenue DESC;
+        solution: |
+          WITH long_rows AS (
+              SELECT p.product,
+                     v.month,
+                     v.revenue
+              FROM product_sales_wide AS p
+              CROSS JOIN LATERAL (
+                  VALUES ('Jan', p.jan), ('Feb', p.feb), ('Mar', p.mar),
+                         ('Apr', p.apr), ('May', p.may), ('Jun', p.jun)
+              ) AS v (month, revenue)
+          ),
+          ranked AS (
+              SELECT product,
+                     month,
+                     revenue,
+                     ROW_NUMBER() OVER (
+                         PARTITION BY product
+                         ORDER BY revenue DESC
+                     ) AS rn
+              FROM long_rows
+          )
+          SELECT product,
+                 month AS best_month,
+                 revenue
+          FROM ranked
+          WHERE rn = 1
+          ORDER BY revenue DESC, product;
+        ordered: true
+        columnNames: true
+        hints:
+          - First unpivot the table into one row per product and month, then rank the months inside each product.
+          - "`ROW_NUMBER() OVER (PARTITION BY product ORDER BY revenue DESC)` puts the best month first in each product."
+          - "WITH long_rows AS (SELECT ... CROSS JOIN LATERAL (VALUES ...) AS v (month, revenue)), ranked AS (SELECT ..., ROW_NUMBER() OVER (...) AS rn FROM long_rows) SELECT ... FROM ranked WHERE rn = 1 ORDER BY revenue DESC, product;"
+        explanation: |
+          Espresso Machine peaks in April, while most other products peak in January.
+          Two steps make the answer: unpivot first so every month becomes a row, then rank
+          the rows. The `ROW_NUMBER` keeps one best row per product, and the final
+          `ORDER BY` puts the highest revenue first.
+        difficulty: 3
+
+      - type: predict
+        id: m18-l05-p1
+        question: What does this query return?
+        sql: |
+          SELECT SUM(revenue) FILTER (WHERE month = 'Jul') AS jul
+          FROM monthly_sales_long;
+        options: ["0", "NULL", "60", "An error"]
+        answer: 1
+        explanation: |
+          There is no July in the data, so the `FILTER` keeps no rows. `SUM` of no rows
+          is NULL, not 0. That is why a pivot can show blanks for months that are missing.
+          Use `COALESCE(..., 0)` if you want 0 instead.
+
+      - type: quiz
+        id: m18-l05-q1
+        question: In `CROSS JOIN LATERAL (VALUES ('Jan', p.jan), ...)`, what does `LATERAL` allow?
+        options:
+          - It sorts the rows of the VALUES list.
+          - The VALUES list can use the columns of the row on its left, such as `p.jan`.
+          - It removes duplicate months.
+          - It turns the output into columns.
+        answer: 1
+        explanation: |
+          A normal subquery in `FROM` cannot see the row from the table next to it.
+          `LATERAL` lets the list be built for each row, so `p.jan` means the January
+          value of that product.
+
+      - type: fill
+        id: m18-l05-f1
+        prompt: Complete the query so that each month becomes its own column using a conditional sum.
+        template: |
+          SELECT product,
+                 SUM(revenue) ___ (WHERE month = 'Jan') AS jan
+          FROM monthly_sales_long
+          GROUP BY product;
+        answers:
+          - ["FILTER"]
+        explanation: |
+          `FILTER (WHERE ...)` after an aggregate counts only the rows that match. It is
+          the cleanest way to pivot in PostgreSQL, and `CASE` inside the sum is the
+          portable alternative.
+
+      - type: parsons
+        id: m18-l05-o1
+        prompt: Put the lines in the correct order to show January and February as columns, for the first two products.
+        lines:
+          - "SELECT product,"
+          - "       SUM(CASE WHEN month = 'Jan' THEN revenue END) AS jan,"
+          - "       SUM(CASE WHEN month = 'Feb' THEN revenue END) AS feb"
+          - "FROM monthly_sales_long"
+          - "GROUP BY product"
+          - "ORDER BY product"
+          - "LIMIT 2;"
+        distractors:
+          - "WHERE month = 'Jan';"
+        explanation: |
+          The `SELECT` lists the columns, the `FROM` names the table, and the `GROUP BY`
+          makes one row per product. `LIMIT 2` keeps the first two products. A `WHERE` on
+          January would throw away February, so it is the wrong line.
+    cheatsheet:
+      - title: Pivot with FILTER
+        sql: |
+          SELECT product,
+                 SUM(revenue) FILTER (WHERE month = 'Jan') AS jan
+          FROM monthly_sales_long
+          GROUP BY product;
+        note: One FILTER per output column. Each aggregate adds only the rows it matches.
+      - title: Crosstab (tablefunc)
+        sql: |
+          CREATE EXTENSION IF NOT EXISTS tablefunc;
+          SELECT * FROM crosstab(
+              'SELECT product, month, revenue FROM monthly_sales_long
+               ORDER BY 1, 2',
+              'SELECT m FROM unnest(ARRAY[''Jan'',''Feb'']) AS m'
+          ) AS ct (product text, jan numeric, feb numeric);
+        note: Sort the data by row label and column label. Double every quote inside the text.
+      - title: Unpivot with LATERAL VALUES
+        sql: |
+          SELECT p.product, v.month, v.revenue
+          FROM product_sales_wide AS p
+          CROSS JOIN LATERAL (
+              VALUES ('Jan', p.jan), ('Feb', p.feb)
+          ) AS v (month, revenue);
+        note: One output row per pair in the VALUES list, for each input row.
+      - title: Unpivot with unnest
+        sql: |
+          SELECT p.product, u.month, u.revenue
+          FROM product_sales_wide AS p,
+               unnest(ARRAY['Jan', 'Feb'], ARRAY[p.jan, p.feb]) AS u (month, revenue);
+        note: Both arrays must be the same length.
