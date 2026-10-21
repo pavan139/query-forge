@@ -1,0 +1,61 @@
+glossary:
+  - term: Window frame
+    definition: The set of rows a window function looks at for the current row. You write it inside OVER (...), after ORDER BY, for example ROWS BETWEEN 2 PRECEDING AND CURRENT ROW. Without a frame clause, PostgreSQL uses the default frame.
+    example: "AVG(amount) OVER (ORDER BY txn_time ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)"
+    module: m11
+  - term: ROWS frame
+    definition: A frame measured in rows. It counts a fixed number of rows before and after the current row, whatever their values are. A missing date or an equal value does not change the count.
+    example: "SUM(steps) OVER (ORDER BY day ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)"
+    module: m11
+  - term: RANGE frame
+    definition: A frame measured by the value of the ORDER BY column. With an interval such as INTERVAL '2 days', it includes every row whose value is within that distance, so a missing day does not shift the window.
+    example: "SUM(steps) OVER (ORDER BY day RANGE BETWEEN INTERVAL '2 days' PRECEDING AND CURRENT ROW)"
+    module: m11
+  - term: GROUPS frame
+    definition: A frame measured in peer groups. Rows that share the same ORDER BY value count as one group, and the frame counts whole groups. GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW covers the previous group and the current group.
+    example: "SUM(amount) OVER (ORDER BY txn_date GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)"
+    module: m11
+  - term: Peers
+    definition: Rows that have the same ORDER BY value inside one window. RANGE and GROUPS frames treat peers together, so every peer of the current row is included when the frame reaches it.
+    example: "Two rows with day = '2024-03-01' are peers in OVER (ORDER BY day)"
+    module: m11
+  - term: Default frame
+    definition: The frame PostgreSQL uses when you write ORDER BY but no frame clause. It is RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW, so it includes every row up to the current row and all of its peers.
+    example: "SUM(amount) OVER (ORDER BY txn_time) is the same as the RANGE frame above"
+    module: m11
+  - term: Frame exclusion
+    definition: A clause at the end of a frame that removes some rows. EXCLUDE CURRENT ROW removes the current row. EXCLUDE GROUP removes the current row and its peers. EXCLUDE TIES keeps the current row but removes its other peers.
+    example: "AVG(x) OVER (ORDER BY d ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING EXCLUDE CURRENT ROW)"
+    module: m11
+  - term: LAST_VALUE trap
+    definition: The common mistake of expecting LAST_VALUE to return the last row of the partition. With the default frame, the frame ends at the current row, so LAST_VALUE returns the current row. Fix it with ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING.
+    example: "LAST_VALUE(title) OVER (PARTITION BY age_rating ORDER BY duration_min ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+    module: m11
+  - term: NTH_VALUE
+    definition: Returns the value from the nth row of the window frame, counting from 1. If the frame does not yet contain n rows, the result is NULL.
+    example: "NTH_VALUE(title, 2) OVER (ORDER BY release_year, movie_id)"
+    module: m11
+  - term: NTILE
+    definition: Splits the ordered rows into a given number of groups of almost equal size, numbered from 1. When the rows do not divide evenly, the first groups get one extra row.
+    example: "NTILE(4) OVER (ORDER BY duration_min DESC) puts each film into quartile 1 to 4"
+    module: m11
+  - term: PERCENT_RANK
+    definition: A number from 0 to 1 that shows how far down the ranking a row is, calculated as (rank - 1) / (number of rows - 1). The smallest value gets 0 and the largest gets 1.
+    example: "PERCENT_RANK() OVER (ORDER BY duration_min)"
+    module: m11
+  - term: CUME_DIST
+    definition: The share of rows whose value is less than or equal to this row's value, as a number between 0 and 1. The largest value always gets 1.
+    example: "CUME_DIST() OVER (ORDER BY box_office_musd)"
+    module: m11
+  - term: Percentile
+    definition: The value below which a given share of the data falls. PERCENTILE_CONT(0.9) interpolates between neighbouring values, while PERCENTILE_DISC returns a real value from the data. Both are written with WITHIN GROUP (ORDER BY ...) and act as group summaries.
+    example: "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY duration_min)"
+    module: m11
+  - term: Median
+    definition: The middle value. Half of the values are below it and half above. In PostgreSQL the median is PERCENTILE_CONT(0.5) WITHIN GROUP. It can be very different from the average when a few values are extreme.
+    example: "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY box_office_musd)"
+    module: m11
+  - term: Named window
+    definition: A window defined once with a name in a WINDOW clause, placed after HAVING and before ORDER BY. You then reuse it with OVER name, which keeps several columns in sync.
+    example: "WINDOW by_age AS (PARTITION BY age_rating ORDER BY duration_min)"
+    module: m11

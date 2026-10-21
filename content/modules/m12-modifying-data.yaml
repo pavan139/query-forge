@@ -1,0 +1,3386 @@
+id: m12
+order: 12
+title: "Changing Data: INSERT, UPDATE, DELETE"
+subtitle: Add, change and remove rows safely
+icon: "📝"
+level: intermediate
+description: |
+  So far every query you wrote only **read** data. The database was a window you could look through.
+  In this module it becomes a notebook you can also **write** in.
+
+  You will add rows with `INSERT`, change them with `UPDATE`, remove them with `DELETE` and `TRUNCATE`,
+  and see the result straight away with `RETURNING`. Then you'll combine these into `UPSERT` ("insert,
+  or update if it is already there") and `MERGE` (bring a whole table in line with a list).
+  You'll practise on the ShopSmart store and finish with a full "Inventory Day" project.
+
+  Changing data is powerful, and one careless statement can touch a whole table. So every lesson repeats
+  the same safety habit: **SELECT first, then change**. Look at the rows your `WHERE` would touch, and only
+  then run the `UPDATE` or `DELETE`.
+dataset: shop
+lessons:
+  - id: m12-l01
+    title: "INSERT: Adding New Rows"
+    summary: Add one or many rows to a table, name the columns, and learn what the database refuses.
+    minutes: 25
+    steps:
+      - type: read
+        title: A new supplier signs up
+        md: |
+          It is Monday morning at ShopSmart. Priya from purchasing drops a sticky note on your desk:
+
+          *"Summit Outdoor Co. from Norway has agreed to supply our camping gear. Please add them to the
+          suppliers table so I can order from them this week."*
+
+          Right now the `suppliers` table knows 8 companies. Your job is to add a ninth. This time you
+          won't only read data. You will **write** it.
+
+      - type: read
+        title: The INSERT statement
+        md: |
+          To add a row, you start with **`INSERT INTO`**, name the table, list the columns, and then give
+          the values with **`VALUES`**:
+
+          ```sql
+          INSERT INTO table_name (column1, column2)
+          VALUES (value1, value2);
+          ```
+
+          The first value goes into the first column, the second value into the second column, and so on.
+          Text goes in single quotes, numbers do not.
+
+          > [!ANALOGY]
+          > Think of a paper supplier form. You write a name in the "Name" box and a country in the "Country"
+          > box. The boxes are the column list, and what you write in them is the `VALUES` part.
+
+      - type: example
+        title: Adding one supplier
+        md: Press **Run**. The first statement adds Priya's supplier. The second one shows the whole table.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        after: |
+          The `INSERT` itself shows no table. It only reports that it added **1 row**. The `SELECT` afterwards
+          shows all nine suppliers, and the new one is at the bottom.
+
+          Remember this pattern: **INSERT changes the data, SELECT shows you the result.**
+
+      - type: read
+        title: What if you skip a column?
+        md: |
+          You don't always have a value for every column. A supplier may not have an email address yet.
+          If you leave a column out of the column list, the database puts in its default for that column.
+          For `contact_email` that default is **NULL**, which means "no value here". You met NULL in the
+          filtering module.
+
+      - type: example
+        title: Leaving a column out
+        md: We add a supplier with no email address. We don't mention `contact_email` at all.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (10, 'Quill & Paper Ltd.', 'Italy');
+
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id = 10;
+        after: |
+          The new row's `contact_email` shows **NULL**. We never gave it a value, so the database left it empty.
+
+      - type: example
+        title: Several rows in one statement
+        md: You can add many rows at once. Separate the rows with commas and put each one in brackets.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES
+              (11, 'Bright Lantern Co.', 'Canada', NULL),
+              (12, 'Mesa Imports', 'Mexico', 'hola@mesaimports.example.com'),
+              (13, 'Fjord Outfitters', 'Norway', NULL);
+
+          SELECT COUNT(*) AS suppliers_now
+          FROM suppliers;
+        after: |
+          Three rows went in with one statement. The count is **11**: the 8 suppliers from the start plus
+          these 3. Writing one statement with many rows is faster than writing three statements.
+
+      - type: example
+        title: The default discount
+        md: |
+          Each order line in `order_items` has a `discount` column. We add a line and leave `discount` out.
+        sql: |
+          INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price)
+          VALUES (2297, 1, 9, 1, 49.99);
+
+          SELECT *
+          FROM order_items
+          WHERE order_item_id = 2297;
+        after: |
+          The line shows **0.00** in `discount`. The table itself has a rule: "if no discount is given, use 0".
+          That rule is called a **default**. You didn't type it, but the database filled it in.
+
+      - type: read
+        title: The database checks your rows
+        md: |
+          Notice that you have to choose `supplier_id` yourself. ShopSmart's tables don't number their rows for
+          you, so you must pick a number nobody else is using.
+
+          Tables can also have **rules**. The database checks every new row against them and refuses the whole
+          statement if one row breaks a rule. Two common refusals are shown next.
+
+      - type: example
+        title: "Refused: the id already exists"
+        md: Supplier `1` already exists. What happens when we try to add another one with the same id?
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (1, 'Copycat Imports', 'Spain');
+        expectError: true
+        after: |
+          The error says `duplicate key value violates unique constraint "suppliers_pkey"`.
+          The `supplier_id` is the **primary key**, and a primary key must be different in every row. Fix it by
+          choosing a free id such as `9`.
+
+      - type: example
+        title: "Refused: a rule is broken"
+        md: This product would cost nothing. Let's see whether the table allows a price of 0.
+        sql: |
+          INSERT INTO products (product_id, name, category_id, price, cost,
+                                stock_qty, is_active, created_at)
+          VALUES (61, 'Free Sample Tote', 4, 0, 0, 10, TRUE, '2024-12-31');
+        expectError: true
+        after: |
+          The error mentions `products_price_check`. The `products` table has a rule that a price must be
+          **greater than 0**, and the database enforces it. Nothing was added, not even the other columns.
+
+      - type: quiz
+        id: m12-l01-q1
+        question: In `INSERT INTO suppliers (supplier_id, name) VALUES (9, 'Nimbus');`, what does `(supplier_id, name)` do?
+        options:
+          - It filters the rows to those with an id of 9.
+          - It names the columns that the values go into, in the same order.
+          - It sorts the new row by name.
+          - It creates the table if it does not exist.
+        answer: 1
+        explanation: |
+          The bracketed list after the table name is the **column list**. The first value goes into the first
+          column in the list, and so on. The column list is optional, but it makes your statement safer, because
+          it doesn't depend on the table's column order.
+
+      - type: predict
+        id: m12-l01-p1
+        question: The INSERT adds one row. How many suppliers will the final SELECT show?
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Lakeside Gear', 'Canada');
+
+          SELECT COUNT(*) AS suppliers_now
+          FROM suppliers;
+        options: ["8", "9", "10", "An error"]
+        answer: 1
+        explanation: |
+          The table starts with 8 suppliers. One new row makes **9**. Count the starting rows before you count
+          the new ones.
+
+      - type: exercise
+        id: m12-l01-e1
+        title: Add the new supplier
+        difficulty: 1
+        prompt: |
+          Add one supplier to the `suppliers` table with these values:
+
+          - `supplier_id`: `9`
+          - `name`: `Harbor Light Trading`
+          - `country`: `Canada`
+          - `contact_email`: `sales@harborlight.example.com`
+
+          Nothing else should change.
+        starter: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES ();
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (9, 'Harbor Light Trading', 'Canada', 'sales@harborlight.example.com');
+        check: |
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        hints:
+          - "Start with `INSERT INTO suppliers`, then list the four column names in brackets."
+          - "After `VALUES`, write the four values in brackets, in the same order as the columns. Text goes in single quotes."
+          - "INSERT INTO suppliers (supplier_id, name, country, contact_email) VALUES (___, ___, ___, ___);"
+        explanation: |
+          The column list and the value list line up one by one: `9` goes into `supplier_id`, the name into
+          `name`, and so on. Both lists must have exactly four items.
+
+      - type: exercise
+        id: m12-l01-e2
+        title: Two suppliers in one go
+        difficulty: 1
+        prompt: |
+          Add **two** suppliers with one `INSERT` statement (one statement, two rows):
+
+          - `supplier_id` `10`, `name` `Ember Peak Outfitters`, `country` `Norway`, `contact_email` `NULL`
+          - `supplier_id` `11`, `name` `Blue Harbour Supply`, `country` `Portugal`,
+            `contact_email` `orders@blueharbour.example.com`
+
+          Write `NULL` (no quotes) for the empty email.
+        starter: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (10, 'Ember Peak Outfitters', 'Norway', NULL);
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES
+              (10, 'Ember Peak Outfitters', 'Norway', NULL),
+              (11, 'Blue Harbour Supply', 'Portugal', 'orders@blueharbour.example.com');
+        check: |
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        hints:
+          - "The starter only adds the first row. Add the second row after a comma."
+          - "Each row is a bracketed list of four values, and the rows are separated by commas."
+          - "VALUES (10, ...), (11, ...);"
+        explanation: |
+          Separating rows with commas inside a single `VALUES` list is faster than writing several `INSERT`
+          statements. The `NULL` is written without quotes, because it is a special empty value, not text.
+
+      - type: exercise
+        id: m12-l01-e3
+        title: Add a line to an order
+        difficulty: 2
+        prompt: |
+          Order `2` needs one more item: product `9` (HD Webcam 1080p), quantity `1`, unit price `49.99`.
+
+          Insert it into `order_items` with `order_item_id` `2297`. Leave the `discount` column out, so the
+          table uses its default.
+        solution: |
+          INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price)
+          VALUES (2297, 2, 9, 1, 49.99);
+        check: |
+          SELECT order_item_id, order_id, product_id, quantity, unit_price, discount
+          FROM order_items
+          WHERE order_id = 2
+          ORDER BY order_item_id;
+        hints:
+          - "Name the five columns you do have: order_item_id, order_id, product_id, quantity and unit_price."
+          - "Leave `discount` out of the column list and of the VALUES."
+          - "INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price) VALUES (___, ___, ___, ___, ___);"
+        explanation: |
+          Because `discount` is left out, the table's default of `0` is used. The check shows the new line next
+          to the four existing lines for order 2, all with a discount of `0.00`.
+
+      - type: read
+        title: A small trap
+        md: |
+          > [!MISTAKE]
+          > If the number of names in the column list and the number of values differ, the statement fails
+          > before it adds anything. Count both lists before you press **Run**. The next exercise shows you the
+          > error, so you can recognise it.
+
+      - type: exercise
+        id: m12-l01-e4
+        title: A bamboo desk lamp
+        difficulty: 2
+        prompt: |
+          Add a new product to the `products` table:
+
+          - `product_id` `61`
+          - `name` `Bamboo Desk Lamp`
+          - `category_id` `10` (Furniture)
+          - `supplier_id` `8` (Pioneer Peak Supply)
+          - `price` `64.00`, `cost` `29.50`, `stock_qty` `25`
+          - `is_active` `TRUE`
+          - `created_at` `2024-12-30`
+
+          Use one `INSERT` with all nine columns listed.
+        solution: |
+          INSERT INTO products (product_id, name, category_id, supplier_id, price, cost,
+                                stock_qty, is_active, created_at)
+          VALUES (61, 'Bamboo Desk Lamp', 10, 8, 64.00, 29.50, 25, TRUE, '2024-12-30');
+        check: |
+          SELECT *
+          FROM products
+          WHERE product_id = 61
+          ORDER BY product_id;
+        hints:
+          - "A product needs all nine columns: product_id, name, category_id, supplier_id, price, cost, stock_qty, is_active and created_at."
+          - "Keep the values in the same order as the column names."
+          - "INSERT INTO products (product_id, name, category_id, supplier_id, price, cost, stock_qty, is_active, created_at) VALUES (___, ___, ___, ___, ___, ___, ___, ___, ___);"
+        explanation: |
+          Every column in the list must get its value in the same position. `TRUE` is written without quotes
+          because it is a boolean (yes or no) value.
+
+      - type: exercise
+        id: m12-l01-e5
+        title: Fix the broken INSERT
+        difficulty: 2
+        prompt: |
+          The statement below fails. Fix it so that the new supplier `9` (Maple Ridge Co., Canada) gets the
+          email `info@mapleridge.example.com`.
+
+          Do not change the column list. Only fix the values.
+        starter: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (9, 'Maple Ridge Co.', 'Canada');
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (9, 'Maple Ridge Co.', 'Canada', 'info@mapleridge.example.com');
+        check: |
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id = 9
+          ORDER BY supplier_id;
+        hints:
+          - "Read the error message. It says the statement has more target columns than values."
+          - "Count the names in the column list (four) and the values (three). They must match."
+          - "Add the missing email value after 'Canada', in single quotes."
+        explanation: |
+          The error `INSERT has more target columns than expressions` means one value is missing. Always check
+          that the two lists have the same length and the same order.
+
+      - type: parsons
+        id: m12-l01-o1
+        prompt: Put the lines in the right order to add one supplier. Leave out the line that does not belong.
+        lines:
+          - "INSERT INTO suppliers (supplier_id, name, country)"
+          - "VALUES"
+          - "    (9, 'Cedar Lane Co.', 'Canada');"
+        distractors:
+          - "UPDATE suppliers SET name = 'Cedar Lane Co.'"
+        explanation: |
+          The statement starts with `INSERT INTO`, then the table and column list, then `VALUES` with the row.
+          `UPDATE` would change an existing row, which is not what we want here.
+
+      - type: fill
+        id: m12-l01-f1
+        prompt: Fill in the three blanks so that the statement adds supplier `9` (Nimbus Co., Canada).
+        template: |
+          ___ ___ suppliers (supplier_id, name, country)
+          ___ (9, 'Nimbus Co.', 'Canada');
+        answers:
+          - ["INSERT"]
+          - ["INTO"]
+          - ["VALUES"]
+        explanation: "`INSERT INTO` says what you are doing and where, and `VALUES` gives the row."
+
+      - type: read
+        title: Wrap-up
+        md: |
+          You can now add single rows, many rows at once, and rows that use defaults. You also know the two
+          refusals you will meet most often: a **duplicate key** and a **broken rule**.
+
+          > [!TIP]
+          > Before you run any change on a real table, ask yourself: *"Which rows will this touch, and does
+          > the result look right?"* Then check the result with a `SELECT`.
+
+    cheatsheet:
+      - title: Add one row
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Lakeside Gear', 'Canada');
+        note: List the columns, then the values in the same order.
+      - title: Add several rows
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Lakeside Gear', 'Canada'),
+                 (10, 'Quill & Paper Ltd.', 'Italy');
+        note: Separate the rows with commas. One statement, many rows.
+      - title: Leave a column out
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (10, 'Quill & Paper Ltd.', 'Italy');
+        note: "Columns you leave out get their default, usually NULL or a value set on the table."
+  - id: m12-l02
+    title: "INSERT ... SELECT and CREATE TABLE AS: Copying Rows"
+    summary: Copy the result of any query into a new table or into one you already have, and keep a snapshot.
+    minutes: 25
+    steps:
+      - type: read
+        title: Freeze the list for the web team
+        md: |
+          Dana from marketing has a request: *"The web team is building a clearance page. Can you give them
+          a list of our inactive products with names and prices? They need it to stay exactly the same while
+          they work, even if somebody changes the products table."*
+
+          Typing rows by hand is slow and error-prone. You already know how to ask for exactly the rows you
+          want with a `SELECT`. This lesson shows how to **save** that result.
+
+      - type: read
+        title: Two ways to copy a query's result
+        md: |
+          There are two tools, and both use a `SELECT` to choose the rows:
+
+          - **`CREATE TABLE ... AS SELECT`** makes a **brand-new table** and fills it with the result.
+          - **`INSERT INTO ... SELECT`** adds the result to a table that **already exists**.
+
+          ```sql
+          CREATE TABLE new_table AS
+          SELECT column1, column2
+          FROM source_table
+          WHERE ...;
+
+          INSERT INTO existing_table (column1, column2)
+          SELECT column1, column2
+          FROM source_table
+          WHERE ...;
+          ```
+
+          > [!ANALOGY]
+          > It's like photocopying a page. `CREATE TABLE ... AS` photocopies onto a fresh sheet of paper.
+          > `INSERT ... SELECT` photocopies the page and sticks the copies into a folder that already exists.
+
+      - type: example
+        title: Making a snapshot table
+        md: Press **Run**. The first statement creates `inactive_products`. The second one shows its rows.
+        sql: |
+          CREATE TABLE inactive_products AS
+          SELECT product_id, name, price
+          FROM products
+          WHERE is_active = FALSE;
+
+          SELECT *
+          FROM inactive_products
+          ORDER BY product_id;
+        after: |
+          Four rows: Desk Mat XL, Budget Phone Go, Memory Foam Pillow and Plush Dragon, Large. The new table
+          has exactly the three columns you selected, and the same kinds of values as the original columns.
+
+      - type: read
+        title: An empty copy, ready to fill
+        md: |
+          Sometimes you want the same columns but **no rows yet**. Add `WITH NO DATA` at the end of the
+          `CREATE TABLE ... AS` statement. You get an empty table that you can fill later with `INSERT ... SELECT`.
+
+      - type: example
+        title: Create an empty table, then fill it
+        md: The first statement makes an empty table. The second one copies the cheap active products into it.
+        sql: |
+          CREATE TABLE clearance AS
+          SELECT product_id, name, price
+          FROM products
+          WITH NO DATA;
+
+          INSERT INTO clearance (product_id, name, price)
+          SELECT product_id, name, price
+          FROM products
+          WHERE is_active = TRUE
+            AND price < 20;
+
+          SELECT *
+          FROM clearance
+          ORDER BY product_id;
+        after: |
+          Seven products: the Phone Case, Screen Protector, Sourdough guide, Midnight Gardener, Mindful
+          Mornings Journal, Jigsaw Puzzle and Bamboo Hairbrush. The `INSERT` ran the `SELECT` and put every
+          result row into the table.
+
+      - type: example
+        title: "Refused: the column counts do not match"
+        md: We copy four columns into a table that has three. What does the database say?
+        sql: |
+          CREATE TABLE clearance AS
+          SELECT product_id, name, price
+          FROM products
+          WITH NO DATA;
+
+          INSERT INTO clearance (product_id, name, price)
+          SELECT product_id, name, price, cost
+          FROM products;
+        expectError: true
+        after: |
+          The error says `INSERT has more expressions than target columns`. The `SELECT` gives four values for
+          every row, but the column list only has three places. Remove `cost`, or add a column to the list.
+
+      - type: example
+        title: A summary table from GROUP BY
+        md: Any `SELECT` can become a table, including one with `GROUP BY`. Here we count products per category.
+        sql: |
+          CREATE TABLE category_sizes AS
+          SELECT category_id,
+                 COUNT(*) AS product_count
+          FROM products
+          GROUP BY category_id;
+
+          SELECT *
+          FROM category_sizes
+          ORDER BY category_id;
+        after: |
+          Eleven rows, one per category that has products. Categories 1, 2 and 3 are missing because they only
+          group other categories and have no products of their own.
+
+      - type: example
+        title: Copying with a LEFT JOIN
+        md: We copy every kitchen product together with its supplier's name.
+        sql: |
+          CREATE TABLE kitchen_suppliers AS
+          SELECT p.product_id,
+                 p.name AS product,
+                 s.name AS supplier
+          FROM products p
+          LEFT JOIN suppliers s
+                 ON s.supplier_id = p.supplier_id
+          WHERE p.category_id = 9;
+
+          SELECT *
+          FROM kitchen_suppliers
+          ORDER BY product_id;
+        after: |
+          Eight kitchen products, each with the supplier's name. We used a `LEFT JOIN`, so a product without a
+          supplier would still be copied, with an empty supplier name.
+
+      - type: read
+        title: A copy is a snapshot
+        md: |
+          A copied table is **frozen** at the moment you made it. If the price of product 45 changes tomorrow,
+          `inactive_products` won't change. That is exactly right for a report or a list you hand to another team.
+
+          It is the wrong choice when you need live data. Then you query the original table each time.
+
+          > [!MISTAKE]
+          > In `INSERT ... SELECT`, the columns in the list and the columns in the `SELECT` must match in
+          > **number, order and type**. The statement is refused if they don't.
+
+      - type: quiz
+        id: m12-l02-q1
+        question: What is the main difference between `CREATE TABLE ... AS SELECT` and `INSERT INTO ... SELECT`?
+        options:
+          - "CREATE TABLE ... AS makes a new table, while INSERT INTO ... SELECT adds rows to a table that already exists."
+          - "INSERT INTO ... SELECT is faster and can also change existing rows."
+          - "CREATE TABLE ... AS keeps the copy updated whenever the original table changes."
+          - "There is no difference. Both do the same thing."
+        answer: 0
+        explanation: |
+          `CREATE TABLE ... AS` creates the table for you. `INSERT INTO ... SELECT` needs the target table to
+          exist already, and it only adds rows. Neither one keeps the copy in sync with the original.
+
+      - type: predict
+        id: m12-l02-p1
+        question: The table is created with `WITH NO DATA`. How many rows will the final SELECT count?
+        sql: |
+          CREATE TABLE empty_copy AS
+          SELECT product_id, name
+          FROM products
+          WITH NO DATA;
+
+          SELECT COUNT(*) AS rows_copied
+          FROM empty_copy;
+        options: ["0", "60", "2", "An error"]
+        answer: 0
+        explanation: |
+          `WITH NO DATA` copies the column structure but none of the rows. The count is **0** until you add rows
+          with `INSERT ... SELECT`.
+
+      - type: exercise
+        id: m12-l02-e1
+        title: The out-of-stock list
+        difficulty: 1
+        prompt: |
+          Create a new table called `out_of_stock`. It should hold the `product_id`, `name` and `stock_qty` of
+          every product whose `stock_qty` is `0`. Use `CREATE TABLE ... AS SELECT`.
+        solution: |
+          CREATE TABLE out_of_stock AS
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE stock_qty = 0;
+        check: |
+          SELECT *
+          FROM out_of_stock
+          ORDER BY product_id;
+        hints:
+          - "Start with `CREATE TABLE out_of_stock AS`, then write a normal SELECT underneath it."
+          - "Choose the three columns, read FROM products, and keep only the rows where stock_qty is 0."
+          - "CREATE TABLE out_of_stock AS SELECT ___ FROM products WHERE ___;"
+        explanation: |
+          The table gets the column names from your SELECT. It holds the six products with no stock, and it is a
+          copy, so later changes to `products` will not change it.
+
+      - type: exercise
+        id: m12-l02-e2
+        title: Books on clearance
+        difficulty: 1
+        setup: |
+          CREATE TABLE clearance_list (product_id integer, name text, price numeric(10,2));
+        prompt: |
+          A table called `clearance_list` already exists. It has the columns `product_id`, `name` and `price`,
+          and it is empty.
+
+          Copy every product from category `4` (Books) that is priced under `20` into it, keeping those three
+          columns.
+        solution: |
+          INSERT INTO clearance_list (product_id, name, price)
+          SELECT product_id, name, price
+          FROM products
+          WHERE category_id = 4
+            AND price < 20;
+        check: |
+          SELECT *
+          FROM clearance_list
+          ORDER BY product_id;
+        hints:
+          - "Your SELECT is an ordinary query: choose the columns, FROM products, then filter with WHERE."
+          - "Books is category 4. Under 20 means price < 20."
+          - "INSERT INTO clearance_list (product_id, name, price) SELECT ___ FROM products WHERE ___ AND ___;"
+        explanation: |
+          Three Books cost less than 20: product 45, 49 and 50. Because the table already exists, you use
+          `INSERT INTO ... SELECT`, not `CREATE TABLE`.
+
+      - type: exercise
+        id: m12-l02-e3
+        title: Products per supplier
+        difficulty: 2
+        prompt: |
+          Create a table called `supplier_product_counts` with two columns: `supplier_id` and `product_count`.
+          `product_count` is how many products each supplier provides.
+
+          Leave out products that have no supplier. Each supplier should appear on one row.
+        solution: |
+          CREATE TABLE supplier_product_counts AS
+          SELECT supplier_id,
+                 COUNT(*) AS product_count
+          FROM products
+          WHERE supplier_id IS NOT NULL
+          GROUP BY supplier_id;
+        check: |
+          SELECT *
+          FROM supplier_product_counts
+          ORDER BY supplier_id;
+        hints:
+          - "You are counting per supplier, so the result needs GROUP BY supplier_id."
+          - "Products with no supplier have an empty supplier_id. Leave them out with WHERE supplier_id IS NOT NULL."
+          - "CREATE TABLE supplier_product_counts AS SELECT supplier_id, COUNT(*) AS product_count FROM products WHERE ___ GROUP BY ___;"
+        explanation: |
+          `IS NOT NULL` is the correct test for an empty value. `supplier_id = NULL` would never be true, so it
+          would not filter anything out.
+
+      - type: exercise
+        id: m12-l02-e4
+        title: Archive the late returns
+        difficulty: 2
+        setup: |
+          CREATE TABLE returns_archive (order_id integer, customer_id integer, order_date date);
+        prompt: |
+          The table `returns_archive` already exists, with the columns `order_id`, `customer_id` and
+          `order_date`.
+
+          Copy every order with the status `returned` and an `order_date` on or after `2024-11-01` into it.
+          Keep those three columns.
+        solution: |
+          INSERT INTO returns_archive (order_id, customer_id, order_date)
+          SELECT order_id, customer_id, order_date
+          FROM orders
+          WHERE status = 'returned'
+            AND order_date >= '2024-11-01';
+        check: |
+          SELECT *
+          FROM returns_archive
+          ORDER BY order_id;
+        hints:
+          - "Pick the three columns from orders, then filter on the status and on the date."
+          - "Two conditions must both be true, so join them with AND."
+          - "INSERT INTO returns_archive (order_id, customer_id, order_date) SELECT ___ FROM orders WHERE ___ AND ___;"
+        explanation: |
+          `>=` includes the first day, `2024-11-01`. Using a fixed date like this keeps the answer the same every
+          time you run it.
+
+      - type: exercise
+        id: m12-l02-e5
+        title: Customers who never ordered
+        difficulty: 3
+        setup: |
+          CREATE TABLE dormant_customers (customer_id integer, email text, city text);
+        prompt: |
+          The table `dormant_customers` already exists, with the columns `customer_id`, `email` and `city`.
+
+          Copy every customer who has **never placed an order** into it. Use `NOT EXISTS`, the way you did in
+          the subqueries module.
+        solution: |
+          INSERT INTO dormant_customers (customer_id, email, city)
+          SELECT c.customer_id, c.email, c.city
+          FROM customers c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.customer_id = c.customer_id
+          );
+        check: |
+          SELECT *
+          FROM dormant_customers
+          ORDER BY customer_id;
+        hints:
+          - "A customer who never ordered has no matching row in orders at all."
+          - "NOT EXISTS keeps a customer only when the sub-query finds nothing for that customer_id."
+          - "INSERT INTO dormant_customers (...) SELECT ... FROM customers c WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id);"
+        explanation: |
+          The correlated sub-query runs once per customer. Customers 141 to 150 have never ordered, so they are
+          the ten rows copied. This combines an `INSERT` with the anti-join idea from the subqueries module.
+
+      - type: parsons
+        id: m12-l02-o1
+        prompt: Put the lines in the right order to create a table of cheap Books. Leave out the line that does not belong.
+        lines:
+          - "CREATE TABLE cheap_books AS"
+          - "SELECT product_id, name, price"
+          - "FROM products"
+          - "WHERE category_id = 4"
+          - "  AND price < 20;"
+        distractors:
+          - "DELETE FROM products;"
+        explanation: |
+          `CREATE TABLE ... AS` comes first, followed by an ordinary SELECT. The `DELETE` line would remove every
+          product, which is the opposite of what we want.
+
+      - type: fill
+        id: m12-l02-f1
+        prompt: Fill in the blanks so that the statement copies all columns of the inactive products into a new table called `inactive_products`.
+        template: |
+          CREATE TABLE ___ AS
+          SELECT ___
+          FROM products
+          WHERE is_active = ___;
+        answers:
+          - ["inactive_products"]
+          - ["*"]
+          - ["FALSE"]
+        explanation: "`*` means every column. `FALSE` is the boolean value that marks an inactive product."
+
+      - type: read
+        title: Wrap-up
+        md: |
+          You can now turn any query into a table, or pour its rows into a table you already have. These two
+          habits are used all the time in real jobs, for reports, backups and monthly snapshots.
+
+          > [!REAL-WORLD]
+          > Analysts often copy a messy query's result into a table once, so that every later report starts from
+          > the same frozen numbers.
+
+    cheatsheet:
+      - title: Create a table from a query
+        sql: |
+          CREATE TABLE top_products AS
+          SELECT product_id, name
+          FROM products
+          WHERE price > 100;
+        note: The new table gets the columns of the SELECT.
+      - title: Copy rows into a table that exists
+        sql: |
+          INSERT INTO clearance_list (product_id, name, price)
+          SELECT product_id, name, price
+          FROM products
+          WHERE price < 20;
+        note: The column list and the SELECT must match in count, order and type.
+      - title: Empty copy of the columns
+        sql: |
+          CREATE TABLE products_empty AS
+          SELECT *
+          FROM products
+          WITH NO DATA;
+        note: Same columns, zero rows. Fill it later with INSERT ... SELECT.
+  - id: m12-l03
+    title: "UPDATE: Changing Rows That Already Exist"
+    summary: Change one row, many rows or a calculated value with SET and WHERE, and never forget the WHERE.
+    minutes: 25
+    steps:
+      - type: read
+        title: A price change on Monday morning
+        md: |
+          Omar, who runs operations at ShopSmart, is on the phone:
+
+          *"The Aurora 14-inch Laptop is going on sale. Change its price to 849.99 and make sure nothing else
+          changes."*
+
+          The row already exists, so you don't need `INSERT`. You need to **change** it, using **`UPDATE`**.
+
+      - type: read
+        title: The shape of an UPDATE
+        md: |
+          An `UPDATE` has three parts:
+
+          ```sql
+          UPDATE table_name
+          SET column = new_value
+          WHERE condition;
+          ```
+
+          - **`SET`** says which column changes and what its new value is.
+          - **`WHERE`** says which rows change.
+
+          > [!ANALOGY]
+          > It is like editing a spreadsheet. `WHERE` is how you select the cells, and `SET` is what you type
+          > into them. If you select the whole column, every cell changes.
+
+      - type: example
+        title: Changing one row
+        md: Press **Run**. We change one product's price, then look at the product.
+        sql: |
+          UPDATE products
+          SET price = 849.99
+          WHERE product_id = 1;
+
+          SELECT product_id, name, price
+          FROM products
+          WHERE product_id = 1;
+        after: |
+          The `UPDATE` reports that **1 row** changed. The price of product 1 is now **849.99**.
+
+          The `WHERE product_id = 1` part is the only reason the other 59 products are untouched.
+
+      - type: example
+        title: A new value calculated from the old one
+        md: The kitchen department goes on a 10% discount. Each new price is the old price multiplied by 0.90.
+        sql: |
+          UPDATE products
+          SET price = ROUND(price * 0.90, 2)
+          WHERE category_id = 9;
+
+          SELECT product_id, name, price
+          FROM products
+          WHERE category_id = 9
+          ORDER BY product_id;
+        after: |
+          All eight kitchen products have a lower price. The Blender Pro 1200 went from 99.99 to **89.99**.
+
+          `ROUND(..., 2)` keeps the answer at two decimal places, the way money is written.
+
+      - type: example
+        title: Changing several columns at once
+        md: Product 13 (Desk Mat XL) has no stock and is inactive. We restock it and put it back on sale.
+        sql: |
+          UPDATE products
+          SET stock_qty = stock_qty + 20,
+              is_active = TRUE
+          WHERE product_id = 13;
+
+          SELECT product_id, name, stock_qty, is_active
+          FROM products
+          WHERE product_id = 13;
+        after: |
+          The stock went from 0 to **20**, and `is_active` changed from false to **true**. Two columns changed
+          in one statement, separated by a comma.
+
+      - type: read
+        title: Look first, then change
+        md: |
+          Here is the habit that protects you from most `UPDATE` disasters. **Write the `WHERE` as a `SELECT`
+          first.** Check that the rows it finds are exactly the rows you mean to change. Only then replace
+          `SELECT` with `UPDATE` and keep the same `WHERE`.
+
+          > [!TIP]
+          > Keep the `WHERE` identical in both statements. If you change one, you are no longer checking the
+          > rows you are about to change.
+
+      - type: example
+        title: SELECT first, then UPDATE
+        md: "The same condition is used three times: first to look, then to change, then to check."
+        sql: |
+          -- 1. Look: which rows match?
+          SELECT product_id, name, is_active
+          FROM products
+          WHERE stock_qty = 0
+            AND is_active = TRUE;
+
+          -- 2. Change exactly those rows
+          UPDATE products
+          SET is_active = FALSE
+          WHERE stock_qty = 0
+            AND is_active = TRUE;
+
+          -- 3. Check the result
+          SELECT product_id, name, is_active
+          FROM products
+          WHERE stock_qty = 0
+          ORDER BY product_id;
+        after: |
+          Three products matched the condition: the HD Webcam, the Wireless Earbuds and The Midnight Gardener.
+          They are now inactive. The last `SELECT` shows all six products with no stock. The three that were
+          already inactive stay that way.
+
+      - type: example
+        title: The UPDATE without a WHERE
+        md: We forget the `WHERE` clause. Watch what happens to the row count.
+        sql: |
+          UPDATE products
+          SET is_active = FALSE;
+
+          SELECT COUNT(*) AS still_active
+          FROM products
+          WHERE is_active = TRUE;
+        after: |
+          The `UPDATE` reports **60 rows**, every product in the table. Without a `WHERE`, the `SET` applies to
+          every row. `still_active` is now 0.
+
+          This example runs on a copy, so nothing real was harmed. On a real store, you would have to restore the
+          data from a backup. That is why you always look first.
+
+      - type: read
+        title: Types must match
+        md: |
+          The new value must fit the column. `price` is a number, so `'cheap'` is refused with
+          `invalid input syntax for type numeric`. Numbers go in without quotes, and text goes in single quotes.
+
+          > [!MISTAKE]
+          > Writing `SET price = 'cheap'` is a type error. Writing `SET price = cheap` (with no quotes) is worse:
+          > the database looks for a column called `cheap` and reports that it does not exist.
+
+      - type: example
+        title: Updating from another table
+        md: |
+          Nordlys Distribution is having a sale, so we lower the prices of their products by 5%. The supplier's name
+          lives in the `suppliers` table, so `UPDATE ... FROM` lets us look it up.
+        sql: |
+          UPDATE products AS p
+          SET price = ROUND(p.price * 0.95, 2)
+          FROM suppliers AS s
+          WHERE s.supplier_id = p.supplier_id
+            AND s.name = 'Nordlys Distribution';
+
+          SELECT product_id, name, price
+          FROM products
+          WHERE supplier_id = 5
+          ORDER BY product_id;
+        after: |
+          Only products whose supplier is Nordlys Distribution changed. `UPDATE ... FROM` works like a join: the
+          `WHERE` line matches each product to its supplier, and only matching rows are changed.
+
+      - type: quiz
+        id: m12-l03-q1
+        question: What happens when an UPDATE has no WHERE clause?
+        options:
+          - "Only the first row in the table changes."
+          - "Every row in the table changes."
+          - "The statement fails with an error."
+          - "Only rows that contain NULL change."
+        answer: 1
+        explanation: |
+          Without a `WHERE`, there is no filter, so every row matches. This is the most common and most costly
+          `UPDATE` mistake, which is why you look first with a `SELECT`.
+
+      - type: predict
+        id: m12-l03-p1
+        question: How many products will be inactive when the final SELECT runs? Four were inactive at the start.
+        sql: |
+          UPDATE products
+          SET is_active = FALSE
+          WHERE stock_qty = 0;
+
+          SELECT COUNT(*) AS inactive_now
+          FROM products
+          WHERE is_active = FALSE;
+        options: ["4", "6", "7", "60"]
+        answer: 2
+        explanation: |
+          Six products have no stock: 9, 13, 19, 22, 49 and 55. Four were already inactive (13, 19, 37, 55). The
+          union of the two groups is 9, 13, 19, 22, 37, 49 and 55, which is **7** products.
+
+      - type: exercise
+        id: m12-l03-e1
+        title: Re-price the laptop
+        difficulty: 1
+        prompt: |
+          Change the price of product `2` (Aurora 16-inch Pro Laptop) to `1399.99`.
+
+          Do not change any other product.
+        solution: |
+          UPDATE products
+          SET price = 1399.99
+          WHERE product_id = 2;
+        check: |
+          SELECT product_id, name, price
+          FROM products
+          WHERE product_id = 2
+          ORDER BY product_id;
+        hints:
+          - "Use UPDATE, not INSERT. The row already exists."
+          - "Use SET to say which column changes, and WHERE product_id = 2 to pick the one row."
+          - "UPDATE products SET ___ = ___ WHERE ___ = ___;"
+        explanation: |
+          `WHERE product_id = 2` is what keeps the other 59 products safe. Without it, every price would become
+          1399.99.
+
+      - type: exercise
+        id: m12-l03-e2
+        title: Restock the webcams
+        difficulty: 1
+        prompt: |
+          The HD Webcam 1080p (product `9`) has just been restocked with `25` more units.
+
+          Add 25 to its `stock_qty`. Use the current value in your calculation, not a number you typed in.
+        solution: |
+          UPDATE products
+          SET stock_qty = stock_qty + 25
+          WHERE product_id = 9;
+        check: |
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE product_id = 9
+          ORDER BY product_id;
+        hints:
+          - "The new stock is the old stock plus 25, so the column name appears on both sides of SET."
+          - "SET stock_qty = stock_qty + ___ WHERE product_id = ___;"
+          - "Write stock_qty + 25 inside the SET, and remember the WHERE."
+        explanation: |
+          `stock_qty = stock_qty + 25` reads the current value and adds 25 to it. This is safer than typing the
+          new total, because a second restock would not overwrite the first.
+
+      - type: exercise
+        id: m12-l03-e3
+        title: Raise the peripherals
+        difficulty: 2
+        prompt: |
+          Raise the price of every product in category `13` (Peripherals) by `5%`. Round each new price to two
+          decimal places.
+
+          Only the products in category 13 should change.
+        solution: |
+          UPDATE products
+          SET price = ROUND(price * 1.05, 2)
+          WHERE category_id = 13;
+        check: |
+          SELECT product_id, name, price
+          FROM products
+          WHERE category_id = 13
+          ORDER BY product_id;
+        hints:
+          - "To raise a price by 5%, multiply it by 1.05."
+          - "Wrap the calculation in ROUND(..., 2) so the price keeps two decimal places."
+          - "UPDATE products SET price = ROUND(price * ___, 2) WHERE category_id = ___;"
+        explanation: |
+          The right-hand side uses the current `price` on each row, so every product gets its own new price. The
+          `WHERE category_id = 13` keeps the other categories untouched.
+
+      - type: exercise
+        id: m12-l03-e4
+        title: Retire the sold-out products
+        difficulty: 2
+        prompt: |
+          Set `is_active` to `FALSE` for every product that has `stock_qty` equal to `0` **and** is still active.
+
+          Products that are already inactive should stay as they are.
+        solution: |
+          UPDATE products
+          SET is_active = FALSE
+          WHERE stock_qty = 0
+            AND is_active = TRUE;
+        check: |
+          SELECT is_active, COUNT(*) AS product_count
+          FROM products
+          GROUP BY is_active
+          ORDER BY is_active;
+        hints:
+          - "Use SELECT first, with the same conditions, to see which products match."
+          - "Two conditions must both be true, so join them with AND."
+          - "UPDATE products SET is_active = ___ WHERE stock_qty = ___ AND is_active = ___;"
+        explanation: |
+          Three products change: 9, 22 and 49. The check counts the active and inactive products afterwards, so
+          any product changed by mistake would show up in the numbers.
+
+      - type: exercise
+        id: m12-l03-e5
+        title: Cheaper ingredients from Kestrel
+        difficulty: 2
+        prompt: |
+          Kestrel Supply GmbH raised its costs, so we need to update our own cost for its products. Raise the
+          `cost` of every product supplied by **Kestrel Supply GmbH** by `3%`, rounded to two decimal places.
+
+          Use `UPDATE ... FROM` with the `suppliers` table to find the supplier by name.
+        solution: |
+          UPDATE products AS p
+          SET cost = ROUND(p.cost * 1.03, 2)
+          FROM suppliers AS s
+          WHERE s.supplier_id = p.supplier_id
+            AND s.name = 'Kestrel Supply GmbH';
+        check: |
+          SELECT supplier_id, ROUND(SUM(cost), 2) AS total_cost
+          FROM products
+          GROUP BY supplier_id
+          ORDER BY supplier_id;
+        hints:
+          - "Start from the example with Nordlys Distribution. The same shape works here."
+          - "The supplier's name is in suppliers, so the WHERE must compare s.name and link s.supplier_id to p.supplier_id."
+          - "UPDATE products AS p SET cost = ROUND(p.cost * ___, 2) FROM suppliers AS s WHERE ___ AND s.name = '...';"
+        explanation: |
+          The check adds up the cost of each supplier's products. If you changed the wrong products, these totals
+          would not match.
+
+      - type: exercise
+        id: m12-l03-e6
+        title: European and Japanese suppliers
+        difficulty: 3
+        prompt: |
+          Raise the `cost` by `10%` (rounded to two decimal places) for every product whose supplier is based in
+          **Germany or Japan**.
+
+          Hint from the subqueries module: you can pick the supplier ids with a sub-query on `suppliers.country`.
+        solution: |
+          UPDATE products
+          SET cost = ROUND(cost * 1.10, 2)
+          WHERE supplier_id IN (
+              SELECT supplier_id
+              FROM suppliers
+              WHERE country IN ('Germany', 'Japan')
+          );
+        check: |
+          SELECT supplier_id, ROUND(SUM(cost), 2) AS total_cost
+          FROM products
+          GROUP BY supplier_id
+          ORDER BY supplier_id;
+        hints:
+          - "First write a SELECT that returns the supplier_id of suppliers in Germany or Japan."
+          - "Put that SELECT inside brackets, after IN, in the WHERE clause of your UPDATE."
+          - "UPDATE products SET cost = ROUND(cost * ___, 2) WHERE supplier_id IN (SELECT ___ FROM suppliers WHERE ___);"
+        explanation: |
+          The sub-query returns the ids of Germany's and Japan's suppliers. Those ids are then used in the
+          `WHERE`, so only their products change. The check totals show the effect per supplier.
+
+      - type: parsons
+        id: m12-l03-o1
+        prompt: Put the lines in the right order to raise the price of kitchen products by 10%. Leave out the line that does not belong.
+        lines:
+          - "UPDATE products"
+          - "SET price = ROUND(price * 1.10, 2)"
+          - "WHERE category_id = 9;"
+        distractors:
+          - "DELETE FROM products"
+        explanation: |
+          An `UPDATE` starts with the table name, then `SET`, then `WHERE`. The `DELETE` line would remove the
+          products instead of changing their prices.
+
+      - type: fill
+        id: m12-l03-f1
+        prompt: Fill in the two blanks so that product 9 gets 10 more units in stock.
+        template: |
+          UPDATE ___
+          SET stock_qty = stock_qty + 10
+          WHERE ___ = 9;
+        answers:
+          - ["products"]
+          - ["product_id"]
+        explanation: "The table is `products`, and the row is chosen by its `product_id`."
+
+      - type: read
+        title: Wrap-up
+        md: |
+          You can now change one row, several rows and calculated values, and you know how to use a second table
+          with `UPDATE ... FROM`. Remember the habit: **look with a SELECT, then change with an UPDATE, then check
+          with a SELECT.**
+
+    cheatsheet:
+      - title: Change one row
+        sql: |
+          UPDATE products
+          SET price = 849.99
+          WHERE product_id = 1;
+        note: Always keep a WHERE that picks exactly the rows you mean.
+      - title: Change based on the old value
+        sql: |
+          UPDATE products
+          SET stock_qty = stock_qty + 20
+          WHERE product_id = 13;
+        note: The column name on the right-hand side means the current value.
+      - title: Update from another table
+        sql: |
+          UPDATE products AS p
+          SET price = ROUND(p.price * 0.95, 2)
+          FROM suppliers AS s
+          WHERE s.supplier_id = p.supplier_id
+            AND s.name = 'Nordlys Distribution';
+        note: The WHERE line links the two tables, just like a JOIN.
+  - id: m12-l04
+    title: "DELETE and TRUNCATE: Removing Rows Safely"
+    summary: Remove matching rows with DELETE, remove a delete using another table, and empty a table with TRUNCATE.
+    minutes: 25
+    steps:
+      - type: read
+        title: The moderation team's list
+        md: |
+          The moderation team has marked some customer reviews as spam. Their message says:
+
+          *"Please remove every one-star review. We checked them, and they are all spam."*
+
+          Removing rows is the most permanent change you can make. So this lesson uses the **look first** habit
+          from the last lesson, every single time.
+
+      - type: read
+        title: The shape of a DELETE
+        md: |
+          **`DELETE FROM`** names the table, and a **`WHERE`** says which rows go:
+
+          ```sql
+          DELETE FROM table_name
+          WHERE condition;
+          ```
+
+          > [!ANALOGY]
+          > A `DELETE` is like shredding paper. The `WHERE` decides which sheets go into the shredder, and once
+          > they are gone, you cannot read them again.
+
+      - type: example
+        title: Look first
+        md: Before deleting anything, we run the same condition as a `SELECT`.
+        sql: |
+          SELECT review_id, product_id, rating
+          FROM reviews
+          WHERE rating = 1
+          ORDER BY review_id;
+        after: |
+          Five reviews match: 39, 178, 194, 214 and 260. These are exactly the rows the `DELETE` would remove.
+          If the list looked wrong, you would stop here and change the condition.
+
+      - type: example
+        title: Deleting the matching rows
+        md: Now we run the `DELETE` with the same condition, and count what is left.
+        sql: |
+          DELETE FROM reviews
+          WHERE rating = 1;
+
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        after: |
+          The `DELETE` removed **5** rows. Of the 320 reviews, **315** are left. The count is a quick way to
+          confirm the change went as planned.
+
+      - type: read
+        title: Deleting with a second table
+        md: |
+          Sometimes the condition depends on another table. For example, "delete the reviews of discontinued
+          products" needs the `products` table to know which products are discontinued. Use **`DELETE ... USING`**
+          to bring the other table in, then join the two with a `WHERE`, just like `UPDATE ... FROM`.
+
+      - type: example
+        title: DELETE ... USING
+        md: We remove every review of an inactive (discontinued) product.
+        sql: |
+          DELETE FROM reviews AS r
+          USING products AS p
+          WHERE p.product_id = r.product_id
+            AND p.is_active = FALSE;
+
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        after: |
+          17 reviews were removed, so 303 are left. The four inactive products (Desk Mat XL, Budget Phone Go,
+          Memory Foam Pillow and Plush Dragon) had reviews that belonged to them, and those went too.
+
+      - type: example
+        title: "Refused: the product is still on order"
+        md: What happens if we delete a product that customers have bought? Let's try product `1`.
+        sql: |
+          DELETE FROM products
+          WHERE product_id = 1;
+        expectError: true
+        after: |
+          The error says `violates foreign key constraint "order_items_product_id_fkey"`. Order lines still point
+          at product 1, and the database will not leave them pointing at nothing. This protects the order history.
+
+          The fix is usually not to delete the product at all. Set `is_active` to `FALSE` instead.
+
+      - type: read
+        title: "TRUNCATE: empty the whole table"
+        md: |
+          **`TRUNCATE`** removes **every** row of a table in one quick step. It has no `WHERE`, so it cannot pick
+          some rows and leave others.
+
+          ```sql
+          TRUNCATE TABLE table_name;
+          ```
+
+          > [!ANALOGY]
+          > `DELETE` erases a notebook line by line. `TRUNCATE` tears out every page at once. It is much faster
+          > for a whole table, and just as final.
+
+      - type: example
+        title: Emptying a table
+        md: We empty the `reviews` table completely and count what is left.
+        sql: |
+          TRUNCATE TABLE reviews;
+
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        after: |
+          The count is **0**. The table still exists, with all its columns, but it holds no rows at all.
+
+      - type: example
+        title: "Refused: other tables depend on it"
+        md: What happens if we try to empty the `suppliers` table?
+        sql: |
+          TRUNCATE TABLE suppliers;
+        expectError: true
+        after: |
+          The error is `cannot truncate a table referenced in a foreign key constraint`. Products point at
+          suppliers, so the database refuses to empty the table under them.
+
+          The hint in the error suggests `CASCADE`, which also empties the tables that depend on this one.
+          Don't use it unless you know exactly what it will delete.
+
+      - type: read
+        title: Two habits that save jobs
+        md: |
+          1. **Look first.** Run the `WHERE` as a `SELECT` and check the rows. Count them if you can.
+          2. **Back up before a big delete or truncate.** One line makes a full copy:
+
+          ```sql
+          CREATE TABLE reviews_backup AS
+          SELECT *
+          FROM reviews;
+          ```
+
+          > [!MISTAKE]
+          > `DELETE FROM reviews;` with no `WHERE` removes **every** row, just like `TRUNCATE`. Always check that
+          > your `WHERE` is there before you run a `DELETE`.
+
+      - type: stepper
+        title: "Building a safe DELETE, one clause at a time"
+        md: Each stage adds one piece. Click through, and run each one before you move on.
+        stages:
+          - label: FROM
+            md: Start with the table, and look at a few of its rows.
+            sql: |
+              SELECT review_id, rating
+              FROM reviews
+              ORDER BY review_id
+              LIMIT 6;
+          - label: WHERE
+            md: Add the condition. Now only the rows that would be deleted are shown.
+            sql: |
+              SELECT review_id, rating
+              FROM reviews
+              WHERE rating = 1
+              ORDER BY review_id;
+          - label: DELETE
+            md: Swap the SELECT for a DELETE with the same WHERE, then count what is left.
+            sql: |
+              DELETE FROM reviews
+              WHERE rating = 1;
+
+              SELECT COUNT(*) AS reviews_left
+              FROM reviews;
+
+      - type: quiz
+        id: m12-l04-q1
+        question: Which statement describes the difference between DELETE and TRUNCATE correctly?
+        options:
+          - "DELETE removes the rows that match a WHERE condition. TRUNCATE empties the whole table and has no WHERE."
+          - "TRUNCATE removes only the rows that match a WHERE condition. DELETE empties the whole table."
+          - "DELETE removes the table itself. TRUNCATE removes only the rows."
+          - "They do exactly the same thing. Only the spelling is different."
+        answer: 0
+        explanation: |
+          Use `DELETE` when you want to choose rows with a `WHERE`. Use `TRUNCATE` to empty the whole table in one
+          quick step. Neither one removes the table itself.
+
+      - type: predict
+        id: m12-l04-p1
+        question: How many reviews are left in the final count?
+        sql: |
+          DELETE FROM reviews
+          WHERE rating <= 2;
+
+          SELECT COUNT(*) AS reviews_left
+          FROM reviews;
+        options: ["297", "302", "315", "320"]
+        answer: 0
+        explanation: |
+          There are 320 reviews. Five have 1 star and 18 have 2 stars, which is 23 rows. 320 minus 23 is **297**.
+
+      - type: parsons
+        id: m12-l04-o1
+        prompt: Put the lines in the right order to delete the one-star reviews that have no text. Leave out the line that does not belong.
+        lines:
+          - "DELETE FROM reviews"
+          - "WHERE rating = 1"
+          - "  AND review_text IS NULL;"
+        distractors:
+          - "TRUNCATE TABLE reviews;"
+        explanation: |
+          `DELETE FROM` names the table, and the `WHERE` lines choose the rows. `TRUNCATE` would empty the whole
+          table, so it does not belong here.
+
+      - type: fill
+        id: m12-l04-f1
+        prompt: Fill in the two blanks so that the statement deletes every review with a rating of 1.
+        template: |
+          DELETE FROM ___
+          WHERE ___ = 1;
+        answers:
+          - ["reviews"]
+          - ["rating"]
+        explanation: "`DELETE FROM reviews` names the table, and `WHERE rating = 1` picks the rows."
+
+      - type: exercise
+        id: m12-l04-e1
+        title: Remove one product's reviews
+        difficulty: 1
+        prompt: |
+          Product `27` (Programmable Coffee Maker) has been withdrawn from our reviews page. Delete **all** of
+          its reviews from the `reviews` table.
+
+          Leave the reviews of every other product alone.
+        solution: |
+          DELETE FROM reviews
+          WHERE product_id = 27;
+        check: |
+          SELECT COUNT(*) AS reviews_left,
+                 COUNT(DISTINCT product_id) AS products_reviewed
+          FROM reviews;
+        hints:
+          - "Use DELETE FROM reviews. The condition is about the product, not the rating."
+          - "Pick the rows where product_id equals 27."
+          - "DELETE FROM reviews WHERE ___ = ___;"
+        explanation: |
+          Product 27 had two reviews. After deleting them, one fewer product still has any reviews, so the check
+          shows 51 products reviewed and 318 reviews left.
+
+      - type: exercise
+        id: m12-l04-e2
+        title: Empty reviews with no text
+        difficulty: 1
+        prompt: |
+          Delete every review that **has no written text** (`review_text` is empty) **and** has a rating of `2` or
+          lower.
+
+          Reviews with stars and text should stay.
+        solution: |
+          DELETE FROM reviews
+          WHERE review_text IS NULL
+            AND rating <= 2;
+        check: |
+          SELECT COUNT(*) AS reviews_left,
+                 COUNT(review_text) AS reviews_with_text
+          FROM reviews;
+        hints:
+          - "An empty text is tested with IS NULL, not = NULL."
+          - "Two conditions must both be true, so join them with AND."
+          - "DELETE FROM reviews WHERE review_text IS NULL AND ___ <= ___;"
+        explanation: |
+          Seven reviews are both empty and rated 1 or 2. The check counts the reviews left and how many of them
+          still have text. `COUNT(review_text)` skips empty values, which is why it can be lower than the total.
+
+      - type: exercise
+        id: m12-l04-e3
+        title: Reviews from Oregon customers
+        difficulty: 2
+        prompt: |
+          A customer from Oregon (state `OR`) asked us to remove every review they wrote. Delete all reviews
+          written by customers whose `state` is `OR`.
+
+          Use `DELETE ... USING` with the `customers` table.
+        solution: |
+          DELETE FROM reviews AS r
+          USING customers AS c
+          WHERE c.customer_id = r.customer_id
+            AND c.state = 'OR';
+        check: |
+          SELECT rating, COUNT(*) AS review_count
+          FROM reviews
+          GROUP BY rating
+          ORDER BY rating;
+        hints:
+          - "Look at the example with DELETE ... USING. Replace products with customers."
+          - "Link the two tables with c.customer_id = r.customer_id, then add the state condition."
+          - "DELETE FROM reviews AS r USING customers AS c WHERE c.customer_id = r.customer_id AND c.state = ___;"
+        explanation: |
+          `USING` brings in the `customers` table so the `WHERE` can read each reviewer's state. Only reviews
+          written by Oregon customers are removed, and the check shows how each star rating is left.
+
+      - type: exercise
+        id: m12-l04-e4
+        title: Back up, then empty
+        difficulty: 2
+        prompt: |
+          Before emptying the `reviews` table, make a backup:
+
+          1. Create a new table called `reviews_backup` that is a full copy of `reviews`.
+          2. Then empty `reviews` with `TRUNCATE`.
+        solution: |
+          CREATE TABLE reviews_backup AS
+          SELECT *
+          FROM reviews;
+
+          TRUNCATE TABLE reviews;
+        check: |
+          SELECT (SELECT COUNT(*) FROM reviews) AS reviews_left,
+                 (SELECT COUNT(*) FROM reviews_backup) AS backup_rows;
+        hints:
+          - "Make the backup first. Its SELECT is just SELECT * FROM reviews."
+          - "Then run TRUNCATE TABLE reviews; after the backup is created."
+          - "CREATE TABLE reviews_backup AS SELECT * FROM reviews; TRUNCATE TABLE ___;"
+        explanation: |
+          Backing up first means the data can always be recovered. The check shows zero reviews left in `reviews`
+          and all 320 rows in the backup.
+
+      - type: exercise
+        id: m12-l04-e5
+        title: Remove the poorly rated products
+        difficulty: 3
+        prompt: |
+          Some products have an **average rating below 3**. Delete every review of those products.
+
+          Hint: a sub-query can find those products. Use `GROUP BY product_id` and `HAVING AVG(rating) < 3`
+          inside it.
+        solution: |
+          DELETE FROM reviews
+          WHERE product_id IN (
+              SELECT product_id
+              FROM reviews
+              GROUP BY product_id
+              HAVING AVG(rating) < 3
+          );
+        check: |
+          SELECT COUNT(*) AS reviews_left,
+                 COUNT(DISTINCT product_id) AS products_reviewed
+          FROM reviews;
+        hints:
+          - "First write the sub-query alone and check which product_ids it returns."
+          - "Use IN (...) to match every review whose product_id is in that list."
+          - "DELETE FROM reviews WHERE product_id IN (SELECT product_id FROM reviews GROUP BY product_id HAVING ___);"
+        explanation: |
+          Two products (27 and 45) have an average below 3. Their 11 reviews are removed. The sub-query is
+          evaluated first and gives the list of products, and the `DELETE` then removes all of their reviews.
+
+      - type: read
+        title: Wrap-up
+        md: |
+          You can now delete the rows that match a condition, delete using a second table, and empty a table with
+          `TRUNCATE`. Before every removal, remember the two habits: **look first with a SELECT**, and **back up
+          before a big change**.
+
+    cheatsheet:
+      - title: Delete the matching rows
+        sql: |
+          DELETE FROM reviews
+          WHERE rating = 1;
+        note: No WHERE means every row goes. Look first with a SELECT.
+      - title: Delete using another table
+        sql: |
+          DELETE FROM reviews AS r
+          USING products AS p
+          WHERE p.product_id = r.product_id
+            AND p.is_active = FALSE;
+        note: USING brings in a second table; the WHERE links the two.
+      - title: Empty a whole table
+        sql: |
+          TRUNCATE TABLE reviews;
+        note: Removes every row at once. Refused if another table points at it.
+  - id: m12-l05
+    title: "RETURNING: See Exactly What Changed"
+    summary: Get the rows an INSERT, UPDATE or DELETE touched back in the same statement, including old and new values.
+    minutes: 20
+    steps:
+      - type: read
+        title: "Did it work? Show me the rows."
+        md: |
+          Lena, the store manager, reads every change you make. After each one she asks:
+
+          *"Which rows did that touch, and what do they look like now?"*
+
+          You could answer with a second `SELECT`. But there is a shorter way: ask the change itself to
+          **report back** the rows it touched, using **`RETURNING`**.
+
+      - type: read
+        title: How RETURNING works
+        md: |
+          Add `RETURNING` and a list of columns (or `*` for all of them) at the **end** of an `INSERT`, `UPDATE`
+          or `DELETE`:
+
+          ```sql
+          UPDATE table_name
+          SET column = new_value
+          WHERE condition
+          RETURNING column1, column2;
+          ```
+
+          The rows come back in the same result. For an `INSERT` or `UPDATE` you see the rows **after** the change.
+          For a `DELETE` you see the rows **as they were** just before they were removed.
+
+          > [!ANALOGY]
+          > It's like a shop assistant who, after changing your order, reads the updated order back to you before
+          > you leave the counter.
+
+      - type: example
+        title: RETURNING after an INSERT
+        md: Press **Run**. There is no second `SELECT` this time.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Trailhead Supply', 'Canada')
+          RETURNING *;
+        after: |
+          The new supplier comes straight back as a result row. Its `contact_email` is **NULL**, because we left
+          it out, just like in the first lesson.
+
+      - type: example
+        title: RETURNING old and new values
+        md: |
+          Since PostgreSQL 18, `RETURNING` can show the value **before** the change (`old.`) and **after** the
+          change (`new.`) in the same result.
+        sql: |
+          UPDATE products
+          SET price = ROUND(price * 0.90, 2)
+          WHERE product_id = 2
+          RETURNING name, old.price AS old_price, new.price AS new_price;
+        after: |
+          One row: the Aurora 16-inch Pro Laptop went from **1499.99** to **1349.99**. Seeing both numbers
+          in one place is the fastest way to prove a price change did what you meant.
+
+      - type: example
+        title: RETURNING from a DELETE
+        md: This `DELETE` removes the one-star reviews, and `RETURNING` shows us what it removed.
+        sql: |
+          DELETE FROM reviews
+          WHERE rating = 1
+          RETURNING review_id, product_id, rating;
+        after: |
+          Five rows come back: the five reviews that were deleted. They are shown as they were before the
+          deletion, because they no longer exist in the table.
+
+      - type: example
+        title: No match, no rows, no error
+        md: What happens when the `WHERE` matches nothing? Product `999` does not exist.
+        sql: |
+          UPDATE products
+          SET price = 0.01
+          WHERE product_id = 999
+          RETURNING product_id, price;
+
+          SELECT COUNT(*) AS products_with_id_999
+          FROM products
+          WHERE product_id = 999;
+        after: |
+          The `RETURNING` sends back **0 rows**, and there is no error. The statement ran, but no row matched the
+          `WHERE`. The final count confirms it: there is no product with id 999.
+          An empty `RETURNING` is a useful signal: check your `WHERE` if you expected something back.
+
+      - type: example
+        title: Archiving rows with RETURNING
+        md: |
+          Before deleting the one-star reviews, we copy them into an archive table. The `WITH` part (from the CTE
+          lesson) deletes the rows and passes them on to the `INSERT`.
+        sql: |
+          CREATE TABLE deleted_reviews AS
+          SELECT *
+          FROM reviews
+          WITH NO DATA;
+
+          WITH moved AS (
+              DELETE FROM reviews
+              WHERE rating = 1
+              RETURNING *
+          )
+          INSERT INTO deleted_reviews
+          SELECT *
+          FROM moved;
+
+          SELECT COUNT(*) AS archived
+          FROM deleted_reviews;
+        after: |
+          The archive holds **5** reviews, and the `reviews` table no longer has them. Nothing was copied and
+          then deleted separately, so the two steps cannot get out of step.
+
+      - type: read
+        title: Where RETURNING is not allowed
+        md: |
+          `RETURNING` works with `INSERT`, `UPDATE`, `DELETE` and `MERGE` (which you'll meet at the end of this module).
+          It does **not** work with `TRUNCATE`, because `TRUNCATE` removes everything and has no list of rows to return.
+
+          > [!MISTAKE]
+          > `RETURNING` shows the rows that the statement changed. It does not change the rows itself. If you forget
+          > the `WHERE`, `RETURNING` will faithfully show you every row that was changed.
+
+      - type: quiz
+        id: m12-l05-q1
+        question: What does RETURNING do in an INSERT, UPDATE or DELETE statement?
+        options:
+          - "It undoes the change so you can try again."
+          - "It shows the rows the statement changed, in the same result."
+          - "It returns only the number of rows changed."
+          - "It copies the whole table into a backup."
+        answer: 1
+        explanation: |
+          `RETURNING` sends back the affected rows from the statement itself. It saves you from writing a second
+          `SELECT` to check what happened.
+
+      - type: predict
+        id: m12-l05-p1
+        question: How many rows does this DELETE return? The rating 9 does not exist in the table.
+        sql: |
+          DELETE FROM reviews
+          WHERE rating = 9
+          RETURNING review_id;
+        options: ["0", "1", "5", "An error"]
+        answer: 0
+        explanation: |
+          No review has a rating of 9, so the `WHERE` matches nothing. Nothing is deleted and nothing is returned,
+          and there is **no error**.
+
+      - type: parsons
+        id: m12-l05-o1
+        prompt: Put the lines in the right order so the price of product 2 goes down by 10 and the new price comes back. Leave out the line that does not belong.
+        lines:
+          - "UPDATE products"
+          - "SET price = price - 10"
+          - "WHERE product_id = 2"
+          - "RETURNING product_id, price;"
+        distractors:
+          - "SELECT * FROM products;"
+        explanation: |
+          The order is `UPDATE`, then `SET`, then `WHERE`, and `RETURNING` comes last. The plain `SELECT` line
+          is not needed, because `RETURNING` already shows the result.
+
+      - type: fill
+        id: m12-l05-f1
+        prompt: Fill in the blank so that the DELETE returns the review ids and ratings of the two reviews for product 27.
+        template: |
+          DELETE FROM reviews
+          WHERE product_id = 27
+          ___ review_id, rating;
+        answers:
+          - ["RETURNING"]
+        explanation: "`RETURNING` goes after the WHERE, and then the list of columns you want back."
+
+      - type: exercise
+        id: m12-l05-e1
+        title: Add a supplier and show it
+        difficulty: 1
+        prompt: |
+          Add a supplier with `supplier_id` `9`, `name` `Summit Ridge Co.` and `country` `Norway`. Leave out the
+          email.
+
+          Use `RETURNING` so the statement shows the new row's `supplier_id`, `name` and `country`.
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Summit Ridge Co.', 'Norway')
+          RETURNING supplier_id, name, country;
+        hints:
+          - "Start with the INSERT from the first example, and change the values."
+          - "Add RETURNING at the very end, followed by the three columns you want to see."
+          - "INSERT INTO suppliers (supplier_id, name, country) VALUES (___, ___, ___) RETURNING ___, ___, ___;"
+        explanation: |
+          The result is the single new row. Notice that you did not need a second `SELECT`.
+
+      - type: exercise
+        id: m12-l05-e2
+        title: Restock and report
+        difficulty: 1
+        prompt: |
+          The Wireless Earbuds Pulse (product `22`) is back in stock with `12` units.
+
+          Set its `stock_qty` to its current stock plus `12`. Then return the `product_id`, `name` and `stock_qty`
+          of the row you changed.
+        solution: |
+          UPDATE products
+          SET stock_qty = stock_qty + 12
+          WHERE product_id = 22
+          RETURNING product_id, name, stock_qty;
+        hints:
+          - "The product's stock is 0 to start, so the new value should be 12."
+          - "Write SET stock_qty = stock_qty + 12, then the WHERE, then RETURNING."
+          - "UPDATE products SET stock_qty = stock_qty + ___ WHERE product_id = ___ RETURNING ___, ___, ___;"
+        explanation: |
+          `RETURNING` shows the stock after the change. Writing `stock_qty + 12` keeps the update relative to
+          the current value.
+
+      - type: exercise
+        id: m12-l05-e3
+        title: Show the old and new price
+        difficulty: 2
+        prompt: |
+          Cut the price of product `2` (Aurora 16-inch Pro Laptop) by `100.00`.
+
+          Return three columns: `product_id`, `old_price` (the price before the change) and `new_price` (the
+          price after the change). Use `old.` and `new.` in `RETURNING`.
+        solution: |
+          UPDATE products
+          SET price = price - 100.00
+          WHERE product_id = 2
+          RETURNING product_id,
+                    old.price AS old_price,
+                    new.price AS new_price;
+        columnNames: true
+        hints:
+          - "Use SET price = price - 100.00 with WHERE product_id = 2."
+          - "In RETURNING, old.price means the value before the change, and new.price means after."
+          - "RETURNING product_id, old.price AS old_price, ___.price AS ___;"
+        explanation: |
+          `old.` and `new.` are only available inside `RETURNING` in PostgreSQL 18. They let you show a before-and-after
+          comparison without storing the old value anywhere.
+
+      - type: exercise
+        id: m12-l05-e4
+        title: Return the deleted reviews
+        difficulty: 2
+        prompt: |
+          Delete every review of product `27`. Return the `review_id` and `rating` of each deleted review.
+        solution: |
+          DELETE FROM reviews
+          WHERE product_id = 27
+          RETURNING review_id, rating;
+        hints:
+          - "Use DELETE FROM reviews with a WHERE that picks product 27."
+          - "The RETURNING list should contain only review_id and rating."
+          - "DELETE FROM reviews WHERE ___ = ___ RETURNING ___, ___;"
+        explanation: |
+          Product 27 has two reviews, so two rows come back. The rows show the values they had just before they
+          were removed.
+
+      - type: exercise
+        id: m12-l05-e5
+        title: Retire the sold-out products
+        difficulty: 3
+        prompt: |
+          Set `is_active` to `FALSE` for every product with `stock_qty` equal to `0` that is still active.
+
+          Then show the **names** of the products you retired, sorted alphabetically by `name`. Write it as one
+          statement with a `WITH` clause that uses `UPDATE ... RETURNING`.
+        solution: |
+          WITH retired AS (
+              UPDATE products
+              SET is_active = FALSE
+              WHERE stock_qty = 0
+                AND is_active = TRUE
+              RETURNING product_id, name
+          )
+          SELECT name
+          FROM retired
+          ORDER BY name;
+        ordered: true
+        hints:
+          - "Put the UPDATE ... RETURNING inside WITH retired AS ( ... ). The RETURNING gives you a list of rows to read from."
+          - "Read FROM retired, not FROM products, in the final SELECT."
+          - "WITH retired AS (UPDATE products SET ... WHERE ... RETURNING product_id, name) SELECT name FROM retired ORDER BY name;"
+        explanation: |
+          A data-changing statement can be the first part of a `WITH` clause. Its `RETURNING` rows become a
+          temporary table called `retired`, which the final `SELECT` reads and sorts. Three products are retired:
+          HD Webcam 1080p, The Midnight Gardener and Wireless Earbuds Pulse.
+
+      - type: read
+        title: Wrap-up
+        md: |
+          `RETURNING` gives you a receipt for every change. Use it with `INSERT`, `UPDATE`, `DELETE` and, next,
+          `MERGE`. Read the result as your proof that the change did exactly what you intended.
+
+    cheatsheet:
+      - title: See the new rows
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (9, 'Trailhead Supply', 'Canada')
+          RETURNING *;
+        note: For an INSERT or UPDATE, RETURNING shows the rows after the change.
+      - title: Before and after an update
+        sql: |
+          UPDATE products
+          SET price = price - 100.00
+          WHERE product_id = 2
+          RETURNING product_id,
+                    old.price AS old_price,
+                    new.price AS new_price;
+        note: old. and new. are available in RETURNING in PostgreSQL 18.
+      - title: Show what a DELETE removed
+        sql: |
+          DELETE FROM reviews
+          WHERE rating = 1
+          RETURNING review_id, product_id, rating;
+        note: The rows come back as they were before they were deleted.
+  - id: m12-l06
+    title: "UPSERT: Insert, or Update If It Is Already There"
+    summary: Use INSERT ... ON CONFLICT to add new rows and update existing ones in a single statement.
+    minutes: 25
+    steps:
+      - type: read
+        title: The nightly supplier feed
+        md: |
+          Every night, ShopSmart's suppliers send a file with their latest details. Some suppliers are new, and
+          some are already in our table. Ravi, who maintains the system, asks you for one thing:
+
+          *"Please load the whole file in one go. New suppliers should be added, and existing ones should be updated."*
+
+          A plain `INSERT` fails as soon as it meets an id that already exists. A plain `UPDATE` ignores the new
+          suppliers. You need both at once: **UPSERT**, which is short for "update or insert".
+
+      - type: read
+        title: INSERT ... ON CONFLICT
+        md: |
+          You add an `ON CONFLICT` clause to the end of an `INSERT`. It names the column that must be unique, and it
+          says what to do when a row with the same value already exists:
+
+          ```sql
+          INSERT INTO table_name (key_column, other_column)
+          VALUES (...)
+          ON CONFLICT (key_column)
+          DO NOTHING;
+          ```
+
+          Or, to change the existing row instead:
+
+          ```sql
+          ON CONFLICT (key_column)
+          DO UPDATE SET other_column = EXCLUDED.other_column;
+          ```
+
+          > [!ANALOGY]
+          > A library receives a book that is already on the shelf. `DO NOTHING` means "leave the shelf as it is".
+          > `DO UPDATE` means "replace the card on the shelf with the new information".
+
+      - type: example
+        title: "DO NOTHING: skip the rows that already exist"
+        md: Supplier 1 is already in the table. Supplier 9 is new. Watch what happens to each.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (1, 'Lumen Trading (again)', 'United States'),
+                 (9, 'Summit Outdoor Co.', 'Norway')
+          ON CONFLICT (supplier_id) DO NOTHING;
+
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id IN (1, 9)
+          ORDER BY supplier_id;
+        after: |
+          Supplier 1 keeps its original name, **Lumen Trading Co.**, because the conflicting row was skipped.
+          Supplier 9 was new, so it was added. One statement handled both cases without an error.
+
+      - type: read
+        title: "EXCLUDED: the row you tried to insert"
+        md: |
+          Inside `DO UPDATE`, the word **`EXCLUDED`** means "the row I was trying to insert". The existing row in
+          the table is called by its table name, such as `suppliers.contact_email`.
+
+          > [!TIP]
+          > Read `SET contact_email = EXCLUDED.contact_email` as: "put the new email from the feed into the row
+          > that already exists".
+
+      - type: example
+        title: "DO UPDATE: change the existing row"
+        md: Supplier 2 has a new contact email in the feed. We upsert the whole row.
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'hello@kestrel.example.com')
+          ON CONFLICT (supplier_id)
+          DO UPDATE SET contact_email = EXCLUDED.contact_email;
+
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id = 2;
+        after: |
+          The email changed to **hello@kestrel.example.com**. There is still one row for supplier 2, and the table
+          still has eight suppliers. Nothing was duplicated.
+
+      - type: example
+        title: Upserting a product feed
+        md: |
+          The feed sends full product rows. Product 1 already exists, so only its price and cost are updated. Product
+          61 is new, so it is inserted.
+        sql: |
+          INSERT INTO products (product_id, name, category_id, supplier_id,
+                                price, cost, stock_qty, is_active, created_at)
+          VALUES
+              (1, 'Aurora 14-inch Laptop', 12, 4, 849.99, 611.09, 15, TRUE, '2022-12-11'),
+              (61, 'Trail Mix Pack', 14, 1, 9.99, 4.20, 100, TRUE, '2024-12-20')
+          ON CONFLICT (product_id)
+          DO UPDATE SET price = EXCLUDED.price,
+                        cost = EXCLUDED.cost;
+
+          SELECT product_id, name, price, cost
+          FROM products
+          WHERE product_id IN (1, 61)
+          ORDER BY product_id;
+        after: |
+          Product 1 now costs **849.99** (it was 899.99), and its name and stock stayed as they were. Product 61 is
+          new, with a price of 9.99. Both changes happened in one statement.
+
+      - type: example
+        title: Adding to an existing number
+        md: A shipment of 30 HD Webcams arrives. The stock must grow, not be replaced.
+        sql: |
+          INSERT INTO products (product_id, name, category_id, supplier_id,
+                                price, cost, stock_qty, is_active, created_at)
+          VALUES (9, 'HD Webcam 1080p', 13, 4, 49.99, 22.80, 30, TRUE, '2022-07-10')
+          ON CONFLICT (product_id)
+          DO UPDATE SET stock_qty = products.stock_qty + EXCLUDED.stock_qty;
+
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE product_id = 9;
+        after: |
+          The webcam had **0** units, so the stock is now **30**. Writing `products.stock_qty + EXCLUDED.stock_qty`
+          means: take the stock already in the table and add the incoming quantity.
+
+      - type: example
+        title: "Refused: the column is not unique"
+        md: We try to use `name` as the conflict column. Is a product name unique?
+        sql: |
+          INSERT INTO products (product_id, name, category_id, supplier_id,
+                                price, cost, stock_qty, is_active, created_at)
+          VALUES (61, 'Trail Mix Pack', 14, 1, 9.99, 4.20, 100, TRUE, '2024-12-20')
+          ON CONFLICT (name) DO NOTHING;
+        expectError: true
+        after: |
+          The error is `there is no unique or exclusion constraint matching the ON CONFLICT specification`. The
+          database can only detect a conflict on a column that is guaranteed unique, such as the primary key
+          `product_id`. Names can repeat, so `name` cannot be used.
+
+      - type: read
+        title: Choose the conflict column carefully
+        md: |
+          > [!MISTAKE]
+          > `ON CONFLICT (column)` only works when that column is a **primary key** or has a **unique** rule. Use
+          > the id column (for example `supplier_id` or `product_id`) and you will be fine.
+
+          An upsert can also be used to build a summary, one row per key. The key must be unique so that the
+          database knows which row is "the same".
+
+      - type: quiz
+        id: m12-l06-q1
+        question: Inside ON CONFLICT ... DO UPDATE, what does EXCLUDED refer to?
+        options:
+          - "The existing row in the table that caused the conflict."
+          - "The row you tried to insert."
+          - "Only the column that caused the conflict."
+          - "The rows that were deleted earlier in the statement."
+        answer: 1
+        explanation: |
+          `EXCLUDED` is the proposed new row, the one the `INSERT` was trying to add. The existing row is referred to
+          by its table name, for example `products.stock_qty`.
+
+      - type: predict
+        id: m12-l06-p1
+        question: Which rows does this statement return with RETURNING?
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (3, 'Tanuki Trading', 'Japan'),
+                 (10, 'Pacific Pine', 'Chile')
+          ON CONFLICT (supplier_id) DO NOTHING
+          RETURNING supplier_id;
+        options: ["No rows", "One row: 10", "Two rows: 3 and 10", "An error"]
+        answer: 1
+        explanation: |
+          Supplier 3 already exists, so its row was skipped and nothing is returned for it. Supplier 10 is new, so
+          it was inserted and comes back. The result is one row, 10.
+
+      - type: parsons
+        id: m12-l06-o1
+        prompt: Put the lines in the right order so that supplier 2 is added, or skipped if it already exists. Leave out the line that does not belong.
+        lines:
+          - "INSERT INTO suppliers (supplier_id, name, country)"
+          - "VALUES (2, 'Kestrel Supply GmbH', 'Germany')"
+          - "ON CONFLICT (supplier_id) DO NOTHING;"
+        distractors:
+          - "DELETE FROM suppliers;"
+        explanation: |
+          The `ON CONFLICT` clause always comes after the `VALUES`. The `DELETE` line would wipe the table, which
+          is never part of an upsert.
+
+      - type: fill
+        id: m12-l06-f1
+        prompt: Fill in the two blanks so that an existing supplier gets its country replaced from the feed.
+        template: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany')
+          ON CONFLICT (___)
+          DO UPDATE SET country = ___.country;
+        answers:
+          - ["supplier_id"]
+          - ["EXCLUDED"]
+        explanation: "The conflict column is `supplier_id`. `EXCLUDED.country` is the country from the feed."
+
+      - type: exercise
+        id: m12-l06-e1
+        title: Skip the suppliers we already have
+        difficulty: 1
+        prompt: |
+          Load these two rows from the supplier feed into `suppliers` with one statement. If a `supplier_id` already
+          exists, skip that row and leave it unchanged:
+
+          - `supplier_id` `9`, `name` `Summit Outdoor Co.`, `country` `Norway`, `contact_email` `NULL`
+          - `supplier_id` `3`, `name` `Tanuki Goods Ltd.`, `country` `Japan`, `contact_email` `NULL`
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (9, 'Summit Outdoor Co.', 'Norway', NULL),
+                 (3, 'Tanuki Goods Ltd.', 'Japan', NULL)
+          ON CONFLICT (supplier_id) DO NOTHING;
+        check: |
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        hints:
+          - "Supplier 9 is new, and supplier 3 already exists. You want one to be added and the other skipped."
+          - "Add ON CONFLICT (supplier_id) DO NOTHING after the VALUES list."
+          - "INSERT INTO suppliers (...) VALUES (...), (...) ON CONFLICT (___) DO ___;"
+        explanation: |
+          `DO NOTHING` skips supplier 3 without an error, and supplier 9 is inserted. The check shows nine suppliers
+          and supplier 3 unchanged.
+
+      - type: exercise
+        id: m12-l06-e2
+        title: Refresh one supplier's email
+        difficulty: 1
+        prompt: |
+          Upsert one row into `suppliers`: `supplier_id` `2`, `name` `Kestrel Supply GmbH`, `country` `Germany`,
+          `contact_email` `orders@kestrel.example.com`.
+
+          If supplier 2 already exists, update only its `contact_email`. Otherwise add the row.
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com')
+          ON CONFLICT (supplier_id)
+          DO UPDATE SET contact_email = EXCLUDED.contact_email;
+        check: |
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        hints:
+          - "Supplier 2 already exists, so you need DO UPDATE, not DO NOTHING."
+          - "Only the email changes, so SET only contact_email."
+          - "ON CONFLICT (supplier_id) DO UPDATE SET contact_email = ___.contact_email;"
+        explanation: |
+          `EXCLUDED.contact_email` is the new email from the feed. The check shows eight suppliers, and only the
+          email of supplier 2 is different.
+
+      - type: exercise
+        id: m12-l06-e3
+        title: A shipment adds to the stock
+        difficulty: 2
+        setup: |
+          CREATE TABLE stock_levels (product_id integer PRIMARY KEY, units integer NOT NULL);
+          INSERT INTO stock_levels (product_id, units) VALUES (9, 5), (13, 0);
+        prompt: |
+          The table `stock_levels` already exists. It has the columns `product_id` (the primary key) and `units`,
+          and it starts with two rows: product 9 with 5 units and product 13 with 0 units.
+
+          A shipment arrives with **10** units of product 9 and **12** units of product 22. Upsert the shipment into
+          `stock_levels`. A product already in the table gets its units **added** to. A new product is inserted.
+        solution: |
+          INSERT INTO stock_levels (product_id, units)
+          VALUES (9, 10),
+                 (22, 12)
+          ON CONFLICT (product_id)
+          DO UPDATE SET units = stock_levels.units + EXCLUDED.units;
+        check: |
+          SELECT *
+          FROM stock_levels
+          ORDER BY product_id;
+        hints:
+          - "Product 9 is already in the table, and product 22 is not. Both rows go into one INSERT."
+          - "For a conflict, the new units are added to the existing units: stock_levels.units + EXCLUDED.units."
+          - "INSERT INTO stock_levels (product_id, units) VALUES (9, 10), (22, 12) ON CONFLICT (___) DO UPDATE SET units = ___ + ___;"
+        explanation: |
+          Product 9 goes from 5 units to 15, product 13 is unchanged, and product 22 is inserted with 12 units.
+          The table name on the right-hand side means "the units already stored".
+
+      - type: exercise
+        id: m12-l06-e4
+        title: Only replace an email that exists
+        difficulty: 2
+        prompt: |
+          Upsert these two rows from the supplier feed into `suppliers`:
+
+          - `supplier_id` `3`, `name` `Tanuki Goods Ltd.`, `country` `Japan`, `contact_email` `sales@tanuki.example.com`
+          - `supplier_id` `7`, `name` `Orchid & Oak Imports`, `country` `United Kingdom`, `contact_email` `NULL`
+
+          Update `contact_email` only when the feed has an email. Add a `WHERE` after `DO UPDATE SET` so that a
+          `NULL` email in the feed does not overwrite the stored value.
+        solution: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (3, 'Tanuki Goods Ltd.', 'Japan', 'sales@tanuki.example.com'),
+                 (7, 'Orchid & Oak Imports', 'United Kingdom', NULL)
+          ON CONFLICT (supplier_id)
+          DO UPDATE SET contact_email = EXCLUDED.contact_email
+          WHERE EXCLUDED.contact_email IS NOT NULL;
+        check: |
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id IN (3, 7)
+          ORDER BY supplier_id;
+        hints:
+          - "The WHERE goes after the DO UPDATE SET line, not in the VALUES."
+          - "You want to keep the update only when EXCLUDED.contact_email is not empty."
+          - "... DO UPDATE SET contact_email = EXCLUDED.contact_email WHERE EXCLUDED.contact_email ___ NULL;"
+        explanation: |
+          Supplier 3 gets its email. Supplier 7's feed email is empty, so the `WHERE` is false and the stored value
+          (also empty) stays as it was. A plain `DO UPDATE` would have overwritten existing data with empty values.
+
+      - type: exercise
+        id: m12-l06-e5
+        title: Copy the category's stock with an upsert
+        difficulty: 3
+        setup: |
+          CREATE TABLE stock_levels (product_id integer PRIMARY KEY, units integer NOT NULL);
+          INSERT INTO stock_levels (product_id, units) VALUES (9, 5), (13, 0);
+        prompt: |
+          The table `stock_levels` already exists, with `product_id` (the primary key) and `units`. It starts with
+          product 9 at 5 units and product 13 at 0 units.
+
+          Copy the **current** stock of every product in category `13` (Peripherals) into `stock_levels`, using
+          `INSERT ... SELECT`. A product already in the table should get its units **replaced** with the current
+          `stock_qty`, not added to.
+        solution: |
+          INSERT INTO stock_levels (product_id, units)
+          SELECT product_id, stock_qty
+          FROM products
+          WHERE category_id = 13
+          ON CONFLICT (product_id)
+          DO UPDATE SET units = EXCLUDED.units;
+        check: |
+          SELECT *
+          FROM stock_levels
+          ORDER BY product_id;
+        hints:
+          - "Write the SELECT first: product_id and stock_qty from products, filtered to category 13."
+          - "Put the ON CONFLICT clause after the WHERE of the SELECT, and use EXCLUDED.units to replace the value."
+          - "INSERT INTO stock_levels (product_id, units) SELECT ___, ___ FROM products WHERE ___ ON CONFLICT (___) DO UPDATE SET units = ___.units;"
+        explanation: |
+          Eight products are copied. Products 9 and 13 were already there, so their units are replaced with the
+          current stock (both 0). The rest are new rows. `EXCLUDED.units` is the value from the SELECT.
+
+      - type: read
+        title: Wrap-up
+        md: |
+          An upsert is the right tool when a file arrives that may contain both new and known rows. Choose
+          **DO NOTHING** to keep what is there, **DO UPDATE** to change it, and use `EXCLUDED` to reach the new values.
+
+    cheatsheet:
+      - title: Skip existing rows
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country)
+          VALUES (1, 'Lumen Trading (again)', 'United States')
+          ON CONFLICT (supplier_id) DO NOTHING;
+        note: The existing row stays exactly as it was.
+      - title: Update existing rows from the feed
+        sql: |
+          INSERT INTO suppliers (supplier_id, name, country, contact_email)
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'hello@kestrel.example.com')
+          ON CONFLICT (supplier_id)
+          DO UPDATE SET contact_email = EXCLUDED.contact_email;
+        note: EXCLUDED is the row you tried to insert.
+      - title: Add to an existing number
+        sql: |
+          ON CONFLICT (product_id)
+          DO UPDATE SET stock_qty = products.stock_qty + EXCLUDED.stock_qty;
+        note: The table name refers to the row already stored in the table.
+  - id: m12-l07
+    title: "MERGE: Bring a Table in Line with a List"
+    summary: Update, insert and remove rows in one MERGE statement by comparing a target table with a source list.
+    minutes: 25
+    steps:
+      - type: read
+        title: Friday's stock count
+        md: |
+          Every Friday the warehouse team counts the shelves and writes the results on a **count sheet**. Lena
+          wants the system to match the sheet exactly:
+
+          *"Update the stock for products that were counted. Add anything new. Products that are missing from
+          the sheet in the Peripherals category should be set to zero."*
+
+          That is three different actions, depending on what each product's situation is. One statement can do
+          all three: **`MERGE`**.
+
+      - type: read
+        title: A staging table and a small list
+        md: |
+          Incoming data is usually loaded into a **staging table** first. It is a holding area, like an in-tray,
+          where the new data waits to be checked before it touches the real table.
+
+          You can also type a short list straight into a query with **`VALUES`**. Wrapped in brackets and given a
+          name, it becomes a small table:
+
+          ```sql
+          (VALUES (9, 12), (13, 4)) AS v(product_id, counted)
+          ```
+
+          That is a two-row table with the columns `product_id` and `counted`. We'll use it as a count sheet.
+
+      - type: read
+        title: The three kinds of match
+        md: |
+          MERGE compares every row of the **target** (the table to change) with every row of the **source** (the
+          list), using a condition such as `ON p.product_id = s.product_id`. Each row ends up in one of three groups:
+
+          - **`WHEN MATCHED`**: the row is in both. Usually you update it.
+          - **`WHEN NOT MATCHED`**: the row is only in the source. Usually you insert it.
+          - **`WHEN NOT MATCHED BY SOURCE`**: the row is only in the target. You can update it or delete it.
+            This clause arrived in PostgreSQL 17.
+
+          > [!ANALOGY]
+          > Imagine a guest list (the target) and a new invitation list (the source). Guests on both lists stay.
+          > New names get added. Guests whose invitation was not sent get removed.
+
+      - type: example
+        title: MERGE with WHEN MATCHED
+        md: We create the count sheet, then update the stock of the products on it.
+        sql: |
+          CREATE TABLE count_sheet AS
+          SELECT *
+          FROM (VALUES (9, 12), (13, 4), (22, 3)) AS v(product_id, counted);
+
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted;
+
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE product_id IN (9, 13, 22)
+          ORDER BY product_id;
+        after: |
+          Product 9 now has **12** units, product 13 has **4**, and product 22 has **3**. Each product on the sheet
+          was matched by its `product_id` and updated. Products that were not on the sheet are untouched.
+
+      - type: example
+        title: Matched rows updated, new rows inserted
+        md: The supplier feed contains one supplier we already have (2) and one new supplier (9).
+        sql: |
+          CREATE TABLE supplier_feed AS
+          SELECT *
+          FROM (VALUES
+              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (9, 'Summit Outdoor Co.', 'Norway', NULL)
+          ) AS v(supplier_id, name, country, contact_email);
+
+          MERGE INTO suppliers AS s
+          USING supplier_feed AS f
+             ON s.supplier_id = f.supplier_id
+          WHEN MATCHED THEN
+              UPDATE SET contact_email = f.contact_email
+          WHEN NOT MATCHED THEN
+              INSERT (supplier_id, name, country, contact_email)
+              VALUES (f.supplier_id, f.name, f.country, f.contact_email);
+
+          SELECT *
+          FROM suppliers
+          WHERE supplier_id IN (2, 9)
+          ORDER BY supplier_id;
+        after: |
+          Supplier 2 kept its name and country, but its email came from the feed. Supplier 9 did not exist, so
+          MERGE inserted it. One statement did both jobs.
+
+      - type: example
+        title: WHEN NOT MATCHED BY SOURCE
+        md: |
+          The count sheet only lists products 9 and 13. All other Peripherals (category 13) are missing from it, so
+          their stock is set to zero.
+        sql: |
+          CREATE TABLE count_sheet AS
+          SELECT *
+          FROM (VALUES (9, 12), (13, 4)) AS v(product_id, counted);
+
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted
+          WHEN NOT MATCHED BY SOURCE AND p.category_id = 13 THEN
+              UPDATE SET stock_qty = 0;
+
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE category_id = 13
+          ORDER BY product_id;
+        after: |
+          Eight products in category 13 are shown. Products 9 and 13 were counted, so they have 12 and 4. The other
+          six are not on the sheet, so they now show **0**. The `AND p.category_id = 13` condition keeps the
+          rest of the store out of it.
+
+      - type: read
+        title: Watch out for BY SOURCE
+        md: |
+          > [!MISTAKE]
+          > A `WHEN NOT MATCHED BY SOURCE` clause **without** a condition applies to every target row that is not in
+          > the source. On a store with 60 products and a short count sheet, that could be almost every row. Always
+          > add a condition, and check the matching rows with a `SELECT` first.
+
+      - type: example
+        title: "Refused: two source rows for the same product"
+        md: The count sheet has product 9 twice, with different counts. Which one should win?
+        sql: |
+          CREATE TABLE count_sheet AS
+          SELECT *
+          FROM (VALUES (9, 12), (9, 14)) AS v(product_id, counted);
+
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted;
+        expectError: true
+        after: |
+          The error is `MERGE command cannot affect row a second time`. Each target row can be matched by only one
+          source row. Fix the sheet first, so that each product appears only once.
+
+      - type: example
+        title: Seeing what MERGE did
+        md: PostgreSQL 18 lets `RETURNING` report the action taken for each row with `merge_action()`.
+        sql: |
+          CREATE TABLE count_sheet AS
+          SELECT *
+          FROM (VALUES (9, 12), (13, 4)) AS v(product_id, counted);
+
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted
+          RETURNING merge_action(), p.product_id, p.stock_qty;
+        after: |
+          Two rows come back, both with the action **UPDATE**: product 9 with 12 units, and product 13 with 4 units.
+          If a `WHEN NOT MATCHED` clause had inserted a row, its action would say **INSERT** instead.
+
+      - type: read
+        title: MERGE or UPSERT?
+        md: |
+          Both can add and update rows in one statement. The difference is the number of decisions:
+
+          - **UPSERT** (`INSERT ... ON CONFLICT`) handles one kind of event: "this key already exists".
+          - **MERGE** handles several at once: matched, not matched, and not matched by source, each with its own action.
+
+          Use an upsert for a simple feed of new or changed rows. Use MERGE when you must also remove rows that are
+          missing from the list.
+
+      - type: quiz
+        id: m12-l07-q1
+        question: Which MERGE clause applies to a row that is in the target table but not in the source list?
+        options:
+          - "WHEN MATCHED"
+          - "WHEN NOT MATCHED"
+          - "WHEN NOT MATCHED BY SOURCE"
+          - "RETURNING"
+        answer: 2
+        explanation: |
+          `WHEN NOT MATCHED BY SOURCE` handles target rows that have no partner in the source. You can update or
+          delete them there.
+
+      - type: predict
+        id: m12-l07-p1
+        question: What number does the final query show? Products 1 and 2 are on the sheet, and MERGE only has a WHEN MATCHED clause.
+        sql: |
+          CREATE TABLE sheet AS
+          SELECT *
+          FROM (VALUES (1, 50), (2, 60)) AS v(product_id, counted);
+
+          MERGE INTO products AS p
+          USING sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted;
+
+          SELECT COUNT(*) AS products_in_table
+          FROM products;
+        options: ["2", "58", "60", "62"]
+        answer: 2
+        explanation: |
+          MERGE changed only two existing rows and added none, because there is no `WHEN NOT MATCHED` clause. The
+          table still has its original **60** products.
+
+      - type: parsons
+        id: m12-l07-o1
+        prompt: Put the lines in the right order to update product 9's stock from a one-row source. Leave out the line that does not belong.
+        lines:
+          - "MERGE INTO products AS p"
+          - "USING (VALUES (9, 12)) AS s(product_id, counted)"
+          - "ON p.product_id = s.product_id"
+          - "WHEN MATCHED THEN"
+          - "    UPDATE SET stock_qty = s.counted;"
+        distractors:
+          - "TRUNCATE products;"
+        explanation: |
+          A MERGE names the target, then the source, then the matching condition, then what to do with each group of
+          rows. `TRUNCATE` is a different statement that would empty the whole table.
+
+      - type: fill
+        id: m12-l07-f1
+        prompt: Fill in the blank so that products found in the source are updated.
+        template: |
+          MERGE INTO products AS p
+          USING (VALUES (9, 12)) AS s(product_id, counted)
+          ON p.product_id = s.product_id
+          WHEN ___ THEN
+              UPDATE SET stock_qty = s.counted;
+        answers:
+          - ["MATCHED"]
+        explanation: "`WHEN MATCHED` means the row exists in both the target and the source."
+
+      - type: exercise
+        id: m12-l07-e1
+        title: Apply the count sheet
+        difficulty: 1
+        setup: |
+          CREATE TABLE count_sheet (product_id integer, counted integer);
+          INSERT INTO count_sheet (product_id, counted) VALUES (9, 12), (13, 4), (22, 3);
+        prompt: |
+          The count sheet is in the table `count_sheet`, with the columns `product_id` and `counted`.
+
+          Use `MERGE` to set `stock_qty` to the counted number for every product that is on the sheet. Products
+          that are not on the sheet should not change.
+        solution: |
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted;
+        check: |
+          SELECT product_id, name, stock_qty
+          FROM products
+          WHERE product_id IN (9, 13, 22)
+          ORDER BY product_id;
+        hints:
+          - "Use MERGE INTO products, with count_sheet as the source."
+          - "Match the two tables on product_id, and handle the WHEN MATCHED case only."
+          - "MERGE INTO products AS p USING count_sheet AS s ON p.product_id = s.product_id WHEN MATCHED THEN UPDATE SET ___ = s.___;"
+        explanation: |
+          Products 9, 13 and 22 are the three rows on the sheet, so their stock is replaced by the counted number.
+          Because there is no `WHEN NOT MATCHED` clause, nothing is added.
+
+      - type: exercise
+        id: m12-l07-e2
+        title: Sync the supplier feed
+        difficulty: 2
+        setup: |
+          CREATE TABLE supplier_feed (supplier_id integer, name text, country text, contact_email text);
+          INSERT INTO supplier_feed (supplier_id, name, country, contact_email) VALUES
+              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (9, 'Summit Outdoor Co.', 'Norway', NULL);
+        prompt: |
+          The table `supplier_feed` holds this week's supplier list, with the same columns as `suppliers`.
+
+          Use `MERGE` to bring `suppliers` in line with it, matching on `supplier_id`:
+
+          - a supplier that is in both tables gets its `contact_email` updated from the feed
+          - a supplier that is only in the feed gets inserted with all four columns
+        solution: |
+          MERGE INTO suppliers AS s
+          USING supplier_feed AS f
+             ON s.supplier_id = f.supplier_id
+          WHEN MATCHED THEN
+              UPDATE SET contact_email = f.contact_email
+          WHEN NOT MATCHED THEN
+              INSERT (supplier_id, name, country, contact_email)
+              VALUES (f.supplier_id, f.name, f.country, f.contact_email);
+        check: |
+          SELECT *
+          FROM suppliers
+          ORDER BY supplier_id;
+        hints:
+          - "You need two WHEN clauses: one for matched rows and one for rows that are not matched."
+          - "The WHEN NOT MATCHED clause is an INSERT, and the values come from the feed, written as f.column."
+          - "WHEN MATCHED THEN UPDATE SET contact_email = f.___ WHEN NOT MATCHED THEN INSERT (...) VALUES (f.___, ...);"
+        explanation: |
+          Supplier 2 is matched, so only its email changes. Supplier 9 is new, so it is inserted. The check shows
+          nine suppliers in total.
+
+      - type: exercise
+        id: m12-l07-e3
+        title: Clear the Books that were not counted
+        difficulty: 2
+        setup: |
+          CREATE TABLE count_sheet (product_id integer, counted integer);
+          INSERT INTO count_sheet (product_id, counted) VALUES (45, 6), (46, 2);
+        prompt: |
+          The count sheet `count_sheet` lists two Books: product 45 with 6 units and product 46 with 2 units.
+
+          Use one `MERGE` to do two things:
+
+          - set `stock_qty` to the counted number for products on the sheet
+          - set `is_active` to `FALSE` for every **Book** (category `4`) that is **not** on the sheet
+        solution: |
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted
+          WHEN NOT MATCHED BY SOURCE AND p.category_id = 4 THEN
+              UPDATE SET is_active = FALSE;
+        check: |
+          SELECT product_id, name, stock_qty, is_active
+          FROM products
+          WHERE category_id = 4
+          ORDER BY product_id;
+        hints:
+          - "Products on the sheet are matched; Books that are not on the sheet are NOT MATCHED BY SOURCE."
+          - "Add AND p.category_id = 4 after WHEN NOT MATCHED BY SOURCE so that other categories are left alone."
+          - "WHEN NOT MATCHED BY SOURCE AND p.category_id = ___ THEN UPDATE SET is_active = ___;"
+        explanation: |
+          Products 45 and 46 get their counted stock. Products 47 to 51 are Books that were not counted, so they
+          become inactive. The `AND p.category_id = 4` condition stops the rest of the store from being changed.
+
+      - type: exercise
+        id: m12-l07-e4
+        title: Make the watchlist match
+        difficulty: 3
+        setup: |
+          CREATE TABLE watchlist (customer_id integer, product_id integer);
+          INSERT INTO watchlist (customer_id, product_id) VALUES (1, 9), (1, 13), (1, 22);
+          CREATE TABLE new_watchlist (customer_id integer, product_id integer);
+          INSERT INTO new_watchlist (customer_id, product_id) VALUES (1, 9), (1, 45);
+        prompt: |
+          Customer 1 has a `watchlist` of products. Their new list is in `new_watchlist`. Both tables have the
+          columns `customer_id` and `product_id`.
+
+          Use one `MERGE` to make `watchlist` match `new_watchlist` exactly:
+
+          - add the products that are only in `new_watchlist`
+          - delete the products that are only in `watchlist`
+        solution: |
+          MERGE INTO watchlist AS w
+          USING new_watchlist AS n
+             ON w.customer_id = n.customer_id
+            AND w.product_id = n.product_id
+          WHEN NOT MATCHED THEN
+              INSERT (customer_id, product_id)
+              VALUES (n.customer_id, n.product_id)
+          WHEN NOT MATCHED BY SOURCE THEN
+              DELETE;
+        check: |
+          SELECT *
+          FROM watchlist
+          ORDER BY customer_id, product_id;
+        hints:
+          - "The match needs both columns: customer_id and product_id must both be equal."
+          - "WHEN NOT MATCHED adds the new rows, and WHEN NOT MATCHED BY SOURCE removes the old ones."
+          - "MERGE INTO watchlist AS w USING new_watchlist AS n ON ___ AND ___ WHEN NOT MATCHED THEN INSERT ... WHEN NOT MATCHED BY SOURCE THEN ___;"
+        explanation: |
+          Product 9 is on both lists and stays. Product 45 is added. Products 13 and 22 are only on the old
+          watchlist, so MERGE deletes them. The final watchlist holds exactly the new list.
+
+      - type: exercise
+        id: m12-l07-e5
+        title: Report what the merge did
+        difficulty: 3
+        setup: |
+          CREATE TABLE supplier_feed (supplier_id integer, name text, country text, contact_email text);
+          INSERT INTO supplier_feed (supplier_id, name, country, contact_email) VALUES
+              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (9, 'Summit Outdoor Co.', 'Norway', NULL);
+        prompt: |
+          Merge `supplier_feed` into `suppliers` (matched on `supplier_id`). Matched suppliers get their
+          `contact_email` from the feed. New suppliers are inserted with all four columns.
+
+          Use `RETURNING` so the merge reports one row per change, with two columns:
+
+          - `action`: the action taken for that row (`UPDATE` or `INSERT`)
+          - `supplier_id`: the supplier's id
+        solution: |
+          MERGE INTO suppliers AS s
+          USING supplier_feed AS f
+             ON s.supplier_id = f.supplier_id
+          WHEN MATCHED THEN
+              UPDATE SET contact_email = f.contact_email
+          WHEN NOT MATCHED THEN
+              INSERT (supplier_id, name, country, contact_email)
+              VALUES (f.supplier_id, f.name, f.country, f.contact_email)
+          RETURNING merge_action() AS action,
+                    s.supplier_id AS supplier_id;
+        columnNames: true
+        hints:
+          - "Use the same MERGE as the previous exercise, then add RETURNING at the end."
+          - "merge_action() returns the action name for each row. Give it the alias action."
+          - "... RETURNING merge_action() AS action, s.supplier_id AS supplier_id;"
+        explanation: |
+          Two rows come back: supplier 2 was updated and supplier 9 was inserted. `merge_action()` is the easiest
+          way to see what MERGE did to each row, without running a second `SELECT`.
+
+      - type: read
+        title: Wrap-up
+        md: |
+          You now have a single tool for the most complex changes: **MERGE** matches two lists and decides, row by
+          row, whether to update, insert or delete. Combined with the habits of this module, look first, back up
+          before a big change, and check with `RETURNING` or a `SELECT`, you can change real data with confidence.
+
+          > [!TIP]
+          > Before you write a MERGE, write its `USING` part as a `SELECT` and check the source rows. Duplicate source
+          > rows are the most common reason a MERGE fails.
+
+    cheatsheet:
+      - title: Update matched, insert new
+        sql: |
+          MERGE INTO products AS p
+          USING count_sheet AS s
+             ON p.product_id = s.product_id
+          WHEN MATCHED THEN
+              UPDATE SET stock_qty = s.counted;
+        note: Add a WHEN NOT MATCHED THEN INSERT ... clause to also add new rows.
+      - title: Delete rows missing from the source
+        sql: |
+          WHEN NOT MATCHED BY SOURCE AND p.category_id = 13 THEN
+              UPDATE SET stock_qty = 0;
+        note: Always add a condition so only the intended rows are changed.
+      - title: Report what MERGE did
+        sql: |
+          RETURNING merge_action(), p.product_id, p.stock_qty;
+        note: merge_action() shows UPDATE, INSERT or DELETE for each row.
+testPool:
+  - type: quiz
+    id: m12-t01
+    lesson: m12-l01
+    difficulty: 1
+    question: A table has a discount column with the default 0. You INSERT a row and leave discount out. What is stored?
+    options: ["NULL", "0", "An error, because the column is missing", "An empty text"]
+    answer: 1
+    explanation: A column left out of an INSERT gets its default value. Here the default is 0.
+
+  - type: predict
+    id: m12-t02
+    lesson: m12-l01
+    difficulty: 2
+    question: How many suppliers does the final SELECT count?
+    sql: |
+      INSERT INTO suppliers (supplier_id, name, country)
+      VALUES (20, 'Atlas Tools', 'Germany'),
+             (21, 'Beacon Foods', 'Peru');
+
+      SELECT COUNT(*) AS suppliers_now
+      FROM suppliers;
+    options: ["8", "9", "10", "An error"]
+    answer: 2
+    explanation: The table starts with 8 suppliers. Two new rows make 10.
+
+  - type: exercise
+    id: m12-t03
+    lesson: m12-l01
+    difficulty: 1
+    title: A supplier with no email yet
+    prompt: |
+      Add supplier `10` with the name `Atlas Tools` and the country `Germany`. Leave the email column out of the
+      statement completely.
+    starter: |
+      INSERT INTO suppliers (supplier_id, name, country)
+      VALUES ();
+    solution: |
+      INSERT INTO suppliers (supplier_id, name, country)
+      VALUES (10, 'Atlas Tools', 'Germany');
+    check: |
+      SELECT *
+      FROM suppliers
+      WHERE supplier_id = 10
+      ORDER BY supplier_id;
+    hints:
+      - "Name only the three columns you have values for: supplier_id, name and country."
+      - "The values go in the same order: 10, then the name in quotes, then the country in quotes."
+      - "INSERT INTO suppliers (supplier_id, name, country) VALUES (___, ___, ___);"
+    explanation: The email is left out, so the table fills in NULL for it.
+
+  - type: fill
+    id: m12-t04
+    lesson: m12-l01
+    difficulty: 1
+    prompt: Fill in the two blanks so that a new top-level category called Pets (id 15) is added.
+    template: |
+      ___ INTO categories (category_id, name, parent_id)
+      ___ (15, 'Pets', NULL);
+    answers:
+      - ["INSERT"]
+      - ["VALUES"]
+    explanation: INSERT INTO names the table, and VALUES gives the row. A NULL parent makes it a top-level category.
+
+  - type: exercise
+    id: m12-t05
+    lesson: m12-l02
+    difficulty: 2
+    title: A budget shelf
+    prompt: |
+      Create a new table called `budget_products` with the columns `product_id`, `name` and `price`. It should hold
+      every product priced **under 15**, one row each. Use `CREATE TABLE ... AS SELECT`.
+    solution: |
+      CREATE TABLE budget_products AS
+      SELECT product_id, name, price
+      FROM products
+      WHERE price < 15;
+    check: |
+      SELECT *
+      FROM budget_products
+      ORDER BY product_id;
+    hints:
+      - "Start with CREATE TABLE budget_products AS, then write a normal SELECT."
+      - "Pick the three columns from products, and keep the rows where price is less than 15."
+      - "CREATE TABLE budget_products AS SELECT ___ FROM products WHERE ___ < 15;"
+    explanation: Four products cost less than 15. The table is a snapshot, so later price changes will not affect it.
+
+  - type: quiz
+    id: m12-t06
+    lesson: m12-l02
+    difficulty: 2
+    question: "What is true about the table made by CREATE TABLE t AS SELECT * FROM products WHERE price > 1000 WITH NO DATA;?"
+    options:
+      - "It has the columns of products and no rows."
+      - "It holds every product priced above 1000."
+      - "It keeps itself updated whenever products changes."
+      - "It fails, because WITH NO DATA cannot follow a WHERE."
+    answer: 0
+    explanation: WITH NO DATA keeps only the column structure. The copy is a snapshot and does not follow the original table.
+
+  - type: exercise
+    id: m12-t07
+    lesson: m12-l02
+    difficulty: 3
+    title: Sub-categories under each top-level category
+    prompt: |
+      Create a table called `category_tree_sizes` with two columns: `parent_name` (the name of each top-level
+      category, where `parent_id` is empty) and `child_count` (how many sub-categories it has).
+
+      Top-level categories with no sub-categories must still appear, with a count of `0`.
+    solution: |
+      CREATE TABLE category_tree_sizes AS
+      SELECT p.name AS parent_name,
+             COUNT(c.category_id) AS child_count
+      FROM categories AS p
+      LEFT JOIN categories AS c
+             ON c.parent_id = p.category_id
+      WHERE p.parent_id IS NULL
+      GROUP BY p.name;
+    check: |
+      SELECT *
+      FROM category_tree_sizes
+      ORDER BY parent_name;
+    hints:
+      - "Start from the top-level categories, then attach their children with a join."
+      - "Use LEFT JOIN so categories with no children are kept, and COUNT(c.category_id) counts only real matches."
+      - "SELECT p.name AS parent_name, COUNT(c.category_id) ... FROM categories AS p LEFT JOIN categories AS c ON ___ WHERE p.parent_id IS NULL GROUP BY ___;"
+    explanation: Books, Toys and Beauty have no children, so they get a count of 0 instead of disappearing.
+
+  - type: exercise
+    id: m12-t08
+    lesson: m12-l03
+    difficulty: 2
+    title: Sold out, and pricier
+    prompt: |
+      The Beginner's Guide to Sourdough (product 45) is sold out, and its price goes up by 2.00. In **one** UPDATE
+      statement, set `stock_qty` to `0` and raise `price` by `2.00`.
+    solution: |
+      UPDATE products
+      SET stock_qty = 0,
+          price = price + 2.00
+      WHERE product_id = 45;
+    check: |
+      SELECT product_id, name, price, stock_qty
+      FROM products
+      WHERE product_id = 45
+      ORDER BY product_id;
+    hints:
+      - "Two columns change, so the SET line has two parts separated by a comma."
+      - "The new price is the old price plus 2.00, so the column name appears on the right."
+      - "UPDATE products SET stock_qty = ___, price = price + ___ WHERE ___ = 45;"
+    explanation: "Both changes are in one statement. The old price of 19.99 becomes 21.99."
+
+  - type: quiz
+    id: m12-t09
+    lesson: m12-l03
+    difficulty: 1
+    question: In an UPDATE statement, which clause decides which rows change?
+    options: ["SET", "WHERE", "FROM", "RETURNING"]
+    answer: 1
+    explanation: SET says what the new values are, and WHERE picks the rows that receive them.
+
+  - type: predict
+    id: m12-t10
+    lesson: m12-l03
+    difficulty: 2
+    question: How many Camping products (category 14) cost more than 100 after the UPDATE?
+    sql: |
+      UPDATE products
+      SET price = price + 1
+      WHERE category_id = 14
+        AND price > 100;
+
+      SELECT COUNT(*) AS expensive_camping
+      FROM products
+      WHERE category_id = 14
+        AND price > 100;
+    options: ["0", "1", "2", "4"]
+    answer: 1
+    explanation: Only product 41 (the tent, 159.99) is above 100. After the +1 it is 160.99, which is still above 100, so the count is 1.
+
+  - type: parsons
+    id: m12-t11
+    lesson: m12-l03
+    difficulty: 2
+    prompt: Put the lines in the right order to raise the cost of products from Swedish suppliers by 5%. Leave out the line that does not belong.
+    lines:
+      - "UPDATE products AS p"
+      - "SET cost = ROUND(p.cost * 1.05, 2)"
+      - "FROM suppliers AS s"
+      - "WHERE s.supplier_id = p.supplier_id"
+      - "  AND s.country = 'Sweden';"
+    distractors:
+      - "DELETE FROM suppliers;"
+    explanation: An UPDATE ... FROM names the target table, sets the value, brings in the second table, and then joins the two in the WHERE.
+
+  - type: exercise
+    id: m12-t12
+    lesson: m12-l04
+    difficulty: 2
+    title: Clear the Beauty reviews
+    prompt: |
+      Delete every review written about a product in category `6` (Beauty). Use a sub-query on `products` to find
+      those products.
+    solution: |
+      DELETE FROM reviews
+      WHERE product_id IN (
+          SELECT product_id
+          FROM products
+          WHERE category_id = 6
+      );
+    check: |
+      SELECT COUNT(*) AS reviews_left,
+             COUNT(DISTINCT product_id) AS products_reviewed
+      FROM reviews;
+    hints:
+      - "The condition is about the product's category, which lives in products, not reviews."
+      - "Use IN (...) with a SELECT that returns the product_id values of category 6."
+      - "DELETE FROM reviews WHERE product_id IN (SELECT ___ FROM products WHERE ___ = 6);"
+    explanation: The sub-query runs first and gives the Beauty product ids. The DELETE then removes every review that matches one of them.
+
+  - type: quiz
+    id: m12-t13
+    lesson: m12-l04
+    difficulty: 1
+    question: Which statement removes every row of a table in one quick step and keeps the table's columns?
+    options: ["DROP TABLE reviews;", "TRUNCATE TABLE reviews;", "UPDATE reviews SET rating = NULL;", "CREATE TABLE reviews AS SELECT;"]
+    answer: 1
+    explanation: TRUNCATE empties the table and keeps its structure. DROP removes the table itself, which you will learn in module 13.
+
+  - type: predict
+    id: m12-t14
+    lesson: m12-l04
+    difficulty: 2
+    question: How many customers are left in the final count?
+    sql: |
+      DELETE FROM customers
+      WHERE customer_id > 145;
+
+      SELECT COUNT(*) AS customers_left
+      FROM customers;
+    options: ["145", "146", "150", "An error"]
+    answer: 0
+    explanation: There are 150 customers, and 5 have ids above 145 (146 to 150). Those five never placed an order, so no foreign key stops the delete. 150 minus 5 is 145.
+
+  - type: fill
+    id: m12-t15
+    lesson: m12-l04
+    difficulty: 1
+    prompt: Fill in the two blanks so that every review with no written text is deleted.
+    template: |
+      ___ FROM reviews
+      WHERE review_text ___ NULL;
+    answers:
+      - ["DELETE"]
+      - ["IS"]
+    explanation: IS NULL is the correct test for an empty value. = NULL never matches anything.
+
+  - type: exercise
+    id: m12-t16
+    lesson: m12-l05
+    difficulty: 2
+    title: Remove two-star reviews and show them
+    prompt: |
+      Delete every review of product `45` that has a rating of `2`. Use `RETURNING` to show the `review_id` and
+      `rating` of each review you deleted.
+    solution: |
+      DELETE FROM reviews
+      WHERE product_id = 45
+        AND rating = 2
+      RETURNING review_id, rating;
+    hints:
+      - "Two conditions must both be true: the product is 45, and the rating is 2."
+      - "Put RETURNING at the end, after the WHERE, and list the two columns."
+      - "DELETE FROM reviews WHERE product_id = ___ AND rating = ___ RETURNING ___, ___;"
+    explanation: RETURNING shows the removed rows, so you have proof of exactly what was deleted without another SELECT.
+
+  - type: quiz
+    id: m12-t17
+    lesson: m12-l05
+    difficulty: 1
+    question: Which of these statements does NOT accept a RETURNING clause?
+    options: ["INSERT", "UPDATE", "DELETE", "TRUNCATE"]
+    answer: 3
+    explanation: TRUNCATE empties a table without listing rows, so there is nothing to return. INSERT, UPDATE, DELETE and MERGE all accept RETURNING.
+
+  - type: predict
+    id: m12-t18
+    lesson: m12-l05
+    difficulty: 3
+    question: What does the result show?
+    sql: |
+      UPDATE products
+      SET stock_qty = stock_qty + 5
+      WHERE product_id = 13
+      RETURNING old.stock_qty AS before,
+                new.stock_qty AS after;
+    options: ["before 0, after 5", "before 5, after 5", "before 0, after 0", "An error"]
+    answer: 0
+    explanation: Product 13 starts with 0 units. old.stock_qty is the value before the change, which is 0, and new.stock_qty is the value after it, which is 5.
+
+  - type: exercise
+    id: m12-t19
+    lesson: m12-l06
+    difficulty: 2
+    title: A small price list
+    setup: |
+      CREATE TABLE price_list (product_id integer PRIMARY KEY, price numeric(10,2));
+      INSERT INTO price_list (product_id, price) VALUES (1, 899.99);
+    prompt: |
+      The table `price_list` (columns `product_id` and `price`, with `product_id` as the primary key) already has
+      product 1 at 899.99.
+
+      Upsert two prices in one statement: product 1 at `799.00` and product 2 at `1299.00`. An existing product's
+      price should be replaced. A new product should be inserted.
+    solution: |
+      INSERT INTO price_list (product_id, price)
+      VALUES (1, 799.00),
+             (2, 1299.00)
+      ON CONFLICT (product_id)
+      DO UPDATE SET price = EXCLUDED.price;
+    check: |
+      SELECT *
+      FROM price_list
+      ORDER BY product_id;
+    hints:
+      - "Product 1 is already in the table, and product 2 is not. Both rows go into one INSERT."
+      - "The conflict column is product_id, and the new price is EXCLUDED.price."
+      - "INSERT INTO price_list (product_id, price) VALUES (...), (...) ON CONFLICT (___) DO UPDATE SET price = ___.price;"
+    explanation: EXCLUDED.price is the price from the VALUES list. Product 1 is updated, and product 2 is inserted.
+
+  - type: quiz
+    id: m12-t20
+    lesson: m12-l06
+    difficulty: 2
+    question: What does ON CONFLICT (supplier_id) DO NOTHING do when that supplier_id already exists?
+    options:
+      - "It stops the whole statement with an error."
+      - "It replaces the stored row with the new one."
+      - "It silently skips the new row and keeps the stored row."
+      - "It deletes the stored row."
+    answer: 2
+    explanation: DO NOTHING skips the conflicting row without an error. The stored row stays exactly as it was.
+
+  - type: fill
+    id: m12-t21
+    lesson: m12-l06
+    difficulty: 2
+    prompt: Fill in the two blanks so that an existing category is left unchanged, with no error.
+    template: |
+      INSERT INTO categories (category_id, name, parent_id)
+      VALUES (1, 'Electronics', NULL)
+      ON CONFLICT (___) DO ___;
+    answers:
+      - ["category_id"]
+      - ["NOTHING"]
+    explanation: category_id is the primary key, so it is the conflict column. DO NOTHING skips the row.
+
+  - type: exercise
+    id: m12-t22
+    lesson: m12-l07
+    difficulty: 2
+    title: Price check from a typed list
+    prompt: |
+      Use MERGE with a list you type in: `(VALUES (2, 1299.99), (9, 44.99)) AS s(product_id, new_price)`.
+      For products that match, set `price` to `new_price`. Do not add any products.
+    solution: |
+      MERGE INTO products AS p
+      USING (VALUES (2, 1299.99), (9, 44.99)) AS s(product_id, new_price)
+         ON p.product_id = s.product_id
+      WHEN MATCHED THEN
+          UPDATE SET price = s.new_price;
+    check: |
+      SELECT product_id, name, price
+      FROM products
+      WHERE product_id IN (2, 9)
+      ORDER BY product_id;
+    hints:
+      - "Only a WHEN MATCHED clause is needed, because nothing should be inserted."
+      - "The source is the typed list, and its price column is called new_price."
+      - "MERGE INTO products AS p USING (VALUES ...) AS s(...) ON ___ WHEN MATCHED THEN UPDATE SET price = s.___;"
+    explanation: Products 2 and 9 get their new prices. The MERGE only has WHEN MATCHED, so no rows are added.
+
+  - type: exercise
+    id: m12-t23
+    lesson: m12-l07
+    difficulty: 3
+    title: Mark the unlisted Phones as inactive
+    setup: |
+      CREATE TABLE count_sheet (product_id integer, counted integer);
+      INSERT INTO count_sheet (product_id, counted) VALUES (9, 2), (22, 0);
+    prompt: |
+      The table `count_sheet` (columns `product_id` and `counted`) holds the Phones count sheet, and it lists products
+      9 and 22.
+
+      Use one MERGE to:
+
+      1. set `stock_qty` to the counted number for matching products
+      2. set `is_active` to `FALSE` for every **Phone** (category `8`) that is **not** on the sheet
+    solution: |
+      MERGE INTO products AS p
+      USING count_sheet AS s
+         ON p.product_id = s.product_id
+      WHEN MATCHED THEN
+          UPDATE SET stock_qty = s.counted
+      WHEN NOT MATCHED BY SOURCE AND p.category_id = 8 THEN
+          UPDATE SET is_active = FALSE;
+    check: |
+      SELECT product_id, name, stock_qty, is_active
+      FROM products
+      WHERE category_id = 8
+      ORDER BY product_id;
+    hints:
+      - "Use WHEN MATCHED for the stock, and WHEN NOT MATCHED BY SOURCE for the phones that are not on the sheet."
+      - "Add AND p.category_id = 8 after WHEN NOT MATCHED BY SOURCE, so other categories are not touched."
+      - "WHEN NOT MATCHED BY SOURCE AND p.category_id = ___ THEN UPDATE SET is_active = ___;"
+    explanation: Product 22 is on the sheet, so its stock becomes 0. The other seven phones are not on the sheet, so they become inactive. Product 9 is not a phone, so its category is not checked by this clause.
+
+  - type: parsons
+    id: m12-t24
+    lesson: m12-l07
+    difficulty: 2
+    prompt: Put the lines in the right order to update the country of supplier 2 from a one-row list. Leave out the line that does not belong.
+    lines:
+      - "MERGE INTO suppliers AS s"
+      - "USING (VALUES (2, 'Germany')) AS f(supplier_id, country)"
+      - "ON s.supplier_id = f.supplier_id"
+      - "WHEN MATCHED THEN"
+      - "    UPDATE SET country = f.country;"
+    distractors:
+      - "TRUNCATE suppliers;"
+    explanation: A MERGE names the target, then the source, then the matching condition, then the action for each group of rows. TRUNCATE would empty the whole table, so it does not belong.
+
+  - type: exercise
+    id: m12-t25
+    lesson: m12-l07
+    difficulty: 3
+    title: Report every change
+    prompt: |
+      Use MERGE with the list `(VALUES (9, 25), (22, 9)) AS s(product_id, counted)` to set `stock_qty` to `counted`
+      for each matched product. Return two columns: `action` (the merge action taken) and `product_id`.
+    solution: |
+      MERGE INTO products AS p
+      USING (VALUES (9, 25), (22, 9)) AS s(product_id, counted)
+         ON p.product_id = s.product_id
+      WHEN MATCHED THEN
+          UPDATE SET stock_qty = s.counted
+      RETURNING merge_action() AS action,
+                p.product_id AS product_id;
+    columnNames: true
+    hints:
+      - "Use the same MERGE as the earlier example, with WHEN MATCHED only."
+      - "merge_action() gives the action name for each row, and you name it with AS action."
+      - "... WHEN MATCHED THEN UPDATE SET stock_qty = s.counted RETURNING merge_action() AS action, p.product_id AS product_id;"
+    explanation: Two rows come back, both with the action UPDATE. merge_action() shows what MERGE did to each row, without a second SELECT.
+
+project:
+  id: m12-proj
+  title: "Inventory Day"
+  icon: "📦"
+  dataset: shop
+  md: |
+    It is the last Friday before the holiday rush at ShopSmart, and it is **Inventory Day**. The warehouse team has
+    been counting shelves since six in the morning. Lena, the operations manager, hands you the keyboard and a list
+    of changes to make.
+
+    The six tasks happen in order, and each one builds on the one before. The store already contains the changes
+    from the earlier tasks, so you see the day as it stands. Work through them one at a time: read the note, write
+    the statement, run it, and check the result.
+
+    > [!TIP]
+    > Before every `UPDATE`, `DELETE` or `MERGE`, look first with a `SELECT` that uses the same condition.
+  tasks:
+    - type: exercise
+      id: m12-proj-1
+      title: A new supplier
+      difficulty: 1
+      prompt: |
+        Lena's first note: *"Summit Outdoor Co. (Norway) signed a contract this morning. Add them as supplier 9,
+        with the email hello@summitoutdoor.example.com, before we do anything else."*
+
+        Insert the supplier. Add nothing else.
+      solution: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+      check: |
+        SELECT *
+        FROM suppliers
+        ORDER BY supplier_id;
+      hints:
+        - "Start with INSERT INTO suppliers and list the four columns."
+        - "The values are 9, the name, the country and the email, in the same order."
+        - "INSERT INTO suppliers (supplier_id, name, country, contact_email) VALUES (___, ___, ___, ___);"
+      explanation: Nine suppliers now. Supplier 9 is the new row, and it is the last one in the list.
+
+    - type: exercise
+      id: m12-proj-2
+      title: The first product from the new supplier
+      difficulty: 1
+      setup: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+      prompt: |
+        Task 1 is already done, so supplier 9 is on file.
+
+        Lena's next note: *"Their first product is the Trail Water Bottle 1L. Add it as product 61 in Camping
+        (category 14), supplied by supplier 9. Price 24.50, cost 11.20. It has no stock yet, because the count
+        comes later. Active, created on 2024-12-30."*
+      solution: |
+        INSERT INTO products (product_id, name, category_id, supplier_id,
+                              price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+      check: |
+        SELECT product_id, name, category_id, supplier_id, price, stock_qty
+        FROM products
+        WHERE product_id = 61
+        ORDER BY product_id;
+      hints:
+        - "A product needs nine columns. Start with the list of all nine column names."
+        - "Count the values as well: product_id, name, category_id, supplier_id, price, cost, stock_qty, is_active, created_at."
+        - "INSERT INTO products (product_id, name, ...) VALUES (61, 'Trail Water Bottle 1L', 14, 9, ...);"
+      explanation: The new product has the id 61 and belongs to Camping. Its stock is 0 for now, and the count in task 3 will update it.
+
+    - type: exercise
+      id: m12-proj-3
+      title: The shelf count
+      difficulty: 2
+      setup: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        INSERT INTO products (product_id, name, category_id, supplier_id,
+                              price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+      prompt: |
+        The shelf count is in. Two changes are needed:
+
+        1. The bottle count came to **40** units. Set the `stock_qty` of product 61 to `40`.
+        2. The Standing Desk 140cm (product 34) had 42 units, but **3** were damaged. Subtract 3 from its
+           **current** stock.
+
+        Use one `UPDATE` for each change.
+      solution: |
+        UPDATE products
+        SET stock_qty = 40
+        WHERE product_id = 61;
+
+        UPDATE products
+        SET stock_qty = stock_qty - 3
+        WHERE product_id = 34;
+      check: |
+        SELECT product_id, name, stock_qty
+        FROM products
+        WHERE product_id IN (34, 61)
+        ORDER BY product_id;
+      hints:
+        - "The first change is a plain number, so SET stock_qty = 40 is enough."
+        - "The second change depends on the current stock, so write stock_qty - 3 on the right of SET."
+        - "UPDATE products SET stock_qty = ___ WHERE product_id = ___; then UPDATE ... SET stock_qty = stock_qty - ___ WHERE ___ = 34;"
+      explanation: The bottles are set to the counted 40, and the desk goes from 42 to 39. Using stock_qty - 3 keeps the update based on the stock that is really there.
+
+    - type: exercise
+      id: m12-proj-4
+      title: The Camping sale
+      difficulty: 2
+      setup: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        INSERT INTO products (product_id, name, category_id, supplier_id,
+                              price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        UPDATE products SET stock_qty = 40 WHERE product_id = 61;
+        UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
+      prompt: |
+        Lena's sale note: *"Camping goes on sale: 10% off every product in category 14. Round each new price to two
+        decimal places."*
+
+        Update the `price` of all Camping products in one statement. The bottle added in task 2 is included.
+      solution: |
+        UPDATE products
+        SET price = ROUND(price * 0.90, 2)
+        WHERE category_id = 14;
+      check: |
+        SELECT product_id, name, price
+        FROM products
+        WHERE category_id = 14
+        ORDER BY product_id;
+      hints:
+        - "Ten percent off means the new price is 90% of the old one, so multiply by 0.90."
+        - "Wrap the calculation in ROUND(..., 2) and restrict the rows to category 14."
+        - "UPDATE products SET price = ROUND(price * ___, 2) WHERE category_id = ___;"
+      explanation: Five Camping products are discounted. The bottle goes from 24.50 to 22.05, and ROUND keeps every price at two decimals.
+
+    - type: exercise
+      id: m12-proj-5
+      title: The clean-up
+      difficulty: 3
+      setup: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        INSERT INTO products (product_id, name, category_id, supplier_id,
+                              price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        UPDATE products SET stock_qty = 40 WHERE product_id = 61;
+        UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
+        UPDATE products SET price = ROUND(price * 0.90, 2) WHERE category_id = 14;
+      prompt: |
+        Lena's clean-up note: *"Some products have never sold, and they are older than 2024. Remove them from the
+        catalog. Keep anything that has sold, and keep anything added in 2024."*
+
+        Delete every product that appears in **no** order line (`order_items`) **and** has a `created_at` before
+        `2024-01-01`.
+
+        Hint: use a `NOT IN` sub-query for the order lines, and add the date condition with `AND`.
+      solution: |
+        DELETE FROM products
+        WHERE product_id NOT IN (
+            SELECT product_id
+            FROM order_items
+        )
+          AND created_at < '2024-01-01';
+      check: |
+        SELECT product_id, name
+        FROM products
+        WHERE product_id IN (34, 46, 56, 60, 61)
+        ORDER BY product_id;
+      hints:
+        - "Products that never sold are the ones whose product_id is not in order_items."
+        - "Both conditions must be true, so join them with AND. The date is compared with '2024-01-01'."
+        - "DELETE FROM products WHERE product_id NOT IN (SELECT ___ FROM order_items) AND created_at ___ '2024-01-01';"
+      explanation: Products 46 and 60 never sold and were added in 2022, so they are deleted. Product 34 and product 56 never sold either, but they were added in 2024, so they stay.
+
+    - type: exercise
+      id: m12-proj-6
+      title: The Camping count
+      difficulty: 3
+      setup: |
+        INSERT INTO suppliers (supplier_id, name, country, contact_email)
+        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        INSERT INTO products (product_id, name, category_id, supplier_id,
+                              price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        UPDATE products SET stock_qty = 40 WHERE product_id = 61;
+        UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
+        UPDATE products SET price = ROUND(price * 0.90, 2) WHERE category_id = 14;
+        DELETE FROM products
+        WHERE product_id NOT IN (SELECT product_id FROM order_items)
+          AND created_at < '2024-01-01';
+        CREATE TABLE count_sheet (product_id integer, counted integer);
+        INSERT INTO count_sheet (product_id, counted) VALUES (61, 35), (41, 120);
+      prompt: |
+        The last count sheet of the day is in the table `count_sheet`, with the columns `product_id` and `counted`:
+
+        - product 61 (Trail Water Bottle): 35 counted
+        - product 41 (2-Person Camping Tent): 120 counted
+
+        Camping items that are **not** on the sheet were not on the shelves, so they are out of stock. Use **one**
+        `MERGE` to:
+
+        1. set `stock_qty` to the counted number for products on the sheet
+        2. set `stock_qty` to `0` for every Camping product (category `14`) that is not on the sheet
+
+        Products in other categories must stay unchanged.
+      solution: |
+        MERGE INTO products AS p
+        USING count_sheet AS s
+           ON p.product_id = s.product_id
+        WHEN MATCHED THEN
+            UPDATE SET stock_qty = s.counted
+        WHEN NOT MATCHED BY SOURCE AND p.category_id = 14 THEN
+            UPDATE SET stock_qty = 0;
+      check: |
+        SELECT product_id, name, stock_qty
+        FROM products
+        WHERE category_id = 14
+        ORDER BY product_id;
+      hints:
+        - "Use WHEN MATCHED for the products on the sheet, and WHEN NOT MATCHED BY SOURCE for the Camping products that are not on it."
+        - "Add AND p.category_id = 14 after WHEN NOT MATCHED BY SOURCE, so no other category changes."
+        - "MERGE INTO products AS p USING count_sheet AS s ON ___ WHEN MATCHED THEN UPDATE SET stock_qty = s.___ WHEN NOT MATCHED BY SOURCE AND ___ THEN UPDATE SET stock_qty = ___;"
+      explanation: The tent gets 120 and the bottle gets 35. The three Camping items that were not counted go to 0, and every other category is left alone. This final task brings together MERGE, a condition on the source-less rows, and everything from the earlier tasks.

@@ -1,0 +1,57 @@
+glossary:
+  - term: CTE (Common Table Expression)
+    definition: "A named, temporary result that you define with WITH before the main SELECT. You can use its name like a table in that one statement. It disappears when the statement finishes, so nothing is saved."
+    example: "WITH big_orders AS (SELECT * FROM orders WHERE order_id > 100) SELECT COUNT(*) FROM big_orders;"
+    module: m09
+  - term: Recursive CTE
+    definition: "A CTE that refers to itself. It starts from an anchor row and repeats a recursive part, adding new rows each round, until a round produces no rows. Written as WITH RECURSIVE."
+    example: "WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums;"
+    module: m09
+  - term: Anchor
+    definition: "The starting part of a recursive CTE. It runs once and gives the first rows, such as the manager at the top of a team or the starting stop of a route."
+    example: "SELECT emp_id, 0 FROM employees WHERE emp_id = 9"
+    module: m09
+  - term: Recursive part
+    definition: "The second half of a recursive CTE, joined to the anchor with UNION ALL. It reads the rows from the previous round and produces the next round."
+    example: "UNION ALL SELECT e.emp_id, t.depth + 1 FROM employees AS e JOIN team AS t ON e.manager_id = t.emp_id"
+    module: m09
+  - term: Stop rule
+    definition: "A WHERE condition in the recursive part that stops new rows from being made. When a round makes no rows, the recursion ends. Without a stop rule (or a cycle check) a recursive query can run forever."
+    example: "WHERE n < 10"
+    module: m09
+  - term: Hierarchy
+    definition: "Data where each row points to one parent, such as an org chart, where each person has one manager, or a category tree. Recursive CTEs are the usual way to walk a hierarchy."
+    example: "employees.manager_id points to employees.emp_id"
+    module: m09
+  - term: Depth (level)
+    definition: "How many steps a row is from the starting point of a recursive search. The anchor has depth 0, and each round adds 1."
+    example: "SELECT emp_id, 0 AS depth ... then t.depth + 1 in the recursive part"
+    module: m09
+  - term: Graph
+    definition: "A network of nodes joined by edges, such as stops joined by roads. Unlike a tree, a graph can contain loops, so a recursive search needs a way to stop."
+    example: "A table of links: from_stop, to_stop, minutes"
+    module: m09
+  - term: Node
+    definition: "A place or item in a graph. In the route example, each stop is a node."
+    example: "'Harbor' is one node in the edges table"
+    module: m09
+  - term: Edge
+    definition: "A link between two nodes. A one-way (directed) edge can only be followed from its from_stop to its to_stop."
+    example: "('Harbor', 'Mill', 10) is one edge that takes 10 minutes"
+    module: m09
+  - term: Cycle
+    definition: "A loop: a route that leaves a node and comes back to it. A recursive search over a cycle keeps going unless a stop rule or a cycle check ends it."
+    example: "Mill, Oakvale, Hilltop, Mill"
+    module: m09
+  - term: Path (array of visited stops)
+    definition: "A list of values stored in one column. ARRAY['Harbor'] makes a list, || adds an item to the end, and = ANY(list) checks whether a value is in the list."
+    example: "'Mill' = ANY(ARRAY['Harbor', 'Mill']) returns TRUE"
+    module: m09
+  - term: Simple route
+    definition: "A route through a graph that never visits the same node twice. A path guard in the recursive part keeps a search to simple routes only."
+    example: "Harbor > Riverside > Hilltop > Station"
+    module: m09
+  - term: CYCLE clause
+    definition: "A clause, available since PostgreSQL 14, that goes after a recursive CTE. It sets a flag column to true on the row where a node repeats on the same route, so you can filter those rows out with WHERE NOT."
+    example: "CYCLE stop SET is_cycle USING visited_path"
+    module: m09

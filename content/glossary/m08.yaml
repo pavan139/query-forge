@@ -1,0 +1,45 @@
+glossary:
+  - term: Set operation
+    definition: A keyword that combines the rows of two queries into one result. The four are UNION, UNION ALL, INTERSECT and EXCEPT. Unlike a JOIN, which adds columns side by side, a set operation adds rows one below the other or compares them.
+    example: "SELECT 1 UNION SELECT 2;  -- 2 rows"
+    module: m08
+  - term: UNION
+    definition: Stacks the rows of two queries and removes exact copies, so each row appears only once in the result.
+    example: "SELECT 1 UNION SELECT 1;  -- 1 row"
+    module: m08
+  - term: UNION ALL
+    definition: Stacks the rows of two queries and keeps every copy. It is the faster choice, and the right one when you count or add up the results.
+    example: "SELECT 1 UNION ALL SELECT 1;  -- 2 rows"
+    module: m08
+  - term: INTERSECT
+    definition: Keeps only the rows that appear in both query results. Copies are removed, as with UNION.
+    example: "SELECT student_id FROM enrollments WHERE term = '2024-Fall' INTERSECT SELECT student_id FROM enrollments WHERE term = '2025-Spring';  -- 108 rows (school dataset)"
+    module: m08
+  - term: EXCEPT
+    definition: Keeps the rows of the first query that do not appear in the second query. The order of the two queries matters, because the first one is the starting list.
+    example: "SELECT 1 UNION SELECT 2 EXCEPT SELECT 2;  -- 1 row (the 1)"
+    module: m08
+  - term: Symmetric difference
+    definition: The rows that are on exactly one of two lists, but not on both. You build it with two EXCEPT queries, each in parentheses, joined by a UNION.
+    example: "(SELECT 1 EXCEPT SELECT 2) UNION (SELECT 2 EXCEPT SELECT 1);  -- 2 rows"
+    module: m08
+  - term: Compatible columns
+    definition: The rule that both sides of a set operation must return the same number of columns, with compatible types in each position. Columns are matched by position, not by name, and the result takes its column names from the first query.
+    example: "SELECT 1, 2 UNION SELECT 3;  -- error: each UNION query must have the same number of columns"
+    module: m08
+  - term: Literal label
+    definition: A fixed value, such as 'Discontinued', written directly in the SELECT list. Every row from that part of the query gets the same value, which tells the reader where the row came from.
+    example: "SELECT 'Discontinued' AS reason, name FROM products WHERE is_active = false;"
+    module: m08
+  - term: Set operation precedence
+    definition: The order in which set operators run. INTERSECT runs before UNION and EXCEPT, and UNION and EXCEPT run from left to right. Wrap a part in parentheses when you are not sure, so the order is clear to the next reader.
+    example: "SELECT 1 UNION SELECT 2 INTERSECT SELECT 2;  -- 2 rows, because INTERSECT runs first"
+    module: m08
+  - term: Parenthesized query
+    definition: A query wrapped in parentheses inside a set operation. It can have its own ORDER BY and LIMIT, because the parentheses show where that part ends.
+    example: "(SELECT name FROM products ORDER BY price LIMIT 2) UNION ALL (SELECT name FROM products ORDER BY price DESC LIMIT 2);"
+    module: m08
+  - term: NULL in set operations
+    definition: Unlike the = operator in a WHERE clause, set operations treat two NULLs as the same value. So INTERSECT keeps one NULL row when both sides have a NULL, instead of returning nothing.
+    example: "SELECT NULL INTERSECT SELECT NULL;  -- 1 row (NULL)"
+    module: m08

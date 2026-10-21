@@ -1,0 +1,2924 @@
+id: m14
+order: 14
+title: "Transactions & Concurrency"
+subtitle: Move money safely, even when many people use the bank at once
+icon: "🔐"
+level: advanced
+description: |
+  So far you have changed data one statement at a time. In a real bank, one
+  business action often needs several changes that must all happen, or none
+  of them may happen. A transfer takes money out of one account and puts it
+  into another.
+
+  In this module you learn to group changes into a **transaction** with
+  `BEGIN`, `COMMIT` and `ROLLBACK`, to undo part of a transaction with
+  **savepoints**, and to understand what happens when two people change the
+  same data at the same time: **isolation levels** and **locks**. You will
+  finish with rules that protect the data itself, and a project that moves
+  money safely through Harbor Bank.
+
+  Concurrency sounds advanced, and it is. But the ideas are simple once you
+  see them. Most lessons run on one database session that you can use here.
+  For the "two people at once" moments, you will use the transaction
+  visualizer to watch two sessions step by step.
+dataset: bank
+lessons:
+  - id: m14-l01
+    title: "BEGIN, COMMIT and ROLLBACK"
+    summary: Group several changes into one all-or-nothing transaction, and undo them when you change your mind.
+    minutes: 25
+    steps:
+      - type: read
+        title: A transfer is really two changes
+        md: |
+          Sneha Khan wants to pay her friend Nils $200 from her checking account. It sounds like one action,
+          but the bank's database has to do **two** things:
+
+          1. Take $200 out of account 1 (Sneha's).
+          2. Put $200 into account 2 (Nils's).
+
+          What if the system crashes after step 1 and before step 2? Sneha has lost $200, and Nils never gets
+          it. A **transaction** is the tool that prevents this kind of half-finished work.
+
+      - type: read
+        title: All or nothing
+        md: |
+          A **transaction** is a group of changes that the database treats as one unit. Either **all** of
+          them are saved, or **none** of them are.
+
+          You control a transaction with three words:
+
+          | word | what it does |
+          |---|---|
+          | `BEGIN` | Starts the transaction. The changes after it are not final yet. |
+          | `COMMIT` | Saves every change since `BEGIN` for good. |
+          | `ROLLBACK` | Throws away every change since `BEGIN`. The data goes back to how it was. |
+
+          > [!ANALOGY]
+          > Think of writing a letter in pencil first. `BEGIN` is starting the draft. `COMMIT` is writing it in
+          > ink and posting it. `ROLLBACK` is tearing up the draft and going back to the original page.
+
+      - type: example
+        title: A transfer that is saved
+        md: |
+          Press **Run**. The two inserts sit between `BEGIN` and `COMMIT`, so they are saved together. The last
+          `SELECT` shows the balances of both accounts.
+        sql: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils'),
+              (3676, 2, '2025-01-02 09:00:00',
+               200.00, 'transfer_in', 'Transfer from Sneha');
+
+          COMMIT;
+
+          SELECT account_id, ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id IN (1, 2)
+          GROUP BY account_id
+          ORDER BY account_id;
+        after: |
+          Both rows went in together. Account 1 had a balance of 260.79 and now has 60.79. Account 2 went
+          from 6983.12 to 7183.12.
+
+          Remember how balances work in this dataset: the **balance** of an account is the sum of its
+          transactions. Money in is positive, money out is negative.
+
+      - type: read
+        title: You can see your changes before you commit
+        md: |
+          Inside a transaction you can already see the rows you inserted. That is useful: you can check your
+          work before you decide to keep it.
+
+          If you change your mind, `ROLLBACK` removes everything since `BEGIN`.
+
+      - type: example
+        title: Changing your mind
+        md: |
+          This time we look at the new rows, then undo them with `ROLLBACK`. The first `COUNT` shows **2** rows.
+          The second one shows **0**.
+        sql: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils'),
+              (3676, 2, '2025-01-02 09:00:00',
+               200.00, 'transfer_in', 'Transfer from Sneha');
+
+          SELECT COUNT(*) AS rows_now
+          FROM transactions
+          WHERE txn_id >= 3675;
+
+          ROLLBACK;
+
+          SELECT COUNT(*) AS rows_after_rollback
+          FROM transactions
+          WHERE txn_id >= 3675;
+        after: |
+          Inside the transaction the two new rows exist. After `ROLLBACK` they are gone, and nothing was saved.
+          The table had 3,674 rows before we started, so `txn_id >= 3675` finds only our new rows.
+
+      - type: example
+        title: Oops, a typo, undone
+        md: |
+          Sneha's overdraft limit should go to 999.00, but we typed 9999.00. Run it, see the mistake, and
+          undo it.
+        sql: |
+          BEGIN;
+
+          UPDATE accounts
+          SET overdraft_limit = 9999.00
+          WHERE account_id = 1;
+
+          SELECT overdraft_limit
+          FROM accounts
+          WHERE account_id = 1;
+
+          ROLLBACK;
+
+          SELECT overdraft_limit
+          FROM accounts
+          WHERE account_id = 1;
+        after: |
+          The first `SELECT` shows the typo, **9999.00**. `ROLLBACK` undid the change, so the last `SELECT`
+          shows the original **0.00**. A transaction is a safety net when you are not yet sure about a change.
+
+      - type: read
+        title: What happens without BEGIN
+        md: |
+          If you run one statement on its own, PostgreSQL wraps it in its own tiny transaction and saves it
+          immediately. This is called **autocommit**. It is convenient for a single change.
+
+          A transfer has two changes, so you need `BEGIN` and `COMMIT` around both of them.
+
+          > [!MISTAKE]
+          > Running only the first half of a transfer, with no `BEGIN`, saves it at once. If the second half
+          > then fails, the money is already gone. Always wrap related changes in one transaction.
+
+      - type: viz
+        viz: transaction
+        title: Watch COMMIT and ROLLBACK happen
+        md: |
+          Press the step button and follow each statement. Notice the moment the changes become permanent, and
+          the moment they are thrown away.
+        config: { scenario: commit-rollback }
+
+      - type: quiz
+        id: m14-l01-q1
+        question: Which pair of words wraps a transaction so that its changes are either all saved or all undone?
+        options: ["START and FINISH", "BEGIN and COMMIT", "SELECT and FROM", "CREATE and DROP"]
+        answer: 1
+        explanation: |
+          `BEGIN` starts the transaction and `COMMIT` saves it. If you use `ROLLBACK` instead of `COMMIT`,
+          the same changes are undone.
+
+      - type: exercise
+        id: m14-l01-e1
+        title: Raise an overdraft limit safely
+        prompt: |
+          Sneha asks for her overdraft limit on account 1 to rise to 750.00.
+
+          Write a transaction that changes it and then saves it with `COMMIT`. After that, show `account_id`
+          and `overdraft_limit` for account 1.
+        starter: |
+          BEGIN;
+
+          -- 1. Change the overdraft limit here.
+
+          COMMIT;
+
+          -- 2. Show the account here.
+        solution: |
+          BEGIN;
+
+          UPDATE accounts
+          SET overdraft_limit = 750.00
+          WHERE account_id = 1;
+
+          COMMIT;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 1;
+        columnNames: true
+        hints:
+          - You need an `UPDATE` between `BEGIN` and `COMMIT`.
+          - "Use `SET overdraft_limit = 750.00` and point the `WHERE` at account 1."
+          - "Skeleton: `BEGIN; UPDATE accounts SET ___ WHERE ___; COMMIT; SELECT ___ FROM accounts WHERE ___;`"
+        explanation: |
+          The `UPDATE` is saved by the `COMMIT`. Without `BEGIN` and `COMMIT`, the update would still be
+          saved on its own, but a transaction makes it clear where the change starts and ends.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l01-e2
+        title: Sneha pays Nils $50
+        prompt: |
+          Write one transaction that does three things:
+
+          1. Inserts a `transfer_out` row for account 1 with txn_id 3675 and amount -50.00.
+          2. Inserts a `transfer_in` row for account 2 with txn_id 3676 and amount 50.00.
+          3. Saves both rows with `COMMIT`.
+
+          Use txn_time `'2025-01-02 09:00:00'` for both rows. Any short description is fine.
+
+          Then show `account_id` and `balance` (the sum of the amounts, rounded to 2 decimals) for accounts 1
+          and 2, ordered by `account_id`.
+        starter: |
+          BEGIN;
+
+          -- 1. Add the two transfer rows here.
+
+          COMMIT;
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -50.00, 'transfer_out', 'Transfer to Nils'),
+              (3676, 2, '2025-01-02 09:00:00',
+               50.00, 'transfer_in', 'Transfer from Sneha');
+
+          COMMIT;
+
+          SELECT account_id, ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id IN (1, 2)
+          GROUP BY account_id
+          ORDER BY account_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - It is the same shape as the example above, with a different amount.
+          - One `INSERT` can hold both rows, separated by a comma. Money out is negative.
+          - "Skeleton: `INSERT INTO transactions (...) VALUES (3675, 1, ..., -50.00, ...), (3676, 2, ..., ...);`"
+        explanation: |
+          Both rows travel together because they sit between `BEGIN` and `COMMIT`. After the commit, account 1
+          has 210.79 and account 2 has 7033.12.
+
+          Pitfall: if you forget `COMMIT`, the rows are not final yet.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l01-e3
+        title: Changed your mind
+        prompt: |
+          Sneha thinks about paying Nils $75 and then changes her mind. Write a transaction that:
+
+          1. Inserts a `transfer_out` row for account 1 with txn_id 3675 and amount -75.00.
+          2. Inserts a `transfer_in` row for account 2 with txn_id 3676 and amount 75.00.
+          3. Undoes both rows with `ROLLBACK`.
+
+          Use txn_time `'2025-01-02 09:00:00'`. Then show `account_id` and `balance` (the rounded sum of
+          the amounts) for accounts 1 and 2, ordered by `account_id`. The balances must be unchanged.
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -75.00, 'transfer_out', 'Transfer to Nils'),
+              (3676, 2, '2025-01-02 09:00:00',
+               75.00, 'transfer_in', 'Transfer from Sneha');
+
+          ROLLBACK;
+
+          SELECT account_id, ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id IN (1, 2)
+          GROUP BY account_id
+          ORDER BY account_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Nothing should be saved, so the transaction must end with `ROLLBACK`, not `COMMIT`.
+          - "Order: `BEGIN;`, then the `INSERT`, then `ROLLBACK;`, then the `SELECT`."
+          - "Skeleton: `BEGIN; INSERT INTO transactions (...) VALUES (...), (...); ___; SELECT ...;`"
+        explanation: |
+          After `ROLLBACK` the two rows no longer exist, so the `SELECT` shows the original balances: 260.79
+          and 6983.12. This is a safe way to test a change before you decide to keep it.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l01-e4
+        title: Four rows, one promise
+        prompt: |
+          Sneha and Nils pay each other back and forth. Write one transaction with four inserts, then `COMMIT`:
+
+          - txn 3675: `transfer_out` for account 1, amount -40.00 (Sneha pays Nils)
+          - txn 3676: `transfer_in` for account 2, amount 40.00
+          - txn 3677: `transfer_out` for account 2, amount -60.00 (Nils pays Sneha back)
+          - txn 3678: `transfer_in` for account 1, amount 60.00
+
+          Use txn_time `'2025-01-02 09:00:00'` for all four rows. Then show `account_id` and `balance` (the
+          rounded sum of the amounts) for accounts 1 and 2, ordered by `account_id`.
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -40.00, 'transfer_out', 'Sneha pays Nils'),
+              (3676, 2, '2025-01-02 09:00:00',
+               40.00, 'transfer_in', 'From Sneha'),
+              (3677, 2, '2025-01-02 09:00:00',
+               -60.00, 'transfer_out', 'Nils pays Sneha'),
+              (3678, 1, '2025-01-02 09:00:00',
+               60.00, 'transfer_in', 'From Nils');
+
+          COMMIT;
+
+          SELECT account_id, ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id IN (1, 2)
+          GROUP BY account_id
+          ORDER BY account_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - One `INSERT` can add all four rows, separated by commas. Each row needs six values.
+          - Match the sign to the direction. Money out is negative, money in is positive.
+          - "Skeleton: `INSERT INTO transactions (...) VALUES (3675, 1, ..., -40.00, ...), (3676, 2, ...), ...;`"
+        explanation: |
+          All four rows succeed or fail together. Account 1 goes from 260.79 to 280.79, and account 2 goes from
+          6983.12 to 6963.12. Notice how a single `INSERT` can add several rows at once.
+        difficulty: 3
+
+      - type: predict
+        id: m14-l01-p1
+        question: This script inserts a row and then rolls it back. How many rows does the final `COUNT` return?
+        sql: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -20.00, 'transfer_out', 'Test');
+
+          ROLLBACK;
+
+          SELECT COUNT(*) AS total_rows
+          FROM transactions;
+        options: ["3674", "3675", "3676", "An error"]
+        answer: 0
+        explanation: |
+          The `ROLLBACK` undid the insert, so the table is back to its original 3,674 rows. A row that was rolled
+          back never counts.
+
+      - type: fill
+        id: m14-l01-f1
+        prompt: Fill in the two words that wrap the change, so that it is saved only when both steps succeed.
+        template: |
+          ___;
+
+          UPDATE accounts
+          SET overdraft_limit = 750.00
+          WHERE account_id = 2;
+
+          ___;
+        answers:
+          - ["BEGIN", "START TRANSACTION"]
+          - ["COMMIT", "END"]
+        explanation: |
+          `START TRANSACTION` means the same as `BEGIN`, and `END` means the same as `COMMIT` in PostgreSQL.
+          You will mostly see `BEGIN` and `COMMIT`.
+
+      - type: parsons
+        id: m14-l01-o1
+        prompt: Put the lines in order so that a test change is undone. Leave out the line that would save it.
+        lines:
+          - BEGIN;
+          - UPDATE accounts
+          - SET overdraft_limit = 900.00
+          - WHERE account_id = 2;
+          - ROLLBACK;
+        distractors:
+          - COMMIT;
+        explanation: |
+          The update is made inside the transaction and then `ROLLBACK` throws it away. A `COMMIT` here would
+          have saved the test change for good.
+
+      - type: read
+        title: Always finish on purpose
+        md: |
+          A transaction is not final until you write `COMMIT`. Until then, the changes are still waiting, and
+          you can still undo them with `ROLLBACK`.
+
+          > [!TIP]
+          > Make it a habit: every `BEGIN` gets a matching `COMMIT` or `ROLLBACK`. Decide which one you need
+          > before you write the statements in between.
+
+    cheatsheet:
+      - title: Save a group of changes
+        sql: |
+          BEGIN;
+          -- your changes here
+          COMMIT;
+        note: Everything between BEGIN and COMMIT is saved together, or not at all.
+      - title: Undo everything since BEGIN
+        sql: ROLLBACK;
+        note: Use it when you change your mind, or when something is wrong.
+      - title: END means COMMIT
+        sql: END;
+        note: In PostgreSQL, END is a synonym for COMMIT.
+  - id: m14-l02
+    title: "SAVEPOINT: Undoing Part of a Transaction"
+    summary: Set bookmarks inside a transaction, undo only the part you got wrong, and learn what an error does to the rest.
+    minutes: 25
+    steps:
+      - type: read
+        title: Undo the mistake, keep the rest
+        md: |
+          A transfer desk runs a small batch. First comes Sneha's $200 transfer, which is correct. Then a $25
+          wire fee is entered by mistake. The manager asks for one thing: keep the transfer, remove the fee.
+
+          With `ROLLBACK` alone you would have to undo the whole batch, including the good transfer. You need a
+          way to undo only the part after a certain point. That is a **savepoint**.
+
+      - type: read
+        title: A savepoint is a bookmark
+        md: |
+          A **savepoint** is a named bookmark inside a transaction. You can jump back to it later without
+          leaving the transaction.
+
+          | statement | what it does |
+          |---|---|
+          | `SAVEPOINT name;` | Places a bookmark called `name`. |
+          | `ROLLBACK TO SAVEPOINT name;` | Undoes everything after the bookmark. The transaction is still open. |
+          | `RELEASE SAVEPOINT name;` | Removes the bookmark but keeps all the work. |
+
+          > [!ANALOGY]
+          > A video game save point. You can keep playing, and if you lose a level you go back to the save point,
+          > not to the start of the game. The game is still running.
+
+      - type: example
+        title: Undo only the fee
+        md: |
+          Place a bookmark after the transfer, add a fee, and then jump back to the bookmark. The transfer stays.
+        sql: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils');
+
+          SAVEPOINT before_fee;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 1, '2025-01-02 09:00:00',
+               -25.00, 'fee', 'Wire fee');
+
+          SELECT txn_id, amount, description
+          FROM transactions
+          WHERE txn_id >= 3675;
+
+          ROLLBACK TO SAVEPOINT before_fee;
+
+          SELECT txn_id, amount, description
+          FROM transactions
+          WHERE txn_id >= 3675;
+
+          COMMIT;
+        after: |
+          The first `SELECT` shows two rows: the transfer and the fee. After `ROLLBACK TO SAVEPOINT before_fee`
+          the second `SELECT` shows only the transfer. `COMMIT` then saves the transfer, and the fee never
+          existed.
+
+          The transaction was never closed. We only jumped back to the bookmark, and then we committed.
+
+      - type: read
+        title: Bookmarks inside bookmarks
+        md: |
+          You can set as many savepoints as you like. A savepoint only remembers the work done up to that moment.
+
+          `RELEASE SAVEPOINT` removes a bookmark, but it does not undo anything. Once a bookmark is released,
+          you can no longer jump back to it. Jumping back to an **earlier** bookmark still undoes everything
+          after it, including the work done after the released bookmark.
+
+      - type: example
+        title: Nested savepoints
+        md: |
+          Two bookmarks, one release, and one jump back to the first bookmark. Press **Run** and count what is left.
+        sql: |
+          BEGIN;
+
+          SAVEPOINT first_step;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils');
+
+          SAVEPOINT second_step;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 2, '2025-01-02 09:00:00',
+               200.00, 'transfer_in', 'Transfer from Sneha');
+
+          RELEASE SAVEPOINT second_step;
+
+          ROLLBACK TO SAVEPOINT first_step;
+
+          COMMIT;
+
+          SELECT COUNT(*) AS rows_from_3675
+          FROM transactions
+          WHERE txn_id >= 3675;
+        after: |
+          The count is **0**. `RELEASE SAVEPOINT second_step` only removed that bookmark. The second insert
+          stayed in place. Then `ROLLBACK TO SAVEPOINT first_step` undid everything after the first bookmark,
+          including the second insert.
+
+      - type: read
+        title: What an error does to a transaction
+        md: |
+          Sometimes a statement fails. A common reason is a **foreign key** rule (you learned it in the design
+          module): a transfer to an account that does not exist is refused.
+
+          When a statement fails inside `BEGIN`, PostgreSQL does not simply skip it and carry on. The whole
+          transaction enters a **failed state**. Every later statement is refused with the message
+          `current transaction is aborted, commands ignored until end of transaction block`.
+
+          The way out is `ROLLBACK`, or `ROLLBACK TO SAVEPOINT` to a bookmark placed before the error.
+
+      - type: example
+        title: A transfer to an account that does not exist
+        md: |
+          Account 999 does not exist in Harbor Bank. Press **Run** and read the error. The last `SELECT` is never
+          reached.
+        sql: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 999, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to nobody');
+
+          SELECT 'This line never runs' AS message;
+        expectError: true
+        after: |
+          The error is `violates foreign key constraint`. It means account 999 is not in the `accounts` table.
+          The run stops at the first error. Inside a real program, the transaction would now be in the failed
+          state described above.
+
+      - type: read
+        title: Savepoints as a safety net
+        md: |
+          Programs use savepoints for error handling. Before a risky step they place a savepoint. If the step
+          fails, they run `ROLLBACK TO SAVEPOINT` and carry on with the rest of the transaction.
+
+          Our online runner stops at the first error, so you see the error here and not the recovery. The
+          recovery pattern is still important to know, and the quiz below checks it.
+
+      - type: quiz
+        id: m14-l02-q1
+        question: What does `ROLLBACK TO SAVEPOINT before_fee;` do?
+        options:
+          - Ends the transaction and undoes everything since `BEGIN`
+          - Undoes only the changes made after `before_fee`, and the transaction stays open
+          - Saves the changes made after `before_fee`
+          - Deletes the table `before_fee`
+        answer: 1
+        explanation: |
+          `ROLLBACK TO SAVEPOINT` jumps back to the bookmark and undoes only what came after it. The transaction
+          is still open, so you still need `COMMIT` or `ROLLBACK` at the end.
+
+      - type: exercise
+        id: m14-l02-e1
+        title: Keep the transfer, drop the fee
+        prompt: |
+          Write one transaction that does the following:
+
+          1. Inserts a `transfer_out` row: txn_id 3675, account 1, amount -200.00, description `Transfer to Nils`.
+          2. Places a savepoint named `before_fee`.
+          3. Inserts a `fee` row: txn_id 3676, account 1, amount -25.00, description `Wire fee`.
+          4. Undoes only the fee with `ROLLBACK TO SAVEPOINT before_fee`.
+          5. Saves everything with `COMMIT`.
+
+          Use txn_time `'2025-01-02 09:00:00'` for both rows. Finally, show `txn_id`, `amount` and `description`
+          for every row with `txn_id >= 3675`.
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils');
+
+          SAVEPOINT before_fee;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 1, '2025-01-02 09:00:00',
+               -25.00, 'fee', 'Wire fee');
+
+          ROLLBACK TO SAVEPOINT before_fee;
+
+          COMMIT;
+
+          SELECT txn_id, amount, description
+          FROM transactions
+          WHERE txn_id >= 3675;
+        columnNames: true
+        hints:
+          - Do the example's steps in the same order. The `COMMIT` must come last.
+          - Only the fee should disappear. The `ROLLBACK TO SAVEPOINT` goes back to `before_fee`, not to `BEGIN`.
+          - "Skeleton: `BEGIN; INSERT ... (3675 ...); SAVEPOINT before_fee; INSERT ... (3676 ...); ___ TO SAVEPOINT before_fee; COMMIT; SELECT ...;`"
+        explanation: |
+          The transfer row survives because it was made before the bookmark. The fee row was made after the
+          bookmark, so the rollback removed it.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l02-e2
+        title: Replace one wrong row
+        prompt: |
+          Harbor Bank's batch has a mistake in the second row. Write a transaction that:
+
+          1. Inserts txn 3675: `transfer_out`, account 1, amount -120.00, description `Transfer to Nils`.
+          2. Places a savepoint named `after_out`.
+          3. Inserts txn 3676 with the **wrong** amount -120.00 on account 2 (type `transfer_in`, description `Transfer from Sneha`). This is the mistake.
+          4. Rolls back to `after_out`, which removes the wrong row 3676.
+          5. Inserts txn 3676 again, correctly, with amount 120.00 on account 2 (same type and description).
+          6. Commits.
+
+          Use txn_time `'2025-01-02 09:00:00'` for all rows. Finally, show `txn_id`, `account_id` and `amount` for
+          every row with `txn_id >= 3675`, ordered by `txn_id`.
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -120.00, 'transfer_out', 'Transfer to Nils');
+
+          SAVEPOINT after_out;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 2, '2025-01-02 09:00:00',
+               -120.00, 'transfer_in', 'Transfer from Sneha');
+
+          ROLLBACK TO SAVEPOINT after_out;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 2, '2025-01-02 09:00:00',
+               120.00, 'transfer_in', 'Transfer from Sneha');
+
+          COMMIT;
+
+          SELECT txn_id, account_id, amount
+          FROM transactions
+          WHERE txn_id >= 3675
+          ORDER BY txn_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - The wrong row is inserted after the savepoint, so one rollback can remove it.
+          - After the rollback, the id 3676 is free again, so you can insert it a second time with the right amount.
+          - "Skeleton: `INSERT ... (3675 ...); SAVEPOINT after_out; INSERT ... (3676, ..., -120.00, ...); ___ TO SAVEPOINT after_out; INSERT ... (3676, ..., 120.00, ...); COMMIT;`"
+        explanation: |
+          The savepoint lets you fix one row without throwing away the good row in front of it. Notice that
+          `ROLLBACK TO` removed the wrong row, and only then did the correct row go in.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l02-e3
+        title: Overdraft try-and-undo
+        prompt: |
+          Account 2 has an overdraft limit of 500.00. The manager wants to try 1000.00 and then decide. Write one
+          transaction that:
+
+          1. Places a savepoint named `before_change`.
+          2. Sets the overdraft limit of account 2 to 1000.00.
+          3. Rolls back to `before_change`, which undoes that change.
+          4. Sets the overdraft limit of account 2 to 750.00.
+          5. Commits.
+
+          Finally, show `account_id` and `overdraft_limit` for account 2.
+        solution: |
+          BEGIN;
+
+          SAVEPOINT before_change;
+
+          UPDATE accounts
+          SET overdraft_limit = 1000.00
+          WHERE account_id = 2;
+
+          ROLLBACK TO SAVEPOINT before_change;
+
+          UPDATE accounts
+          SET overdraft_limit = 750.00
+          WHERE account_id = 2;
+
+          COMMIT;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 2;
+        columnNames: true
+        hints:
+          - Savepoints work on any statement, including `UPDATE`.
+          - The 1000.00 change is undone by the rollback, so the final value comes from the second `UPDATE`.
+          - "Skeleton: `BEGIN; SAVEPOINT before_change; UPDATE accounts SET overdraft_limit = ___ WHERE ___; ROLLBACK TO SAVEPOINT before_change; UPDATE ...; COMMIT;`"
+        explanation: |
+          The 1000.00 value was tried and then removed. The final limit is 750.00. This "try, check, undo" pattern is
+          a safe way to test a change inside a live database.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l02-e4
+        title: Three bookmarks, one clean batch
+        prompt: |
+          A batch needs three steps, with a bookmark after each one. Write one transaction that:
+
+          1. Inserts txn 3675: `transfer_out`, account 1, amount -60.00, description `Transfer to Nils`.
+          2. Places savepoint `sp_a`.
+          3. Inserts txn 3676: `transfer_in`, account 2, amount 60.00, description `Transfer from Sneha`.
+          4. Places savepoint `sp_b`.
+          5. Inserts txn 3677: `fee`, account 2, amount -5.00, description `Wire fee`.
+          6. Rolls back to `sp_b`, which removes the fee.
+          7. Releases `sp_a` (it removes the bookmark but keeps the transfer rows).
+          8. Commits.
+
+          Use txn_time `'2025-01-02 09:00:00'` for all rows. Finally, show `txn_id`, `account_id` and `amount` for
+          every row with `txn_id >= 3675`, ordered by `txn_id`.
+        solution: |
+          BEGIN;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -60.00, 'transfer_out', 'Transfer to Nils');
+
+          SAVEPOINT sp_a;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3676, 2, '2025-01-02 09:00:00',
+               60.00, 'transfer_in', 'Transfer from Sneha');
+
+          SAVEPOINT sp_b;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3677, 2, '2025-01-02 09:00:00',
+               -5.00, 'fee', 'Wire fee');
+
+          ROLLBACK TO SAVEPOINT sp_b;
+
+          RELEASE SAVEPOINT sp_a;
+
+          COMMIT;
+
+          SELECT txn_id, account_id, amount
+          FROM transactions
+          WHERE txn_id >= 3675
+          ORDER BY txn_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Use the savepoint names exactly as written. Each name must be placed before you need to jump back to it.
+          - "`ROLLBACK TO sp_b` removes only the fee. `RELEASE sp_a` keeps both transfer rows."
+          - "Skeleton: `BEGIN; INSERT ... (3675 ...); SAVEPOINT sp_a; INSERT ... (3676 ...); SAVEPOINT sp_b; INSERT ... (3677 ...); ___ TO SAVEPOINT sp_b; ___ SAVEPOINT sp_a; COMMIT;`"
+        explanation: |
+          Two transfer rows remain, and the fee is gone. `RELEASE` tidied up the bookmark without touching the
+          work. Only `COMMIT` makes the rows final.
+        difficulty: 3
+
+      - type: predict
+        id: m14-l02-p1
+        question: What happens when you run this script?
+        sql: |
+          BEGIN;
+
+          SAVEPOINT before_risky_step;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 999, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Risky transfer');
+
+          ROLLBACK TO SAVEPOINT before_risky_step;
+
+          SELECT COUNT(*) AS total_rows
+          FROM transactions;
+        options:
+          - It shows 3674 rows
+          - It shows 3675 rows
+          - "An error: account 999 breaks the foreign key rule, and the run stops at that statement"
+          - It returns no rows at all
+        answer: 2
+        expectError: true
+        explanation: |
+          The `INSERT` fails first, because account 999 does not exist. The run stops there, so the
+          `ROLLBACK TO SAVEPOINT` never runs. The savepoint only helps your program keep going after the error.
+
+      - type: fill
+        id: m14-l02-f1
+        prompt: Complete the batch so that a bookmark is placed and then used to undo a risky change.
+        template: |
+          BEGIN;
+
+          UPDATE accounts
+          SET overdraft_limit = 300.00
+          WHERE account_id = 2;
+
+          ___ before_risky_change;
+
+          UPDATE accounts
+          SET overdraft_limit = 0.00
+          WHERE account_id = 2;
+
+          ___ TO SAVEPOINT before_risky_change;
+
+          COMMIT;
+        answers:
+          - ["SAVEPOINT"]
+          - ["ROLLBACK"]
+        explanation: |
+          `SAVEPOINT` places the bookmark. `ROLLBACK TO SAVEPOINT` jumps back to it. The `COMMIT` at the end still
+          saves the rest of the transaction, which is the 300.00 change made before the bookmark.
+
+      - type: read
+        title: Undoing is not the same as finishing
+        md: |
+          A `ROLLBACK TO SAVEPOINT` does not end the transaction. The transaction is still open, so you must still
+          finish it with `COMMIT` or `ROLLBACK`.
+
+          > [!MISTAKE]
+          > Writing `ROLLBACK TO SAVEPOINT` and then forgetting `COMMIT` leaves the transaction open. Also,
+          > `RELEASE SAVEPOINT` saves nothing. Only `COMMIT` saves the changes.
+
+    cheatsheet:
+      - title: Place and use a bookmark
+        sql: |
+          SAVEPOINT before_fee;
+          -- risky changes here
+          ROLLBACK TO SAVEPOINT before_fee;
+        note: The bookmark keeps the changes made before it. Only the later changes are undone.
+      - title: Remove a bookmark, keep the work
+        sql: RELEASE SAVEPOINT before_fee;
+        note: After RELEASE, you can no longer jump back to that bookmark.
+      - title: A failed statement blocks the transaction
+        sql: ROLLBACK;
+        note: "After an error inside BEGIN, only ROLLBACK or ROLLBACK TO SAVEPOINT work again."
+  - id: m14-l03
+    title: "ACID in Practice: The Four Promises"
+    summary: Learn what a transaction guarantees, and see the rules of the bank table stop bad data before it is saved.
+    minutes: 20
+    steps:
+      - type: read
+        title: The auditor's question
+        md: |
+          Harbor Bank's auditor asks a simple question: "When Sneha pays Nils, what does the database promise
+          you?" Database engineers answer with one word made of four letters: **ACID**.
+
+          Each letter is one promise. You have already met the first one in lesson 1. Here is the full picture:
+
+          | letter | word | plain meaning | bank example |
+          |---|---|---|---|
+          | **A** | Atomicity | All of the changes happen, or none of them do | Both transfer rows are saved, or neither is |
+          | **C** | Consistency | Every rule in the tables is still true after the change | An overdraft limit can never be negative |
+          | **I** | Isolation | A transaction does not see another transaction's unfinished work | Nobody reads Sneha's half-made transfer |
+          | **D** | Durability | Once `COMMIT` has said yes, the change survives a crash | The transfer is still there after a power cut |
+
+      - type: read
+        title: A is for Atomicity
+        md: |
+          Atomicity means "indivisible". A transaction is treated as one piece. It cannot be left half done.
+
+          Even a single statement is atomic. If one row in a multi-row `INSERT` breaks a rule, the database
+          refuses the **whole** statement. The good rows are not saved either.
+
+          > [!ANALOGY]
+          > Think of two parcels sealed in one courier bag, going to two addresses. The courier delivers both
+          > parcels or neither. You never get a case where only one arrives.
+
+      - type: example
+        title: One bad row, nothing saved
+        md: |
+          The first row is correct. The second row points at account 999, which does not exist. Press **Run**.
+        sql: |
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               -200.00, 'transfer_out', 'Transfer to Nils'),
+              (3676, 999, '2025-01-02 09:00:00',
+               200.00, 'transfer_in', 'Transfer from Sneha');
+        expectError: true
+        after: |
+          The error is refused by a foreign key rule. Row 3675 was correct, but it is not saved either. This is
+          atomicity: the statement is all or nothing.
+
+      - type: read
+        title: C is for Consistency
+        md: |
+          Consistency means the database only accepts changes that keep its **rules** true. The rules come from
+          the table design you learned in the design module:
+
+          - `NOT NULL`: a value must be given.
+          - `PRIMARY KEY` and `UNIQUE`: no duplicate ids or references.
+          - `CHECK`: a condition every row must satisfy, such as "the overdraft limit is not negative".
+          - `FOREIGN KEY`: a row must point at a row that exists.
+
+          If a change breaks one of these rules, the database refuses it. The data is never left in a broken state.
+
+      - type: example
+        title: A CHECK rule says no
+        md: |
+          An overdraft limit is how far below zero an account is allowed to go, so it cannot be negative. Press
+          **Run** to try to set one to -500.00.
+        sql: |
+          UPDATE accounts
+          SET overdraft_limit = -500.00
+          WHERE account_id = 1;
+        expectError: true
+        after: |
+          The message names the rule: `accounts_overdraft_limit_check`. The `CHECK` rule on the table refused the
+          change. The account keeps its old limit of 0.00.
+
+      - type: example
+        title: A NOT NULL rule says no
+        md: A transfer without an amount makes no sense. Try to save one anyway.
+        sql: |
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          VALUES
+              (3675, 1, '2025-01-02 09:00:00',
+               NULL, 'transfer_out', 'Missing amount');
+        expectError: true
+        after: |
+          `NULL` means "no value". The `amount` column is `NOT NULL`, so the database refuses the row with
+          `null value in column "amount"`.
+
+      - type: read
+        title: I is for Isolation
+        md: |
+          Isolation is about two transactions running at the same time. Imagine one teller is halfway through
+          Sneha's transfer when another teller reads her balance. Should the second teller see the half-finished
+          work?
+
+          The answer depends on the **isolation level**. The next lesson explains the levels one by one. For now,
+          watch the scenario below: the second session does not see the first session's unsaved change.
+
+      - type: viz
+        viz: transaction
+        title: The first session's unsaved change
+        md: |
+          Step through the timeline. Session A changes a row but does not commit yet. Notice what session B can see.
+        config: { scenario: dirty-read }
+
+      - type: read
+        title: D is for Durability
+        md: |
+          Durability means that once `COMMIT` has said yes, the change is safe. PostgreSQL writes the change to
+          its log on disk before it confirms the `COMMIT`. If the power goes off a second later, the change is
+          still there when the database starts again.
+
+          Our browser database cannot be switched off in the middle of a `COMMIT` for you to test, so you will
+          have to trust the explanation here. In a real bank, durability is what makes a confirmed transfer
+          safe.
+
+      - type: quiz
+        id: m14-l03-q1
+        question: Which ACID promise means "all of the changes happen, or none of them do"?
+        options: ["A (Atomicity)", "C (Consistency)", "I (Isolation)", "D (Durability)"]
+        answer: 0
+        explanation: Atomicity is the "all or nothing" promise. Each of the other letters covers a different guarantee.
+
+      - type: predict
+        id: m14-l03-p1
+        question: How many accounts break the overdraft rule right now?
+        sql: |
+          SELECT COUNT(*) AS rule_breakers
+          FROM accounts
+          WHERE overdraft_limit < 0;
+        options: ["0", "1", "126", "An error"]
+        answer: 0
+        explanation: |
+          The `CHECK` rule refuses any row with a negative overdraft limit, so no stored row can break it. The
+          count is 0. This is consistency in action.
+
+      - type: fill
+        id: m14-l03-f1
+        prompt: Complete the table definition so that a wire amount must always be greater than zero.
+        template: |
+          CREATE TABLE wire_limits (
+              limit_id integer PRIMARY KEY,
+              amount numeric(10,2) ___ (amount ___ 0)
+          );
+        answers:
+          - ["CHECK"]
+          - [">"]
+        explanation: |
+          `CHECK` introduces a rule that every row must satisfy. The rule `amount > 0` refuses zero and negative
+          amounts. You met `CHECK` in the design module.
+
+      - type: exercise
+        id: m14-l03-e1
+        title: How many accounts obey the rule?
+        prompt: |
+          Show how many accounts have an `overdraft_limit` of 0 or more. Return one row with one column, named
+          `accounts_ok`.
+        solution: |
+          SELECT COUNT(*) AS accounts_ok
+          FROM accounts
+          WHERE overdraft_limit >= 0;
+        columnNames: true
+        hints:
+          - Count the rows with `COUNT(*)`, and filter with a `WHERE` on `overdraft_limit`.
+          - "Use `>= 0` so that zero counts as allowed."
+          - "Skeleton: `SELECT COUNT(*) AS accounts_ok FROM accounts WHERE ___;`"
+        explanation: |
+          All 126 accounts obey the rule. The database keeps it that way, so you can trust this count without
+          checking each row by hand.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l03-e2
+        title: Find orphan transactions
+        prompt: |
+          An "orphan" is a transaction that points at an account that does not exist. Show the `txn_id` of every
+          orphan transaction, ordered by `txn_id`. In a healthy database the result is empty.
+        solution: |
+          SELECT t.txn_id
+          FROM transactions AS t
+          LEFT JOIN accounts AS a
+              ON a.account_id = t.account_id
+          WHERE a.account_id IS NULL
+          ORDER BY t.txn_id;
+        columnNames: true
+        ordered: true
+        allowEmpty: true
+        hints:
+          - A `LEFT JOIN` keeps every transaction, even if no matching account exists.
+          - An account that is missing gives `NULL` in `a.account_id`. Filter for that.
+          - "Skeleton: `SELECT t.txn_id FROM transactions AS t LEFT JOIN accounts AS a ON ___ WHERE a.account_id ___ NULL;`"
+        explanation: |
+          The foreign key rule keeps this result empty. A `LEFT JOIN` with `IS NULL` is the standard way to look
+          for "rows with no partner", which you saw in the joins module.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l03-e3
+        title: Do the paired transfers net to zero?
+        prompt: |
+          Harbor Bank's rule: every `Transfer to savings` row has a matching `Transfer from checking` row with the
+          opposite amount. So the total of both descriptions must be zero.
+
+          Show the total of all transactions with a description of either `Transfer to savings` or
+          `Transfer from checking`. Return one row with one column, named `net_total`, rounded to 2 decimals.
+        solution: |
+          SELECT ROUND(SUM(amount), 2) AS net_total
+          FROM transactions
+          WHERE description IN ('Transfer to savings', 'Transfer from checking');
+        columnNames: true
+        hints:
+          - Sum the `amount` column with `SUM`, and filter with a `WHERE` on `description`.
+          - Use `IN ('Transfer to savings', 'Transfer from checking')` for the two descriptions.
+          - "Skeleton: `SELECT ROUND(SUM(amount), 2) AS net_total FROM transactions WHERE description ___ (...);`"
+        explanation: |
+          A total of 0.00 means every pair cancels out and no money was created or lost. Checks like this are
+          how analysts test that a set of changes was done correctly.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l03-e4
+        title: Check the savings rule
+        prompt: |
+          Harbor Bank says savings accounts never have an overdraft. For each `account_type`, show:
+
+          - the number of accounts, named `accounts`,
+          - the number of accounts whose `overdraft_limit` is exactly 0, named `zero_limit`.
+
+          Return one row per `account_type`, with the columns `account_type`, `accounts` and `zero_limit`, ordered
+          by `account_type`.
+        solution: |
+          SELECT account_type,
+                 COUNT(*) AS accounts,
+                 SUM(CASE WHEN overdraft_limit = 0 THEN 1 ELSE 0 END)
+                     AS zero_limit
+          FROM accounts
+          GROUP BY account_type
+          ORDER BY account_type;
+        columnNames: true
+        ordered: true
+        hints:
+          - "Group by `account_type`, then count the rows in each group."
+          - "A `CASE` inside `SUM` counts only the rows that match: `SUM(CASE WHEN ... THEN 1 ELSE 0 END)`."
+          - "Skeleton: `SELECT account_type, COUNT(*) AS accounts, SUM(CASE WHEN overdraft_limit = 0 THEN 1 ELSE 0 END) AS zero_limit FROM accounts GROUP BY ___ ORDER BY ___;`"
+        explanation: |
+          Every savings account has a limit of 0.00. Checking accounts can have a limit, and credit accounts use
+          their limit as a credit line. A `CASE` inside `SUM` is a neat way to count only the rows that match.
+        difficulty: 3
+
+      - type: read
+        title: A constraint error is a protection
+        md: |
+          When a rule refuses your change, the rule is protecting the data. Do not "fix" it by removing the rule.
+          Look at the value you tried to save and correct that.
+
+          > [!MISTAKE]
+          > A common mistake is to switch off checks because they are "in the way". Every rule you remove is a bad
+          > row waiting to happen. Change the data to follow the rule.
+
+    cheatsheet:
+      - title: Four ACID promises
+        sql: "-- A: all or nothing\n-- C: rules are kept\n-- I: transactions don't interfere\n-- D: committed means saved"
+        note: Atomicity, Consistency, Isolation, Durability.
+      - title: Find rows with no partner
+        sql: |
+          SELECT t.txn_id
+          FROM transactions AS t
+          LEFT JOIN accounts AS a ON a.account_id = t.account_id
+          WHERE a.account_id IS NULL;
+        note: An orphan row has no matching parent row.
+      - title: A rule on a column
+        sql: |
+          CREATE TABLE wire_limits (
+              limit_id integer PRIMARY KEY,
+              amount numeric(10,2) CHECK (amount > 0)
+          );
+        note: The database refuses any row that breaks the CHECK.
+  - id: m14-l04
+    title: "Isolation Levels & Anomalies"
+    summary: See what two busy tellers can see from each other, meet the four isolation levels, and learn the anomalies they prevent.
+    minutes: 30
+    steps:
+      - type: read
+        title: Two tellers, one account
+        md: |
+          Two tellers at Harbor Bank are working at the same time. Teller A is updating Sneha's account. Teller B
+          is reading the same account to answer a phone call. What should Teller B see?
+
+          Each connection to the database is a **session**, and each transaction runs inside a session. The app
+          you use has just one session. So for the "two tellers" moments, you will watch the scenarios in the
+          transaction visualizer, which shows both sessions side by side.
+
+      - type: read
+        title: The isolation level is a promise
+        md: |
+          The **isolation level** decides how much a transaction can see of the other transactions running at the
+          same time. Higher levels give stronger promises, and they cost a little more work.
+
+          PostgreSQL uses **READ COMMITTED** unless you choose otherwise. Let us check your session.
+
+      - type: example
+        title: Which level am I using?
+        md: Press **Run**. The answer should be `read committed`.
+        sql: |
+          SHOW transaction_isolation;
+        after: |
+          `read committed` is the default. It means each statement sees only changes that were committed before
+          that statement started.
+
+      - type: example
+        title: Choose a level for one transaction
+        md: |
+          You can ask for a different level when you start the transaction. Press **Run**.
+        sql: |
+          BEGIN ISOLATION LEVEL REPEATABLE READ;
+
+          SELECT current_setting('transaction_isolation') AS level;
+
+          COMMIT;
+        after: |
+          The level is now `repeatable read`, for this transaction only. The next transaction goes back to the
+          default unless it also asks for a level.
+
+      - type: read
+        title: The four levels, as PostgreSQL does them
+        md: |
+          The standard names four levels. PostgreSQL implements three real behaviours:
+
+          | level | dirty read | non-repeatable read | phantom read |
+          |---|---|---|---|
+          | READ UNCOMMITTED | never | possible | possible |
+          | READ COMMITTED (default) | never | possible | possible |
+          | REPEATABLE READ | never | never | never |
+          | SERIALIZABLE | never | never | never |
+
+          `READ UNCOMMITTED` is accepted, but PostgreSQL treats it as `READ COMMITTED`. The stronger levels also
+          stop the **lost updates** described below. `SERIALIZABLE` also prevents "write skew", which is a more
+          advanced problem and beyond this lesson.
+
+      - type: read
+        title: Dirty reads never happen in PostgreSQL
+        md: |
+          A **dirty read** is reading a change that another transaction made but has **not committed** yet. If
+          that transaction then rolls back, you acted on data that never really existed.
+
+          PostgreSQL never allows dirty reads. Even if you ask for `READ UNCOMMITTED`, you only see committed
+          data. That is why the table above shows "never" in the first column for every level.
+
+      - type: viz
+        viz: transaction
+        title: A non-repeatable read
+        md: |
+          Session A reads the same account twice. Between the two reads, session B changes it and commits. Watch
+          what session A sees the second time.
+        config: { scenario: non-repeatable-read }
+
+      - type: read
+        title: Non-repeatable reads
+        md: |
+          A **non-repeatable read** happens when the same query, read twice in one transaction, returns different
+          values because another transaction committed a change in between.
+
+          Under `READ COMMITTED`, every statement takes a fresh look at the committed data. That is usually what
+          you want. If your logic reads the same row twice and needs the same answer both times, use
+          `REPEATABLE READ`.
+
+      - type: viz
+        viz: transaction
+        title: A phantom read
+        md: |
+          This time session B adds a **new** row that matches session A's `WHERE`. Watch whether the new row
+          appears in session A's second read.
+        config: { scenario: phantom-read }
+
+      - type: read
+        title: Phantom reads
+        md: |
+          A **phantom read** is when a repeated query returns a row that did not match the first time, because
+          another transaction inserted it and committed. In PostgreSQL, `REPEATABLE READ` prevents phantoms too,
+          because the transaction keeps one snapshot of the committed data for its whole life.
+
+      - type: viz
+        viz: transaction
+        title: A lost update
+        md: |
+          Two sessions each read the same overdraft limit, add to it in the program, and write it back. One update
+          disappears. Watch the numbers.
+        config: { scenario: lost-update }
+
+      - type: read
+        title: Lost updates, and the fix
+        md: |
+          A **lost update** happens when two transactions read the same value, change it in their own program,
+          and write it back. The second write overwrites the first, so one change is lost.
+
+          The safe fix is to let the database do the arithmetic in **one** statement. The database locks the row
+          while it updates it, so the second change works on the latest value.
+
+      - type: example
+        title: Let the database add it up
+        md: |
+          Add 250.00 to account 1's overdraft limit in one statement, then check the result. Press **Run**.
+        sql: |
+          BEGIN;
+
+          UPDATE accounts
+          SET overdraft_limit = overdraft_limit + 250.00
+          WHERE account_id = 1;
+
+          SELECT overdraft_limit
+          FROM accounts
+          WHERE account_id = 1;
+
+          COMMIT;
+        after: |
+          The limit is now 250.00. Nothing was read into your program and written back, so there was no
+          moment when a stale copy could be overwritten.
+
+      - type: read
+        title: Choose the level before you start
+        md: |
+          `SET TRANSACTION ISOLATION LEVEL` changes the level of the transaction you are in. It must come
+          **before** the first query of the transaction. Once a query has run, the level is fixed.
+
+      - type: example
+        title: Too late to change the level
+        md: |
+          The `SELECT` runs first, so PostgreSQL refuses the `SET TRANSACTION` that comes after it. Press **Run**.
+        sql: |
+          BEGIN;
+
+          SELECT COUNT(*) FROM accounts;
+
+          SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+        expectError: true
+        after: |
+          The message is `SET TRANSACTION ISOLATION LEVEL must be called before any query`. The fix is to put the
+          `SET TRANSACTION` line right after `BEGIN`.
+
+      - type: read
+        title: When two transactions collide
+        md: |
+          At `REPEATABLE READ` and `SERIALIZABLE`, PostgreSQL may find that two transactions cannot both be kept
+          as if they ran one after the other. It then stops one of them with error code **40001**
+          (`could not serialize access due to concurrent update`).
+
+          That is not a bug. Your program must catch that error and **retry the whole transaction** from its
+          first statement.
+
+      - type: quiz
+        id: m14-l04-q1
+        question: Which anomaly can PostgreSQL never produce, even at READ UNCOMMITTED?
+        options: ["Dirty read", "Non-repeatable read", "Phantom read", "Write skew"]
+        answer: 0
+        explanation: |
+          A dirty read sees data that is not committed yet. PostgreSQL never allows it. The other three can happen
+          at the lower levels.
+
+      - type: quiz
+        id: m14-l04-q2
+        question: At REPEATABLE READ, your program gets error 40001 on an update. What should it do?
+        options: ["Ignore the error and keep going", "Retry the whole transaction from the start", "Commit only the first statement", "Delete the account to be safe"]
+        answer: 1
+        explanation: |
+          Error 40001 means PostgreSQL could not keep the transactions in a safe order. The fix is to run the whole
+          transaction again, from its first statement.
+
+      - type: predict
+        id: m14-l04-p1
+        question: What does this script show?
+        sql: |
+          BEGIN ISOLATION LEVEL READ UNCOMMITTED;
+
+          SELECT current_setting('transaction_isolation') AS setting;
+
+          COMMIT;
+        options: ["read committed", "read uncommitted", "repeatable read", "An error: PostgreSQL does not know this level"]
+        answer: 1
+        explanation: |
+          PostgreSQL accepts the name and reports it, so you see `read uncommitted`. But it still behaves as READ
+          COMMITTED, so dirty reads never happen.
+
+      - type: fill
+        id: m14-l04-f1
+        prompt: Complete the statement that starts a transaction at the REPEATABLE READ level.
+        template: |
+          BEGIN ___ ___ REPEATABLE READ;
+
+          SELECT COUNT(*) FROM accounts;
+
+          COMMIT;
+        answers:
+          - ["ISOLATION"]
+          - ["LEVEL"]
+        explanation: "`BEGIN ISOLATION LEVEL ...` starts a transaction with a chosen level in one line."
+
+      - type: exercise
+        id: m14-l04-e1
+        title: Which level is my session using?
+        prompt: |
+          Show the isolation level your session is using right now. Return one row with one column, named `level`.
+        solution: |
+          SELECT current_setting('transaction_isolation') AS level;
+        columnNames: true
+        hints:
+          - PostgreSQL keeps the level in a setting called `transaction_isolation`.
+          - "`current_setting('name')` returns the value of a setting."
+          - "Skeleton: `SELECT current_setting('___') AS level;`"
+        explanation: |
+          You should see `read committed`, the default. The same answer comes from `SHOW transaction_isolation;`.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l04-e2
+        title: Read a balance in a stable transaction
+        prompt: |
+          Start a transaction at the `REPEATABLE READ` level. Inside it, show the balance of account 1 as the
+          rounded sum of its transaction amounts, in one column named `balance`. Then `COMMIT`.
+        solution: |
+          BEGIN ISOLATION LEVEL REPEATABLE READ;
+
+          SELECT ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id = 1;
+
+          COMMIT;
+        columnNames: true
+        hints:
+          - Start with `BEGIN ISOLATION LEVEL REPEATABLE READ;`.
+          - The balance is `SUM(amount)` over the rows of account 1.
+          - "Skeleton: `BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT ROUND(SUM(amount), 2) AS balance FROM transactions WHERE ___; COMMIT;`"
+        explanation: |
+          Inside `REPEATABLE READ`, every read in the transaction sees the same snapshot. Other tellers can
+          commit changes meanwhile, but your numbers stay steady until you `COMMIT`.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l04-e3
+        title: Count and balance in one snapshot
+        prompt: |
+          In one `SERIALIZABLE` transaction, show for account 1 the number of transactions and the balance (the
+          rounded sum of the amounts) in one row. Use the columns `txn_count` and `balance`. Then `COMMIT`.
+        solution: |
+          BEGIN ISOLATION LEVEL SERIALIZABLE;
+
+          SELECT COUNT(*) AS txn_count,
+                 ROUND(SUM(amount), 2) AS balance
+          FROM transactions
+          WHERE account_id = 1;
+
+          COMMIT;
+        columnNames: true
+        hints:
+          - One `SELECT` can return both numbers, separated by a comma.
+          - Filter with `WHERE account_id = 1`.
+          - "Skeleton: `BEGIN ISOLATION LEVEL SERIALIZABLE; SELECT COUNT(*) AS txn_count, ROUND(SUM(amount), 2) AS balance FROM transactions WHERE ___; COMMIT;`"
+        explanation: |
+          Both numbers come from one snapshot, so they always match each other. `SERIALIZABLE` is the strictest
+          level, and this read is safe under it.
+        difficulty: 3
+
+      - type: exercise
+        id: m14-l04-e4
+        title: Add to a limit in one statement
+        prompt: |
+          Account 2 has an overdraft limit of 500.00. Raise it by 250.00 with a single `UPDATE`, without reading the
+          value first. Then show `account_id` and `overdraft_limit` for account 2.
+        solution: |
+          UPDATE accounts
+          SET overdraft_limit = overdraft_limit + 250.00
+          WHERE account_id = 2;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 2;
+        columnNames: true
+        hints:
+          - Use `SET overdraft_limit = overdraft_limit + ...`. The column can refer to its own current value.
+          - Only one `UPDATE` is needed.
+          - "Skeleton: `UPDATE accounts SET overdraft_limit = overdraft_limit + ___ WHERE ___;`"
+        explanation: |
+          The database reads the current value, adds 250.00, and writes the result while it holds the row lock.
+          That prevents a lost update.
+        difficulty: 2
+
+      - type: read
+        title: Do not rely on the default alone
+        md: |
+          Do not assume that everyone else's transactions behave the way yours do. Choose the level your logic
+          needs, and write it at the start of the transaction.
+
+          > [!MISTAKE]
+          > Setting `SET TRANSACTION ISOLATION LEVEL` after your first query is refused. Put it right after
+          > `BEGIN`, or use `BEGIN ISOLATION LEVEL ...` in one line.
+
+    cheatsheet:
+      - title: Check the current level
+        sql: SHOW transaction_isolation;
+        note: The default is read committed.
+      - title: Start a transaction at a level
+        sql: |
+          BEGIN ISOLATION LEVEL REPEATABLE READ;
+          -- your reads here
+          COMMIT;
+        note: The level applies to this transaction only.
+      - title: Safe add in one statement
+        sql: |
+          UPDATE accounts
+          SET overdraft_limit = overdraft_limit + 250.00
+          WHERE account_id = 1;
+        note: The database does the arithmetic on the latest value, so no update is lost.
+  - id: m14-l05
+    title: "Locks: Waiting Politely"
+    summary: Lock rows you are about to change, build a job queue that never hands out the same job twice, and learn how deadlocks happen.
+    minutes: 30
+    steps:
+      - type: read
+        title: Two payments, one balance
+        md: |
+          Sneha's account has $200 left after a late-night purchase. Two payment requests arrive in the same second.
+          Each one checks the balance, sees $200, and approves a $200 payment. If both go through, the account
+          ends up $200 overdrawn, and nobody checked the second payment against the first.
+
+          **Locks** stop this. A lock tells other transactions: "I am working on this row, wait for me."
+
+      - type: read
+        title: A row lock is a reservation
+        md: |
+          A **row lock** is like a library book on hold. One person has it. Anyone else who wants it must wait until
+          it is returned.
+
+          `SELECT ... FOR UPDATE` locks the rows it returns. Until your transaction ends with `COMMIT` or `ROLLBACK`,
+          other transactions that try to change or lock those rows must wait. Ordinary `SELECT`s without `FOR UPDATE`
+          do not wait for locks, so readers are not blocked.
+
+      - type: example
+        title: Lock the row before you change it
+        md: |
+          Lock account 1, check its current value, set a new limit, and save. Press **Run**.
+        sql: |
+          BEGIN;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 1
+          FOR UPDATE;
+
+          UPDATE accounts
+          SET overdraft_limit = 300.00
+          WHERE account_id = 1;
+
+          COMMIT;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 1;
+        after: |
+          The last `SELECT` shows the new limit, 300.00. While our transaction held the lock, any other
+          transaction trying to change account 1 would have waited until our `COMMIT`.
+
+      - type: read
+        title: FOR SHARE, a gentler lock
+        md: |
+          `FOR SHARE` locks the rows against changes, but lets other transactions take the same kind of lock too.
+          Use it when you need a row to stay the same while you read related data, without blocking other
+          readers. When you intend to change the row, `FOR UPDATE` is the usual choice.
+
+      - type: read
+        title: A job queue that never hands out the same job twice
+        md: |
+          Harbor Bank keeps a **queue** of transfers waiting to be processed. Several workers take jobs from it
+          at the same time. You want each job to be taken by exactly one worker.
+
+          `FOR UPDATE SKIP LOCKED` solves this. A worker locks the next free job. If another worker already locked
+          a job, this worker **skips** it and takes the next one, instead of waiting in line behind it.
+
+      - type: example
+        title: Take the next two jobs
+        md: |
+          This example creates a small queue, then asks for the first two queued jobs with `FOR UPDATE SKIP LOCKED`.
+          Press **Run**.
+        sql: |
+          CREATE TABLE transfer_queue (
+              queue_id integer PRIMARY KEY,
+              from_account integer,
+              to_account integer,
+              amount numeric(10,2),
+              status text
+          );
+
+          INSERT INTO transfer_queue VALUES
+              (1, 1, 2, 50.00, 'queued'),
+              (2, 2, 1, 20.00, 'queued'),
+              (3, 1, 2, 75.00, 'queued');
+
+          SELECT queue_id, from_account, to_account, amount
+          FROM transfer_queue
+          WHERE status = 'queued'
+          ORDER BY queue_id
+          LIMIT 2
+          FOR UPDATE SKIP LOCKED;
+        after: |
+          The two oldest queued jobs come back: 1 and 2. We have only one session here, so nothing is skipped.
+          If a second worker ran the same query at the same moment, it would skip jobs 1 and 2 and receive job 3.
+
+          Notice that the locking clause comes **last**, after `LIMIT`.
+
+      - type: read
+        title: NOWAIT, the impatient option
+        md: |
+          `FOR UPDATE NOWAIT` does not wait at all. If the row is locked by someone else, PostgreSQL immediately
+          raises an error (`could not obtain lock on row in relation`). Your program can then tell the user to try
+          again, instead of freezing.
+
+          Each of these options changes what a locked row means for your query: wait (default), skip (`SKIP LOCKED`),
+          or fail at once (`NOWAIT`).
+
+      - type: read
+        title: "Deadlocks: two people waiting for each other"
+        md: |
+          A **deadlock** happens when transaction A locks account 1 and then waits for account 2, while transaction B
+          has already locked account 2 and waits for account 1. Neither can move, and both wait forever.
+
+          PostgreSQL watches for this. After the `deadlock_timeout` (one second by default), it cancels one of the
+          transactions with error `40P01` (`deadlock detected`). The other transaction continues. Your program
+          should retry the one that was cancelled.
+
+      - type: viz
+        viz: transaction
+        title: Watch a deadlock form
+        md: |
+          Step through the timeline. Each session takes one lock and then asks for the other. Notice the moment one
+          of them is stopped.
+        config: { scenario: deadlock }
+
+      - type: read
+        title: "The cure: the same order, every time"
+        md: |
+          Most deadlocks are avoided by one habit. **Every program locks the same rows in the same order.** If
+          everyone locks the lower `account_id` first, the circle cannot form. Nobody holds account 2 while waiting for
+          account 1.
+
+      - type: example
+        title: Lock in one agreed order
+        md: |
+          Lock accounts 1 and 2, sorted by `account_id`. Press **Run**.
+        sql: |
+          BEGIN;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id IN (1, 2)
+          ORDER BY account_id
+          FOR UPDATE;
+
+          COMMIT;
+        after: |
+          Two rows come back, account 1 and then account 2. Any program that moves money between these two accounts
+          should lock them in this same sorted order.
+
+      - type: read
+        title: "Advisory locks: lock an idea, not a row"
+        md: |
+          Sometimes you need a lock that is not tied to a table row. For example, "only one nightly interest run at a
+          time". An **advisory lock** locks a number you choose, such as `42`. The database does not check what the
+          number means. Your programs agree on it.
+
+          `pg_try_advisory_lock(42)` returns `true` if you got it, and `false` at once if someone else has it.
+          `pg_advisory_lock(42)` waits instead. `pg_advisory_unlock(42)` releases it.
+
+      - type: example
+        title: Take an advisory lock
+        md: |
+          Take the lock, count the advisory locks held right now, then release it. Press **Run**.
+        sql: |
+          SELECT pg_try_advisory_lock(42) AS got_lock;
+
+          SELECT COUNT(*) AS held_locks
+          FROM pg_locks
+          WHERE locktype = 'advisory';
+
+          SELECT pg_advisory_unlock(42) AS released;
+        after: |
+          The lock was granted (`true`), one advisory lock is held, and it was released (`true`). The number 42
+          means nothing to PostgreSQL. It only means something to the programs that agree to use it.
+
+      - type: read
+        title: Locks cost waiting time
+        md: |
+          Every lock is a little promise that someone else will wait. The longer you hold a lock, the longer
+          everyone waits. Keep transactions short: take the locks you need, do the work, and commit.
+
+          > [!TIP]
+          > Never open a transaction, lock a row, and then wait for a person to click a button. Do the thinking
+          > first, then lock, change and commit in a few quick steps.
+
+      - type: quiz
+        id: m14-l05-q1
+        question: What does `SELECT ... FOR UPDATE` do to the rows it returns?
+        options:
+          - It makes the query run faster
+          - It locks them, so other transactions must wait before they change them
+          - It deletes them after they are read
+          - It copies them into a new table
+        answer: 1
+        explanation: |
+          The lock stays until your transaction ends. Other transactions that want to change or lock the same rows
+          wait for you.
+
+      - type: predict
+        id: m14-l05-p1
+        question: Both lines run in the same session. What do the two results show?
+        sql: |
+          SELECT pg_try_advisory_lock(42) AS first_try;
+
+          SELECT pg_try_advisory_lock(42) AS second_try;
+        options: ["true and true", "true and false", "false and false", "An error"]
+        answer: 0
+        explanation: |
+          Advisory locks are re-entrant: the same session can take a lock it already holds. A different session would
+          get `false` for the second try.
+
+      - type: fill
+        id: m14-l05-f1
+        prompt: Complete the query so that the rows it returns are locked for the rest of the transaction.
+        template: |
+          SELECT *
+          FROM accounts
+          WHERE account_id = 1
+          ___ UPDATE;
+        answers:
+          - ["FOR"]
+        explanation: "`FOR UPDATE` at the end of a `SELECT` locks each row it returns."
+
+      - type: parsons
+        id: m14-l05-o1
+        prompt: Put the lines in order to take the next active account to process. Leave out the line that is not part of a locking query.
+        lines:
+          - BEGIN;
+          - SELECT account_id, overdraft_limit
+          - FROM accounts
+          - WHERE status = 'active'
+          - ORDER BY account_id
+          - LIMIT 1
+          - FOR UPDATE SKIP LOCKED;
+          - COMMIT;
+        distractors:
+          - FOR UPDATE NOWAIT;
+        explanation: |
+          The locking clause goes last, after `LIMIT`. `SKIP LOCKED` lets a second worker take the next account
+          instead of waiting. The `COMMIT` releases the locks.
+
+      - type: exercise
+        id: m14-l05-e1
+        title: Lock account 2 for an update
+        prompt: |
+          Inside a transaction, lock account 2 with `FOR UPDATE`, and show its `account_id` and `overdraft_limit`.
+          Then `COMMIT`. Return one row with the columns `account_id` and `overdraft_limit`.
+        solution: |
+          BEGIN;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id = 2
+          FOR UPDATE;
+
+          COMMIT;
+        columnNames: true
+        hints:
+          - Start with `BEGIN;` and finish with `COMMIT;`.
+          - The `SELECT` needs `FOR UPDATE` at the end, after the `WHERE`.
+          - "Skeleton: `BEGIN; SELECT account_id, overdraft_limit FROM accounts WHERE ___ FOR UPDATE; COMMIT;`"
+        explanation: |
+          Account 2 is locked until the `COMMIT`. Any other transaction that wants to change it has to wait for
+          you. The result shows the limit of 500.00.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l05-e2
+        title: Lock two accounts in order
+        prompt: |
+          Inside a transaction, lock accounts 1 and 2 with `FOR UPDATE`, sorted by `account_id`. Then `COMMIT`.
+          Return the columns `account_id` and `overdraft_limit`, one row per account, ordered by `account_id`.
+        solution: |
+          BEGIN;
+
+          SELECT account_id, overdraft_limit
+          FROM accounts
+          WHERE account_id IN (1, 2)
+          ORDER BY account_id
+          FOR UPDATE;
+
+          COMMIT;
+        columnNames: true
+        ordered: true
+        hints:
+          - Use `WHERE account_id IN (1, 2)`.
+          - Put `ORDER BY account_id` before `FOR UPDATE`.
+          - "Skeleton: `BEGIN; SELECT ... FROM accounts WHERE account_id IN (1, 2) ORDER BY ___ FOR UPDATE; COMMIT;`"
+        explanation: |
+          Sorting before you lock is the habit that prevents deadlocks. Any other program that locks these two
+          accounts should use the same order.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l05-e3
+        title: Take the first two queued jobs
+        prompt: |
+          The table `transfer_queue` has the columns `queue_id`, `from_account`, `to_account`, `amount` and `status`.
+          Show the first two jobs with `status = 'queued'`, ordered by `queue_id`. Lock them with `FOR UPDATE SKIP LOCKED`,
+          so other workers can skip them. Return `queue_id`, `from_account`, `to_account` and `amount`.
+        setup: |
+          CREATE TABLE transfer_queue (
+              queue_id integer PRIMARY KEY,
+              from_account integer,
+              to_account integer,
+              amount numeric(10,2),
+              status text
+          );
+
+          INSERT INTO transfer_queue VALUES
+              (1, 1, 2, 50.00, 'queued'),
+              (2, 2, 1, 20.00, 'queued'),
+              (3, 1, 2, 75.00, 'queued');
+        solution: |
+          SELECT queue_id, from_account, to_account, amount
+          FROM transfer_queue
+          WHERE status = 'queued'
+          ORDER BY queue_id
+          LIMIT 2
+          FOR UPDATE SKIP LOCKED;
+        columnNames: true
+        ordered: true
+        hints:
+          - Filter with `WHERE status = 'queued'` and sort with `ORDER BY queue_id`.
+          - "`LIMIT 2` keeps only the first two jobs."
+          - "The locking clause goes last: `... LIMIT 2 FOR UPDATE SKIP LOCKED;`"
+        explanation: |
+          Jobs 1 and 2 come back and are locked. A second worker running the same query would receive job 3,
+          because it skips the locked rows.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l05-e4
+        title: Mark the next job as done
+        prompt: |
+          The table `transfer_queue` has the columns `queue_id`, `from_account`, `to_account`, `amount` and `status`.
+          Take the oldest job with `status = 'queued'` using `FOR UPDATE SKIP LOCKED`, and set its `status` to `'done'`
+          with one `UPDATE`. Then show `queue_id` and `status` for all jobs, ordered by `queue_id`.
+        setup: |
+          CREATE TABLE transfer_queue (
+              queue_id integer PRIMARY KEY,
+              from_account integer,
+              to_account integer,
+              amount numeric(10,2),
+              status text
+          );
+
+          INSERT INTO transfer_queue VALUES
+              (1, 1, 2, 50.00, 'queued'),
+              (2, 2, 1, 20.00, 'queued'),
+              (3, 1, 2, 75.00, 'queued');
+        solution: |
+          UPDATE transfer_queue
+          SET status = 'done'
+          WHERE queue_id = (
+              SELECT queue_id
+              FROM transfer_queue
+              WHERE status = 'queued'
+              ORDER BY queue_id
+              LIMIT 1
+              FOR UPDATE SKIP LOCKED
+          );
+
+          SELECT queue_id, status
+          FROM transfer_queue
+          ORDER BY queue_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Put the locking `SELECT` inside the `WHERE` of the `UPDATE`, as a sub-query that returns one `queue_id`.
+          - The sub-query is the same as the previous exercise, but with `LIMIT 1`.
+          - "Skeleton: `UPDATE transfer_queue SET status = 'done' WHERE queue_id = (SELECT queue_id FROM transfer_queue WHERE ___ ORDER BY queue_id LIMIT 1 FOR UPDATE SKIP LOCKED); SELECT ...;`"
+        explanation: |
+          This is a real job-queue pattern. The oldest free job is locked, marked done, and no other worker can grab
+          it in the meantime. Only job 1 changes.
+        difficulty: 3
+
+      - type: read
+        title: Lock only when you need to
+        md: |
+          Do not use `FOR UPDATE` on every query. It is needed when you read a row, decide something, and then change it.
+          A plain `SELECT` or a single `UPDATE` is often enough.
+
+          > [!MISTAKE]
+          > Writing `FOR UPDATE` and then forgetting `COMMIT` keeps the lock. Other transactions that need those rows
+          > will wait, possibly for a long time. Always finish the transaction.
+
+    cheatsheet:
+      - title: Lock rows you will change
+        sql: |
+          SELECT *
+          FROM accounts
+          WHERE account_id = 1
+          FOR UPDATE;
+        note: Other transactions must wait until your transaction ends.
+      - title: Take the next free job
+        sql: |
+          SELECT *
+          FROM transfer_queue
+          WHERE status = 'queued'
+          ORDER BY queue_id
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED;
+        note: SKIP LOCKED skips rows another worker already locked.
+      - title: Advisory lock on a number
+        sql: SELECT pg_try_advisory_lock(42);
+        note: Returns true if you got the lock, false if someone else has it. Release it with pg_advisory_unlock(42).
+  - id: m14-l06
+    title: "Integrity Patterns: Rules That Hold"
+    summary: Write business rules into the table, delay a check until COMMIT when you need to, and make retries safe.
+    minutes: 25
+    steps:
+      - type: read
+        title: The payment that was sent twice
+        md: |
+          Harbor Bank's payment service sends a request to move $250 to Nils. The network times out before the
+          reply comes back. The service does not know whether the payment happened, so it sends the request again.
+
+          Without protection, Nils is paid twice. With the right design, the second attempt does nothing, because
+          the payment already exists. An operation that has the same result whether it runs once or many times is
+          called **idempotent**. You will build one in this lesson.
+
+      - type: read
+        title: Business rules inside the table
+        md: |
+          You already used `CHECK` to keep a value in range. You can write any rule that looks at **one row**:
+
+          - an amount must be greater than zero,
+          - a transfer cannot go from an account to the same account,
+          - a status must be one of a short list of words.
+
+          A `CHECK` cannot look at other rows, so it cannot say "the balance covers this payment". You will handle
+          that case later in this lesson.
+
+      - type: example
+        title: A transfer must move money
+        md: |
+          A zero-dollar transfer is refused by the `CHECK` on `amount`. Press **Run**.
+        sql: |
+          CREATE TABLE transfer_requests (
+              request_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL CHECK (amount > 0),
+              from_account integer,
+              to_account integer,
+              CHECK (from_account <> to_account)
+          );
+
+          INSERT INTO transfer_requests VALUES
+              (1, 'REF-1001', 0.00, 1, 2);
+        expectError: true
+        after: |
+          The table was created, but the row was refused by the rule `amount > 0`. Nothing was saved, because a
+          zero transfer makes no sense.
+
+      - type: example
+        title: No transfers to yourself
+        md: |
+          The second rule says the two accounts must be different. This time the amount is fine, but the accounts are
+          the same. Press **Run**.
+        sql: |
+          CREATE TABLE transfer_requests (
+              request_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL CHECK (amount > 0),
+              from_account integer,
+              to_account integer,
+              CHECK (from_account <> to_account)
+          );
+
+          INSERT INTO transfer_requests VALUES
+              (2, 'REF-1002', 25.00, 1, 1);
+        expectError: true
+        after: |
+          The table-level `CHECK` refused the row, because `from_account` and `to_account` are equal. Business rules
+          like this are written once, in the table, so every program that writes to it is held to them.
+
+      - type: read
+        title: Deferred checks wait for COMMIT
+        md: |
+          Normally a foreign key is checked the moment each statement runs. Sometimes you need two rows that point
+          at each other, or a parent and a child that you want to insert in either order inside one transaction.
+
+          Write `DEFERRABLE INITIALLY DEFERRED` on the foreign key, and the check moves to the `COMMIT`. If the rule
+          still holds at that moment, the transaction succeeds.
+
+      - type: example
+        title: Child first, parent second
+        md: |
+          The child row points at batch 77, which does not exist yet. The parent is added later in the same
+          transaction. Press **Run**.
+        sql: |
+          CREATE TABLE loan_batches (
+              batch_id integer PRIMARY KEY
+          );
+
+          CREATE TABLE loan_applications (
+              app_id integer PRIMARY KEY,
+              batch_id integer
+                  REFERENCES loan_batches (batch_id)
+                  DEFERRABLE INITIALLY DEFERRED
+          );
+
+          BEGIN;
+
+          INSERT INTO loan_applications VALUES (1, 77);
+
+          INSERT INTO loan_batches VALUES (77);
+
+          COMMIT;
+
+          SELECT app_id, batch_id
+          FROM loan_applications;
+        after: |
+          The application row points at batch 77 before batch 77 exists. That is allowed, because the check waits
+          until `COMMIT`. By then batch 77 is there, so the check passes.
+
+      - type: example
+        title: The same order, without DEFERRABLE
+        md: |
+          The foreign key is no longer deferrable. Try the same order again. Press **Run**.
+        sql: |
+          CREATE TABLE loan_batches (
+              batch_id integer PRIMARY KEY
+          );
+
+          CREATE TABLE loan_applications (
+              app_id integer PRIMARY KEY,
+              batch_id integer REFERENCES loan_batches (batch_id)
+          );
+
+          INSERT INTO loan_applications VALUES (1, 77);
+        expectError: true
+        after: |
+          The foreign key is checked at once, in the `INSERT`. Batch 77 does not exist yet, so the row is refused.
+          The deferrable version is the one that waits.
+
+      - type: read
+        title: SET CONSTRAINTS, for the whole transaction
+        md: |
+          Inside a transaction you can change when deferrable checks run. `SET CONSTRAINTS ALL DEFERRED` moves every
+          deferrable check to the `COMMIT`. `SET CONSTRAINTS ALL IMMEDIATE` checks them now. Only constraints that
+          were created as `DEFERRABLE` are affected. The others always check at once.
+
+      - type: read
+        title: Retries that cannot do damage
+        md: |
+          Here is the fix for the double payment. Your application creates a **reference**, such as `REF-2001`, before
+          the first attempt, and sends it with every attempt. The table has a `UNIQUE` rule on `reference`. The first
+          attempt saves the payment. Any retry with the same reference hits the rule, and the database can be told
+          to ignore it.
+
+          That reference is called an **idempotency key**. It is the reason the retry is safe.
+
+      - type: example
+        title: The retry does nothing
+        md: |
+          The app sends the same payment twice, in two transactions. Press **Run** and count what is saved.
+        sql: |
+          CREATE TABLE payments (
+              payment_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL
+          );
+
+          BEGIN;
+
+          INSERT INTO payments VALUES (1, 'REF-2001', 250.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          COMMIT;
+
+          -- The first reply timed out, so the app sends the same payment again.
+          BEGIN;
+
+          INSERT INTO payments VALUES (2, 'REF-2001', 250.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          COMMIT;
+
+          SELECT COUNT(*) AS payments, SUM(amount) AS total
+          FROM payments;
+        after: |
+          The count is **1** and the total is **250.00**. The retry used a new `payment_id`, but its reference
+          already existed, so `ON CONFLICT (reference) DO NOTHING` skipped it. Nils was paid once.
+
+      - type: read
+        title: DO NOTHING or DO UPDATE?
+        md: |
+          `ON CONFLICT DO NOTHING` is for retries, where the first saved version is already right. `ON CONFLICT ...
+          DO UPDATE` is for when the newer values should replace the saved ones, such as a status that moved on.
+          Choose the one that matches what a retry should mean.
+
+          > [!MISTAKE]
+          > `ON CONFLICT DO NOTHING` with no column in brackets skips **any** conflict, on any `UNIQUE` column.
+          > That can hide a different problem, such as a duplicated id. Name the column you mean, as in
+          > `ON CONFLICT (reference)`.
+
+      - type: read
+        title: Some rules need many rows
+        md: |
+          A rule such as "a transfer cannot be more than the balance" is different. The balance is the sum of many
+          rows, and `CHECK` cannot see them. Use the tools from lesson 5 instead:
+
+          1. Lock the account with `FOR UPDATE`, so nobody else can spend the same money.
+          2. Check the balance, inside the same transaction.
+          3. Insert the transfer only if the check passed.
+
+      - type: example
+        title: Check the balance under a lock
+        md: |
+          Account 1 has a balance of 260.79. A transfer of 300.00 is too large, so it should not be saved. Press **Run**.
+        sql: |
+          BEGIN;
+
+          SELECT account_id
+          FROM accounts
+          WHERE account_id = 1
+          FOR UPDATE;
+
+          INSERT INTO transactions
+              (txn_id, account_id, txn_time, amount, txn_type, description)
+          SELECT 3675, 1, '2025-01-02 09:00:00',
+                 -300.00, 'transfer_out', 'Transfer to Nils'
+          WHERE (SELECT SUM(amount)
+                 FROM transactions
+                 WHERE account_id = 1) >= 300.00;
+
+          COMMIT;
+
+          SELECT COUNT(*) AS new_rows
+          FROM transactions
+          WHERE txn_id = 3675;
+        after: |
+          The `WHERE` check failed, so the `INSERT` added no rows, and `new_rows` is **0**. The lock stopped another
+          transaction from spending the same money between the check and the insert.
+
+      - type: exercise
+        id: m14-l06-e1
+        title: A payments table with a rule
+        prompt: |
+          Create a table `payments` with the columns `payment_id` (integer, primary key), `reference` (text, unique,
+          not null) and `amount` (numeric(10,2), not null, with a `CHECK` that the amount is greater than 0).
+          Insert one payment: payment_id 1, reference `REF-3001`, amount 40.00. Then show `payment_id`, `reference`
+          and `amount` for all rows.
+        solution: |
+          CREATE TABLE payments (
+              payment_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL CHECK (amount > 0)
+          );
+
+          INSERT INTO payments VALUES (1, 'REF-3001', 40.00);
+
+          SELECT payment_id, reference, amount
+          FROM payments;
+        columnNames: true
+        hints:
+          - Start with `CREATE TABLE payments (...)`. Use the same kind of definition as the examples.
+          - "The `CHECK` goes on the `amount` column: `CHECK (amount > 0)`."
+          - "Skeleton: `CREATE TABLE payments (...); INSERT INTO payments VALUES (1, 'REF-3001', 40.00); SELECT ...;`"
+        explanation: |
+          The table now refuses zero and negative payments, whatever program writes to it. The row you inserted is
+          the only one, so the result has one line.
+        difficulty: 1
+
+      - type: exercise
+        id: m14-l06-e2
+        title: Send the same payment twice
+        setup: |
+          CREATE TABLE payments (
+              payment_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL
+          );
+
+          INSERT INTO payments VALUES (1, 'REF-3001', 40.00);
+        prompt: |
+          The table `payments` (columns `payment_id`, `reference`, `amount`) already holds payment 1.
+
+          Payment `REF-3002` for 75.00 is sent twice, because the first reply timed out. Insert it with
+          `payment_id` 2, then insert the retry with `payment_id` 3. Both inserts must use
+          `ON CONFLICT (reference) DO NOTHING`.
+
+          Then show `payment_id`, `reference` and `amount` for all rows, ordered by `payment_id`.
+        solution: |
+          INSERT INTO payments VALUES (2, 'REF-3002', 75.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          INSERT INTO payments VALUES (3, 'REF-3002', 75.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          SELECT payment_id, reference, amount
+          FROM payments
+          ORDER BY payment_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - Each insert needs `ON CONFLICT (reference) DO NOTHING` at the end.
+          - The second insert uses `payment_id` 3, but its reference already exists, so nothing is saved for it.
+          - "Skeleton: `INSERT INTO payments VALUES (2, 'REF-3002', 75.00) ON CONFLICT (___) DO ___;` then the same with 3."
+        explanation: |
+          The retry is skipped because the reference exists. Two rows remain: the original 40.00 payment and the
+          75.00 payment, which was saved once.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l06-e3
+        title: Child first, parent later
+        setup: |
+          CREATE TABLE payment_batches (
+              batch_id integer PRIMARY KEY,
+              batch_name text
+          );
+
+          CREATE TABLE batch_items (
+              item_id integer PRIMARY KEY,
+              batch_id integer
+                  REFERENCES payment_batches (batch_id)
+                  DEFERRABLE INITIALLY DEFERRED
+          );
+        prompt: |
+          The tables `payment_batches` (`batch_id`, `batch_name`) and `batch_items` (`item_id`, `batch_id`) are ready.
+          The foreign key from `batch_items` to `payment_batches` is deferrable.
+
+          Inside one transaction, insert item 1 that points at batch 7, then create batch 7 with the name `Monday run`.
+          `COMMIT`. Then show `item_id` and `batch_id` for all items.
+        solution: |
+          BEGIN;
+
+          INSERT INTO batch_items VALUES (1, 7);
+
+          INSERT INTO payment_batches VALUES (7, 'Monday run');
+
+          COMMIT;
+
+          SELECT item_id, batch_id
+          FROM batch_items
+          ORDER BY item_id;
+        columnNames: true
+        ordered: true
+        hints:
+          - The item must be inserted before the batch, and that is only allowed because the check is deferred.
+          - "Order inside the transaction: the `batch_items` insert first, then the `payment_batches` insert."
+          - "Skeleton: `BEGIN; INSERT INTO batch_items VALUES (1, 7); INSERT INTO payment_batches VALUES (7, ___); COMMIT; SELECT ...;`"
+        explanation: |
+          The foreign key check waited until `COMMIT`, when batch 7 existed. Without `DEFERRABLE`, the first insert
+          would have failed straight away.
+        difficulty: 2
+
+      - type: exercise
+        id: m14-l06-e4
+        title: A safe, conditional, repeatable transfer
+        setup: |
+          CREATE TABLE transfer_log (
+              reference text PRIMARY KEY,
+              amount numeric(10,2) NOT NULL,
+              status text NOT NULL
+          );
+        prompt: |
+          Record the transfer `TR-9001` of 250.00 out of account 1, but only if account 1 can cover it. Do this:
+
+          1. Begin a transaction.
+          2. Lock account 1 with `FOR UPDATE`.
+          3. Insert a row into `transfer_log` with reference `TR-9001`, amount 250.00 and status `posted`. Insert it
+             only when the balance of account 1 (the sum of its `transactions.amount`) is at least 250.00. Add
+             `ON CONFLICT (reference) DO NOTHING`.
+          4. Run that same insert a second time, as a retry.
+          5. Commit.
+
+          Then show `reference`, `amount` and `status` for all rows in `transfer_log`.
+        solution: |
+          BEGIN;
+
+          SELECT account_id
+          FROM accounts
+          WHERE account_id = 1
+          FOR UPDATE;
+
+          INSERT INTO transfer_log (reference, amount, status)
+          SELECT 'TR-9001', 250.00, 'posted'
+          WHERE (SELECT SUM(amount)
+                 FROM transactions
+                 WHERE account_id = 1) >= 250.00
+          ON CONFLICT (reference) DO NOTHING;
+
+          INSERT INTO transfer_log (reference, amount, status)
+          SELECT 'TR-9001', 250.00, 'posted'
+          WHERE (SELECT SUM(amount)
+                 FROM transactions
+                 WHERE account_id = 1) >= 250.00
+          ON CONFLICT (reference) DO NOTHING;
+
+          COMMIT;
+
+          SELECT reference, amount, status
+          FROM transfer_log
+          ORDER BY reference;
+        columnNames: true
+        ordered: true
+        hints:
+          - The balance is the sum of `amount` for account 1, as in the example above. Compare it with `>= 250.00`.
+          - Use `INSERT ... SELECT ... WHERE (balance check) ON CONFLICT (reference) DO NOTHING`.
+          - "The retry is the same insert again. Its row already exists, so it does nothing."
+        explanation: |
+          Account 1 has 260.79, so the first insert saved the transfer. The retry was skipped by `ON CONFLICT`.
+          Locking first means no other transaction can change the balance between the check and the insert.
+        difficulty: 3
+
+      - type: quiz
+        id: m14-l06-q1
+        question: What does it mean for an operation to be **idempotent**?
+        options:
+          - Running it twice gives the same result as running it once
+          - It always runs faster the second time
+          - It can only be run once in the whole database
+          - It locks the whole table while it runs
+        answer: 0
+        explanation: |
+          Idempotent operations are safe to repeat. A payment with a unique reference, inserted with `ON CONFLICT
+          DO NOTHING`, is a common example.
+
+      - type: quiz
+        id: m14-l06-q2
+        question: Which clause makes a foreign key check wait until `COMMIT`?
+        options: ["NOT NULL", "DEFERRABLE INITIALLY DEFERRED", "CHECK", "PRIMARY KEY"]
+        answer: 1
+        explanation: |
+          `DEFERRABLE INITIALLY DEFERRED` moves the check to the end of the transaction. `CHECK` and `NOT NULL` check
+          each row straight away.
+
+      - type: predict
+        id: m14-l06-p1
+        question: How many rows does the final `COUNT` return?
+        sql: |
+          CREATE TABLE payments (
+              payment_id integer PRIMARY KEY,
+              reference text UNIQUE NOT NULL,
+              amount numeric(10,2) NOT NULL
+          );
+
+          INSERT INTO payments VALUES (1, 'REF-1', 25.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          INSERT INTO payments VALUES (2, 'REF-1', 25.00)
+          ON CONFLICT (reference) DO NOTHING;
+
+          SELECT COUNT(*) AS payments
+          FROM payments;
+        options: ["0", "1", "2", "An error"]
+        answer: 1
+        explanation: |
+          The second insert has the same reference, so `ON CONFLICT (reference) DO NOTHING` skipped it. One row is
+          saved, and the retry did no harm.
+
+      - type: fill
+        id: m14-l06-f1
+        prompt: Complete the statement so that a duplicate branch is skipped instead of causing an error.
+        template: |
+          INSERT INTO branches (branch_id, name, city, opened_on)
+          VALUES (1, 'Seattle Central', 'Seattle', '1998-04-06')
+          ON ___ (branch_id) DO ___;
+        answers:
+          - ["CONFLICT"]
+          - ["NOTHING"]
+        explanation: |
+          `ON CONFLICT (branch_id) DO NOTHING` skips the row when that branch id already exists. Running the statement
+          again is harmless.
+
+      - type: read
+        title: Put the rule where nothing can skip it
+        md: |
+          A rule written in your app can be bypassed by any other program that writes to the same table. A rule written
+          in the table protects every writer, whatever its language.
+
+          > [!TIP]
+          > Use `NOT NULL`, `CHECK`, `UNIQUE` and foreign keys for every rule that can be written as a single fact about
+          > a row. Use locks and a balance check in a transaction for the rules that need many rows.
+
+    cheatsheet:
+      - title: A row rule in the table
+        sql: |
+          CREATE TABLE payments (
+              payment_id integer PRIMARY KEY,
+              amount numeric(10,2) CHECK (amount > 0)
+          );
+        note: The database refuses any row that breaks the rule.
+      - title: A check that waits until COMMIT
+        sql: |
+          REFERENCES loan_batches (batch_id)
+              DEFERRABLE INITIALLY DEFERRED
+        note: The foreign key is checked at COMMIT, not at each statement.
+      - title: A safe, repeatable insert
+        sql: |
+          INSERT INTO payments VALUES (2, 'REF-2001', 250.00)
+          ON CONFLICT (reference) DO NOTHING;
+        note: A retry with the same reference saves nothing new.
+  # @@MORE@@
+testPool:
+  - type: exercise
+    id: m14-t01
+    lesson: m14-l01
+    difficulty: 1
+    prompt: |
+      Harbor Bank charges account 2 a card replacement fee of 15.00.
+
+      Write a transaction that inserts one fee row for account 2 with txn_id 3675, txn_type `fee`,
+      amount -15.00, txn_time `'2025-01-03 10:00:00'` and description `Card replacement`. Save it with
+      `COMMIT`. Then show how many `fee` rows account 2 has, as one column named `fee_rows`.
+    solution: |
+      BEGIN;
+
+      INSERT INTO transactions
+          (txn_id, account_id, txn_time, amount, txn_type, description)
+      VALUES
+          (3675, 2, '2025-01-03 10:00:00',
+           -15.00, 'fee', 'Card replacement');
+
+      COMMIT;
+
+      SELECT COUNT(*) AS fee_rows
+      FROM transactions
+      WHERE account_id = 2
+        AND txn_type = 'fee';
+    columnNames: true
+    hints:
+      - Use `BEGIN` before the insert and `COMMIT` after it.
+      - The `COUNT(*)` must filter on `account_id = 2` and `txn_type = 'fee'`.
+      - "Skeleton: `BEGIN; INSERT INTO transactions (...) VALUES (3675, 2, ...); COMMIT; SELECT COUNT(*) AS fee_rows FROM transactions WHERE ___;`"
+  - type: quiz
+    id: m14-t02
+    lesson: m14-l01
+    difficulty: 1
+    question: Which statement undoes every change made since the matching `BEGIN`?
+    options: [COMMIT, ROLLBACK, SELECT, DELETE]
+    answer: 1
+    explanation: ROLLBACK throws away everything since BEGIN. COMMIT does the opposite and saves it.
+  - type: predict
+    id: m14-t03
+    lesson: m14-l01
+    difficulty: 2
+    question: What does the final `SELECT` return?
+    sql: |
+      BEGIN;
+
+      UPDATE accounts
+      SET overdraft_limit = 1500.00
+      WHERE account_id = 3;
+
+      ROLLBACK;
+
+      SELECT overdraft_limit
+      FROM accounts
+      WHERE account_id = 3;
+    options: ["1500.00", "0.00", "An error", "NULL"]
+    answer: 1
+    explanation: The update was rolled back, so account 3 still has its original overdraft limit of 0.00.
+  - type: fill
+    id: m14-t04
+    lesson: m14-l01
+    difficulty: 1
+    prompt: Complete the transaction so that the freeze is undone and nothing is saved.
+    template: |
+      ___;
+
+      UPDATE accounts
+      SET status = 'frozen'
+      WHERE account_id = 5;
+
+      ___;
+    answers:
+      - ["BEGIN"]
+      - ["ROLLBACK"]
+    explanation: ROLLBACK undoes the freeze, so account 5 keeps its original status.
+  - type: exercise
+    id: m14-t05
+    lesson: m14-l02
+    difficulty: 2
+    prompt: |
+      Harbor Bank refunds Sneha $30, but the refund is entered twice. Write one transaction that:
+
+      1. Inserts a refund row: txn_id 3675, account 2, amount 30.00, txn_type `transfer_in`, description `Refund`, txn_time `'2025-01-02 09:00:00'`.
+      2. Places a savepoint named `after_refund`.
+      3. Inserts a second refund with txn_id 3676 and the same other values.
+      4. Undoes the second refund with `ROLLBACK TO SAVEPOINT after_refund`.
+      5. Saves everything with `COMMIT`.
+
+      Then show one row with the number of rows whose txn_id is at least 3675, in a column named `saved_rows`.
+    solution: |
+      BEGIN;
+
+      INSERT INTO transactions
+          (txn_id, account_id, txn_time, amount, txn_type, description)
+      VALUES
+          (3675, 2, '2025-01-02 09:00:00',
+           30.00, 'transfer_in', 'Refund');
+
+      SAVEPOINT after_refund;
+
+      INSERT INTO transactions
+          (txn_id, account_id, txn_time, amount, txn_type, description)
+      VALUES
+          (3676, 2, '2025-01-02 09:00:00',
+           30.00, 'transfer_in', 'Refund');
+
+      ROLLBACK TO SAVEPOINT after_refund;
+
+      COMMIT;
+
+      SELECT COUNT(*) AS saved_rows
+      FROM transactions
+      WHERE txn_id >= 3675;
+    columnNames: true
+    hints:
+      - The second refund is the one you undo. The first must stay.
+      - "`ROLLBACK TO SAVEPOINT after_refund` removes only what came after the bookmark."
+      - "Skeleton: `BEGIN; INSERT ... (3675 ...); SAVEPOINT after_refund; INSERT ... (3676 ...); ___ TO SAVEPOINT after_refund; COMMIT; SELECT COUNT(*) ...;`"
+  - type: quiz
+    id: m14-t06
+    lesson: m14-l02
+    difficulty: 2
+    question: You ran `ROLLBACK TO SAVEPOINT audit_point;` in the middle of a transaction. What is true now?
+    options:
+      - The transaction is closed, and nothing else can run
+      - The transaction is still open, and you still need COMMIT or ROLLBACK
+      - All changes are saved for good
+      - The savepoint has been deleted and cannot be reused
+    answer: 1
+    explanation: |
+      Rolling back to a savepoint undoes the work after it, but the transaction stays open. You still have to end
+      it with COMMIT or ROLLBACK.
+  - type: fill
+    id: m14-t07
+    lesson: m14-l02
+    difficulty: 1
+    prompt: Complete the batch so that the bookmark is removed and the work done after it is kept.
+    template: |
+      BEGIN;
+
+      SAVEPOINT step_one;
+
+      UPDATE accounts
+      SET status = 'frozen'
+      WHERE account_id = 4;
+
+      ___ SAVEPOINT step_one;
+
+      COMMIT;
+    answers:
+      - ["RELEASE"]
+    explanation: RELEASE SAVEPOINT removes the bookmark and keeps the work, so the frozen status is saved by COMMIT.
+  - type: exercise
+    id: m14-t08
+    lesson: m14-l02
+    difficulty: 3
+    prompt: |
+      Write one transaction that:
+
+      1. Inserts txn 3675: account 2, amount 10.00, txn_type `deposit`, description `Cash top-up`.
+      2. Places a savepoint named `try_again`.
+      3. Inserts txn 3676: account 2, amount -10.00, txn_type `withdrawal`, description `Mistake`.
+      4. Rolls back to `try_again`.
+      5. Releases `try_again`.
+      6. Commits.
+
+      Use txn_time `'2025-01-02 09:00:00'` for both rows. Then show `txn_id` and `amount` for every row with
+      `txn_id >= 3675`, ordered by `txn_id`.
+    solution: |
+      BEGIN;
+
+      INSERT INTO transactions
+          (txn_id, account_id, txn_time, amount, txn_type, description)
+      VALUES
+          (3675, 2, '2025-01-02 09:00:00',
+           10.00, 'deposit', 'Cash top-up');
+
+      SAVEPOINT try_again;
+
+      INSERT INTO transactions
+          (txn_id, account_id, txn_time, amount, txn_type, description)
+      VALUES
+          (3676, 2, '2025-01-02 09:00:00',
+           -10.00, 'withdrawal', 'Mistake');
+
+      ROLLBACK TO SAVEPOINT try_again;
+
+      RELEASE SAVEPOINT try_again;
+
+      COMMIT;
+
+      SELECT txn_id, amount
+      FROM transactions
+      WHERE txn_id >= 3675
+      ORDER BY txn_id;
+    columnNames: true
+    ordered: true
+    hints:
+      - Only the second insert is undone. The first one stays.
+      - "`RELEASE` after the rollback is allowed, and it does not undo anything."
+      - "Skeleton: `BEGIN; INSERT ... (3675 ...); SAVEPOINT try_again; INSERT ... (3676 ...); ___ TO SAVEPOINT try_again; ___ SAVEPOINT try_again; COMMIT;`"
+  - type: exercise
+    id: m14-t09
+    lesson: m14-l03
+    difficulty: 1
+    prompt: |
+      Show how many transactions have a NULL `amount`. The `amount` column is `NOT NULL`, so the answer must be 0.
+      Return one row in a column named `missing_amounts`.
+    solution: |
+      SELECT COUNT(*) AS missing_amounts
+      FROM transactions
+      WHERE amount IS NULL;
+    columnNames: true
+    hints:
+      - Count with `COUNT(*)` and filter with `WHERE amount IS NULL`.
+      - "Use `IS NULL`, not `= NULL`."
+      - "Skeleton: `SELECT COUNT(*) AS missing_amounts FROM transactions WHERE ___;`"
+  - type: quiz
+    id: m14-t10
+    lesson: m14-l03
+    difficulty: 2
+    question: Session B sees a half-finished transfer that session A has not committed yet. Which ACID promise is broken?
+    options: ["Atomicity", "Consistency", "Isolation", "Durability"]
+    answer: 2
+    explanation: Isolation means a transaction should not see another transaction's unfinished work.
+  - type: predict
+    id: m14-t11
+    lesson: m14-l03
+    difficulty: 2
+    question: How many accounts have a NULL overdraft limit?
+    sql: |
+      SELECT COUNT(*) AS missing_limits
+      FROM accounts
+      WHERE overdraft_limit IS NULL;
+    options: ["0", "1", "126", "An error"]
+    answer: 0
+    explanation: The overdraft limit is NOT NULL, so the database refuses any row without one. The count is 0.
+  - type: parsons
+    id: m14-t12
+    lesson: m14-l03
+    difficulty: 2
+    prompt: Put the lines in order to create a savings goal table with a rule, add one goal and read it back. Leave out the line that would delete the table.
+    lines:
+      - "CREATE TABLE savings_goals ("
+      - "    goal_id integer PRIMARY KEY,"
+      - "    saved numeric(10,2) CHECK (saved >= 0)"
+      - ");"
+      - "INSERT INTO savings_goals VALUES (1, 100.00);"
+      - "SELECT * FROM savings_goals;"
+    distractors:
+      - "DROP TABLE savings_goals;"
+    explanation: The table must exist before the row is inserted, and the SELECT comes last. Dropping the table would remove the goal.
+  - type: exercise
+    id: m14-t13
+    lesson: m14-l04
+    difficulty: 1
+    prompt: |
+      Start a transaction at the `SERIALIZABLE` level. Show the isolation level it uses, in one column named `level`.
+      Then `COMMIT`.
+    solution: |
+      BEGIN ISOLATION LEVEL SERIALIZABLE;
+
+      SELECT current_setting('transaction_isolation') AS level;
+
+      COMMIT;
+    columnNames: true
+    hints:
+      - Start with `BEGIN ISOLATION LEVEL SERIALIZABLE;`.
+      - The setting is named `transaction_isolation`, as in the lesson.
+      - "Skeleton: `BEGIN ISOLATION LEVEL SERIALIZABLE; SELECT current_setting('___') AS level; COMMIT;`"
+  - type: quiz
+    id: m14-t14
+    lesson: m14-l04
+    difficulty: 2
+    question: In PostgreSQL, at which level can a phantom read still happen?
+    options: ["REPEATABLE READ only", "READ COMMITTED (the default)", "SERIALIZABLE only", "Nowhere, at any level"]
+    answer: 1
+    explanation: |
+      At READ COMMITTED, each statement sees the rows committed so far, so a new matching row can appear between two
+      reads. REPEATABLE READ and SERIALIZABLE keep one snapshot for the whole transaction.
+  - type: exercise
+    id: m14-t15
+    lesson: m14-l04
+    difficulty: 2
+    prompt: |
+      Start a transaction at the `REPEATABLE READ` level. Inside it, show for account 2 the number of transactions,
+      named `n`, and the rounded balance, named `balance`, in one row. Then `COMMIT`.
+    solution: |
+      BEGIN ISOLATION LEVEL REPEATABLE READ;
+
+      SELECT COUNT(*) AS n,
+             ROUND(SUM(amount), 2) AS balance
+      FROM transactions
+      WHERE account_id = 2;
+
+      COMMIT;
+    columnNames: true
+    hints:
+      - Start with `BEGIN ISOLATION LEVEL REPEATABLE READ;`.
+      - Both numbers come from one `SELECT` with `WHERE account_id = 2`.
+      - "Skeleton: `BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT COUNT(*) AS n, ROUND(SUM(amount), 2) AS balance FROM transactions WHERE ___; COMMIT;`"
+  - type: predict
+    id: m14-t16
+    lesson: m14-l04
+    difficulty: 2
+    question: What does this script return?
+    sql: |
+      BEGIN;
+
+      SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+      SELECT 1 AS x;
+
+      COMMIT;
+    options:
+      - One row with x = 1
+      - "An error: SET TRANSACTION must come after the first query"
+      - Zero rows
+      - "An error: the level name is misspelled"
+    answer: 0
+    explanation: |
+      `SET TRANSACTION` is allowed right after `BEGIN`, before any query. Here it works, so the `SELECT` returns one
+      row with x = 1.
+  - type: exercise
+    id: m14-t17
+    lesson: m14-l05
+    difficulty: 1
+    prompt: |
+      Inside a transaction, lock account 3 with `FOR UPDATE`, and show its `account_id` and `status`. Then `COMMIT`.
+      Return the columns `account_id` and `status`.
+    solution: |
+      BEGIN;
+
+      SELECT account_id, status
+      FROM accounts
+      WHERE account_id = 3
+      FOR UPDATE;
+
+      COMMIT;
+    columnNames: true
+    hints:
+      - Use `WHERE account_id = 3`, and end the `SELECT` with `FOR UPDATE`.
+      - Wrap the `SELECT` in `BEGIN;` and `COMMIT;`.
+      - "Skeleton: `BEGIN; SELECT account_id, status FROM accounts WHERE ___ FOR UPDATE; COMMIT;`"
+  - type: quiz
+    id: m14-t18
+    lesson: m14-l05
+    difficulty: 2
+    question: What does `FOR UPDATE SKIP LOCKED` do when a row it wants is already locked by another transaction?
+    options:
+      - It waits until the row is unlocked
+      - It skips that row and returns the other matching rows
+      - It raises an error straight away
+      - It unlocks the row for you
+    answer: 1
+    explanation: |
+      `SKIP LOCKED` is the job-queue option. The locked row is left out, so other workers get the next free row.
+  - type: fill
+    id: m14-t19
+    lesson: m14-l05
+    difficulty: 2
+    prompt: Complete the query so that it fails straight away, instead of waiting, if another transaction holds account 2.
+    template: |
+      SELECT account_id
+      FROM accounts
+      WHERE account_id = 2
+      FOR ___ NOWAIT;
+    answers:
+      - ["UPDATE"]
+    explanation: "`NOWAIT` raises an error at once when the row is locked (error 55P03). `FOR UPDATE NOWAIT` is the usual form."
+  - type: exercise
+    id: m14-t20
+    lesson: m14-l05
+    difficulty: 3
+    prompt: |
+      Inside one transaction, lock accounts 1 and 2 with `FOR UPDATE`, in ascending `account_id` order. Then set the
+      `overdraft_limit` of account 2 to 600.00 and `COMMIT`. Finally, show `account_id` and `overdraft_limit` for
+      accounts 1 and 2, ordered by `account_id`.
+    solution: |
+      BEGIN;
+
+      SELECT account_id, overdraft_limit
+      FROM accounts
+      WHERE account_id IN (1, 2)
+      ORDER BY account_id
+      FOR UPDATE;
+
+      UPDATE accounts
+      SET overdraft_limit = 600.00
+      WHERE account_id = 2;
+
+      COMMIT;
+
+      SELECT account_id, overdraft_limit
+      FROM accounts
+      WHERE account_id IN (1, 2)
+      ORDER BY account_id;
+    columnNames: true
+    ordered: true
+    hints:
+      - Lock first, with `ORDER BY account_id` before `FOR UPDATE`. Then do the update.
+      - Only account 2 changes. Account 1 keeps its limit.
+      - "Skeleton: `BEGIN; SELECT ... WHERE account_id IN (1, 2) ORDER BY account_id FOR UPDATE; UPDATE ... WHERE ___; COMMIT; SELECT ...;`"
+  - type: exercise
+    id: m14-t21
+    lesson: m14-l06
+    difficulty: 1
+    prompt: |
+      Show how many accounts have a `status` other than `active`, `frozen` or `closed`. The rule says there must be
+      none, so the answer is 0. Return one row in a column named `bad_status`.
+    solution: |
+      SELECT COUNT(*) AS bad_status
+      FROM accounts
+      WHERE status NOT IN ('active', 'frozen', 'closed');
+    columnNames: true
+    hints:
+      - Count with `COUNT(*)`, and filter with `WHERE status NOT IN (...)`.
+      - "List the three allowed words inside the brackets."
+      - "Skeleton: `SELECT COUNT(*) AS bad_status FROM accounts WHERE status NOT IN (___);`"
+  - type: quiz
+    id: m14-t22
+    lesson: m14-l06
+    difficulty: 2
+    question: Why is a payment `reference` marked UNIQUE in an idempotent design?
+    options:
+      - It makes queries faster
+      - A retry with the same reference hits the rule, so the database can skip the duplicate
+      - It hides the payment from the customer
+      - PostgreSQL requires every text column to be unique
+    answer: 1
+    explanation: |
+      The reference is the idempotency key. A second attempt with the same reference cannot create a second payment,
+      and `ON CONFLICT (reference) DO NOTHING` skips it.
+  - type: predict
+    id: m14-t23
+    lesson: m14-l06
+    difficulty: 2
+    question: What happens when this script runs?
+    sql: |
+      CREATE TABLE tiny_payments (
+          payment_id integer PRIMARY KEY,
+          amount numeric(10,2) CHECK (amount > 0)
+      );
+
+      INSERT INTO tiny_payments VALUES (1, 10.00);
+
+      INSERT INTO tiny_payments VALUES (2, 0.00);
+
+      SELECT COUNT(*) AS rows_saved
+      FROM tiny_payments;
+    options:
+      - "2"
+      - "1"
+      - "0"
+      - "An error: the CHECK refuses 0.00, and the run stops at that insert"
+    answer: 3
+    expectError: true
+    explanation: |
+      The first row is saved. The second has amount 0.00, which breaks `amount > 0`, so the database refuses it and
+      the run stops there.
+  - type: parsons
+    id: m14-t24
+    lesson: m14-l06
+    difficulty: 2
+    prompt: |
+      Put the lines in order to create two linked tables, save a batch and an item in one transaction, and count the
+      items. Leave out the line that would undo the transaction.
+    lines:
+      - "CREATE TABLE payment_batches (batch_id integer PRIMARY KEY);"
+      - "CREATE TABLE batch_items ("
+      - "    item_id integer PRIMARY KEY,"
+      - "    batch_id integer REFERENCES payment_batches (batch_id)"
+      - "        DEFERRABLE INITIALLY DEFERRED"
+      - ");"
+      - "BEGIN;"
+      - "INSERT INTO batch_items VALUES (5, 9);"
+      - "INSERT INTO payment_batches VALUES (9);"
+      - "COMMIT;"
+      - "SELECT COUNT(*) AS items FROM batch_items;"
+    distractors:
+      - "ROLLBACK;"
+    explanation: |
+      The tables come first. The item is inserted before its batch, which is allowed because the foreign key is
+      deferred. `COMMIT` checks it, and the `SELECT` counts one saved item.
+  - type: exercise
+    id: m14-t25
+    lesson: m14-l06
+    difficulty: 3
+    prompt: |
+      The table `transfer_log` has the columns `reference`, `amount` and `status`. Try to save `TR-9002` for 1000.00
+      out of account 1. Insert it only if account 1 covers it, meaning the sum of its `transactions.amount` is at
+      least 1000.00. Add `ON CONFLICT (reference) DO NOTHING`. Then show the number of rows in `transfer_log`, in a
+      column named `saved_rows`.
+    setup: |
+      CREATE TABLE transfer_log (
+          reference text PRIMARY KEY,
+          amount numeric(10,2) NOT NULL,
+          status text NOT NULL
+      );
+    solution: |
+      INSERT INTO transfer_log (reference, amount, status)
+      SELECT 'TR-9002', 1000.00, 'posted'
+      WHERE (SELECT SUM(amount)
+             FROM transactions
+             WHERE account_id = 1) >= 1000.00
+      ON CONFLICT (reference) DO NOTHING;
+
+      SELECT COUNT(*) AS saved_rows
+      FROM transfer_log;
+    columnNames: true
+    hints:
+      - The balance check goes in the `WHERE` of an `INSERT ... SELECT`.
+      - Account 1 does not have 1000.00, so the `SELECT` returns no row and nothing is inserted.
+      - "Skeleton: `INSERT INTO transfer_log (...) SELECT 'TR-9002', 1000.00, 'posted' WHERE (SELECT SUM(amount) ...) >= 1000.00 ON CONFLICT (reference) DO NOTHING;`"
+    explanation: |
+      Account 1 has 260.79, which is less than 1000.00, so nothing is saved. The count is 0. The balance check and the
+      `ON CONFLICT` together make the insert safe to repeat.

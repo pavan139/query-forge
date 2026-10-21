@@ -1,0 +1,45 @@
+glossary:
+  - term: Window function
+    definition: A function that calculates a value from a set of related rows (its "window") but still gives you one result for every row. Unlike GROUP BY, a window function never squashes rows together.
+    example: "SELECT first_name, salary, AVG(salary) OVER () AS company_avg FROM employees;"
+    module: m10
+  - term: Window
+    definition: The set of rows a window function looks at for each row. The OVER ( ) brackets describe it. Empty brackets mean every row of the result; PARTITION BY and ORDER BY narrow it down.
+    example: "SUM(salary) OVER (PARTITION BY dept_id) -- the window is the rows of one department"
+    module: m10
+  - term: OVER clause
+    definition: The OVER ( ) part that follows a function and turns it into a window function. Everything inside the brackets tells SQL which rows to use and in what order.
+    example: "AVG(salary) OVER (PARTITION BY dept_id ORDER BY hire_date)"
+    module: m10
+  - term: PARTITION BY
+    definition: Splits the rows into separate groups inside a window, and restarts the calculation for each group. Unlike GROUP BY, every row stays in the result.
+    example: "COUNT(*) OVER (PARTITION BY dept_id) -- how many people are in this row's department"
+    module: m10
+  - term: ROW_NUMBER()
+    definition: A window function that numbers the rows 1, 2, 3 and so on, in the order you choose. No two rows get the same number, even when their values tie, so add a tie-breaker to make the order fixed.
+    example: "ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id)"
+    module: m10
+  - term: RANK()
+    definition: A window function that gives tied rows the same rank and then skips the numbers that the tie used up. Two rows tied at rank 2 are followed by rank 4.
+    example: "RANK() OVER (ORDER BY salary DESC) -- 1, 2, 2, 4"
+    module: m10
+  - term: DENSE_RANK()
+    definition: Like RANK(), but it never skips a number. Two rows tied at rank 2 are followed by rank 3, so the levels stay in one unbroken sequence.
+    example: "DENSE_RANK() OVER (ORDER BY salary DESC) -- 1, 2, 2, 3"
+    module: m10
+  - term: Top-N per group
+    definition: The top few rows inside each group, such as the top 3 earners in every department. Rank the rows with a window function in a CTE, then filter on the rank in the outer query.
+    example: "WITH ranked AS (SELECT dept_id, first_name, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rn FROM employees) SELECT * FROM ranked WHERE rn <= 3;"
+    module: m10
+  - term: Running total
+    definition: A total that grows row by row. You create one with SUM() OVER (ORDER BY ...). Each row shows the total of its own value and every row before it in that order.
+    example: "SUM(revenue) OVER (ORDER BY month) AS running_revenue"
+    module: m10
+  - term: LAG()
+    definition: A window function that looks back to a previous row in the window's order and returns the value from that row. It returns NULL when there is no previous row, such as the first row of each group.
+    example: "LAG(salary) OVER (PARTITION BY emp_id ORDER BY effective_date) AS previous_salary"
+    module: m10
+  - term: LEAD()
+    definition: A window function that looks ahead to the next row in the window's order and returns that row's value. It returns NULL on the last row. It is the mirror image of LAG().
+    example: "LEAD(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS next_order_date"
+    module: m10

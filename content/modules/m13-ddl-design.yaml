@@ -555,6 +555,3405 @@ lessons:
           WHERE table_name = 'plants'
           ORDER BY ordinal_position;
 
+  - id: m13-l02
+    title: Constraints — rules the database enforces
+    summary: Make the table refuse bad data with PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT and CHECK.
+    minutes: 30
+    steps:
+      - type: read
+        title: Bad data sneaks in
+        md: |
+          Maya's team now types customer details into the new database. Within a week three problems appear:
+
+          - two customers have the **same email address**,
+          - one customer has **no name at all**,
+          - a plant is saved with a **price of -5**.
+
+          Nobody meant to break anything. The table simply accepted whatever it was given.
+
+          **Constraints** fix this. A constraint is a **rule written into the table**. Each time a row is added or
+          changed, PostgreSQL checks the rules first. If a row breaks one, it is refused and nothing is saved.
+
+      - type: read
+        title: The everyday rules
+        md: |
+          | Rule | What it means | Example |
+          |---|---|---|
+          | `PRIMARY KEY` | Unique **and** never empty. It identifies each row. | `customer_id` |
+          | `NOT NULL` | A value is required. An empty cell is refused. | `name` |
+          | `UNIQUE` | No two rows may hold the same value. | `email` |
+          | `CHECK` | A condition every row must satisfy. | `price > 0` |
+          | `DEFAULT` | A value used when you leave the column out. | `status` = `'new'` |
+
+          `DEFAULT` is a little different: it refuses nothing. It only fills the gap when you do not give a value.
+
+          > [!ANALOGY]
+          > Think of a paper order form. *Required* boxes are `NOT NULL`. A membership number that no two people
+          > may share is `UNIQUE`. *Quantity must be at least 1* is a `CHECK`. A form that already ticks
+          > "standard delivery" for you is a `DEFAULT`.
+
+      - type: example
+        title: A table with rules
+        md: |
+          Here is a `customers` table with rules on four of its columns. The first row obeys every rule,
+          so it is saved.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text NOT NULL,
+              email text UNIQUE,
+              loyalty_points integer CHECK (loyalty_points >= 0)
+          );
+
+          INSERT INTO customers (customer_id, name, email, loyalty_points)
+          VALUES (1, 'Ana', 'ana@example.com', 10);
+
+          SELECT * FROM customers;
+        after: |
+          One row is saved. The id is new, the name is filled in, the email is unique and the points are 0 or
+          more. Rules only say **no** to rows that break them; a good row passes straight through.
+
+      - type: example
+        title: Refused — the same key twice
+        md: |
+          The second customer also uses id `1`. A primary key must be unique, so the database says no.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          INSERT INTO customers (customer_id, name) VALUES (1, 'Ana');
+          INSERT INTO customers (customer_id, name) VALUES (1, 'Ben');
+        expectError: true
+        after: |
+          *duplicate key value violates unique constraint "customers_pkey"*. The first row was saved. The second
+          was refused, and PostgreSQL named the rule for you: `customers_pkey` is the primary key of `customers`.
+
+      - type: example
+        title: Refused — an empty required cell
+        md: |
+          `NOT NULL` means the cell must hold a value. Here we try to save a customer with no name at all.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text NOT NULL
+          );
+
+          INSERT INTO customers (customer_id, name) VALUES (2, NULL);
+        expectError: true
+        after: |
+          *null value in column "name" of relation "customers" violates not-null constraint*. `NULL` means
+          *no value*, and `NOT NULL` says that is not allowed in this column.
+
+      - type: quiz
+        id: m13-l02-q1
+        question: |
+          Maya wants no two customers to share the same email address. Which rule does she need?
+        options: ["NOT NULL", "UNIQUE", "DEFAULT", "CHECK"]
+        answer: 1
+        explanation: |
+          **UNIQUE**. It lets each value appear once. `NOT NULL` only says a value must be present, and it does
+          not stop duplicates. (A primary key is also unique, but a table has only one primary key.)
+
+      - type: example
+        title: Refused — the same email twice
+        md: |
+          `UNIQUE` lets a value appear **once**. Ana's email is already saved, so a second customer cannot use it.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              email text UNIQUE
+          );
+
+          INSERT INTO customers (customer_id, email) VALUES (1, 'ana@example.com');
+          INSERT INTO customers (customer_id, email) VALUES (2, 'ana@example.com');
+        expectError: true
+        after: |
+          *duplicate key value violates unique constraint "customers_email_key"*. A table has **one** primary key
+          but can have **many** `UNIQUE` columns.
+
+          > [!MISTAKE]
+          > Thinking `UNIQUE` means "every row must have an email". It does not. Many rows may hold `NULL` in a
+          > `UNIQUE` column. If every row needs a value, add `NOT NULL` as well.
+
+      - type: example
+        title: Refused — a price below zero
+        md: |
+          A `CHECK` rule holds a condition in brackets. Here the rule is given a name,
+          `price_must_be_positive`, so the error message is easy to read.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              price numeric(6,2)
+                  CONSTRAINT price_must_be_positive CHECK (price > 0)
+          );
+
+          INSERT INTO plants (plant_id, price) VALUES (1, 24.50);
+          INSERT INTO plants (plant_id, price) VALUES (2, -5);
+        expectError: true
+        after: |
+          *new row for relation "plants" violates check constraint "price_must_be_positive"*. Plant 1 was saved,
+          plant 2 was refused. Without the `CONSTRAINT` name, PostgreSQL would call it `plants_price_check`.
+
+      - type: example
+        title: DEFAULT fills the gap
+        md: |
+          New orders should start with the status `'new'` unless someone sets a different one. Leave the column
+          out of the `INSERT` and the default appears.
+        sql: |
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              status text DEFAULT 'new'
+          );
+
+          INSERT INTO orders (order_id) VALUES (1);
+          INSERT INTO orders (order_id, status) VALUES (2, 'shipped');
+
+          SELECT * FROM orders ORDER BY order_id;
+        after: |
+          Order 1 did not mention a status, so it gets the default `new`. Order 2 gives its own value, `shipped`,
+          which replaces the default.
+
+      - type: read
+        title: One column or the whole table?
+        md: |
+          You can write a rule right after its column, as in `email text UNIQUE`. You can also write it on its
+          own line at the end of the table. That is the only way to cover **several** columns at once:
+
+          ```sql
+          UNIQUE (first_name, last_name)
+          ```
+
+          Put `CONSTRAINT name` in front of any rule to give it your own name.
+
+      - type: predict
+        id: m13-l02-p1
+        question: |
+          This script inserts three rows in one `INSERT`. Row 2 has `qty` 0, which breaks the `CHECK`.
+          How many rows will the table hold when the script finishes?
+        sql: |
+          CREATE TABLE items (
+              item_id integer PRIMARY KEY,
+              qty integer CHECK (qty > 0)
+          );
+
+          INSERT INTO items (item_id, qty)
+          VALUES (1, 5), (2, 0), (3, 2);
+
+          SELECT COUNT(*) FROM items;
+        options: ["3 rows", "2 rows", "1 row", "An error, and no rows are saved"]
+        answer: 3
+        expectError: true
+        explanation: |
+          One `INSERT` is **all or nothing**. Because row 2 breaks the rule, PostgreSQL refuses the whole statement,
+          so rows 1 and 3 are not saved either. The script stops at that error and the `SELECT` never runs.
+
+      - type: fill
+        id: m13-l02-f1
+        prompt: |
+          Complete the `books` table: `book_id` is the primary key, and `title` must always be filled in.
+        template: |
+          CREATE TABLE books (
+              book_id integer ___ KEY,
+              title text ___ NULL
+          );
+        answers:
+          - ["PRIMARY", "primary"]
+          - ["NOT", "not"]
+        explanation: |
+          `PRIMARY KEY` identifies each row, and `NOT NULL` refuses an empty title. Together they say:
+          "every book has a unique id and a title."
+
+      - type: exercise
+        id: m13-l02-e1
+        title: Required and remembered
+        difficulty: 1
+        prompt: |
+          Create a table `suppliers` with these columns, **in this order**:
+
+          - `supplier_id` — `integer`, the primary key
+          - `supplier_name` — `text`, required (must not be empty)
+          - `country` — `text`, and when nothing is given it should be `'Netherlands'`
+
+          The check looks at the rules the database stored for your table.
+        starter: |
+          CREATE TABLE suppliers (
+              supplier_id integer,
+              supplier_name text,
+              country text
+          );
+        solution: |
+          CREATE TABLE suppliers (
+              supplier_id integer PRIMARY KEY,
+              supplier_name text NOT NULL,
+              country text DEFAULT 'Netherlands'
+          );
+        check: |
+          SELECT column_name || ' ' || data_type
+                 || ', nullable: ' || is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'suppliers'
+          UNION ALL
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'suppliers'::regclass
+            AND contype <> 'n'
+          UNION ALL
+          SELECT column_name || ' default ' || column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'suppliers'
+            AND column_default IS NOT NULL
+          ORDER BY 1;
+        hints:
+          - Each column needs its own rule words after the type, such as `NOT NULL` or `PRIMARY KEY`.
+          - "Use `PRIMARY KEY` after `integer` for the id, `NOT NULL` after `text` for the name."
+          - "country text ___ 'Netherlands'  -- the word before the quoted value is DEFAULT"
+        explanation: |
+          `PRIMARY KEY` already means "unique and never empty", so the id needs no extra `NOT NULL`. A `DEFAULT`
+          is written after the type. Leaving the default out would make `country` empty when nobody types one.
+          Try it: insert a supplier without a country and see what appears.
+
+      - type: exercise
+        id: m13-l02-e2
+        title: Four rules on one table
+        difficulty: 2
+        prompt: |
+          Create a table `plants` with these columns, **in this order**:
+
+          - `plant_id` — `integer`, the primary key
+          - `name` — `text`, required, and no two plants may share a name
+          - `price` — `numeric(6,2)`, with the rule `CHECK (price > 0)`
+          - `stock` — `integer`, required, and `0` when nothing is given
+        starter: |
+          CREATE TABLE plants (
+              plant_id integer,
+              name text,
+              price numeric(6,2),
+              stock integer
+          );
+        solution: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              name text NOT NULL UNIQUE,
+              price numeric(6,2) CHECK (price > 0),
+              stock integer NOT NULL DEFAULT 0
+          );
+        check: |
+          SELECT column_name || ' ' || data_type
+                 || ', nullable: ' || is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'plants'
+          UNION ALL
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'plants'::regclass
+            AND contype <> 'n'
+          UNION ALL
+          SELECT column_name || ' default ' || column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'plants'
+            AND column_default IS NOT NULL
+          ORDER BY 1;
+        hints:
+          - Go column by column. Each one gets its rule words after its type.
+          - "`name` needs two rules: `NOT NULL` and `UNIQUE`. Put both after `text`."
+          - "stock integer NOT NULL ___ 0  -- the word before the 0 says what to use when nothing is given"
+        explanation: |
+          Four columns, four different kinds of rule. Notice that `price` gets its `CHECK` written right after its
+          type, and that `stock` has both `NOT NULL` and `DEFAULT 0`. Rules can be combined on one column.
+
+      - type: exercise
+        id: m13-l02-e3
+        title: Fix the broken rule
+        difficulty: 2
+        prompt: |
+          Maya's `menu` table should refuse any price that is not above 0. The script below fails before it
+          creates anything. Fix the **one** line that is wrong, so the `CHECK` rule works.
+        starter: |
+          CREATE TABLE menu (
+              item_id integer PRIMARY KEY,
+              item_name text NOT NULL,
+              price numeric(6,2) CHECK price > 0
+          );
+        solution: |
+          CREATE TABLE menu (
+              item_id integer PRIMARY KEY,
+              item_name text NOT NULL,
+              price numeric(6,2) CHECK (price > 0)
+          );
+        check: |
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'menu'::regclass
+            AND contype = 'c';
+        hints:
+          - The error says "syntax error at or near price". The problem is on the line with `CHECK`.
+          - A `CHECK` condition must be wrapped in brackets, just like the example with `plants`.
+          - "price numeric(6,2) CHECK (___ > 0)"
+        explanation: |
+          `CHECK` always needs its condition in brackets: `CHECK (price > 0)`. Without them PostgreSQL cannot tell
+          where the rule ends. Typos like this are common, and the message points at the word right after the
+          problem, which is the same skill you used in the last lesson.
+
+      - type: parsons
+        id: m13-l02-o1
+        prompt: |
+          Put the lines in order to create a `books` table where `book_id` is the primary key and `title` is
+          required. Two of the lines do not belong in the statement.
+        lines:
+          - "CREATE TABLE books ("
+          - "    book_id integer PRIMARY KEY,"
+          - "    title text NOT NULL"
+          - ");"
+        distractors:
+          - "DROP TABLE books;"
+          - "INSERT INTO books VALUES (1, 'Dune');"
+        explanation: |
+          The statement starts with `CREATE TABLE books (`, lists each column with its rules, separates columns with
+          commas (none after the last one) and ends with `);`. Adding `DROP` or `INSERT` lines would change what
+          the script does, so they are not part of the table definition.
+
+      - type: exercise
+        id: m13-l02-e4
+        title: Members with rules
+        difficulty: 3
+        prompt: |
+          Create a `members` table with these columns, **in this order**:
+
+          1. `member_id` — `integer`, the primary key
+          2. `full_name` — `text`, required
+          3. `email` — `text`, required
+          4. `age` — `integer`, with the rule `CHECK (age >= 16)`
+          5. `plan` — `text`, required, and `'basic'` when nothing is given
+
+          Then add one **table-level** rule on its own line, at the end: `UNIQUE (full_name, email)`.
+        starter: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text,
+              email text,
+              age integer,
+              plan text
+          );
+        solution: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text NOT NULL,
+              email text NOT NULL,
+              age integer CHECK (age >= 16),
+              plan text NOT NULL DEFAULT 'basic',
+              UNIQUE (full_name, email)
+          );
+        check: |
+          SELECT column_name || ' ' || data_type
+                 || ', nullable: ' || is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'members'
+          UNION ALL
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'members'::regclass
+            AND contype <> 'n'
+          UNION ALL
+          SELECT column_name || ' default ' || column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'members'
+            AND column_default IS NOT NULL
+          ORDER BY 1;
+        hints:
+          - The starter already has the right columns. Add the rules, then add the `UNIQUE` line.
+          - "The `UNIQUE (full_name, email)` line goes after `plan`, and needs a comma after `plan text ...`."
+          - "age integer CHECK (___ >= 16),   plan text NOT NULL ___ 'basic',   UNIQUE (full_name, email)"
+        explanation: |
+          A rule that covers two columns (`UNIQUE (full_name, email)`) cannot sit on one column, so it goes on its
+          own line at the end of the table. Two people may share a name, and two may share an email, but never
+          both at once. This is a common real-world pattern.
+
+    cheatsheet:
+      - title: Rules on a column
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text NOT NULL,
+              email text UNIQUE,
+              points integer CHECK (points >= 0),
+              status text DEFAULT 'new'
+          );
+        note: "Write each rule right after the column's type."
+      - title: Name a rule
+        sql: |
+          price numeric(6,2)
+              CONSTRAINT price_must_be_positive
+              CHECK (price > 0)
+        note: "A named rule gives a clearer error message."
+      - title: A rule on several columns
+        sql: |
+          CREATE TABLE members (
+              full_name text,
+              email text,
+              UNIQUE (full_name, email)
+          );
+        note: "Put table-level rules on their own line at the end."
+      - title: See the rules a table has
+        sql: |
+          SELECT constraint_name, constraint_type
+          FROM information_schema.table_constraints
+          WHERE table_schema = 'public'
+            AND table_name = 'customers';
+        note: "Replace customers with any table name to inspect its rules."
+
+  - id: m13-l03
+    title: Foreign keys — linking tables safely
+    summary: Make one table point at another, and decide what happens when the row it points at is deleted.
+    minutes: 30
+    steps:
+      - type: read
+        title: Orders that point at nobody
+        md: |
+          Maya now keeps two tables: `customers` and `orders`. Each order must belong to a customer, so every
+          order stores a `customer_id`. One morning she finds an order that says customer `99`. Nobody called
+          customer 99 exists. Where did that order come from?
+
+          A **foreign key** prevents this. It is a rule that says: *the value in this column must match a row
+          in the other table*. The table holding the rule is the **child**; the table it points at is the
+          **parent**.
+
+          > [!ANALOGY]
+          > A school register. A student number on a homework sheet only counts if that student is actually on
+          > the register. A foreign key is the teacher checking the register before accepting the sheet.
+
+      - type: read
+        title: How to write a foreign key
+        md: |
+          Write `REFERENCES parent_table (parent_column)` after the child column:
+
+          ```sql
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+          ```
+
+          Two things must be true:
+
+          - The **parent** table is created **first**, so the database knows what it is pointing at.
+          - The parent column must be a **primary key** (or a `UNIQUE` column), so each value points to one row.
+
+          The child column and the parent column must have the same type, such as `integer` and `integer`.
+
+      - type: example
+        title: A valid link, and an empty link
+        md: |
+          Two customers, three orders. The third order has no customer yet, which is allowed.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana'), (2, 'Ben');
+          INSERT INTO orders VALUES (10, 1), (11, 2), (12, NULL);
+
+          SELECT * FROM orders ORDER BY order_id;
+        after: |
+          All three orders are saved. Orders 10 and 11 point at real customers. Order 12 has `NULL` in
+          `customer_id`, which is allowed: a foreign key only checks values that are filled in. Think of it as
+          a walk-in sale with no customer details.
+
+      - type: example
+        title: Refused — a customer who does not exist
+        md: |
+          Now we try to save an order for customer `99`, which is not in `customers`.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana');
+          INSERT INTO orders VALUES (13, 99);
+        expectError: true
+        after: |
+          *insert or update on table "orders" violates foreign key constraint "orders_customer_id_fkey"*.
+          The name ends in `_fkey`, which stands for **foreign key**. The row is refused before it is saved.
+
+      - type: quiz
+        id: m13-l03-q1
+        question: |
+          An order points at customer `99`, but no customer `99` exists. Which rule refuses that row?
+        options: ["PRIMARY KEY", "FOREIGN KEY", "UNIQUE", "NOT NULL"]
+        answer: 1
+        explanation: |
+          **FOREIGN KEY**. It checks the value against the parent table. `NOT NULL` only checks that a value is
+          present, and `UNIQUE` only checks for duplicates.
+
+      - type: read
+        title: What if the parent row is deleted?
+        md: |
+          Suppose customer 1 is deleted but still has orders. The foreign key must decide what to do. You choose
+          the answer with `ON DELETE` (and `ON UPDATE` for changed ids):
+
+          | Option | What happens to the child rows |
+          |---|---|
+          | *(nothing written)* or `NO ACTION` | The delete is **refused** while children still point at the row. |
+          | `RESTRICT` | Also **refused**, and checked straight away. |
+          | `CASCADE` | The child rows are **deleted too**. |
+          | `SET NULL` | The child rows **stay**, but their link becomes `NULL`. |
+
+          The default is `NO ACTION`, which protects your data. Use `CASCADE` only when a child cannot make sense
+          without its parent, such as order lines without their order.
+
+          > [!MISTAKE]
+          > Writing `ON DELETE CASCADE` out of habit. Deleting one customer then silently deletes every order they
+          > ever placed. Choose the behaviour on purpose.
+
+      - type: example
+        title: Refused — the parent still has children
+        md: |
+          Ana has an order. Deleting her customer row would leave that order pointing at nobody, so the
+          database says no.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana');
+          INSERT INTO orders VALUES (10, 1);
+
+          DELETE FROM customers WHERE customer_id = 1;
+        expectError: true
+        after: |
+          *update or delete on table "customers" violates foreign key constraint "orders_customer_id_fkey" on
+          table "orders"*. The database protected the order. You would have to delete or move the order first.
+
+      - type: example
+        title: CASCADE — delete the children too
+        md: |
+          This time the foreign key says `ON DELETE CASCADE`. Deleting Ana also deletes her two orders.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+                  ON DELETE CASCADE
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana'), (2, 'Ben');
+          INSERT INTO orders VALUES (10, 1), (11, 1), (12, 2);
+
+          DELETE FROM customers WHERE customer_id = 1;
+
+          SELECT * FROM orders ORDER BY order_id;
+        after: |
+          Only order 12 is left, because it belongs to Ben. Orders 10 and 11 disappeared with Ana. Read the
+          `ON DELETE CASCADE` line as: "when the parent goes, the children go too."
+
+      - type: example
+        title: SET NULL — keep the orders, forget the customer
+        md: |
+          Here the orders must survive, even if their customer leaves. So the foreign key uses `ON DELETE SET NULL`.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+                  ON DELETE SET NULL
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana'), (2, 'Ben');
+          INSERT INTO orders VALUES (10, 1), (11, 2);
+
+          DELETE FROM customers WHERE customer_id = 1;
+
+          SELECT * FROM orders ORDER BY order_id;
+        after: |
+          Both orders are still there. Order 10 now shows `NULL` as its customer, because Ana was deleted. Order 11
+          is untouched.
+
+      - type: example
+        title: Drop the parent first — refused
+        md: |
+          You cannot throw away a parent table while another table still depends on it.
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+
+          DROP TABLE customers;
+        expectError: true
+        after: |
+          *cannot drop table customers because other objects depend on it*. The hint says to use
+          `DROP ... CASCADE`, but that also removes the foreign key from `orders`. Drop the child table first, then
+          the parent.
+
+      - type: predict
+        id: m13-l03-p1
+        question: |
+          Ana placed three orders (10, 11 and 13). Ben placed order 12. Deleting Ana uses `ON DELETE CASCADE`.
+          How many orders are left when the script finishes?
+        sql: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+                  ON DELETE CASCADE
+          );
+
+          INSERT INTO customers VALUES (1, 'Ana'), (2, 'Ben');
+          INSERT INTO orders VALUES (10, 1), (11, 1), (12, 2), (13, 1);
+
+          DELETE FROM customers WHERE customer_id = 1;
+
+          SELECT COUNT(*) FROM orders;
+        options: ["4", "1", "3", "0"]
+        answer: 1
+        explanation: |
+          Ana's three orders are deleted by the cascade, so only Ben's order 12 remains. Count the rows that
+          point at Ana before you answer: that is the number that disappears.
+
+      - type: exercise
+        id: m13-l03-e1
+        title: Link a book to its author
+        difficulty: 1
+        prompt: |
+          Create two tables, **parent first**:
+
+          1. `authors` with `author_id` (`integer`, primary key) and `name` (`text`).
+          2. `books` with `book_id` (`integer`, primary key), `title` (`text`), and `author_id` (`integer`)
+             that **references** `authors (author_id)`.
+
+          The check lists the foreign keys the database stored.
+        starter: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer
+          );
+        solution: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer REFERENCES authors (author_id)
+          );
+        check: |
+          SELECT conrelid::regclass::text || ': '
+                 || pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE contype = 'f'
+          ORDER BY 1;
+        hints:
+          - Your `starter` already creates both tables. Only one line is missing a rule.
+          - "The `author_id` line in `books` needs the word `REFERENCES` and a parent column in brackets."
+          - "author_id integer ___ authors (author_id)"
+        explanation: |
+          `REFERENCES authors (author_id)` is the whole rule. Notice the order of the tables: `authors` is created
+          before `books`, because `books` points at it.
+
+      - type: exercise
+        id: m13-l03-e2
+        title: Delete an author, lose their books
+        difficulty: 2
+        prompt: |
+          Create `authors` with `author_id` (`integer`, primary key) and `name` (`text`).
+
+          Create `books` with `book_id` (`integer`, primary key), `title` (`text`) and `author_id` (`integer`).
+          Make `author_id` reference `authors`, so that **deleting an author also deletes their books**.
+        starter: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer REFERENCES authors (author_id)
+          );
+        solution: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer REFERENCES authors (author_id)
+                  ON DELETE CASCADE
+          );
+        check: |
+          INSERT INTO authors (author_id, name)
+          VALUES (1, 'Le Guin'), (2, 'Herbert'), (3, 'Simmons');
+
+          INSERT INTO books (book_id, title, author_id)
+          VALUES (10, 'Earthsea', 1),
+                 (11, 'Dune', 2),
+                 (12, 'The Tombs of Atuan', 1),
+                 (13, 'Hyperion', 3);
+
+          DELETE FROM authors WHERE author_id = 1;
+
+          SELECT title FROM books ORDER BY title;
+        hints:
+          - Start from the starter, which already has the right tables. Add one phrase to the `books` rule.
+          - "The default behaviour refuses the delete. You need the option that removes the child rows too."
+          - "REFERENCES authors (author_id) ___ ___ "
+        explanation: |
+          `ON DELETE CASCADE` goes after the `REFERENCES` part. The check deletes author 1 and sees that only
+          the books of authors 2 and 3 are left. Without the option, the delete would be refused instead.
+
+      - type: exercise
+        id: m13-l03-e3
+        title: Fix the order of the tables
+        difficulty: 2
+        prompt: |
+          Maya's script fails with *relation "authors" does not exist*. The `books` table refers to `authors`,
+          but `authors` is created later. Fix the script so that it works, **without changing any column**.
+          The check lists the foreign keys, as in the first exercise.
+        starter: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer REFERENCES authors (author_id)
+          );
+
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+        solution: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              author_id integer REFERENCES authors (author_id)
+          );
+        check: |
+          SELECT conrelid::regclass::text || ': '
+                 || pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE contype = 'f'
+          ORDER BY 1;
+        hints:
+          - The error names the table that does not exist yet. Which table must be created first?
+          - Move one whole `CREATE TABLE` block above the other.
+          - "Swap the two blocks. The parent `authors` goes ___ the child `books`."
+        explanation: |
+          The parent table must exist before any child can point at it. The lines inside each table did not need to
+          change at all, only the order of the two statements.
+
+      - type: parsons
+        id: m13-l03-o1
+        prompt: |
+          Put the lines in the right order to create the `customers` and `orders` tables, with `orders` linked to
+          `customers`. One line is a wrong link, and one line is a `DROP` that must not be used.
+        lines:
+          - "CREATE TABLE customers ("
+          - "    customer_id integer PRIMARY KEY"
+          - ");"
+          - "CREATE TABLE orders ("
+          - "    order_id integer PRIMARY KEY,"
+          - "    customer_id integer REFERENCES customers (customer_id)"
+          - ");"
+        distractors:
+          - "    customer_id integer REFERENCES orders (order_id)"
+          - "DROP TABLE customers;"
+        explanation: |
+          `customers` is created first because `orders` points at it. The `REFERENCES` in `orders` must name the
+          parent table and its primary key, `customers (customer_id)`, not the child table itself.
+
+      - type: fill
+        id: m13-l03-f1
+        prompt: |
+          Complete the rule so that deleting a customer keeps their orders but leaves their `customer_id` empty.
+        template: |
+          CREATE TABLE customers (
+              customer_id integer PRIMARY KEY
+          );
+
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+                  ON DELETE ___ ___
+          );
+        answers:
+          - ["SET", "set"]
+          - ["NULL", "null"]
+        explanation: |
+          `ON DELETE SET NULL`: the child rows stay, and their link is cleared. Use it when an order should
+          survive even if the customer record is removed.
+
+      - type: exercise
+        id: m13-l03-e4
+        title: Teams that follow their players
+        difficulty: 3
+        prompt: |
+          Create two tables, parent first:
+
+          1. `teams` with `team_id` (`integer`, primary key) and `team_name` (`text`).
+          2. `players` with `player_id` (`integer`, primary key), `player_name` (`text`) and `team_id`
+             (`integer`) that references `teams (team_id)`.
+
+          Add two options to the `team_id` link in `players`:
+
+          - `ON UPDATE CASCADE`: if a team's id changes, its players follow the new id.
+          - `ON DELETE SET NULL`: if a team is deleted, its players stay with no team.
+        starter: |
+          CREATE TABLE teams (
+              team_id integer PRIMARY KEY,
+              team_name text
+          );
+
+          CREATE TABLE players (
+              player_id integer PRIMARY KEY,
+              player_name text,
+              team_id integer
+          );
+        solution: |
+          CREATE TABLE teams (
+              team_id integer PRIMARY KEY,
+              team_name text
+          );
+
+          CREATE TABLE players (
+              player_id integer PRIMARY KEY,
+              player_name text,
+              team_id integer REFERENCES teams (team_id)
+                  ON UPDATE CASCADE
+                  ON DELETE SET NULL
+          );
+        check: |
+          INSERT INTO teams (team_id, team_name)
+          VALUES (1, 'Reds'), (2, 'Blues');
+
+          INSERT INTO players (player_id, player_name, team_id)
+          VALUES (10, 'Ana', 1), (11, 'Ben', 2);
+
+          UPDATE teams SET team_id = 9 WHERE team_id = 1;
+
+          DELETE FROM teams WHERE team_id = 2;
+
+          SELECT player_name, team_id
+          FROM players
+          ORDER BY player_name;
+        hints:
+          - The starter has the right columns. The `team_id` line needs a `REFERENCES` clause.
+          - "After `REFERENCES teams (team_id)`, you need two extra lines: one `ON UPDATE` and one `ON DELETE`."
+          - "ON UPDATE ___   ON DELETE ___   (the words are CASCADE and SET NULL, in that order)"
+        explanation: |
+          The two options handle two different events. `ON UPDATE CASCADE` copies a changed parent id into the
+          children. `ON DELETE SET NULL` keeps the player but clears the team. Ana follows team 1 to id 9, and Ben's
+          team is deleted, so his `team_id` becomes `NULL`.
+
+    cheatsheet:
+      - title: Link a child table to its parent
+        sql: |
+          CREATE TABLE orders (
+              order_id integer PRIMARY KEY,
+              customer_id integer REFERENCES customers (customer_id)
+          );
+        note: "Create the parent table first. The parent column must be a primary key."
+      - title: Choose what happens on delete
+        sql: |
+          REFERENCES customers (customer_id)
+              ON DELETE CASCADE       -- delete the children too
+          -- or ON DELETE SET NULL    -- keep them, clear the link
+          -- or nothing              -- refuse the delete (default)
+        note: "CASCADE and SET NULL are choices you make on purpose."
+      - title: Find the foreign keys in a table
+        sql: |
+          SELECT conrelid::regclass::text,
+                 pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE contype = 'f';
+        note: "Lists every foreign key in the database, with its rule."
+
+  - id: m13-l04
+    title: ALTER TABLE — changing a table that already has data
+    summary: Add, rename, drop and retype columns, and add or drop rules, without losing the rows you already have.
+    minutes: 30
+    steps:
+      - type: read
+        title: The shop has grown
+        md: |
+          Maya's `plants` table has been running for months and holds real data. Now she wants changes: a
+          `care_level` column, a clearer name for `name`, and a `price` that was typed in as text by mistake.
+
+          You cannot simply throw the table away and start again, because the rows would be lost. Instead you
+          change the table in place with **`ALTER TABLE`**. It is also DDL, like `CREATE TABLE`, and it
+          keeps every existing row.
+
+      - type: read
+        title: The common changes
+        md: |
+          | What you want | The words you write |
+          |---|---|
+          | Add a column | `ALTER TABLE plants ADD COLUMN care_level text;` |
+          | Remove a column | `ALTER TABLE plants DROP COLUMN notes;` |
+          | Rename a column | `ALTER TABLE plants RENAME COLUMN name TO plant_name;` |
+          | Rename a table | `ALTER TABLE plants RENAME TO plant_catalog;` |
+          | Change a type | `ALTER TABLE plants ALTER COLUMN price TYPE numeric(6,2);` |
+          | Set a default | `ALTER TABLE plants ALTER COLUMN stock SET DEFAULT 0;` |
+          | Require a value | `ALTER TABLE plants ALTER COLUMN stock SET NOT NULL;` |
+          | Add a rule | `ALTER TABLE plants ADD CONSTRAINT ... CHECK (...);` |
+          | Remove a rule | `ALTER TABLE plants DROP CONSTRAINT rule_name;` |
+
+          > [!ANALOGY]
+          > Renovating a flat while people still live in it. You can knock down a wall, add a shelf or repaint,
+          > but every change has to fit around the things already inside.
+
+      - type: example
+        title: Add a column — old rows get the default
+        md: |
+          Two plants already exist. We add a `care_level` column and give it the default `'easy'`.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              name text
+          );
+
+          INSERT INTO plants VALUES (1, 'Monstera'), (2, 'Cactus');
+
+          ALTER TABLE plants
+              ADD COLUMN care_level text DEFAULT 'easy';
+
+          SELECT * FROM plants ORDER BY plant_id;
+        after: |
+          The two existing rows were **not** deleted. Both now show `easy` in the new column, because the
+          default was applied to every row that already existed.
+
+      - type: example
+        title: Rename a column, then the table
+        md: |
+          Maya wants `name` to say what it really is, a `plant_name`. Then she wants the table called
+          `plant_catalog`. Renaming only changes the label. The data does not move.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              name text
+          );
+
+          INSERT INTO plants VALUES (1, 'Monstera');
+
+          ALTER TABLE plants RENAME COLUMN name TO plant_name;
+          ALTER TABLE plants RENAME TO plant_catalog;
+
+          SELECT plant_name FROM plant_catalog;
+        after: |
+          The query uses the new names and finds `Monstera`. Anything still asking for `plants` or `name` would now
+          fail, so renames are best made before other people build on the table.
+
+      - type: example
+        title: Refused — a text column cannot become a number by itself
+        md: |
+          The `code` column was typed in as `text`, but Maya wants whole numbers. Try a plain type change.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              code text
+          );
+
+          INSERT INTO plants VALUES (1, '42');
+
+          ALTER TABLE plants ALTER COLUMN code TYPE integer;
+        expectError: true
+        after: |
+          *column "code" cannot be cast automatically to type integer*. The hint shows the fix: PostgreSQL
+          needs to know **how** to convert each value. That is what `USING` does, in the next example.
+
+      - type: read
+        title: Converting with USING
+        md: |
+          `USING` says how to turn the old value into the new type. Most of the time you write the conversion with
+          `::`, which you saw in the first module on numbers:
+
+          ```sql
+          ALTER TABLE plants
+              ALTER COLUMN code TYPE integer USING code::integer;
+          ```
+
+          If a value cannot be converted (for example `'abc'` to `integer`), the whole change is refused and
+          nothing is altered. Nothing is half-changed.
+
+      - type: example
+        title: Converting with USING
+        md: |
+          The same change, now with `USING code::integer`. The text `'42'` becomes the number 42, so we can do
+          maths with it.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              code text
+          );
+
+          INSERT INTO plants VALUES (1, '42');
+
+          ALTER TABLE plants
+              ALTER COLUMN code TYPE integer USING code::integer;
+
+          SELECT code + 1 AS next_code FROM plants;
+        after: |
+          The result is `43`. The column is now a true number, so arithmetic works. While it was text, `code + 1`
+          would have been refused, because text cannot be added to a number.
+
+      - type: quiz
+        id: m13-l04-q1
+        question: |
+          Which statement changes the **data type** of an existing column?
+        options:
+          - "ALTER TABLE plants ALTER COLUMN price TYPE numeric(6,2);"
+          - "ALTER TABLE plants RENAME COLUMN price TO cost;"
+          - "ALTER TABLE plants ADD COLUMN price numeric(6,2);"
+          - "UPDATE plants SET price = 4.50;"
+        answer: 0
+        explanation: |
+          `ALTER COLUMN ... TYPE` is the only one of these that changes the type. Renaming only changes the label,
+          adding creates a **new** column, and `UPDATE` changes values, not the structure.
+
+      - type: example
+        title: Refused — an existing row breaks the new rule
+        md: |
+          Maya adds the rule "price must be above 0". But one row already has `-3.00`. PostgreSQL checks the
+          existing rows before it accepts a new rule, and this one fails.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              price numeric(6,2)
+          );
+
+          INSERT INTO plants VALUES (1, 4.50), (2, -3.00);
+
+          ALTER TABLE plants
+              ADD CONSTRAINT price_must_be_positive CHECK (price > 0);
+        expectError: true
+        after: |
+          *check constraint "price_must_be_positive" of relation "plants" is violated by some row*. To add the
+          rule, first fix or remove the bad row, then add the rule again.
+
+      - type: read
+        title: Removing things carefully
+        md: |
+          `DROP COLUMN` removes the column **and all the data in it**. `DROP CONSTRAINT` removes only a rule, so
+          the data stays. Dropping a rule also loses its protection, so do it on purpose.
+
+          > [!MISTAKE]
+          > Dropping a column to "tidy up" before checking whether anything still needs it. Run a `SELECT` of
+          > that column first, and ask the people who use the table.
+
+      - type: example
+        title: Drop a column you no longer need
+        md: |
+          Maya does not need the old `notes` column any more. We drop it and look at what is left.
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              name text,
+              notes text
+          );
+
+          INSERT INTO plants VALUES (1, 'Monstera', 'Old supplier');
+
+          ALTER TABLE plants DROP COLUMN notes;
+
+          SELECT * FROM plants;
+        after: |
+          Only `plant_id` and `name` remain. The text `Old supplier` is gone for good, along with the column.
+
+      - type: predict
+        id: m13-l04-p1
+        question: |
+          Two plants already exist. Maya adds a `in_stock` column with a default of `true`. How many plants are
+          `in_stock` at the end?
+        sql: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              name text
+          );
+
+          INSERT INTO plants VALUES (1, 'Fern'), (2, 'Cactus');
+
+          ALTER TABLE plants
+              ADD COLUMN in_stock boolean DEFAULT true;
+
+          SELECT COUNT(*) FROM plants WHERE in_stock;
+        options: ["0", "1", "2", "An error"]
+        answer: 2
+        explanation: |
+          When you add a column with a default, PostgreSQL fills it in for the rows that already exist, as well
+          as for rows added later. So both plants get `true`, and the count is 2.
+
+      - type: fill
+        id: m13-l04-f1
+        prompt: |
+          Complete the two `ALTER TABLE` steps. First add a `care_level` column. Then require a value in `price`.
+        template: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              price numeric(6,2)
+          );
+
+          ALTER TABLE plants ___ COLUMN care_level text;
+          ALTER TABLE plants ALTER COLUMN price ___ NOT NULL;
+        answers:
+          - ["ADD", "add"]
+          - ["SET", "set"]
+        explanation: |
+          `ADD COLUMN` creates a column. `ALTER COLUMN ... SET NOT NULL` makes a column required. `SET` is part of
+          the phrase `SET NOT NULL`, and `DROP NOT NULL` is the reverse.
+
+      - type: parsons
+        id: m13-l04-o1
+        prompt: |
+          Put the lines in order so that a `plants` table with one row gets a required `stock` column, which
+          holds `0` for the existing row. Leave out the line that drops a column.
+        lines:
+          - "CREATE TABLE plants (plant_id integer PRIMARY KEY, name text);"
+          - "INSERT INTO plants VALUES (1, 'Fern');"
+          - "ALTER TABLE plants"
+          - "    ADD COLUMN stock integer NOT NULL DEFAULT 0;"
+          - "SELECT plant_id, name, stock FROM plants;"
+        distractors:
+          - "ALTER TABLE plants DROP COLUMN name;"
+        explanation: |
+          The table must exist before you change it, and the row is inserted before the change. The `NOT NULL` works
+          here because the `DEFAULT 0` gives the existing row a value. Without that default, PostgreSQL would refuse
+          with *contains null values*.
+
+      - type: exercise
+        id: m13-l04-e1
+        title: A new column
+        difficulty: 1
+        setup: |
+          CREATE TABLE plants (
+              plant_id integer,
+              name text,
+              price numeric(6,2)
+          );
+        prompt: |
+          The `plants` table already exists. Add one column, `care_level` (`text`), **at the end** of the table.
+        starter: |
+          ALTER TABLE plants
+              ___;
+        solution: |
+          ALTER TABLE plants
+              ADD COLUMN care_level text;
+        check: |
+          SELECT column_name, data_type
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'plants'
+          ORDER BY ordinal_position;
+        hints:
+          - Use `ADD COLUMN`, followed by the name and the type.
+          - "ALTER TABLE plants ADD COLUMN ___ ___;"
+          - "The new column name is `care_level` and its type is `text`."
+        explanation: |
+          The check lists the columns in order. `care_level` appears last, because a new column is always added at
+          the end of the table.
+
+      - type: exercise
+        id: m13-l04-e2
+        title: Clearer names
+        difficulty: 1
+        setup: |
+          CREATE TABLE plants (
+              plant_id integer,
+              name text
+          );
+
+          INSERT INTO plants VALUES (1, 'Fern'), (2, 'Cactus');
+        prompt: |
+          Rename the column `name` in the `plants` table to `plant_name`. The table keeps its name, and the two
+          rows must still be there.
+        starter: |
+          ALTER TABLE plants
+              ___ name ___ plant_name;
+        solution: |
+          ALTER TABLE plants
+              RENAME COLUMN name TO plant_name;
+        check: |
+          SELECT plant_id, plant_name
+          FROM plants
+          ORDER BY plant_id;
+        hints:
+          - The statement is `RENAME COLUMN old_name TO new_name`.
+          - "ALTER TABLE plants RENAME COLUMN ___ TO ___;"
+          - "The old name is `name`, the new name is `plant_name`."
+        explanation: |
+          Renaming keeps every value. The check selects `plant_name`, which only works after the rename, and still
+          shows `Fern` and `Cactus`.
+
+      - type: exercise
+        id: m13-l04-e3
+        title: Price as a true number
+        difficulty: 2
+        setup: |
+          CREATE TABLE plants (
+              plant_id integer,
+              price text
+          );
+
+          INSERT INTO plants VALUES (1, '4.50'), (2, '12.00');
+        prompt: |
+          The `price` column of `plants` was saved as text by mistake. Change its type to `numeric(6,2)`.
+          Use `USING` so that every existing text value is converted to a number. Keep the same column name.
+        starter: |
+          ALTER TABLE plants
+              ALTER COLUMN price TYPE numeric(6,2);
+        solution: |
+          ALTER TABLE plants
+              ALTER COLUMN price TYPE numeric(6,2)
+              USING price::numeric(6,2);
+        check: |
+          SELECT plant_id,
+                 price,
+                 pg_typeof(price)::text AS price_type
+          FROM plants
+          ORDER BY plant_id;
+        hints:
+          - The starter is missing one thing that tells PostgreSQL how to convert each value.
+          - "Add a line after the type: `USING` followed by the column and `::numeric(6,2)`."
+          - "USING price::___(6,2)"
+        explanation: |
+          `USING price::numeric(6,2)` converts each stored text into an exact number with two decimal places.
+          The check shows the price type is now `numeric`, and the values still read `4.50` and `12.00`.
+
+      - type: exercise
+        id: m13-l04-e4
+        title: Add a rule and fix the data
+        difficulty: 3
+        setup: |
+          CREATE TABLE plants (
+              plant_id integer PRIMARY KEY,
+              price numeric(6,2)
+          );
+
+          INSERT INTO plants VALUES (1, 4.50), (2, -3.00), (3, 12.00);
+        prompt: |
+          Maya wants every price to be above 0. Two steps, in this order:
+
+          1. Plant 2 has the price `-3.00`, which is wrong. Set its price to `3.00`.
+          2. Add a rule named `price_must_be_positive` to `plants` that says `CHECK (price > 0)`.
+
+          The check shows every row and the rule that the table now stores.
+        starter: |
+          ALTER TABLE plants
+              ADD CONSTRAINT price_must_be_positive
+              CHECK (price > 0);
+        solution: |
+          UPDATE plants SET price = 3.00 WHERE plant_id = 2;
+
+          ALTER TABLE plants
+              ADD CONSTRAINT price_must_be_positive
+              CHECK (price > 0);
+        check: |
+          SELECT plant_id::text || ' costs ' || price::text
+          FROM plants
+          UNION ALL
+          SELECT conname || ': ' || pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'plants'::regclass
+            AND contype = 'c'
+          ORDER BY 1;
+        hints:
+          - The starter fails because of the row with `-3.00`. You must fix that row first.
+          - "The first step is an `UPDATE`, which you know from the last module, with a `WHERE` on `plant_id`."
+          - "UPDATE plants SET price = ___ WHERE plant_id = ___;"
+        explanation: |
+          Order matters. The `UPDATE` makes the data obey the rule, and then the `ADD CONSTRAINT` succeeds. If you
+          did it the other way round, PostgreSQL would refuse, just as in the example.
+
+    cheatsheet:
+      - title: Add or remove a column
+        sql: |
+          ALTER TABLE plants ADD COLUMN care_level text DEFAULT 'easy';
+          ALTER TABLE plants DROP COLUMN notes;
+        note: "Existing rows get the default. DROP COLUMN deletes that column's data."
+      - title: Rename a column or table
+        sql: |
+          ALTER TABLE plants RENAME COLUMN name TO plant_name;
+          ALTER TABLE plants RENAME TO plant_catalog;
+        note: "Renaming keeps every row. Old names stop working in your queries."
+      - title: Change a type safely
+        sql: |
+          ALTER TABLE plants
+              ALTER COLUMN code TYPE integer USING code::integer;
+        note: "USING tells PostgreSQL how to convert each existing value."
+      - title: Add or drop a rule
+        sql: |
+          ALTER TABLE plants
+              ADD CONSTRAINT price_must_be_positive CHECK (price > 0);
+          ALTER TABLE plants DROP CONSTRAINT price_must_be_positive;
+        note: "Existing rows must already obey a new rule."
+
+  - id: m13-l05
+    title: Identity, sequences & generated columns
+    summary: Let the database number your rows, calculate values for you and create unique ids.
+    minutes: 30
+    steps:
+      - type: read
+        title: Who gives each order its number?
+        md: |
+          Every order at Maya's shop needs its own order number: `1`, `2`, `3`... Nobody should type those numbers
+          by hand, because people make mistakes and two orders could end up with the same number.
+
+          Instead, you tell the table to **create the number itself** when a row is added. There are three common
+          ways to do this in PostgreSQL:
+
+          | Way | What it gives you | Use it when |
+          |---|---|---|
+          | `GENERATED ALWAYS AS IDENTITY` | Whole numbers, counted automatically by the database | **Almost always**: the standard choice for new tables |
+          | `SERIAL` | The same idea, in an older PostgreSQL style | You meet it in older code |
+          | `UUID` | A long random code, such as `3f2b...`, unique across many databases | Ids must be made on many machines without asking the database |
+
+      - type: example
+        title: The database counts for you
+        md: |
+          We create a `tickets` table with an identity column. We never write a value for `ticket_id`. The
+          database writes `1`, then `2`, all by itself.
+        sql: |
+          CREATE TABLE tickets (
+              ticket_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              title text
+          );
+
+          INSERT INTO tickets (title) VALUES ('Lamp broken');
+          INSERT INTO tickets (title) VALUES ('Door sticks');
+
+          SELECT * FROM tickets ORDER BY ticket_id;
+        after: |
+          The two rows received the numbers `1` and `2`. We only supplied the titles. Because `ticket_id` is the
+          primary key, the numbers are also guaranteed to be unique.
+
+      - type: read
+        title: ALWAYS means ALWAYS
+        md: |
+          `GENERATED ALWAYS` means the database decides the number, full stop. If you try to type your own, the
+          insert is refused. The alternative, `GENERATED BY DEFAULT AS IDENTITY`, lets you type a number when you
+          want one, and uses the counter only when you leave it out.
+
+          For a shop's order numbers, `ALWAYS` is the safer choice: nobody can accidentally reuse a number.
+
+      - type: example
+        title: Refused — typing your own number
+        md: |
+          Someone tries to force ticket number `50` into the table.
+        sql: |
+          CREATE TABLE tickets (
+              ticket_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              title text
+          );
+
+          INSERT INTO tickets (ticket_id, title) VALUES (50, 'Lamp broken');
+        expectError: true
+        after: |
+          *cannot insert a non-DEFAULT value into column "ticket_id"*. The database says the column is generated for
+          you. (The hint about `OVERRIDING SYSTEM VALUE` is an advanced escape hatch. Leave it alone for now.)
+
+      - type: read
+        title: SERIAL, sequences and the counter behind them
+        md: |
+          A **sequence** is a counter that lives in the database. Each time you ask it for a number, it gives
+          the next one, and it never gives the same number twice. You ask with the function `nextval`.
+
+          `SERIAL` is a shortcut from older PostgreSQL. Writing `ticket_id serial PRIMARY KEY` secretly creates a
+          sequence and sets it as the column's source of numbers. Identity columns do the same job more cleanly,
+          so use them in new tables.
+
+      - type: example
+        title: Asking a sequence for numbers
+        md: |
+          We create a counter that starts at `100`, then ask it for two numbers in one `SELECT`.
+        sql: |
+          CREATE SEQUENCE invoice_seq START WITH 100;
+
+          SELECT nextval('invoice_seq') AS first_number,
+                 nextval('invoice_seq') AS second_number;
+        after: |
+          You get `100` and then `101`. A sequence is useful when several tables, or a program outside the
+          database, need numbers from the same counter.
+
+      - type: read
+        title: Gaps are normal
+        md: |
+          Numbers from a sequence can **skip**. When an insert fails, or when `ON CONFLICT DO NOTHING` skips a
+          row, the number has already been handed out and is not given back. The next row simply gets the next
+          number.
+
+          > [!MISTAKE]
+          > Trying to fix a gap by hand, or expecting "order 7 is missing, so something went wrong". Gaps are a
+          > normal side effect. Never reuse a number for a new row. The numbers are only labels.
+
+      - type: quiz
+        id: m13-l05-q1
+        question: |
+          Which choice is the standard way to let PostgreSQL number the rows of a **new** table?
+        options:
+          - "A plain integer that you type in by hand"
+          - "GENERATED ALWAYS AS IDENTITY"
+          - "A text column called id"
+          - "UPDATE the table after each insert"
+        answer: 1
+        explanation: |
+          `GENERATED ALWAYS AS IDENTITY` is the standard choice for new tables. Typing numbers by hand invites
+          duplicates, text ids cannot be counted, and `UPDATE` changes rows that already exist; it does not number
+          new ones.
+
+      - type: read
+        title: "Generated columns, let the table calculate"
+        md: |
+          Sometimes a column should always be the result of other columns: the `total` of an order line is always
+          `qty * unit_price`. A **generated column** stores that rule once, and the database fills it in for you.
+
+          ```sql
+          total numeric(8,2) GENERATED ALWAYS AS (qty * unit_price) STORED
+          ```
+
+          `STORED` means the result is saved with the row. In PostgreSQL 18, if you leave `STORED` out, the column
+          is `VIRTUAL`: it is calculated again each time you read it. Write `STORED` when you want the value kept.
+
+      - type: example
+        title: A total that calculates itself
+        md: |
+          Each order line has a quantity and a unit price. The `total` column is never typed in.
+        sql: |
+          CREATE TABLE order_lines (
+              line_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              qty integer,
+              unit_price numeric(6,2),
+              total numeric(8,2)
+                  GENERATED ALWAYS AS (qty * unit_price) STORED
+          );
+
+          INSERT INTO order_lines (qty, unit_price) VALUES (3, 4.50);
+
+          SELECT * FROM order_lines;
+        after: |
+          The row shows `13.50` in `total`, which is `3 x 4.50`. Two generated features work together here:
+          the identity gives the line its number, and the generated column does the sum.
+
+      - type: example
+        title: Refused — writing into a generated column
+        md: |
+          Someone tries to type a `total` of `99` by hand, which would disagree with the quantity and price.
+        sql: |
+          CREATE TABLE order_lines (
+              line_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              qty integer,
+              unit_price numeric(6,2),
+              total numeric(8,2)
+                  GENERATED ALWAYS AS (qty * unit_price) STORED
+          );
+
+          INSERT INTO order_lines (qty, unit_price, total) VALUES (3, 4.50, 99);
+        expectError: true
+        after: |
+          *cannot insert a non-DEFAULT value into column "total"*. A generated column can only be calculated; it
+          can never hold a value that you type. That keeps it always correct.
+
+      - type: predict
+        id: m13-l05-p1
+        question: |
+          Three tickets are added, and then ticket 2 is deleted. Which `ticket_id` values are left?
+        sql: |
+          CREATE TABLE tickets (
+              ticket_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              title text
+          );
+
+          INSERT INTO tickets (title) VALUES ('Lamp'), ('Door'), ('Window');
+
+          DELETE FROM tickets WHERE ticket_id = 2;
+
+          SELECT ticket_id FROM tickets ORDER BY ticket_id;
+        options: ["1, 2", "1, 3", "2, 3", "1, 2, 3"]
+        answer: 1
+        explanation: |
+          Ticket 2 is gone, and its number is **not** reused. Ticket 3 keeps its number too. The counter always
+          moves forward, so the numbers left behind look like `1, 3`.
+
+      - type: read
+        title: UUIDs — unique without asking the database
+        md: |
+          A **UUID** is a long random code, such as `7d9e1c44-...`. The function `gen_random_uuid()` creates one.
+          Because the code is random, two computers can each make codes without talking to each other and still
+          never clash in practice.
+
+          The price is that UUIDs are long and hard to read. Use them where that matters, such as public ids in
+          web addresses. The value is random, so **never** compare the exact text of a UUID in a test.
+
+      - type: example
+        title: A UUID as the default
+        md: |
+          Each guest gets a UUID from `gen_random_uuid()` when they are added. Because the code is random, we show
+          only its **length** and its **type**.
+        sql: |
+          CREATE TABLE guests (
+              guest_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+              guest_name text
+          );
+
+          INSERT INTO guests (guest_name) VALUES ('Ana');
+
+          SELECT length(guest_id::text) AS id_length,
+                 guest_name
+          FROM guests;
+        after: |
+          The id is always 36 characters long, including the dashes. Every time you run this, the actual code will
+          be different, which is exactly what makes it unique.
+
+      - type: fill
+        id: m13-l05-f1
+        prompt: |
+          Complete the table: the first column is an identity number, and `total` is calculated and stored.
+        template: |
+          CREATE TABLE order_lines (
+              line_id integer GENERATED ALWAYS AS ___ PRIMARY KEY,
+              qty integer,
+              unit_price numeric(6,2),
+              total numeric(8,2) GENERATED ALWAYS AS (qty * unit_price) ___
+          );
+        answers:
+          - ["IDENTITY", "identity"]
+          - ["STORED", "stored"]
+        explanation: |
+          `AS IDENTITY` makes the database count the numbers. `STORED` at the end saves the calculated total with
+          each row. Without it, PostgreSQL 18 would calculate the total every time it is read.
+
+      - type: parsons
+        id: m13-l05-o1
+        prompt: |
+          Put the lines in order to create a `tickets` table, add one ticket with its title, and read the table.
+          Leave out the line that tries to type a ticket number by hand.
+        lines:
+          - "CREATE TABLE tickets ("
+          - "    ticket_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+          - "    title text"
+          - ");"
+          - "INSERT INTO tickets (title) VALUES ('Lamp');"
+          - "SELECT ticket_id, title FROM tickets;"
+        distractors:
+          - "INSERT INTO tickets (ticket_id, title) VALUES (5, 'Door');"
+        explanation: |
+          The table must exist before you insert, and the insert must come before the `SELECT`. Writing `5` into an
+          `ALWAYS` identity column would be refused, so that line does not belong in the script.
+
+      - type: exercise
+        id: m13-l05-e1
+        title: A numbered visit log
+        difficulty: 1
+        prompt: |
+          Create a table `visits` with two columns, **in this order**:
+
+          1. `visit_id` — `integer`, an identity column that is `GENERATED ALWAYS`, and the primary key
+          2. `visitor_name` — `text`
+
+          The check looks at the columns and tells you whether each one is an identity.
+        starter: |
+          CREATE TABLE visits (
+              visit_id integer,
+              visitor_name text
+          );
+        solution: |
+          CREATE TABLE visits (
+              visit_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              visitor_name text
+          );
+        check: |
+          SELECT column_name,
+                 data_type,
+                 identity_generation
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'visits'
+          ORDER BY ordinal_position;
+        hints:
+          - Add `GENERATED ALWAYS AS IDENTITY` after the type of `visit_id`.
+          - "The words go after `integer` and before `PRIMARY KEY`."
+          - "visit_id integer GENERATED ALWAYS AS ___ PRIMARY KEY"
+        explanation: |
+          The `identity_generation` column reads `ALWAYS` for `visit_id`, and nothing for the text column. The
+          database now numbers every visit for you.
+
+      - type: exercise
+        id: m13-l05-e2
+        title: The total that calculates itself
+        difficulty: 2
+        prompt: |
+          Create a table `order_lines` with these columns, **in this order**:
+
+          1. `line_id` — `integer`, an identity that is `GENERATED ALWAYS`, and the primary key
+          2. `qty` — `integer`
+          3. `unit_price` — `numeric(6,2)`
+          4. `total` — `numeric(8,2)`, calculated as `qty * unit_price` and **stored**
+
+          The check adds two lines and then shows each total, plus which column is stored.
+        starter: |
+          CREATE TABLE order_lines (
+              line_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              qty integer,
+              unit_price numeric(6,2),
+              total numeric(8,2)
+          );
+        solution: |
+          CREATE TABLE order_lines (
+              line_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              qty integer,
+              unit_price numeric(6,2),
+              total numeric(8,2)
+                  GENERATED ALWAYS AS (qty * unit_price) STORED
+          );
+        check: |
+          INSERT INTO order_lines (qty, unit_price)
+          VALUES (3, 4.50), (2, 10.00);
+
+          SELECT line_id::text || ' total ' || total::text
+          FROM order_lines
+          UNION ALL
+          SELECT attname::text || ' generated ' || attgenerated::text
+          FROM pg_attribute
+          WHERE attrelid = 'order_lines'::regclass
+            AND attgenerated <> ''
+          ORDER BY 1;
+        hints:
+          - Your `starter` has the right columns. Only the `total` line needs the calculation.
+          - "After `numeric(8,2)`, write `GENERATED ALWAYS AS` and the formula in brackets."
+          - "total numeric(8,2) GENERATED ALWAYS AS (___ * ___) ___"
+        explanation: |
+          The total is written by the database, never by you. The word `STORED` at the end keeps the total saved
+          with each row. The check confirms it: the flag `s` means stored.
+
+      - type: exercise
+        id: m13-l05-e3
+        title: Guests with random ids
+        difficulty: 2
+        prompt: |
+          Create a table `guests` with these columns, **in this order**:
+
+          1. `guest_id` — `uuid`, the primary key. When a row is added without an id, it should get a random
+             UUID from `gen_random_uuid()`.
+          2. `guest_name` — `text`
+
+          The check adds one guest and shows the length and the type of the id. It does not show the random
+          value itself.
+        starter: |
+          CREATE TABLE guests (
+              guest_id uuid,
+              guest_name text
+          );
+        solution: |
+          CREATE TABLE guests (
+              guest_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+              guest_name text
+          );
+        check: |
+          INSERT INTO guests (guest_name) VALUES ('Ana');
+
+          SELECT length(guest_id::text) AS id_length,
+                 pg_typeof(guest_id)::text AS id_type,
+                 guest_name
+          FROM guests;
+        hints:
+          - The starter has the right columns. The id needs a `PRIMARY KEY` and a `DEFAULT`.
+          - "A default is written after the type: `DEFAULT gen_random_uuid()`."
+          - "guest_id uuid PRIMARY KEY ___ gen_random_uuid(),"
+        explanation: |
+          `DEFAULT gen_random_uuid()` gives every new guest a fresh random code. The check does not show the code
+          itself, because it changes every time. It shows that the code is 36 characters and of type `uuid`.
+
+      - type: exercise
+        id: m13-l05-e4
+        title: Shipments with a custom counter
+        difficulty: 3
+        prompt: |
+          Create a table `shipments` with these columns, **in this order**:
+
+          1. `shipment_id` — `integer`, the primary key. It is an identity that is `GENERATED ALWAYS`, starts at
+             `100` and goes up by `10` each time (`START WITH 100 INCREMENT BY 10`).
+          2. `amount` — `numeric(8,2)`
+          3. `with_vat` — `numeric(8,2)`, calculated as `amount * 1.2` and **stored**
+
+          The check adds two shipments and shows them.
+        starter: |
+          CREATE TABLE shipments (
+              shipment_id integer PRIMARY KEY,
+              amount numeric(8,2),
+              with_vat numeric(8,2)
+          );
+        solution: |
+          CREATE TABLE shipments (
+              shipment_id integer GENERATED ALWAYS
+                  AS IDENTITY (START WITH 100 INCREMENT BY 10)
+                  PRIMARY KEY,
+              amount numeric(8,2),
+              with_vat numeric(8,2)
+                  GENERATED ALWAYS AS (amount * 1.2) STORED
+          );
+        check: |
+          INSERT INTO shipments (amount)
+          VALUES (10.00), (25.50);
+
+          SELECT shipment_id, amount, with_vat
+          FROM shipments
+          ORDER BY shipment_id;
+        hints:
+          - Combine two ideas from this lesson, one on each of the two columns that need it.
+          - "The identity options go in brackets after `AS IDENTITY`: `(START WITH 100 INCREMENT BY 10)`."
+          - "with_vat numeric(8,2) GENERATED ALWAYS AS (amount ___ 1.2) ___"
+        explanation: |
+          The first shipment gets id `100`, the second gets `110`. Each `with_vat` is the amount times 1.2, so
+          `10.00` becomes `12.00` and `25.50` becomes `30.60`. You never typed either total.
+
+    cheatsheet:
+      - title: Automatic numbers
+        sql: |
+          CREATE TABLE tickets (
+              ticket_id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+              title text
+          );
+        note: "The database numbers each new row. Don't type the id."
+      - title: A counter you can ask for numbers
+        sql: |
+          CREATE SEQUENCE invoice_seq START WITH 100;
+          SELECT nextval('invoice_seq');
+        note: "Each call gives the next number. Numbers can skip, and that is normal."
+      - title: A calculated column
+        sql: |
+          total numeric(8,2)
+              GENERATED ALWAYS AS (qty * unit_price) STORED
+        note: "STORED saves the result with the row. You cannot type into it."
+      - title: A random unique id
+        sql: |
+          guest_id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+        note: "UUIDs are unique without asking the database, but they are long and random."
+
+  - id: m13-l06
+    title: Normalization — splitting the messy sheet
+    summary: Find the repeated facts in a spreadsheet-style table and split it into clean, linked tables.
+    minutes: 35
+    steps:
+      - type: read
+        title: One big spreadsheet
+        md: |
+          Before Maya had a database, she kept every order on one big spreadsheet. Each row is one line of one order,
+          so the same customer and the same plant appear again and again. Here is the sheet, built as a table:
+
+          ```sql
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+          ```
+
+          It works, but it hides trouble. Designing a good database means asking: **"Is each fact stored in
+          exactly one place?"** The process of answering that is called **normalization**.
+
+      - type: example
+        title: The sheet, filled in
+        md: |
+          Four rows, filled in the way Maya typed them. Look at what repeats.
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          SELECT * FROM shop_sheet ORDER BY order_id;
+        after: |
+          Ana's name and city are typed three times. The price of a Fern is typed twice. Every repeat is a chance
+          for a typo, and a chance for one copy to change while the others stay the same.
+
+      - type: example
+        title: The update anomaly
+        md: |
+          Ana moves from Lisbon to Porto. Maya updates **one** row of the sheet, and forgets the other rows.
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          UPDATE shop_sheet
+          SET customer_city = 'Porto'
+          WHERE order_id = 1;
+
+          SELECT DISTINCT customer_email, customer_city
+          FROM shop_sheet
+          ORDER BY customer_city;
+        after: |
+          Ana now appears in **two** cities at once: Lisbon and Porto. Nothing stopped the half-finished change,
+          because the table has no way to know that all of Ana's rows should match. This is an **update anomaly**.
+
+      - type: read
+        title: The three normal forms
+        md: |
+          Normalization is a set of rules, one step at a time. You do not need to memorize their names. You need the
+          question behind each one:
+
+          - **First normal form (1NF)**: is every cell holding **one** value? A cell that says `Fern, Monstera` breaks this.
+          - **Second normal form (2NF)**: does every non-key column depend on the **whole** key? Here the key is
+            (`order_id`, `plant_name`), so a column that depends only on `plant_name` is in the wrong table.
+          - **Third normal form (3NF)**: does every non-key column depend **only on the key**, and not on another
+            non-key column? A customer's city depends on the customer, not on the order.
+
+          > [!ANALOGY]
+          > A recipe card that also has the phone number of the supplier, written on every card. Put the supplier
+          > on its own card, and the recipe cards just point to it.
+
+      - type: quiz
+        id: m13-l06-q1
+        question: |
+          Which table breaks the **first normal form** (every cell holds one value)?
+        options:
+          - "A table with one row for each order line"
+          - "A table where one cell holds the text 'Fern, Monstera'"
+          - "A table where two customers share the same city"
+          - "A table with a primary key on order_id"
+        answer: 1
+        explanation: |
+          A cell with two plants in it cannot be counted, filtered or joined properly. Split the values into
+          separate rows, one value per cell. The other options are normal: repeated cities and keys are fine when
+          they are needed.
+
+      - type: example
+        title: 2NF — move the plant prices to their own table
+        md: |
+          The price of a Fern depends only on the plant, not on the order. So plants get their own table, with
+          each plant listed **once**. `DISTINCT` removes the repeats while copying.
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          CREATE TABLE plants AS
+          SELECT DISTINCT plant_name, plant_price
+          FROM shop_sheet;
+
+          ALTER TABLE plants ADD PRIMARY KEY (plant_name);
+
+          SELECT * FROM plants ORDER BY plant_name;
+        after: |
+          Three plants, each listed once: Cactus 8.00, Fern 12.00 and Monstera 24.50. The two Fern rows on the sheet
+          became one. `CREATE TABLE ... AS SELECT` builds a table from a query's result, and `ALTER TABLE ... ADD
+          PRIMARY KEY` gives it the rule from the constraints lesson.
+
+      - type: read
+        title: 3NF — customers get their own table
+        md: |
+          Look at `customer_city`. It depends on the **customer** (Ana lives in Lisbon), not on the order. So
+          customers move to their own table, one row per customer. The customer's email is the key, because it
+          identifies one person.
+
+      - type: example
+        title: 3NF — customers, listed once
+        md: |
+          The same copy-and-remove-repeats trick, this time for customers. Each customer's name and city are kept
+          once.
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          CREATE TABLE customers AS
+          SELECT DISTINCT customer_email, customer_name, customer_city
+          FROM shop_sheet;
+
+          ALTER TABLE customers ADD PRIMARY KEY (customer_email);
+
+          SELECT * FROM customers ORDER BY customer_email;
+        after: |
+          Two customers, each with one name and one city. Ana's city is now stored in exactly one row, so the update
+          anomaly from earlier cannot happen.
+
+      - type: example
+        title: The finished design, joined back together
+        md: |
+          Now the whole design: `customers`, `plants`, `orders` (who ordered) and `order_lines` (what was in each
+          order). Each fact is stored once. The final `SELECT` puts the pieces back together with `JOIN`.
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          CREATE TABLE customers AS
+          SELECT DISTINCT customer_email, customer_name, customer_city
+          FROM shop_sheet;
+          ALTER TABLE customers ADD PRIMARY KEY (customer_email);
+
+          CREATE TABLE plants AS
+          SELECT DISTINCT plant_name, plant_price FROM shop_sheet;
+          ALTER TABLE plants ADD PRIMARY KEY (plant_name);
+
+          CREATE TABLE orders AS
+          SELECT DISTINCT order_id, customer_email FROM shop_sheet;
+          ALTER TABLE orders ADD PRIMARY KEY (order_id);
+
+          CREATE TABLE order_lines AS
+          SELECT order_id, plant_name, quantity FROM shop_sheet;
+          ALTER TABLE order_lines ADD PRIMARY KEY (order_id, plant_name);
+
+          SELECT o.order_id, c.customer_name,
+                 ol.plant_name, ol.quantity
+          FROM orders AS o
+          JOIN customers AS c
+              ON c.customer_email = o.customer_email
+          JOIN order_lines AS ol
+              ON ol.order_id = o.order_id
+          ORDER BY o.order_id, ol.plant_name;
+        after: |
+          Four rows, exactly like the original sheet, but now each fact lives in one place. Foreign keys linking the
+          tables (from the earlier lesson) can be added to protect those links; the exercises below do that.
+
+      - type: read
+        title: When to break the rules on purpose
+        md: |
+          A fully normalized design is clean, but a report that joins five tables can be slow. Sometimes an analyst
+          copies a value on purpose, such as a customer's name stored on every order for a monthly report. That is
+          called **denormalizing**.
+
+          It is fine when you choose it knowingly, and when one place remains responsible for keeping the copies right.
+
+          > [!MISTAKE]
+          > Denormalizing because it feels easier at the start. Each copy you add is another value that can drift
+          > apart later. Normalize first, and copy only for a reason you can name.
+
+      - type: predict
+        id: m13-l06-p1
+        question: |
+          After only one row is changed, how many different cities does Ana have on the sheet?
+        sql: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_city text
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Lisbon'),
+              (3, 'ana@x.com', 'Lisbon');
+
+          UPDATE shop_sheet
+          SET customer_city = 'Porto'
+          WHERE order_id = 1;
+
+          SELECT COUNT(DISTINCT customer_city)
+          FROM shop_sheet
+          WHERE customer_email = 'ana@x.com';
+        options: ["1", "2", "0", "An error"]
+        answer: 1
+        explanation: |
+          The update changed only order 1, so the sheet now holds both `Porto` and `Lisbon` for Ana. Two different
+          values: this is the update anomaly again. In a normalized design the city is stored once, so this could
+          not happen.
+
+      - type: fill
+        id: m13-l06-f1
+        prompt: |
+          Build the `customers` table from the sheet, with one row per customer, then make `customer_email` its
+          primary key.
+        template: |
+          CREATE TABLE shop_sheet (
+              customer_email text,
+              customer_city text
+          );
+
+          INSERT INTO shop_sheet VALUES
+              ('ana@x.com', 'Lisbon'),
+              ('ana@x.com', 'Lisbon'),
+              ('ben@x.com', 'Porto');
+
+          CREATE TABLE customers AS
+          SELECT ___ customer_email, customer_city
+          FROM shop_sheet;
+
+          ALTER TABLE customers ADD ___ KEY (customer_email);
+        answers:
+          - ["DISTINCT", "distinct"]
+          - ["PRIMARY", "primary"]
+        explanation: |
+          `SELECT DISTINCT` copies each combination once, so Ana appears only one time. The primary key is then added
+          to the finished table, with `ADD PRIMARY KEY`.
+
+      - type: parsons
+        id: m13-l06-o1
+        prompt: |
+          Put the lines in order to make a `plants` table with one row per plant, and give it a primary key. Leave
+          out the line that deletes the whole sheet.
+        lines:
+          - "CREATE TABLE shop_sheet (order_id integer, plant_name text, plant_price numeric(6,2));"
+          - "INSERT INTO shop_sheet VALUES (1, 'Fern', 12.00), (2, 'Fern', 12.00), (2, 'Cactus', 8.00);"
+          - "CREATE TABLE plants AS"
+          - "SELECT DISTINCT plant_name, plant_price FROM shop_sheet;"
+          - "ALTER TABLE plants ADD PRIMARY KEY (plant_name);"
+        distractors:
+          - "DROP TABLE shop_sheet;"
+        explanation: |
+          The sheet must exist and be filled before you copy from it. The copy is made before the primary key is
+          added, because a primary key can only be added to a table that already has its rows. Dropping the sheet
+          would throw away the source data, so that line never belongs here.
+
+      - type: exercise
+        id: m13-l06-e1
+        title: One row per customer
+        difficulty: 1
+        setup: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+        prompt: |
+          The `shop_sheet` table already holds the sample orders. Create a table `customers` with one row per
+          customer. Use these columns, **in this order**: `customer_email`, `customer_name`, `customer_city`.
+        starter: |
+          CREATE TABLE customers AS
+          SELECT ___
+          FROM shop_sheet;
+        solution: |
+          CREATE TABLE customers AS
+          SELECT DISTINCT customer_email, customer_name, customer_city
+          FROM shop_sheet;
+        check: |
+          SELECT * FROM customers ORDER BY customer_email;
+        hints:
+          - You need the three customer columns, and each customer should appear only once.
+          - "`SELECT DISTINCT` removes repeated rows."
+          - "CREATE TABLE customers AS SELECT DISTINCT ___ FROM shop_sheet;"
+        explanation: |
+          `DISTINCT` applies to the whole row, so each combination of email, name and city appears once. Ana's
+          three sheet rows become one. Two customers remain.
+
+      - type: exercise
+        id: m13-l06-e2
+        title: One row per plant
+        difficulty: 2
+        setup: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+        prompt: |
+          Create a table `plants` with one row per plant, using the columns `plant_name` and `plant_price`, in
+          that order. Make `plant_name` the primary key.
+
+          The check shows the key rule and the rows.
+        starter: |
+          CREATE TABLE plants AS
+          SELECT plant_name, plant_price
+          FROM shop_sheet;
+        solution: |
+          CREATE TABLE plants AS
+          SELECT DISTINCT plant_name, plant_price
+          FROM shop_sheet;
+
+          ALTER TABLE plants ADD PRIMARY KEY (plant_name);
+        check: |
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'plants'::regclass
+            AND contype = 'p'
+          UNION ALL
+          SELECT plant_name || ' ' || plant_price::text
+          FROM plants
+          ORDER BY 1;
+        hints:
+          - The starter copies all four sheet rows. Only one plant should appear each time.
+          - "Add `DISTINCT` after `SELECT`, then give the table a key on its own line."
+          - "ALTER TABLE plants ADD ___ KEY (plant_name);"
+        explanation: |
+          Four sheet rows become three plants, because the Fern appears twice. The `ADD PRIMARY KEY` line makes sure
+          no plant can appear twice again in the future.
+
+      - type: exercise
+        id: m13-l06-e3
+        title: The order lines
+        difficulty: 2
+        setup: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+        prompt: |
+          Create a table `order_lines` with the columns `order_id`, `plant_name` and `quantity`, in that order.
+          One order can contain several plants, and one plant appears at most once per order, so make the pair
+          (`order_id`, `plant_name`) the primary key.
+        starter: |
+          CREATE TABLE order_lines AS
+          SELECT order_id, plant_name, quantity
+          FROM shop_sheet;
+        solution: |
+          CREATE TABLE order_lines AS
+          SELECT order_id, plant_name, quantity
+          FROM shop_sheet;
+
+          ALTER TABLE order_lines
+              ADD PRIMARY KEY (order_id, plant_name);
+        check: |
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'order_lines'::regclass
+            AND contype = 'p'
+          UNION ALL
+          SELECT order_id::text || ' ' || plant_name
+                 || ' x' || quantity::text
+          FROM order_lines
+          ORDER BY 1;
+        hints:
+          - The starter is nearly right. What is missing is the key.
+          - "Add one more statement after the `CREATE TABLE`, using `ALTER TABLE order_lines ADD PRIMARY KEY`."
+          - "ALTER TABLE order_lines ADD PRIMARY KEY (___, ___);"
+        explanation: |
+          A composite key uses two columns together. Order 1 may contain Fern and Monstera, and order 2 may contain
+          Fern too. Only the pair must be unique, so the key is (`order_id`, `plant_name`).
+          The check lists the key and the four lines.
+
+      - type: exercise
+        id: m13-l06-e4
+        title: Link the orders to the customers
+        difficulty: 3
+        setup: |
+          CREATE TABLE shop_sheet (
+              order_id integer,
+              customer_email text,
+              customer_name text,
+              customer_city text,
+              plant_name text,
+              plant_price numeric(6,2),
+              quantity integer
+          );
+
+          INSERT INTO shop_sheet VALUES
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Fern', 12.00, 2),
+              (1, 'ana@x.com', 'Ana', 'Lisbon', 'Monstera', 24.50, 1),
+              (2, 'ben@x.com', 'Ben', 'Porto', 'Fern', 12.00, 1),
+              (3, 'ana@x.com', 'Ana', 'Lisbon', 'Cactus', 8.00, 3);
+
+          CREATE TABLE customers AS
+          SELECT DISTINCT customer_email, customer_name, customer_city
+          FROM shop_sheet;
+          ALTER TABLE customers ADD PRIMARY KEY (customer_email);
+        prompt: |
+          The `customers` table already exists, with `customer_email` as its primary key. Now create `orders`:
+
+          1. Build `orders` with the columns `order_id` and `customer_email`, one row per order.
+          2. Make `order_id` the primary key.
+          3. Make `customer_email` a foreign key that references `customers (customer_email)`.
+        starter: |
+          CREATE TABLE orders AS
+          SELECT order_id, customer_email
+          FROM shop_sheet;
+        solution: |
+          CREATE TABLE orders AS
+          SELECT DISTINCT order_id, customer_email
+          FROM shop_sheet;
+
+          ALTER TABLE orders ADD PRIMARY KEY (order_id);
+
+          ALTER TABLE orders
+              ADD FOREIGN KEY (customer_email)
+              REFERENCES customers (customer_email);
+        check: |
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'orders'::regclass
+            AND contype IN ('p', 'f')
+          UNION ALL
+          SELECT order_id::text || ' for ' || customer_email
+          FROM orders
+          ORDER BY 1;
+        hints:
+          - Start with `DISTINCT`, so that each order appears once instead of once per plant.
+          - "After the table is built, add two rules with `ALTER TABLE orders ADD ...`."
+          - "ADD FOREIGN KEY (customer_email) REFERENCES ___ (___)"
+        explanation: |
+          `DISTINCT` gives one row per order. The foreign key stops an order from pointing at a customer who does
+          not exist, the same protection you learned in the foreign keys lesson. The check shows the two rules and
+          the three orders.
+
+    cheatsheet:
+      - title: Copy a table from a query
+        sql: |
+          CREATE TABLE customers AS
+          SELECT DISTINCT customer_email, customer_name, customer_city
+          FROM shop_sheet;
+        note: "DISTINCT keeps each combination once. Add the key afterwards."
+      - title: Add a key after copying
+        sql: |
+          ALTER TABLE customers ADD PRIMARY KEY (customer_email);
+          ALTER TABLE orders ADD FOREIGN KEY (customer_email)
+              REFERENCES customers (customer_email);
+        note: "A table built with AS does not get keys automatically."
+      - title: The normal form questions
+        sql: |
+          1NF: one value per cell
+          2NF: depends on the WHOLE key
+          3NF: depends ONLY on the key, not on other columns
+        note: "Ask: is this fact stored in exactly one place?"
+      - title: Pieces back together
+        sql: |
+          SELECT o.order_id, c.customer_name, ol.plant_name
+          FROM orders AS o
+          JOIN customers AS c
+              ON c.customer_email = o.customer_email
+          JOIN order_lines AS ol
+              ON ol.order_id = o.order_id;
+        note: "Joins rebuild the original view without repeating the data."
+
+  - id: m13-l07
+    title: Modeling relationships — one-to-one, one-to-many, many-to-many
+    summary: Decide how tables connect by asking how many of each thing can belong to the other.
+    minutes: 35
+    steps:
+      - type: read
+        title: Ravi's library needs a design
+        md: |
+          Ravi runs a small community library. He describes what it must remember in plain words:
+
+          - each **member** can borrow many books over time,
+          - each member has **at most one** library card,
+          - a **book** can be written by **several authors**, and an author can write **several books**.
+
+          Designing a database starts here: turn those sentences into tables and links. Every link between two
+          tables is called a **relationship**, and the way to describe it is by counting: *how many of this can
+          belong to one of that?*
+
+      - type: read
+        title: Three kinds of relationship
+        md: |
+          | Kind | Question to ask | Example | How to build it |
+          |---|---|---|---|
+          | **One-to-many** | One member, how many loans? *Many.* | `members` to `loans` | Foreign key in the **many** side |
+          | **One-to-one** | One member, how many cards? *At most one.* | `members` to `library_cards` | Primary key that is also a foreign key |
+          | **Many-to-many** | One book, how many authors? *Many.* One author, how many books? *Many.* | `books` and `authors` | A **junction table** in the middle |
+
+          > [!ANALOGY]
+          > A school. One class has many students: each student record points at their class. Each student has one
+          > locker: the locker record points at the student, once. Students take many subjects, and subjects have
+          > many students: a sign-up sheet links the two lists.
+
+      - type: read
+        title: One-to-many, the foreign key sits on the many side
+        md: |
+          A member has many loans, and each loan belongs to one member. So the `loans` table carries the foreign key
+          `member_id`, pointing back to `members`. Nothing is needed in `members` itself.
+
+          The parent is the "one" side (`members`), and the child is the "many" side (`loans`). Remember the rule
+          from the foreign keys lesson: the parent is created first.
+
+      - type: example
+        title: One member, many loans
+        md: |
+          Two members, three loans. Each loan points at its member. Then we count the loans for each person.
+        sql: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text
+          );
+
+          CREATE TABLE loans (
+              loan_id integer PRIMARY KEY,
+              member_id integer REFERENCES members (member_id),
+              book_title text,
+              loaned_on date
+          );
+
+          INSERT INTO members VALUES (1, 'Ana'), (2, 'Ben');
+          INSERT INTO loans VALUES
+              (100, 1, 'Dune', '2025-03-01'),
+              (101, 1, 'Earthsea', '2025-03-05'),
+              (102, 2, 'Dune', '2025-03-02');
+
+          SELECT m.full_name, COUNT(*) AS loans
+          FROM members AS m
+          JOIN loans AS l ON l.member_id = m.member_id
+          GROUP BY m.full_name
+          ORDER BY m.full_name;
+        after: |
+          Ana has 2 loans and Ben has 1. The loans point at members, so there is never a loan without a member.
+          Notice that `members` did not change at all to make room for loans.
+
+      - type: read
+        title: One-to-one, the key is shared
+        md: |
+          A library card belongs to **one** member, and each member has **at most one** card. One way to say that:
+          make the card's table use `member_id` as **its own primary key**, and also as a foreign key to `members`.
+
+          The primary key already means "unique". Since each card row must have a different `member_id`, a member
+          can have at most one card.
+
+      - type: example
+        title: Refused — a second card for the same member
+        md: |
+          Ana already has card `C-1001`. Ravi tries to give her a second card.
+        sql: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text
+          );
+
+          CREATE TABLE library_cards (
+              member_id integer PRIMARY KEY
+                  REFERENCES members (member_id),
+              card_number text UNIQUE
+          );
+
+          INSERT INTO members VALUES (1, 'Ana');
+          INSERT INTO library_cards VALUES (1, 'C-1001');
+          INSERT INTO library_cards VALUES (1, 'C-1002');
+        expectError: true
+        after: |
+          *duplicate key value violates unique constraint "library_cards_pkey"*. The second card would reuse
+          `member_id` 1, so it is refused. That primary key is what makes the relationship one-to-one.
+
+      - type: read
+        title: Many-to-many needs a junction table
+        md: |
+          A book has several authors, and an author has several books. You cannot store that with one foreign key on
+          either side: a `book` would need many `author_id` values, and an author would need many `book_id` values.
+
+          The answer is a third table, a **junction table**, with one row for **each pair** that belongs together.
+          Its primary key is the pair of ids. It is also the foreign key to both tables.
+
+          ```sql
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+          ```
+
+      - type: example
+        title: Many-to-many with a junction table
+        md: |
+          Good Omens was written by two authors. Earthsea has one. A junction row for each pair records it all.
+        sql: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+
+          INSERT INTO authors VALUES (1, 'Le Guin'), (3, 'Pratchett'), (4, 'Gaiman');
+          INSERT INTO books VALUES (10, 'Earthsea'), (12, 'Good Omens');
+          INSERT INTO book_authors VALUES (10, 1), (12, 3), (12, 4);
+
+          SELECT b.title, a.name
+          FROM book_authors AS ba
+          JOIN books AS b ON b.book_id = ba.book_id
+          JOIN authors AS a ON a.author_id = ba.author_id
+          ORDER BY b.title, a.name;
+        after: |
+          Three rows, one per pair: *Earthsea by Le Guin*, *Good Omens by Gaiman* and *Good Omens by Pratchett*.
+          The junction table gives each book as many authors as it needs, with no repeated data.
+
+      - type: example
+        title: Refused — the same pair twice
+        md: |
+          A pair (book, author) may only be listed once. Now someone adds Le Guin to Earthsea a second time.
+        sql: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+
+          INSERT INTO authors VALUES (1, 'Le Guin');
+          INSERT INTO books VALUES (10, 'Earthsea');
+          INSERT INTO book_authors VALUES (10, 1);
+          INSERT INTO book_authors VALUES (10, 1);
+        expectError: true
+        after: |
+          *duplicate key value violates unique constraint "book_authors_pkey"*. The composite primary key is
+          checked as one value, so the pair (10, 1) can appear only once.
+
+      - type: read
+        title: Designing from a list of sentences
+        md: |
+          Here is a simple method you can repeat for any project:
+
+          1. **Nouns become tables.** Member, loan, book, author, card.
+          2. **"Has" and "belongs to" become relationships.** A loan belongs to a member.
+          3. **Count both ways** to choose the kind: one or many on each side.
+          4. **Put the key where the rule needs it:** a foreign key on the many side, a shared key for one-to-one, a
+             junction table for many-to-many.
+
+          > [!MISTAKE]
+          > Writing several authors into one cell, such as `Le Guin, Pratchett`. That breaks the first normal form from
+          > the last lesson, and searching for one author becomes guesswork. Use a junction table instead.
+
+      - type: quiz
+        id: m13-l07-q1
+        question: |
+          A book can have several authors, and an author can write several books. Which design is correct?
+        options:
+          - "Add an author_id column to the books table"
+          - "Add a junction table with book_id and author_id, and a primary key on both"
+          - "Store all the author names in one text column of books"
+          - "Make book_id the foreign key of authors"
+        answer: 1
+        explanation: |
+          A junction table has one row per (book, author) pair. The other options all force one side to hold many
+          values, which a single column cannot do properly.
+
+      - type: predict
+        id: m13-l07-p1
+        question: |
+          How many rows of `book_authors` have `author_id` 1 when the script finishes?
+        sql: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+
+          INSERT INTO authors VALUES (1, 'Le Guin'), (2, 'Herbert');
+          INSERT INTO books VALUES (10, 'Earthsea'), (11, 'Dune'), (12, 'Tehanu');
+          INSERT INTO book_authors VALUES (10, 1), (12, 1), (11, 2);
+
+          SELECT COUNT(*) FROM book_authors WHERE author_id = 1;
+        options: ["1", "2", "3", "An error"]
+        answer: 1
+        explanation: |
+          Le Guin (author 1) is linked to Earthsea and Tehanu, so two rows match. The Dune row belongs to author 2
+          and is not counted.
+
+      - type: fill
+        id: m13-l07-f1
+        prompt: |
+          Complete the junction table. Its primary key is the pair of ids, so both names go between the brackets.
+        template: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (___, ___)
+          );
+        answers:
+          - ["book_id"]
+          - ["author_id"]
+        explanation: |
+          `PRIMARY KEY (book_id, author_id)` means one row per pair. Using the names in this order keeps the
+          key easy to read, though `(author_id, book_id)` would work equally well.
+
+      - type: parsons
+        id: m13-l07-o1
+        prompt: |
+          Put the lines in order to create `members` and `library_cards` (one card per member), then add Ana with
+          card `C-1001`. Leave out the line that gives Ana a second card.
+        lines:
+          - "CREATE TABLE members (member_id integer PRIMARY KEY, full_name text);"
+          - "CREATE TABLE library_cards ("
+          - "    member_id integer PRIMARY KEY REFERENCES members (member_id),"
+          - "    card_number text UNIQUE"
+          - ");"
+          - "INSERT INTO members VALUES (1, 'Ana');"
+          - "INSERT INTO library_cards VALUES (1, 'C-1001');"
+        distractors:
+          - "INSERT INTO library_cards VALUES (1, 'C-1002');"
+        explanation: |
+          The parent table `members` is created first, then the card table that points at it, then the rows.
+          The second card for member 1 is not allowed in a one-to-one design, so that line does not belong.
+
+      - type: exercise
+        id: m13-l07-e1
+        title: Copies on a branch shelf
+        difficulty: 1
+        prompt: |
+          A library has branches, and each branch holds many book copies. Create:
+
+          1. `branches` with `branch_id` (`integer`, primary key) and `branch_name` (`text`).
+          2. `book_copies` with `copy_id` (`integer`, primary key), `title` (`text`) and `branch_id` (`integer`),
+             where `branch_id` **references** `branches (branch_id)`.
+        starter: |
+          CREATE TABLE branches (
+              branch_id integer PRIMARY KEY,
+              branch_name text
+          );
+
+          CREATE TABLE book_copies (
+              copy_id integer PRIMARY KEY,
+              title text,
+              branch_id integer
+          );
+        solution: |
+          CREATE TABLE branches (
+              branch_id integer PRIMARY KEY,
+              branch_name text
+          );
+
+          CREATE TABLE book_copies (
+              copy_id integer PRIMARY KEY,
+              title text,
+              branch_id integer REFERENCES branches (branch_id)
+          );
+        check: |
+          SELECT conrelid::regclass::text || ': '
+                 || pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE contype = 'f'
+          ORDER BY 1;
+        hints:
+          - This is a one-to-many link, so the foreign key goes on the `book_copies` side.
+          - "The `branch_id` line in `book_copies` needs `REFERENCES` and the parent in brackets."
+          - "branch_id integer ___ branches (branch_id)"
+        explanation: |
+          Many copies can point at one branch. The foreign key on `book_copies` is the "many" side, and `branches`
+          is the "one" side, created first.
+
+      - type: exercise
+        id: m13-l07-e2
+        title: One card per member
+        difficulty: 2
+        prompt: |
+          Create two tables, parent first:
+
+          1. `members` with `member_id` (`integer`, primary key) and `full_name` (`text`).
+          2. `library_cards` with `member_id` (`integer`) that is **both** the primary key and a foreign key to
+             `members (member_id)`, and `card_number` (`text`) that must be **unique**.
+
+          The check lists the rules on `library_cards`.
+        starter: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text
+          );
+
+          CREATE TABLE library_cards (
+              member_id integer,
+              card_number text
+          );
+        solution: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text
+          );
+
+          CREATE TABLE library_cards (
+              member_id integer PRIMARY KEY
+                  REFERENCES members (member_id),
+              card_number text UNIQUE
+          );
+        check: |
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'library_cards'::regclass
+            AND contype <> 'n'
+          ORDER BY 1;
+        hints:
+          - "The `member_id` line needs two rules: `PRIMARY KEY` and `REFERENCES`."
+          - "Write `PRIMARY KEY` and `REFERENCES members (member_id)` after `integer`."
+          - "card_number text ___"
+        explanation: |
+          Making `member_id` the primary key of the card table is what makes the link one-to-one. The `UNIQUE`
+          rule on `card_number` stops two members from sharing one card number.
+
+      - type: exercise
+        id: m13-l07-e3
+        title: Books with several authors
+        difficulty: 2
+        prompt: |
+          The library needs many-to-many links. Create:
+
+          1. `authors` with `author_id` (`integer`, primary key) and `name` (`text`).
+          2. `books` with `book_id` (`integer`, primary key) and `title` (`text`).
+          3. `book_authors` with `book_id` and `author_id` (both `integer`), where `book_id` references `books`,
+             `author_id` references `authors`, and the **pair** is the primary key.
+
+          Create the parent tables first.
+        starter: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer,
+              author_id integer
+          );
+        solution: |
+          CREATE TABLE authors (
+              author_id integer PRIMARY KEY,
+              name text
+          );
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+        check: |
+          INSERT INTO authors (author_id, name)
+          VALUES (1, 'Le Guin'), (2, 'Pratchett'), (3, 'Gaiman');
+
+          INSERT INTO books (book_id, title)
+          VALUES (10, 'Earthsea'), (12, 'Good Omens');
+
+          INSERT INTO book_authors (book_id, author_id)
+          VALUES (10, 1), (12, 2), (12, 3);
+
+          SELECT pg_get_constraintdef(oid)
+          FROM pg_constraint
+          WHERE conrelid = 'book_authors'::regclass
+            AND contype IN ('p', 'f')
+          UNION ALL
+          SELECT b.title || ' by ' || a.name
+          FROM book_authors AS ba
+          JOIN books AS b ON b.book_id = ba.book_id
+          JOIN authors AS a ON a.author_id = ba.author_id
+          ORDER BY 1;
+        hints:
+          - The starter is missing both foreign keys and the composite key on `book_authors`.
+          - "Put `REFERENCES` after each of the two id columns in `book_authors`."
+          - "Finish with a line `PRIMARY KEY (book_id, ___)`, after the two columns."
+        explanation: |
+          `book_authors` links the two sides. Each row is one (book, author) pair, and the pair is the key. The
+          check adds three pairs and shows the author of each book in the join.
+
+      - type: exercise
+        id: m13-l07-e4
+        title: Loans from requirements
+        difficulty: 3
+        setup: |
+          CREATE TABLE members (
+              member_id integer PRIMARY KEY,
+              full_name text
+          );
+
+          CREATE TABLE book_copies (
+              copy_id integer PRIMARY KEY,
+              title text
+          );
+
+          INSERT INTO members VALUES (1, 'Ana');
+          INSERT INTO book_copies VALUES (100, 'Dune');
+        prompt: |
+          The tables `members` and `book_copies` already exist. Ravi needs a `loans` table: one row each time a
+          member borrows a copy. Create `loans` with these columns, **in this order**:
+
+          1. `loan_id` — an identity that is `GENERATED ALWAYS` and the primary key
+          2. `member_id` — `integer`, which **references** `members (member_id)`
+          3. `copy_id` — `integer`, which **references** `book_copies (copy_id)`
+          4. `loaned_on` — `date`
+
+          The check adds one loan, then shows it in words.
+        starter: |
+          CREATE TABLE loans (
+              loan_id integer,
+              member_id integer,
+              copy_id integer,
+              loaned_on date
+          );
+        solution: |
+          CREATE TABLE loans (
+              loan_id integer GENERATED ALWAYS AS IDENTITY
+                  PRIMARY KEY,
+              member_id integer REFERENCES members (member_id),
+              copy_id integer REFERENCES book_copies (copy_id),
+              loaned_on date
+          );
+        check: |
+          INSERT INTO loans (member_id, copy_id, loaned_on)
+          VALUES (1, 100, '2025-03-01');
+
+          SELECT l.loan_id::text || ' | ' || m.full_name
+                 || ' borrowed ' || c.title
+                 || ' on ' || l.loaned_on::text
+          FROM loans AS l
+          JOIN members AS m ON m.member_id = l.member_id
+          JOIN book_copies AS c ON c.copy_id = l.copy_id;
+        hints:
+          - Each reference is a foreign key. Write `REFERENCES` after the two `integer` ids.
+          - The `loan_id` needs `GENERATED ALWAYS AS IDENTITY` and `PRIMARY KEY`, as you learned in the numbers lesson.
+          - "copy_id integer REFERENCES ___ (copy_id)"
+        explanation: |
+          `loans` is a one-to-many table on both sides: a member has many loans, and a copy can be borrowed many
+          times. Each loan carries two foreign keys, so it can only point at a real member and a real copy.
+
+    cheatsheet:
+      - title: One-to-many, the foreign key on the many side
+        sql: |
+          CREATE TABLE loans (
+              loan_id integer PRIMARY KEY,
+              member_id integer REFERENCES members (member_id)
+          );
+        note: "Many loans point at one member."
+      - title: One-to-one, a shared key
+        sql: |
+          CREATE TABLE library_cards (
+              member_id integer PRIMARY KEY
+                  REFERENCES members (member_id),
+              card_number text UNIQUE
+          );
+        note: "The primary key allows only one card per member."
+      - title: Many-to-many, a junction table
+        sql: |
+          CREATE TABLE book_authors (
+              book_id integer REFERENCES books (book_id),
+              author_id integer REFERENCES authors (author_id),
+              PRIMARY KEY (book_id, author_id)
+          );
+        note: "One row per (book, author) pair."
+
+  - id: m13-l08
+    title: Schemas, temporary tables & comments
+    summary: Keep a growing database tidy with folders (schemas), short-lived helper tables, notes and sensible names.
+    minutes: 25
+    steps:
+      - type: read
+        title: A database that keeps growing
+        md: |
+          Ravi's library database now has tables for loans, members, cards, branches, books and staff. A few
+          months later it will have many more. Three tools keep it manageable:
+
+          - **Schemas** group related tables into folders, such as `lending` for loans and `admin` for staff.
+          - **Temporary tables** hold a result for a moment and vanish when your session ends.
+          - **Comments** store a short note about what a table or column means, right inside the database.
+
+      - type: read
+        title: Schemas are folders for tables
+        md: |
+          A **schema** is a named group of tables. You write a table as `schema_name.table_name`, the way you would
+          give a file's folder and name. A new database starts with a schema called `public`, and every table you
+          have made so far in this course lives there.
+
+          ```sql
+          CREATE SCHEMA library;
+
+          CREATE TABLE library.books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+          ```
+
+      - type: example
+        title: A table inside its own folder
+        md: |
+          We create the `library` schema, put a `books` table inside it, add one book and read it back using the
+          full name `library.books`.
+        sql: |
+          CREATE SCHEMA library;
+
+          CREATE TABLE library.books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          INSERT INTO library.books VALUES (1, 'Dune');
+
+          SELECT * FROM library.books;
+        after: |
+          The table works exactly like any other. The only difference is its address: `library.books` tells
+          PostgreSQL which folder to look in.
+
+      - type: read
+        title: search_path, the list of folders to check
+        md: |
+          When you write only `books`, PostgreSQL checks the folders listed in **`search_path`** one by one, and uses
+          the first match. Look at the current list with `SHOW search_path;`. On a new database it is `public`.
+
+          You can change it for your session with `SET search_path TO library, public;`. Then `books` means
+          `library.books`. The change lasts until you disconnect; it does not change the database for anyone else.
+
+      - type: example
+        title: Using a shorter name with search_path
+        md: |
+          We put `library` first on the search path, create `books` without any prefix, and ask the catalog
+          which schema it landed in.
+        sql: |
+          CREATE SCHEMA library;
+
+          SET search_path TO library, public;
+
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          SELECT table_schema, table_name
+          FROM information_schema.tables
+          WHERE table_name = 'books';
+        after: |
+          The table is called `library.books`, even though we never typed `library`. The database took the first
+          folder on the list. Only type the short name when your search path is set the way you expect.
+
+          > [!TIP]
+          > When in doubt, write the full name, `library.books`. It always means the same table, whatever the search path is.
+
+      - type: read
+        title: Temporary tables, for a moment only
+        md: |
+          Sometimes you want a helper table for one job: a shortlist, an intermediate result, a scratch area. Add the
+          word **`TEMP`** after `CREATE`:
+
+          ```sql
+          CREATE TEMP TABLE long_books AS
+          SELECT title, pages FROM books WHERE pages > 300;
+          ```
+
+          A temporary table is visible only to **your session**. It disappears automatically when you disconnect, so
+          nothing is left behind in the real database.
+
+          > [!ANALOGY]
+          > A sticky note on your desk. It helps while you work, and you throw it away at the end of the day.
+
+      - type: example
+        title: A temporary shortlist
+        md: |
+          We keep a temporary list of the books longer than 300 pages and read from it.
+        sql: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              pages integer
+          );
+
+          INSERT INTO books VALUES
+              (1, 'Dune', 412),
+              (2, 'Earthsea', 183),
+              (3, 'Hyperion', 482);
+
+          CREATE TEMP TABLE long_books AS
+          SELECT title, pages
+          FROM books
+          WHERE pages > 300;
+
+          SELECT * FROM long_books ORDER BY title;
+        after: |
+          Two books are on the shortlist: *Dune* (412 pages) and *Hyperion* (482 pages). The real `books` table is
+          untouched, and `long_books` disappears when the session ends.
+
+      - type: read
+        title: Comments, notes that live with the table
+        md: |
+          `COMMENT ON` attaches a note to a table or a column. The note is stored in the database, so a colleague who
+          opens the table later can read what it means:
+
+          ```sql
+          COMMENT ON TABLE books IS 'One row per book we own';
+          COMMENT ON COLUMN books.pages IS 'Number of printed pages';
+          ```
+
+          You read a note back with `obj_description` for a table and `col_description` for a column, where the
+          number `3` means the third column.
+
+      - type: example
+        title: Notes for the table and its column
+        md: |
+          We attach a note to the `books` table and one to its `pages` column, then read both back.
+        sql: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              pages integer
+          );
+
+          COMMENT ON TABLE books IS 'One row per book we own';
+          COMMENT ON COLUMN books.pages IS 'Number of printed pages';
+
+          SELECT obj_description('books'::regclass, 'pg_class')
+                     AS table_note,
+                 col_description('books'::regclass, 3)
+                     AS pages_note;
+        after: |
+          One row shows both notes side by side: *One row per book we own* and *Number of printed pages*. Column 3
+          is `pages`, because it was the third column in the `CREATE TABLE`.
+
+      - type: read
+        title: Naming things well
+        md: |
+          Names are read far more often than they are written, so choose them with care:
+
+          | Good | Why |
+          |---|---|
+          | `loans`, `book_authors` | Plural nouns for tables; lowercase words joined with `_` |
+          | `member_id` | The same name for the same kind of id everywhere |
+          | `title`, `pages` | Short, plain and descriptive |
+          | `lending.loans` | A schema groups related tables |
+
+          Avoid words that PostgreSQL reserves for its own grammar, such as `order`, `user` or `table`.
+
+      - type: example
+        title: Refused — a reserved word as a table name
+        md: |
+          Ravi tries to call his table `order`, because it holds orders. That is a word PostgreSQL reserves for the
+          `ORDER BY` clause.
+        sql: |
+          CREATE TABLE order (
+              order_id integer PRIMARY KEY
+          );
+        expectError: true
+        after: |
+          *syntax error at or near "order"*. The fix is a clearer, plural name such as `orders`, which is accepted.
+
+          > [!MISTAKE]
+          > Wrapping the name in double quotes, such as `"order"`, to make the error go away. It works, but then you
+          > must add the quotes every time you use the table. Choosing a better name is simpler.
+
+      - type: quiz
+        id: m13-l08-q1
+        question: |
+          Which command creates a group of tables, like a folder?
+        options: ["CREATE SCHEMA", "CREATE TEMP TABLE", "COMMENT ON TABLE", "SET search_path"]
+        answer: 0
+        explanation: |
+          `CREATE SCHEMA` makes the folder. `CREATE TEMP TABLE` makes a short-lived table, `COMMENT ON` adds a note,
+          and `SET search_path` changes which folders are searched for short names.
+
+      - type: predict
+        id: m13-l08-p1
+        question: |
+          The `search_path` is changed to `library` before the last query. What does the final `SELECT` return?
+        sql: |
+          CREATE SCHEMA library;
+
+          CREATE TABLE library.books (
+              book_id integer,
+              title text
+          );
+
+          INSERT INTO library.books VALUES (1, 'Dune');
+
+          SET search_path TO library, public;
+
+          SELECT COUNT(*) FROM books;
+        options: ["0", "1", "An error: relation books does not exist", "2"]
+        answer: 1
+        explanation: |
+          With `library` first on the search path, `books` means `library.books`, which holds one row. The short
+          name works only because the search path includes `library`. Without that `SET`, the same query would
+          fail.
+
+      - type: fill
+        id: m13-l08-f1
+        prompt: |
+          Complete the script: create the folder, then attach a note to the `library.books` table.
+        template: |
+          CREATE ___ library;
+
+          CREATE TABLE library.books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+
+          COMMENT ON ___ library.books IS 'All books we own';
+        answers:
+          - ["SCHEMA", "schema"]
+          - ["TABLE", "table"]
+        explanation: |
+          `CREATE SCHEMA` makes the folder, and `COMMENT ON TABLE` attaches a note to a table. Each object type has its
+          own word after `COMMENT ON`, such as `COLUMN` or `VIEW`.
+
+      - type: parsons
+        id: m13-l08-o1
+        prompt: |
+          Put the lines in order to create the `library` schema, its `books` table with a note, and read the note
+          back. Leave out the line that uses the reserved word `order`.
+        lines:
+          - "CREATE SCHEMA library;"
+          - "CREATE TABLE library.books (book_id integer PRIMARY KEY, title text);"
+          - "COMMENT ON TABLE library.books IS 'Books we own';"
+          - "SELECT obj_description('library.books'::regclass, 'pg_class') AS note;"
+        distractors:
+          - "CREATE TABLE order (order_id integer);"
+        explanation: |
+          The folder must exist before the table, and the table before its note. The reserved word `order` cannot be
+          a table name without quotes, so that line does not belong in a clean script.
+
+      - type: exercise
+        id: m13-l08-e1
+        title: A table in a new folder
+        difficulty: 1
+        prompt: |
+          Create a schema called `lending`. Inside it, create a table `lending.loans` with two columns, **in this
+          order**: `loan_id` (`integer`, primary key) and `member_name` (`text`).
+        starter: |
+          CREATE TABLE loans (
+              loan_id integer PRIMARY KEY,
+              member_name text
+          );
+        solution: |
+          CREATE SCHEMA lending;
+
+          CREATE TABLE lending.loans (
+              loan_id integer PRIMARY KEY,
+              member_name text
+          );
+        check: |
+          SELECT table_schema,
+                 table_name,
+                 column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'lending'
+          ORDER BY table_name, ordinal_position;
+        hints:
+          - The starter puts `loans` in the default `public` folder. It needs to go in `lending`.
+          - "First `CREATE SCHEMA lending;`, then write the table name as `lending.loans`."
+          - "CREATE ___ lending;  CREATE TABLE lending.loans (...);"
+        explanation: |
+          `lending.loans` is the full address of the table. The check looks in the `lending` folder and finds the two
+          columns, `loan_id` and `member_name`.
+
+      - type: exercise
+        id: m13-l08-e2
+        title: A temporary shortlist
+        difficulty: 2
+        setup: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              pages integer
+          );
+
+          INSERT INTO books VALUES
+              (1, 'Dune', 412),
+              (2, 'Earthsea', 183),
+              (3, 'Hyperion', 482);
+        prompt: |
+          Create a **temporary** table named `long_books` (use `CREATE TEMP TABLE`). It holds the `title` and `pages`
+          of every book in `books` with more than 300 pages.
+        starter: |
+          CREATE TABLE long_books AS
+          SELECT title, pages
+          FROM books
+          WHERE pages > 300;
+        solution: |
+          CREATE TEMP TABLE long_books AS
+          SELECT title, pages
+          FROM books
+          WHERE pages > 300;
+        check: |
+          SELECT title || ' ' || pages::text
+          FROM long_books
+          UNION ALL
+          SELECT relname::text || ' is temp: '
+                 || (relpersistence = 't')::text
+          FROM pg_class
+          WHERE relname = 'long_books'
+          ORDER BY 1;
+        hints:
+          - The starter is almost right. The only missing word is about where the table lives.
+          - "The word `TEMP` goes between `CREATE` and `TABLE`."
+          - "CREATE ___ TABLE long_books AS ..."
+        explanation: |
+          `TEMP` makes the table exist only for this session. The check reads it back and shows the two books over
+          300 pages. Earthsea is left out, because 183 is not more than 300.
+
+      - type: exercise
+        id: m13-l08-e3
+        title: Notes for the team
+        difficulty: 2
+        prompt: |
+          Create a table `books` with `book_id` (`integer`, primary key), `title` (`text`) and `pages`
+          (`integer`). Then attach two notes, in this order:
+
+          1. A note to the `books` table: `One row per book we own`
+          2. A note to the `pages` column of `books`: `Number of printed pages`
+
+          The check reads both notes back.
+        starter: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              pages integer
+          );
+        solution: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              pages integer
+          );
+
+          COMMENT ON TABLE books IS 'One row per book we own';
+          COMMENT ON COLUMN books.pages IS 'Number of printed pages';
+        check: |
+          SELECT obj_description('books'::regclass, 'pg_class') AS note
+          UNION ALL
+          SELECT col_description('books'::regclass, 3) AS note
+          ORDER BY 1;
+        hints:
+          - Start with `COMMENT ON TABLE` for the first note, and `COMMENT ON COLUMN` for the second.
+          - "A column is written as `table.column`, so the second note is for `books.pages`."
+          - "COMMENT ON ___ books IS '...';"
+        explanation: |
+          `COMMENT ON` stores a note in the database. The check reads each one back. The number `3` in
+          `col_description` means the third column of `books`, which is `pages`.
+
+      - type: exercise
+        id: m13-l08-e4
+        title: An archive with a note
+        difficulty: 3
+        setup: |
+          CREATE TABLE books (
+              book_id integer PRIMARY KEY,
+              title text,
+              published_year integer
+          );
+
+          INSERT INTO books VALUES
+              (1, 'Dune', 1965),
+              (2, 'Earthsea', 1968),
+              (3, 'Frankenstein', 1818),
+              (4, 'Emma', 1815);
+        prompt: |
+          Ravi wants old books kept in their own folder:
+
+          1. Create the schema `archive`.
+          2. Create the table `archive.old_books` from `books`, with the columns `book_id` and `title` (in
+             that order), keeping only the books published **before 1900** (`published_year < 1900`).
+          3. Attach the note `Books published before 1900` to `archive.old_books`.
+
+          The check shows the note and the titles that the archive holds.
+        starter: |
+          CREATE SCHEMA archive;
+
+          CREATE TABLE archive.old_books AS
+          SELECT book_id, title
+          FROM books;
+        solution: |
+          CREATE SCHEMA archive;
+
+          CREATE TABLE archive.old_books AS
+          SELECT book_id, title
+          FROM books
+          WHERE published_year < 1900;
+
+          COMMENT ON TABLE archive.old_books
+              IS 'Books published before 1900';
+        check: |
+          SELECT obj_description('archive.old_books'::regclass, 'pg_class') AS note
+          UNION ALL
+          SELECT title FROM archive.old_books
+          ORDER BY 1;
+        hints:
+          - Your starter copies every book. Add a `WHERE` that keeps only the older ones.
+          - "The filter is `WHERE published_year < 1900`, and the note is added with `COMMENT ON TABLE`."
+          - "COMMENT ON TABLE archive.old_books IS '___';"
+        explanation: |
+          The archive keeps two books, `Frankenstein` and `Emma`. Each new table lives in the folder named in its full
+          address, and the note tells the next person what it holds.
+
+    cheatsheet:
+      - title: Create a schema and a table in it
+        sql: |
+          CREATE SCHEMA library;
+          CREATE TABLE library.books (
+              book_id integer PRIMARY KEY,
+              title text
+          );
+        note: "schema.table is the full address of a table."
+      - title: A temporary table
+        sql: |
+          CREATE TEMP TABLE long_books AS
+          SELECT title, pages FROM books WHERE pages > 300;
+        note: "Visible only in your session. It vanishes when you disconnect."
+      - title: Add and read notes
+        sql: |
+          COMMENT ON TABLE books IS 'One row per book we own';
+          COMMENT ON COLUMN books.pages IS 'Number of printed pages';
+
+          SELECT obj_description('books'::regclass, 'pg_class');
+        note: "Comments are stored in the database for everyone who reads it."
+      - title: Check the search path
+        sql: |
+          SHOW search_path;
+          SET search_path TO library, public;
+        note: "The search path decides which schema a short table name means."
+
 testPool:
   - type: quiz
     id: m13-t01
@@ -564,3 +3963,1416 @@ testPool:
     options: ["DML (changes rows)", "DDL (defines structure)", "A query", "A comment"]
     answer: 1
     explanation: "`CREATE`, `ALTER` and `DROP` are DDL — Data Definition Language — they define the structure."
+
+  - type: exercise
+    id: m13-t02
+    lesson: m13-l01
+    difficulty: 2
+    prompt: |
+      Create a table `recipes` with these columns, **in this order**:
+
+      - `recipe_id` — `integer`
+      - `title` — `varchar` with at most 60 characters
+      - `minutes` — `smallint`
+      - `is_vegetarian` — `boolean`
+    starter: |
+      CREATE TABLE recipes (
+          recipe_id integer,
+          title text,
+          minutes integer,
+          is_vegetarian text
+      );
+    solution: |
+      CREATE TABLE recipes (
+          recipe_id integer,
+          title varchar(60),
+          minutes smallint,
+          is_vegetarian boolean
+      );
+    check: |
+      SELECT attname AS column_name,
+             format_type(atttypid, atttypmod) AS data_type
+      FROM pg_attribute
+      WHERE attrelid = 'recipes'::regclass
+        AND attnum > 0 AND NOT attisdropped
+      ORDER BY attnum;
+    hints:
+      - Check each column's type in the list against your table.
+      - "`varchar(60)` needs the maximum length in brackets."
+      - "CREATE TABLE recipes (recipe_id integer, title varchar(___), minutes ___, is_vegetarian ___);"
+    explanation: |
+      `varchar(60)` says the title can be at most 60 characters. `smallint` is good for small whole numbers such as
+      cooking minutes, and `boolean` holds yes or no.
+
+  - type: fill
+    id: m13-t03
+    lesson: m13-l01
+    difficulty: 1
+    prompt: |
+      A shop stores each price with exact cents: 8 digits in total, 2 of them after the point. Fill in the type.
+    template: |
+      CREATE TABLE prices (
+          price_id integer,
+          amount ___(8,2)
+      );
+    answers:
+      - ["numeric", "decimal"]
+    explanation: |
+      `numeric(8,2)` keeps exact decimals. `decimal` is another name for the same type in PostgreSQL.
+
+  - type: fill
+    id: m13-t04
+    lesson: m13-l01
+    difficulty: 2
+    prompt: |
+      Fill in the types: a whole-number id, the day a task is due (no time), and the exact moment it was created,
+      with a time zone.
+    template: |
+      CREATE TABLE tasks (
+          task_id ___,
+          due_date ___,
+          created_at ___
+      );
+    answers:
+      - ["integer", "int"]
+      - ["date"]
+      - ["timestamptz", "timestamp with time zone"]
+    explanation: |
+      `date` for a calendar day, and `timestamptz` for an exact moment that remembers its time zone.
+
+  - type: exercise
+    id: m13-t05
+    lesson: m13-l02
+    difficulty: 2
+    prompt: |
+      Create a table `students` with these columns, **in this order**:
+
+      1. `student_id` — `integer`, the primary key
+      2. `email` — `text`, required, and no two students may share it
+      3. `grade` — `integer`, with the rule `CHECK (grade >= 0)`
+    starter: |
+      CREATE TABLE students (
+          student_id integer,
+          email text,
+          grade integer
+      );
+    solution: |
+      CREATE TABLE students (
+          student_id integer PRIMARY KEY,
+          email text NOT NULL UNIQUE,
+          grade integer CHECK (grade >= 0)
+      );
+    check: |
+      SELECT pg_get_constraintdef(oid)
+      FROM pg_constraint
+      WHERE conrelid = 'students'::regclass
+        AND contype <> 'n'
+      UNION ALL
+      SELECT column_name || ' nullable: ' || is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'students'
+      ORDER BY 1;
+    hints:
+      - Each rule goes right after its column's type, except the names are the same as in the list.
+      - "`email` needs two rules: `NOT NULL` and `UNIQUE`."
+      - "grade integer ___ (grade >= 0)"
+    explanation: |
+      `NOT NULL` makes the email required, `UNIQUE` stops duplicates, and `CHECK` refuses negative grades. The check
+      lists the rules that PostgreSQL stored, and the nullable flags.
+
+  - type: quiz
+    id: m13-t06
+    lesson: m13-l02
+    difficulty: 1
+    question: |
+      A `tickets` table has a `status` column. When an `INSERT` leaves `status` out, you want it to be `'pending'`.
+      Which rule does that?
+    options: ["CHECK (status = 'pending')", "DEFAULT 'pending'", "UNIQUE 'pending'", "NOT NULL 'pending'"]
+    answer: 1
+    explanation: |
+      `DEFAULT` fills the gap when no value is given. `CHECK` only refuses values that break a condition, and it
+      never fills anything in.
+
+  - type: predict
+    id: m13-t07
+    lesson: m13-l02
+    difficulty: 2
+    question: |
+      How many rows does `tasks` hold when the script finishes?
+    sql: |
+      CREATE TABLE tasks (
+          task_id integer PRIMARY KEY,
+          title text NOT NULL
+      );
+
+      INSERT INTO tasks VALUES (1, 'Sweep'), (2, NULL);
+
+      SELECT COUNT(*) FROM tasks;
+    options: ["2", "1", "0", "An error, and no rows are saved"]
+    answer: 3
+    expectError: true
+    explanation: |
+      Row 2 has an empty title, which `NOT NULL` refuses. A single `INSERT` is all or nothing, so row 1 is not saved
+      either, and the script stops at the error.
+
+  - type: parsons
+    id: m13-t08
+    lesson: m13-l02
+    difficulty: 2
+    prompt: |
+      Put the lines in order to create a `tickets` table where each `code` must be unique, and add one ticket.
+      One line does not belong in the script.
+    lines:
+      - "CREATE TABLE tickets ("
+      - "    ticket_id integer PRIMARY KEY,"
+      - "    code text UNIQUE"
+      - ");"
+      - "INSERT INTO tickets VALUES (1, 'T-100');"
+    distractors:
+      - "DELETE FROM tickets;"
+    explanation: |
+      The table is created first, with its rules, and then the row is added. Deleting the rows would undo the work,
+      so that line does not belong.
+
+  - type: exercise
+    id: m13-t09
+    lesson: m13-l03
+    difficulty: 2
+    prompt: |
+      Create two tables, parent first:
+
+      1. `teachers` with `teacher_id` (`integer`, primary key) and `full_name` (`text`).
+      2. `classes` with `class_id` (`integer`, primary key), `subject` (`text`) and `teacher_id` (`integer`) that
+         references `teachers (teacher_id)`. If a teacher is deleted, the class should stay and its `teacher_id`
+         should become `NULL`.
+    starter: |
+      CREATE TABLE teachers (
+          teacher_id integer PRIMARY KEY,
+          full_name text
+      );
+
+      CREATE TABLE classes (
+          class_id integer PRIMARY KEY,
+          subject text,
+          teacher_id integer
+      );
+    solution: |
+      CREATE TABLE teachers (
+          teacher_id integer PRIMARY KEY,
+          full_name text
+      );
+
+      CREATE TABLE classes (
+          class_id integer PRIMARY KEY,
+          subject text,
+          teacher_id integer
+              REFERENCES teachers (teacher_id)
+              ON DELETE SET NULL
+      );
+    check: |
+      SELECT pg_get_constraintdef(oid)
+      FROM pg_constraint
+      WHERE contype = 'f'
+      ORDER BY 1;
+    hints:
+      - The `teacher_id` line in `classes` needs a `REFERENCES` clause.
+      - "Add `ON DELETE` followed by the option that keeps the class and clears the link."
+      - "REFERENCES teachers (teacher_id) ON DELETE ___ ___"
+    explanation: |
+      `ON DELETE SET NULL` keeps the class and clears its link when the teacher goes. Without it, deleting a teacher
+      with classes would be refused.
+
+  - type: quiz
+    id: m13-t10
+    lesson: m13-l03
+    difficulty: 2
+    question: |
+      A `students` table has a `course_id` foreign key to `courses`, with no `ON DELETE` option written. You try to
+      `DELETE` a course that still has students. What happens?
+    options:
+      - "The students are deleted too"
+      - "Each student's course_id is set to NULL"
+      - "The delete is refused with an error"
+      - "The course is deleted and the foreign key is removed"
+    answer: 2
+    explanation: |
+      The default is `NO ACTION`, which refuses the delete while child rows still point at the course. The other
+      options describe `CASCADE` and `SET NULL`, which must be written on purpose.
+
+  - type: exercise
+    id: m13-t11
+    lesson: m13-l04
+    difficulty: 2
+    setup: |
+      CREATE TABLE members (
+          member_id integer PRIMARY KEY,
+          full_name text
+      );
+
+      INSERT INTO members VALUES (1, 'Ana'), (2, 'Ben');
+    prompt: |
+      The `members` table already exists with two rows. Make two changes, in this order:
+
+      1. Rename the column `full_name` to `name`.
+      2. Add a new column `email` (`text`) at the end of the table.
+
+      Keep the existing rows.
+    starter: |
+      ALTER TABLE members
+          RENAME COLUMN full_name TO name;
+    solution: |
+      ALTER TABLE members
+          RENAME COLUMN full_name TO name;
+
+      ALTER TABLE members
+          ADD COLUMN email text;
+    check: |
+      SELECT member_id, name, email
+      FROM members
+      ORDER BY member_id;
+    hints:
+      - The starter does the rename. It is missing the second change.
+      - "A new column uses `ALTER TABLE members ADD COLUMN ___ ___;`"
+      - "The new column is called `email`, and its type is `text`."
+    explanation: |
+      Renaming keeps the values, and adding a column leaves the existing rows in place. The new `email` column is
+      empty (`NULL`) for both members, because no value was given for it.
+
+  - type: predict
+    id: m13-t12
+    lesson: m13-l04
+    difficulty: 3
+    question: |
+      How many rows does `readings` hold when the script finishes?
+    sql: |
+      CREATE TABLE readings (
+          reading_id integer PRIMARY KEY,
+          value text
+      );
+
+      INSERT INTO readings VALUES (1, '42'), (2, 'n/a');
+
+      ALTER TABLE readings
+          ALTER COLUMN value TYPE integer USING value::integer;
+
+      SELECT COUNT(*) FROM readings;
+    options: ["2", "1", "0", "An error, and the column stays text"]
+    answer: 3
+    expectError: true
+    explanation: |
+      `'n/a'` cannot become an integer, so the `ALTER TABLE` fails. An `ALTER TABLE` is all or nothing, so the column
+      stays `text`, and the `SELECT` never runs.
+
+  - type: fill
+    id: m13-t13
+    lesson: m13-l04
+    difficulty: 1
+    prompt: |
+      Complete the script: remove the old `notes` column, then let `price` be empty again.
+    template: |
+      CREATE TABLE menu (
+          item_id integer PRIMARY KEY,
+          price numeric(6,2) NOT NULL,
+          notes text
+      );
+
+      ALTER TABLE menu ___ COLUMN notes;
+      ALTER TABLE menu ALTER COLUMN price ___ NOT NULL;
+    answers:
+      - ["DROP"]
+      - ["DROP"]
+    explanation: |
+      `DROP COLUMN` removes a column and its data. `DROP NOT NULL` removes the requirement that a value must be given.
+
+  - type: exercise
+    id: m13-t14
+    lesson: m13-l05
+    difficulty: 2
+    prompt: |
+      Create a table `coupons` with these columns, **in this order**:
+
+      1. `coupon_id` — `integer`, an identity that is **`GENERATED BY DEFAULT`**, and the primary key
+      2. `code` — `text`, required and unique
+
+      `BY DEFAULT` lets you type your own number. The check types `7` for one coupon, leaves the id out for another,
+      and shows both.
+    starter: |
+      CREATE TABLE coupons (
+          coupon_id integer PRIMARY KEY,
+          code text NOT NULL UNIQUE
+      );
+    solution: |
+      CREATE TABLE coupons (
+          coupon_id integer
+              GENERATED BY DEFAULT AS IDENTITY
+              PRIMARY KEY,
+          code text NOT NULL UNIQUE
+      );
+    check: |
+      INSERT INTO coupons (coupon_id, code)
+      VALUES (7, 'SPRING');
+
+      INSERT INTO coupons (code)
+      VALUES ('SUMMER');
+
+      SELECT coupon_id, code
+      FROM coupons
+      ORDER BY coupon_id;
+    hints:
+      - The starter's `coupon_id` never fills itself in. It needs an identity.
+      - "Put `GENERATED BY DEFAULT AS IDENTITY` after the type `integer`."
+      - "coupon_id integer ___ ___ ___ PRIMARY KEY"
+    explanation: |
+      With `BY DEFAULT`, typing `7` is allowed, and leaving the id out uses the counter. The counter had not been
+      used yet, so `SUMMER` gets `1`. With `GENERATED ALWAYS` the explicit `7` would be refused.
+
+  - type: predict
+    id: m13-t15
+    lesson: m13-l05
+    difficulty: 2
+    question: |
+      Which three numbers does the `SELECT` return?
+    sql: |
+      CREATE SEQUENCE seat_no START 5 INCREMENT 5;
+
+      SELECT nextval('seat_no') AS a,
+             nextval('seat_no') AS b,
+             nextval('seat_no') AS c;
+    options: ["5, 10, 15", "5, 6, 7", "1, 2, 3", "0, 5, 10"]
+    answer: 0
+    explanation: |
+      The sequence starts at 5 and goes up by 5 each time it is asked for a number, so the three calls return 5, 10
+      and 15.
+
+  - type: exercise
+    id: m13-t16
+    lesson: m13-l05
+    difficulty: 3
+    prompt: |
+      Create a table `parcels` with these columns, **in this order**:
+
+      1. `parcel_id` — `integer`, an identity that is `GENERATED ALWAYS`, and the primary key
+      2. `weight_kg` — `numeric(5,2)`
+      3. `weight_g` — `integer`, calculated as `weight_kg * 1000` and converted to a whole number with `::integer`,
+         and **stored**
+    starter: |
+      CREATE TABLE parcels (
+          parcel_id integer
+              GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          weight_kg numeric(5,2),
+          weight_g integer
+      );
+    solution: |
+      CREATE TABLE parcels (
+          parcel_id integer
+              GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+          weight_kg numeric(5,2),
+          weight_g integer
+              GENERATED ALWAYS AS ((weight_kg * 1000)::integer)
+              STORED
+      );
+    check: |
+      INSERT INTO parcels (weight_kg)
+      VALUES (2.50), (0.75);
+
+      SELECT parcel_id, weight_g
+      FROM parcels
+      ORDER BY parcel_id;
+    hints:
+      - Only the `weight_g` line needs a change. It must be calculated, not typed in.
+      - "After `integer`, write `GENERATED ALWAYS AS`, then the formula in brackets, then `STORED`."
+      - "weight_g integer GENERATED ALWAYS AS ((weight_kg * ___)::integer) ___"
+    explanation: |
+      `2.50` kilograms becomes `2500` grams, and `0.75` becomes `750`. The `::integer` turns the calculated decimal
+      into a whole number, and `STORED` saves it with each row.
+
+  - type: quiz
+    id: m13-t17
+    lesson: m13-l06
+    difficulty: 1
+    question: |
+      An `orders` table has the key `order_id`. It also has a column `customer_city` that depends on
+      `customer_email`, another column that is not the key. Which normal form is broken?
+    options: ["First normal form (1NF)", "Second normal form (2NF)", "Third normal form (3NF)", "None, this design is normal"]
+    answer: 2
+    explanation: |
+      A column that depends on another non-key column is a transitive dependency, which breaks third normal form.
+      The fix is to move the customer's city to a `customers` table.
+
+  - type: predict
+    id: m13-t18
+    lesson: m13-l06
+    difficulty: 2
+    question: |
+      What does the final `SELECT` return?
+    sql: |
+      CREATE TABLE sheet (
+          id integer,
+          city text,
+          customer text
+      );
+
+      INSERT INTO sheet VALUES
+          (1, 'Lisbon', 'Ana'),
+          (2, 'Lisbon', 'Ana'),
+          (3, 'Porto', 'Ben');
+
+      SELECT COUNT(*)
+      FROM (SELECT DISTINCT customer, city FROM sheet) AS pairs;
+    options: ["3", "2", "1", "0"]
+    answer: 1
+    explanation: |
+      The distinct (customer, city) pairs are (Ana, Lisbon) and (Ben, Porto). Ana's two rows collapse into one pair.
+
+  - type: exercise
+    id: m13-t19
+    lesson: m13-l06
+    difficulty: 2
+    setup: |
+      CREATE TABLE sheet (
+          order_id integer,
+          supplier text,
+          supplier_phone text,
+          item text
+      );
+
+      INSERT INTO sheet VALUES
+          (1, 'Green Co', '555-0101', 'Fern'),
+          (2, 'Green Co', '555-0101', 'Cactus'),
+          (3, 'Leaf Ltd', '555-0199', 'Monstera');
+    prompt: |
+      Create a table `suppliers` with one row per supplier, using the columns `supplier` and `supplier_phone`, in
+      that order. Make `supplier` the primary key.
+    starter: |
+      CREATE TABLE suppliers AS
+      SELECT supplier, supplier_phone
+      FROM sheet;
+    solution: |
+      CREATE TABLE suppliers AS
+      SELECT DISTINCT supplier, supplier_phone
+      FROM sheet;
+
+      ALTER TABLE suppliers ADD PRIMARY KEY (supplier);
+    check: |
+      SELECT pg_get_constraintdef(oid)
+      FROM pg_constraint
+      WHERE conrelid = 'suppliers'::regclass
+        AND contype = 'p'
+      UNION ALL
+      SELECT supplier || ' ' || supplier_phone
+      FROM suppliers
+      ORDER BY 1;
+    hints:
+      - The sheet repeats Green Co. Each supplier should appear once.
+      - "Add `DISTINCT` after `SELECT`, then add the primary key with `ALTER TABLE`."
+      - "ALTER TABLE suppliers ADD ___ KEY (supplier);"
+    explanation: |
+      Three sheet rows become two suppliers. The `ADD PRIMARY KEY` line stops a supplier from being listed twice.
+
+  - type: quiz
+    id: m13-t20
+    lesson: m13-l07
+    difficulty: 1
+    question: |
+      A book can sit on many shelves, and a shelf holds many books. Which design is correct?
+    options:
+      - "Put a shelf_id column in the books table"
+      - "Put a book_id column in the shelves table"
+      - "A junction table with book_id and shelf_id, and both as its primary key"
+      - "Store all shelf names in one text column of books"
+    answer: 2
+    explanation: |
+      A junction table has one row per (book, shelf) pair. A single column on either side cannot hold many values
+      correctly.
+
+  - type: exercise
+    id: m13-t21
+    lesson: m13-l07
+    difficulty: 3
+    prompt: |
+      Create three tables, parent first:
+
+      1. `students` with `student_id` (`integer`, primary key) and `name` (`text`).
+      2. `courses` with `course_id` (`integer`, primary key) and `title` (`text`).
+      3. `enrolments` with `student_id` and `course_id` (both `integer`), where `student_id` references
+         `students (student_id)` with `ON DELETE CASCADE`, and `course_id` references `courses (course_id)`.
+         The pair (`student_id`, `course_id`) is the primary key.
+
+      The check adds some rows, deletes one student, and shows what is left in `enrolments`.
+    starter: |
+      CREATE TABLE students (
+          student_id integer PRIMARY KEY,
+          name text
+      );
+
+      CREATE TABLE courses (
+          course_id integer PRIMARY KEY,
+          title text
+      );
+
+      CREATE TABLE enrolments (
+          student_id integer,
+          course_id integer
+      );
+    solution: |
+      CREATE TABLE students (
+          student_id integer PRIMARY KEY,
+          name text
+      );
+
+      CREATE TABLE courses (
+          course_id integer PRIMARY KEY,
+          title text
+      );
+
+      CREATE TABLE enrolments (
+          student_id integer
+              REFERENCES students (student_id)
+              ON DELETE CASCADE,
+          course_id integer
+              REFERENCES courses (course_id),
+          PRIMARY KEY (student_id, course_id)
+      );
+    check: |
+      INSERT INTO students (student_id, name)
+      VALUES (1, 'Ana'), (2, 'Ben');
+
+      INSERT INTO courses (course_id, title)
+      VALUES (10, 'Maths');
+
+      INSERT INTO enrolments (student_id, course_id)
+      VALUES (1, 10), (2, 10);
+
+      DELETE FROM students WHERE student_id = 1;
+
+      SELECT student_id, course_id
+      FROM enrolments
+      ORDER BY student_id;
+    hints:
+      - Build the parent tables first, and then `enrolments` with two foreign keys.
+      - "Only the `student_id` link needs `ON DELETE CASCADE`."
+      - "student_id integer REFERENCES students (student_id) ___ ___"
+    explanation: |
+      Deleting Ana cascades to her enrolment, so only Ben's row (`2, 10`) is left. The starter fails because Ana's
+      enrolment would remain.
+
+  - type: quiz
+    id: m13-t22
+    lesson: m13-l08
+    difficulty: 1
+    question: |
+      What happens to a table created with `CREATE TEMP TABLE` when your session ends?
+    options:
+      - "It stays in the database forever"
+      - "It is copied into the public schema"
+      - "It disappears"
+      - "It is shared with all users"
+    answer: 2
+    explanation: |
+      Temporary tables are visible only to your session and are removed when it ends. Nothing is left behind.
+
+  - type: exercise
+    id: m13-t23
+    lesson: m13-l08
+    difficulty: 2
+    prompt: |
+      Create the schema `staff`. Inside it, create the table `staff.teachers` with `teacher_id` (`integer`, primary
+      key) and `full_name` (`text`). Then attach the note `People who teach` to that table.
+
+      The check reads the note and the column names back.
+    starter: |
+      CREATE SCHEMA staff;
+
+      CREATE TABLE staff.teachers (
+          teacher_id integer PRIMARY KEY,
+          full_name text
+      );
+    solution: |
+      CREATE SCHEMA staff;
+
+      CREATE TABLE staff.teachers (
+          teacher_id integer PRIMARY KEY,
+          full_name text
+      );
+
+      COMMENT ON TABLE staff.teachers IS 'People who teach';
+    check: |
+      SELECT obj_description('staff.teachers'::regclass, 'pg_class')
+      UNION ALL
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'staff'
+        AND table_name = 'teachers'
+      ORDER BY 1;
+    hints:
+      - The starter creates the table but does not attach a note yet.
+      - "The note is added with `COMMENT ON TABLE staff.teachers IS` and the text in quotes."
+      - "COMMENT ON TABLE staff.teachers IS '___';"
+    explanation: |
+      The schema is a folder, so the full name `staff.teachers` is used everywhere. The note is stored with the table,
+      and the check reads it back with the column names.
+
+  - type: parsons
+    id: m13-t24
+    lesson: m13-l04
+    difficulty: 2
+    prompt: |
+      Put the lines in order to create a `stock` table with an item id and a quantity, add one item, then add a
+      `warehouse` column that is `'Main'` by default for the existing rows, and read the table. One line is a
+      column removal that must not be used.
+    lines:
+      - "CREATE TABLE stock (item_id integer PRIMARY KEY, qty integer);"
+      - "INSERT INTO stock VALUES (1, 5);"
+      - "ALTER TABLE stock"
+      - "    ADD COLUMN warehouse text DEFAULT 'Main';"
+      - "SELECT * FROM stock;"
+    distractors:
+      - "ALTER TABLE stock DROP COLUMN qty;"
+    explanation: |
+      The table is created, filled, changed, and then read. The existing row receives the default `'Main'`. Dropping
+      `qty` would remove the quantity, so that line does not belong.
+
+  - type: exercise
+    id: m13-t25
+    lesson: m13-l01
+    difficulty: 1
+    prompt: |
+      Create a table `rooms` with these columns, **in this order**:
+
+      - `room_id` — `smallint`
+      - `name` — `varchar(30)`
+      - `opened_at` — `timestamptz`
+      - `facilities` — `jsonb`
+    starter: |
+      CREATE TABLE rooms (
+          room_id integer,
+          name text,
+          opened_at timestamp,
+          facilities text
+      );
+    solution: |
+      CREATE TABLE rooms (
+          room_id smallint,
+          name varchar(30),
+          opened_at timestamptz,
+          facilities jsonb
+      );
+    check: |
+      SELECT attname AS column_name,
+             format_type(atttypid, atttypmod) AS data_type
+      FROM pg_attribute
+      WHERE attrelid = 'rooms'::regclass
+        AND attnum > 0 AND NOT attisdropped
+      ORDER BY attnum;
+    hints:
+      - Four columns, four types. Use the type named after each dash.
+      - "`opened_at` needs the time-zone version of `timestamp`."
+      - "`facilities` holds flexible structured data, so it is `jsonb`."
+    explanation: |
+      `smallint` for small whole numbers, `varchar(30)` for names up to 30 characters, `timestamptz` for an exact moment,
+      and `jsonb` for flexible data.
+
+project:
+  id: m13-proj
+  title: Build a Library Database
+  icon: "📚"
+  dataset: blank
+  md: |
+    Ravi is opening a small community library, and he has asked you to design its database. He has no computer
+    experience, so he is counting on you to get the structure right the first time.
+
+    You will build it one table at a time. **Each task starts from the tables you have already built.** The text of
+    each task tells you what exists, so you always know what you are adding next. The rules you write now protect the
+    library's data later: no member without an email address shared by two people, no loan that ends before it began,
+    no copy with a copy number of zero.
+
+    Work through the eight tasks in order. Each one is a small step, and each one uses a lesson from this module.
+  tasks:
+    - type: exercise
+      id: m13-proj-1
+      title: The first two shelves, authors and books
+      difficulty: 1
+      prompt: |
+        Ravi starts with two tables. Create both, **in this order**:
+
+        1. `authors` with `author_id` — `integer`, an identity that is `GENERATED ALWAYS AS IDENTITY`, and the
+           primary key. And `name` — `text`, required.
+        2. `books` with `book_id` — `integer`, an identity that is `GENERATED ALWAYS AS IDENTITY`, and the
+           primary key. Then `title` — `text`, required. Then `published_year` — `integer`, with the rule
+           `CHECK (published_year > 0)`.
+      starter: |
+        CREATE TABLE authors (
+            author_id integer PRIMARY KEY,
+            name text
+        );
+
+        CREATE TABLE books (
+            book_id integer PRIMARY KEY,
+            title text,
+            published_year integer
+        );
+      solution: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+      check: |
+        SELECT table_name || '.' || column_name || ' '
+               || data_type || ' null=' || is_nullable
+               || coalesce(' identity=' || identity_generation, '')
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name IN ('authors', 'books')
+        UNION ALL
+        SELECT conrelid::regclass::text || ': '
+               || pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid IN ('authors'::regclass, 'books'::regclass)
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - Each table needs its own identity column and a primary key. Read the list carefully for the required words.
+        - "`name` and `title` must not be empty, so they need `NOT NULL`."
+        - "`published_year integer CHECK (published_year > 0)` is the form of the rule."
+      explanation: |
+        Identity columns number the rows for Ravi, so nobody has to type ids. `NOT NULL` keeps the titles and names
+        filled in, and the check stops a book from being published in year 0 or earlier.
+
+    - type: exercise
+      id: m13-proj-2
+      title: The members who borrow
+      difficulty: 1
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+      prompt: |
+        Next come the people who borrow books. Create `members` with these columns, **in this order**:
+
+        1. `member_id` — `integer`, an identity that is `GENERATED ALWAYS`, and the primary key
+        2. `full_name` — `text`, required
+        3. `email` — `text`, unique: no two members may share one (it may be empty)
+        4. `membership` — `text`, required, and `'standard'` when no membership is given
+      starter: |
+        CREATE TABLE members (
+            member_id integer PRIMARY KEY,
+            full_name text,
+            email text,
+            membership text
+        );
+      solution: |
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+               || coalesce(' default ' || column_default, '')
+               || coalesce(' identity=' || identity_generation, '')
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'members'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'members'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - Start from the list. Each column has rules written after its type.
+        - "`email` needs `UNIQUE`, and `membership` needs both `NOT NULL` and a `DEFAULT`."
+        - "membership text NOT NULL ___ 'standard'"
+      explanation: |
+        A default makes sure every member has a membership type, even when the desk forgets to choose one. The
+        unique email keeps two members from sharing an address, and an empty email is still allowed.
+
+    - type: exercise
+      id: m13-proj-3
+      title: Copies of each book
+      difficulty: 2
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+      prompt: |
+        A book can exist as several physical copies, and each copy has its own shelf label. Create `book_copies`
+        with these columns, **in this order**:
+
+        1. `copy_id` — `integer`, an identity that is `GENERATED ALWAYS`, and the primary key
+        2. `book_id` — `integer`, required, and a foreign key that **references** `books (book_id)`. When a book is
+           deleted, its copies are deleted too (`ON DELETE CASCADE`).
+        3. `copy_number` — `integer`, required, with the rule `CHECK (copy_number > 0)`
+
+        Then add one table-level rule on its own line: `UNIQUE (book_id, copy_number)`.
+      starter: |
+        CREATE TABLE book_copies (
+            copy_id integer PRIMARY KEY,
+            book_id integer,
+            copy_number integer
+        );
+      solution: |
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+               || coalesce(' identity=' || identity_generation, '')
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'book_copies'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'book_copies'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - Start with the identity column, then the foreign key, then the copy number, then the table-level rule.
+        - "The foreign key line is `REFERENCES books (book_id)` followed by `ON DELETE CASCADE`."
+        - "UNIQUE (___, ___)  -- the two names go in brackets, separated by a comma"
+      explanation: |
+        The `ON DELETE CASCADE` choice means that if a book is withdrawn, its copies go with it. The table-level
+        `UNIQUE (book_id, copy_number)` allows copy 1 and copy 2 of the same book, but never two copy 1s.
+
+    - type: exercise
+      id: m13-proj-4
+      title: The loans log
+      difficulty: 2
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+      prompt: |
+        Every time a member takes a copy home, Ravi records a loan. Create `loans` with these columns, **in this
+        order**:
+
+        1. `loan_id` — `integer`, an identity that is `GENERATED ALWAYS`, and the primary key
+        2. `copy_id` — `integer`, required, and a foreign key that **references** `book_copies (copy_id)`
+        3. `member_id` — `integer`, required, and a foreign key that **references** `members (member_id)`
+        4. `loaned_on` — `date`, required
+        5. `returned_on` — `date`, which may be empty while the book is still out
+
+        Then add one table-level rule on its own line: `CHECK (returned_on >= loaned_on)`.
+      starter: |
+        CREATE TABLE loans (
+            loan_id integer PRIMARY KEY,
+            copy_id integer,
+            member_id integer,
+            loaned_on date,
+            returned_on date
+        );
+      solution: |
+        CREATE TABLE loans (
+            loan_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            copy_id integer NOT NULL
+                REFERENCES book_copies (copy_id),
+            member_id integer NOT NULL
+                REFERENCES members (member_id),
+            loaned_on date NOT NULL,
+            returned_on date,
+            CHECK (returned_on >= loaned_on)
+        );
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+               || coalesce(' identity=' || identity_generation, '')
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'loans'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'loans'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - Two columns point at other tables, so each one needs `REFERENCES`.
+        - "The `CHECK` line goes after the last column, separated from it by a comma."
+        - "copy_id integer NOT NULL REFERENCES ___ (copy_id),   member_id integer NOT NULL REFERENCES ___ (member_id),"
+      explanation: |
+        A loan can only point at a real copy and a real member. The check refuses a return date earlier than the
+        loan date. An empty `returned_on` is allowed, because the book may still be out.
+
+    - type: exercise
+      id: m13-proj-5
+      title: Books with more than one author
+      difficulty: 2
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+
+        CREATE TABLE loans (
+            loan_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            copy_id integer NOT NULL
+                REFERENCES book_copies (copy_id),
+            member_id integer NOT NULL
+                REFERENCES members (member_id),
+            loaned_on date NOT NULL,
+            returned_on date,
+            CHECK (returned_on >= loaned_on)
+        );
+      prompt: |
+        Many books have several authors, and each author writes several books. Create the junction table
+        `book_authors` with these columns, **in this order**:
+
+        1. `book_id` — `integer`, a foreign key that **references** `books (book_id)`. When a book is deleted,
+           its author links are deleted too (`ON DELETE CASCADE`).
+        2. `author_id` — `integer`, a foreign key that **references** `authors (author_id)`.
+
+        The **pair** (`book_id`, `author_id`) is the primary key. Add it as a table-level rule on its own line.
+      starter: |
+        CREATE TABLE book_authors (
+            book_id integer,
+            author_id integer
+        );
+      solution: |
+        CREATE TABLE book_authors (
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            author_id integer NOT NULL
+                REFERENCES authors (author_id),
+            PRIMARY KEY (book_id, author_id)
+        );
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'book_authors'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'book_authors'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - Both columns are foreign keys, so each one needs `REFERENCES`.
+        - "Put `ON DELETE CASCADE` after the `book_id` reference only."
+        - "PRIMARY KEY (___, ___)  -- the two ids, in brackets"
+      explanation: |
+        The junction table has one row per (book, author) pair. The primary key stops the same pair from being
+        recorded twice. Authors stay in the `authors` table even if a book is deleted.
+
+    - type: exercise
+      id: m13-proj-6
+      title: Two changes to the books shelf
+      difficulty: 2
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            published_year integer
+                CHECK (published_year > 0)
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+
+        CREATE TABLE loans (
+            loan_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            copy_id integer NOT NULL
+                REFERENCES book_copies (copy_id),
+            member_id integer NOT NULL
+                REFERENCES members (member_id),
+            loaned_on date NOT NULL,
+            returned_on date,
+            CHECK (returned_on >= loaned_on)
+        );
+
+        CREATE TABLE book_authors (
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            author_id integer NOT NULL
+                REFERENCES authors (author_id),
+            PRIMARY KEY (book_id, author_id)
+        );
+      prompt: |
+        Ravi wants two changes to the `books` table, **in this order**:
+
+        1. Add a column `isbn` (`text`), and make it unique: no two books may share an ISBN.
+        2. Rename the column `published_year` to `year_published`.
+
+        Keep every existing row and rule.
+      starter: |
+        ALTER TABLE books
+            ADD COLUMN isbn text;
+      solution: |
+        ALTER TABLE books
+            ADD COLUMN isbn text UNIQUE;
+
+        ALTER TABLE books
+            RENAME COLUMN published_year TO year_published;
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'books'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'books'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - The first change adds a column, and `UNIQUE` can be written right after its type.
+        - "The second change uses `ALTER TABLE books RENAME COLUMN old_name TO new_name;`."
+        - "ALTER TABLE books ADD COLUMN isbn text ___;"
+      explanation: |
+        The unique ISBN rule was added to a table that already had books, and it still holds. The rename changes the
+        label only: the values and the `CHECK` rule move with the column, and now read `year_published`.
+
+    - type: exercise
+      id: m13-proj-7
+      title: One library card per member
+      difficulty: 3
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            year_published integer
+                CHECK (year_published > 0),
+            isbn text UNIQUE
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+
+        CREATE TABLE loans (
+            loan_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            copy_id integer NOT NULL
+                REFERENCES book_copies (copy_id),
+            member_id integer NOT NULL
+                REFERENCES members (member_id),
+            loaned_on date NOT NULL,
+            returned_on date,
+            CHECK (returned_on >= loaned_on)
+        );
+
+        CREATE TABLE book_authors (
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            author_id integer NOT NULL
+                REFERENCES authors (author_id),
+            PRIMARY KEY (book_id, author_id)
+        );
+      prompt: |
+        Some members also carry a physical library card. Each card belongs to **exactly one** member, and each member
+        has **at most one** card, so this is a one-to-one relationship. Create `library_cards` with these columns,
+        **in this order**:
+
+        1. `member_id` — `integer`, which is **both** the primary key **and** a foreign key that **references**
+           `members (member_id)`. When the member is deleted, the card is deleted too (`ON DELETE CASCADE`).
+        2. `card_number` — `text`, required and unique.
+      starter: |
+        CREATE TABLE library_cards (
+            member_id integer,
+            card_number text
+        );
+      solution: |
+        CREATE TABLE library_cards (
+            member_id integer PRIMARY KEY
+                REFERENCES members (member_id)
+                ON DELETE CASCADE,
+            card_number text NOT NULL UNIQUE
+        );
+      check: |
+        SELECT column_name || ' ' || data_type
+               || ' null=' || is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'library_cards'
+        UNION ALL
+        SELECT pg_get_constraintdef(oid)
+        FROM pg_constraint
+        WHERE conrelid = 'library_cards'::regclass
+          AND contype <> 'n'
+        ORDER BY 1;
+      hints:
+        - The `member_id` column needs `PRIMARY KEY` **and** `REFERENCES`, so the key is shared with `members`.
+        - "Add `ON DELETE CASCADE` after the `REFERENCES` part, on its own line."
+        - "card_number text ___ ___  -- required and unique"
+      explanation: |
+        Making `member_id` the primary key means each member can appear only once in the card table: one card at most.
+        The foreign key ties every card to a real member, and `ON DELETE CASCADE` removes the card with its member.
+
+    - type: exercise
+      id: m13-proj-8
+      title: An archive of returned loans
+      difficulty: 3
+      setup: |
+        CREATE TABLE authors (
+            author_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name text NOT NULL
+        );
+
+        CREATE TABLE books (
+            book_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            title text NOT NULL,
+            year_published integer
+                CHECK (year_published > 0),
+            isbn text UNIQUE
+        );
+
+        CREATE TABLE members (
+            member_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            full_name text NOT NULL,
+            email text UNIQUE,
+            membership text NOT NULL DEFAULT 'standard'
+        );
+
+        CREATE TABLE book_copies (
+            copy_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            copy_number integer NOT NULL
+                CHECK (copy_number > 0),
+            UNIQUE (book_id, copy_number)
+        );
+
+        CREATE TABLE loans (
+            loan_id integer
+                GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            copy_id integer NOT NULL
+                REFERENCES book_copies (copy_id),
+            member_id integer NOT NULL
+                REFERENCES members (member_id),
+            loaned_on date NOT NULL,
+            returned_on date,
+            CHECK (returned_on >= loaned_on)
+        );
+
+        CREATE TABLE book_authors (
+            book_id integer NOT NULL
+                REFERENCES books (book_id)
+                ON DELETE CASCADE,
+            author_id integer NOT NULL
+                REFERENCES authors (author_id),
+            PRIMARY KEY (book_id, author_id)
+        );
+
+        CREATE TABLE library_cards (
+            member_id integer PRIMARY KEY
+                REFERENCES members (member_id)
+                ON DELETE CASCADE,
+            card_number text NOT NULL UNIQUE
+        );
+
+        INSERT INTO members (full_name, email)
+        VALUES ('Ana Silva', 'ana@library.example'),
+               ('Ben Costa', 'ben@library.example');
+
+        INSERT INTO books (title, year_published)
+        VALUES ('Earthsea', 1968);
+
+        INSERT INTO book_copies (book_id, copy_number)
+        VALUES (1, 1), (1, 2);
+
+        INSERT INTO loans (copy_id, member_id, loaned_on, returned_on)
+        VALUES (1, 1, '2025-01-05', '2025-01-20'),
+               (2, 2, '2025-02-01', NULL);
+      prompt: |
+        Ravi wants returned loans kept apart, so the live `loans` table stays small. Do three things, in order:
+
+        1. Create the schema `archive`.
+        2. Create the table `archive.closed_loans` as a copy of the **returned** loans only (the rows of `loans`
+           where `returned_on` is **not** empty). It has the columns `loan_id`, `copy_id`, `member_id`,
+           `loaned_on` and `returned_on`, in that order.
+        3. Attach the note `Loans that have been returned` to `archive.closed_loans`.
+
+        The check reads the note and shows each archived loan.
+      starter: |
+        CREATE SCHEMA archive;
+      solution: |
+        CREATE SCHEMA archive;
+
+        CREATE TABLE archive.closed_loans AS
+        SELECT loan_id, copy_id, member_id,
+               loaned_on, returned_on
+        FROM loans
+        WHERE returned_on IS NOT NULL;
+
+        COMMENT ON TABLE archive.closed_loans
+            IS 'Loans that have been returned';
+      check: |
+        SELECT obj_description('archive.closed_loans'::regclass,
+                               'pg_class')
+        UNION ALL
+        SELECT loan_id::text || ' ' || returned_on::text
+        FROM archive.closed_loans
+        ORDER BY 1;
+      hints:
+        - Start with `CREATE SCHEMA archive;`, then copy the returned loans into `archive.closed_loans`.
+        - "The filter is `WHERE returned_on IS NOT NULL`, and the note uses `COMMENT ON TABLE archive.closed_loans IS`."
+        - "COMMENT ON TABLE archive.closed_loans IS '___';"
+      explanation: |
+        Only loan 1 had been returned, so it is the only row in the archive. Each new table lives in the folder named
+        in its full address, and the note tells the next person what is inside. The final design is now ready for
+        the library to open.

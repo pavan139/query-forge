@@ -2844,12 +2844,1870 @@ lessons:
           -- recursive: SELECT c.id, t.path || ' > ' || c.name ...
           SELECT path FROM tree ORDER BY path;
         note: A text column that grows each round shows the whole chain, and sorting it gives tree order.
+  - id: m09-l06
+    title: "Graphs and cycles: networks that loop back"
+    summary: Search a network of stops and links, stop the search from going round in circles, and find the fastest route.
+    minutes: 35
+    dataset: shop
+    steps:
+      - type: read
+        title: A network can loop back
+        md: |
+          Marta runs the delivery vans for a small town. Every van starts at the **Harbor** depot. Her question today is simple: *"Which depots can a van reach from Harbor, and how many minutes does each trip take?"*
+
+          In the last lesson the org chart was a **tree**. Each person had exactly one boss, and nobody reported back up to someone below them. Roads are different. Two roads can form a circle, so a van can drive round in a loop and arrive back where it started. A network like this is called a **graph**.
+
+          These are the words we need:
+
+          - A **node** is a place. Here each depot is a node, which we also call a **stop**.
+          - An **edge** is a link between two nodes, such as a road. Our roads are **one-way**, so each edge has a start and an end.
+          - A **cycle** is a loop: you leave a place and come back to it.
+
+          ```
+          Harbor -> Mill -> Oakvale -> Hilltop -> Mill -> Oakvale -> ...
+          ```
+
+          A van on that route would go round forever. This is the danger of graphs.
+
+          > [!ANALOGY]
+          > A tree is like a family tree: you only move down the generations. A graph is like a town map with one-way streets, where you can end up back at a corner you have already passed.
+
+      - type: example
+        title: The links as a table
+        md: |
+          A graph is stored in a table too. Each row is one link. This example creates a small `edges` table with 7 links. Every example in this lesson builds its own copy of `edges`, so each one runs on its own.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          SELECT *
+          FROM edges
+          ORDER BY from_stop, to_stop;
+        after: |
+          Each row is one one-way link. `from_stop` is where the van starts, `to_stop` is where it arrives and `minutes` is the drive time. Look at the Hilltop row that points to Mill: that link closes the loop Mill, Oakvale, Hilltop, Mill.
+
+      - type: read
+        title: The same recipe, and a new danger
+        md: |
+          You already know the recipe from the org chart lesson. It has an **anchor** (the starting row) and a **recursive part** that joins the table to the rows found so far. This time the anchor is Harbor, and each round follows the links that **leave** the last stop:
+
+          ```sql
+          SELECT e.to_stop, r.hops + 1
+          FROM edges AS e
+          JOIN reach AS r ON e.from_stop = r.stop
+          ```
+
+          Read the join aloud: *the link starts where my last stop is.* Each round moves one link further from Harbor, and `hops` counts those links.
+
+          In a tree the search ends by itself. In a graph it may not. Each round adds a new hop count, so a loop always has something new to offer. You must write your own **stop rule**.
+
+      - type: example
+        title: Hop by hop, with a stop rule
+        md: The stop rule `WHERE r.hops < 3` lets only rows with fewer than 3 hops create new rows. The search therefore reaches at most 3 hops.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          WITH RECURSIVE reach(stop, hops) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop, r.hops + 1
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+              WHERE r.hops < 3
+          )
+          SELECT stop, hops
+          FROM reach
+          ORDER BY hops, stop;
+        after: |
+          Eight rows. Harbor is at 0 hops, and Mill and Riverside are 1 hop away. Look at **Mill** and **Hilltop**: each appears twice, at different hop counts. The van has gone round the loop. The stop rule ended the search at 3 hops, so the query finished.
+
+      - type: stepper
+        title: Watch the loop go round
+        md: |
+          Each stage raises the stop rule by one hop. Click through the stages and watch which stops join the result in each round.
+        stages:
+          - label: "Round 0: the start"
+            md: The anchor gives one row, Harbor at 0 hops. The rule `r.hops < 0` lets no new rows in.
+            sql: |
+              CREATE TABLE edges (from_stop text, to_stop text, minutes int);
+              INSERT INTO edges VALUES
+                  ('Harbor', 'Mill', 10), ('Harbor', 'Riverside', 25),
+                  ('Mill', 'Oakvale', 15), ('Oakvale', 'Hilltop', 20),
+                  ('Hilltop', 'Mill', 5), ('Riverside', 'Hilltop', 10),
+                  ('Hilltop', 'Station', 30);
+              WITH RECURSIVE reach(stop, hops) AS (
+                  SELECT 'Harbor', 0
+                  UNION ALL
+                  SELECT e.to_stop, r.hops + 1
+                  FROM edges AS e
+                  JOIN reach AS r ON e.from_stop = r.stop
+                  WHERE r.hops < 0
+              )
+              SELECT stop, hops FROM reach ORDER BY hops, stop;
+          - label: "Round 1: one link"
+            md: Round 1 follows the links out of Harbor and adds **Mill** and **Riverside**. Three rows so far.
+            sql: |
+              CREATE TABLE edges (from_stop text, to_stop text, minutes int);
+              INSERT INTO edges VALUES
+                  ('Harbor', 'Mill', 10), ('Harbor', 'Riverside', 25),
+                  ('Mill', 'Oakvale', 15), ('Oakvale', 'Hilltop', 20),
+                  ('Hilltop', 'Mill', 5), ('Riverside', 'Hilltop', 10),
+                  ('Hilltop', 'Station', 30);
+              WITH RECURSIVE reach(stop, hops) AS (
+                  SELECT 'Harbor', 0
+                  UNION ALL
+                  SELECT e.to_stop, r.hops + 1
+                  FROM edges AS e
+                  JOIN reach AS r ON e.from_stop = r.stop
+                  WHERE r.hops < 1
+              )
+              SELECT stop, hops FROM reach ORDER BY hops, stop;
+          - label: "Round 2: two links"
+            md: Round 2 follows the links out of Mill and Riverside. It adds **Oakvale** (from Mill) and **Hilltop** (from Riverside). Five rows so far.
+            sql: |
+              CREATE TABLE edges (from_stop text, to_stop text, minutes int);
+              INSERT INTO edges VALUES
+                  ('Harbor', 'Mill', 10), ('Harbor', 'Riverside', 25),
+                  ('Mill', 'Oakvale', 15), ('Oakvale', 'Hilltop', 20),
+                  ('Hilltop', 'Mill', 5), ('Riverside', 'Hilltop', 10),
+                  ('Hilltop', 'Station', 30);
+              WITH RECURSIVE reach(stop, hops) AS (
+                  SELECT 'Harbor', 0
+                  UNION ALL
+                  SELECT e.to_stop, r.hops + 1
+                  FROM edges AS e
+                  JOIN reach AS r ON e.from_stop = r.stop
+                  WHERE r.hops < 2
+              )
+              SELECT stop, hops FROM reach ORDER BY hops, stop;
+          - label: "Round 3: back to Mill"
+            md: Round 3 follows the links out of Oakvale and Hilltop. It adds **Hilltop** again, **Mill** again and **Station**. Eight rows, and Mill is back where it was.
+            sql: |
+              CREATE TABLE edges (from_stop text, to_stop text, minutes int);
+              INSERT INTO edges VALUES
+                  ('Harbor', 'Mill', 10), ('Harbor', 'Riverside', 25),
+                  ('Mill', 'Oakvale', 15), ('Oakvale', 'Hilltop', 20),
+                  ('Hilltop', 'Mill', 5), ('Riverside', 'Hilltop', 10),
+                  ('Hilltop', 'Station', 30);
+              WITH RECURSIVE reach(stop, hops) AS (
+                  SELECT 'Harbor', 0
+                  UNION ALL
+                  SELECT e.to_stop, r.hops + 1
+                  FROM edges AS e
+                  JOIN reach AS r ON e.from_stop = r.stop
+                  WHERE r.hops < 3
+              )
+              SELECT stop, hops FROM reach ORDER BY hops, stop;
+
+      - type: read
+        title: What happens with no stop rule?
+        md: |
+          Remove the stop rule and the search never finishes. This is the query that would go round the loop forever. **Do not press Run** on it.
+
+          ```sql
+          WITH RECURSIVE reach(stop, hops) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop, r.hops + 1
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+          )
+          SELECT stop, hops
+          FROM reach
+          ORDER BY hops, stop;
+          ```
+
+          > [!MISTAKE]
+          > Every round creates new rows, because `hops` keeps growing, so the search never runs out of work. The app cancels queries that run for about 20 seconds, but a query like this can freeze the page first. Always write the stop rule before you press Run.
+
+      - type: read
+        title: Keep a list of the stops visited
+        md: |
+          There is a second way to stop a loop. Instead of counting hops, keep a **path**: the list of stops the van has already visited on this trip. PostgreSQL can store a list in one column, called an **array**. Four small pieces make the trick work:
+
+          - `ARRAY['Harbor']` makes a list with one stop in it.
+          - `r.path || e.to_stop` adds a new stop to the end of the list.
+          - `e.to_stop = ANY(r.path)` asks: *is the new stop already in the list?*
+          - `NOT (...)` turns the answer around, so only **new** stops are allowed.
+
+          > [!ANALOGY]
+          > It works like a guest list at the door. Before a new stop joins the trip, check the list. If it is already there, skip it.
+
+      - type: example
+        title: Only simple routes
+        md: |
+          A **simple route** visits each stop at most once. This query finds every simple route from Harbor and how many minutes it takes. The guard `WHERE NOT (e.to_stop = ANY(r.path))` makes a loop impossible, so the query always finishes.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          )
+          SELECT stop,
+                 array_to_string(path, ' > ') AS route,
+                 minutes
+          FROM routes
+          ORDER BY minutes, route;
+        after: |
+          Ten rows, one for each simple route. The first row is the trivial route that stays at Harbor. Look at `Harbor > Riverside > Hilltop > Mill > Oakvale` (55 minutes). It is allowed, because Mill and Oakvale are not on the route yet. The step from Oakvale back to Hilltop is blocked, because Hilltop is already on that route.
+
+      - type: quiz
+        id: m09-l06-q1
+        question: |
+          In the guard `WHERE NOT (e.to_stop = ANY(r.path))`, what does `e.to_stop = ANY(r.path)` check?
+        options:
+          - Whether the new stop is already in the route so far
+          - Whether the link is one-way
+          - Whether this route is the fastest one
+          - Whether the route has exactly three stops
+        answer: 0
+        explanation: |
+          `= ANY(list)` is TRUE when the value equals at least one item in the list. With `NOT` in front, any stop that is already on the route is blocked. That is what stops the loop.
+
+      - type: exercise
+        id: m09-l06-e1
+        title: Hilltop's direct links
+        prompt: |
+          A table called `edges` is already loaded for you. It has the same seven links as the first example, with the columns `from_stop`, `to_stop` and `minutes`.
+
+          Show the `to_stop` and `minutes` of every link that **starts at Hilltop**. Sort the result by `to_stop`.
+        starter: |
+          SELECT
+          FROM edges
+          WHERE from_stop = 'Hilltop';
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          SELECT to_stop, minutes
+          FROM edges
+          WHERE from_stop = 'Hilltop'
+          ORDER BY to_stop;
+        ordered: true
+        columnNames: true
+        hints:
+          - Start from `edges` and keep only the rows where `from_stop` is `'Hilltop'`.
+          - Name the two columns after `SELECT`, and sort by `to_stop`.
+          - "SELECT ___, ___ FROM edges WHERE from_stop = 'Hilltop' ORDER BY ___;"
+        explanation: |
+          Hilltop has two outgoing links: Mill (5 minutes) and Station (30 minutes). A link only works in the direction it points, so the links that arrive at Hilltop are not shown.
+        difficulty: 1
+
+      - type: exercise
+        id: m09-l06-e2
+        title: Two hops is enough
+        prompt: |
+          Search from Harbor with a hop counter, as in the example. This time stop the search **after 2 hops**.
+
+          Show each `stop` and its `hops`. Sort by `hops`, then by `stop`. Use the column names `stop` and `hops`.
+        starter: |
+          WITH RECURSIVE reach(stop, hops) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop, r.hops + 1
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+              WHERE r.hops < 0
+          )
+          SELECT stop, hops
+          FROM reach
+          ORDER BY hops, stop;
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          WITH RECURSIVE reach(stop, hops) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop, r.hops + 1
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+              WHERE r.hops < 2
+          )
+          SELECT stop, hops
+          FROM reach
+          ORDER BY hops, stop;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter has the right shape, but its stop rule is far too strict.
+          - Only rows with fewer than 2 hops may create new rows. Change the number in the stop rule.
+          - "WHERE r.hops < ___"
+        explanation: |
+          Five stops are reached within 2 hops: Harbor (0), Mill and Riverside (1), then Oakvale and Hilltop (2). Hilltop is reached at 2 hops from Riverside, and it only appears once because its second visit is at 3 hops.
+        difficulty: 2
+
+      - type: predict
+        id: m09-l06-p1
+        question: |
+          How many rows does this query return?
+        sql: |
+          WITH RECURSIVE edges(from_stop, to_stop, minutes) AS (
+              VALUES
+                  ('Harbor', 'Mill', 10),
+                  ('Harbor', 'Riverside', 25),
+                  ('Mill', 'Oakvale', 15),
+                  ('Oakvale', 'Hilltop', 20),
+                  ('Hilltop', 'Mill', 5),
+                  ('Riverside', 'Hilltop', 10),
+                  ('Hilltop', 'Station', 30)
+          ),
+          reach(stop, hops) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop, r.hops + 1
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+              WHERE r.hops < 1
+          )
+          SELECT stop, hops
+          FROM reach;
+        options: ["2", "3", "5", "It never ends"]
+        answer: 1
+        explanation: |
+          Harbor is found first. In the next round only Harbor has fewer than 1 hop, so Mill and Riverside are added. Now no row has fewer than 1 hop, nothing new is added, and the search stops with 3 rows.
+
+      - type: exercise
+        id: m09-l06-e3
+        title: Find the bug in the route search
+        prompt: |
+          A colleague wrote this route search, but it fails with an error. Fix the bug.
+
+          The goal is to show every **simple route** from Harbor, **except** the trivial route that stays at Harbor. Show three columns, named `stop`, `route` and `minutes`:
+
+          - `route` is the list of stops joined with ` > ` (a space, a greater-than sign, a space).
+
+          Sort by `minutes`, then by `route`.
+        starter: |
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.stop))
+          )
+          SELECT stop,
+                 array_to_string(path, ' > ') AS route,
+                 minutes
+          FROM routes
+          WHERE stop <> 'Harbor'
+          ORDER BY minutes, route;
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          )
+          SELECT stop,
+                 array_to_string(path, ' > ') AS route,
+                 minutes
+          FROM routes
+          WHERE stop <> 'Harbor'
+          ORDER BY minutes, route;
+        ordered: true
+        columnNames: true
+        hints:
+          - Read the error message. It says the right side of `ANY` must be an array.
+          - Which column holds the list of stops visited so far? It is not `stop`.
+          - "WHERE NOT (e.to_stop = ANY(r.___))"
+        explanation: |
+          `ANY` needs a list on its right side. `r.stop` is a single stop name, not a list, so PostgreSQL refuses the query. `r.path` holds the list. The outer `WHERE stop <> 'Harbor'` removes the trivial route, which leaves nine routes.
+        difficulty: 2
+
+      - type: read
+        title: "Let PostgreSQL watch for loops: CYCLE"
+        md: |
+          Since PostgreSQL 14, a recursive CTE can end with a **`CYCLE` clause**. You name the column to watch (here `stop`), a flag column to create (here `is_cycle`) and a column that PostgreSQL uses to remember the route (here `visited_path`).
+
+          PostgreSQL then checks each route for you. When a stop comes up a second time on the same route, that row is marked `is_cycle = true`, and the search does not keep going round that loop.
+
+          The `CYCLE` clause goes right after the closing parenthesis of the CTE and before the main `SELECT`.
+
+          > [!TIP]
+          > You do not need to read `visited_path`. The clause just needs a name for it.
+
+      - type: example
+        title: The same 10 routes, shorter query
+        md: This query finds the same simple routes as the guard example, without the route text. PostgreSQL does the loop check, so we keep only the rows where `is_cycle` is false.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          WITH RECURSIVE reach(stop, minutes) AS (
+              SELECT 'Harbor', 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+          )
+          CYCLE stop SET is_cycle USING visited_path
+          SELECT stop, minutes
+          FROM reach
+          WHERE NOT is_cycle
+          ORDER BY minutes, stop;
+        after: |
+          Ten rows, the same routes as before. Behind the scenes PostgreSQL also found two loops, one back to Mill after 50 minutes and one back to Hilltop after 75 minutes, and marked them `is_cycle = true`. The `WHERE NOT is_cycle` removed them.
+
+      - type: read
+        title: UNION can stop a loop too
+        md: |
+          You met `UNION` in the set operations module. It removes **duplicate rows**. Inside a recursive CTE it can also stop a loop, because a row that already exists is not added again.
+
+          The catch is that the repeated rows must be **exactly the same**. The next example keeps only the stop name, so a stop found again is an exact repeat.
+
+      - type: example
+        title: UNION stops when no new stop appears
+        md: This query lists every stop that Harbor can reach, with no minutes and no hop counter. Because it uses `UNION`, a stop already in the result is dropped, and the search ends when no new stop appears.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          WITH RECURSIVE reach(stop) AS (
+              SELECT 'Harbor'
+              UNION
+              SELECT e.to_stop
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+          )
+          SELECT stop
+          FROM reach
+          ORDER BY stop;
+        after: |
+          Six stops, each listed once. Mill and Hilltop were reached more than once inside the loop, but `UNION` dropped the repeats, so the search finished.
+
+      - type: read
+        title: The hop counter breaks UNION
+        md: |
+          Now add a counter, such as `hops`, to the recursive CTE. Every row becomes different, because the number keeps growing. `UNION` then removes nothing, and the loop never ends.
+
+          > [!MISTAKE]
+          > A `UNION` loop is only safe when the rows repeat exactly. As soon as you carry `minutes` or `hops`, use the `path` guard or the `CYCLE` clause instead.
+
+      - type: exercise
+        id: m09-l06-e4
+        title: Routes that do not loop
+        prompt: |
+          The `edges` table is already loaded for you. Count the routes from Harbor to each stop, **without going round any loop**. Use the `CYCLE` clause.
+
+          Show `stop` and `route_count` (the number of loop-free routes that end at that stop). Leave out Harbor itself. Sort by `stop`.
+        starter: |
+          WITH RECURSIVE reach(stop) AS (
+              SELECT 'Harbor'
+              UNION ALL
+              SELECT e.to_stop
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+          )
+          CYCLE stop SET is_cycle USING visited_path
+          SELECT stop, COUNT(*) AS route_count
+          FROM reach
+          GROUP BY stop
+          ORDER BY stop;
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          WITH RECURSIVE reach(stop) AS (
+              SELECT 'Harbor'
+              UNION ALL
+              SELECT e.to_stop
+              FROM edges AS e
+              JOIN reach AS r ON e.from_stop = r.stop
+          )
+          CYCLE stop SET is_cycle USING visited_path
+          SELECT stop, COUNT(*) AS route_count
+          FROM reach
+          WHERE NOT is_cycle AND stop <> 'Harbor'
+          GROUP BY stop
+          ORDER BY stop;
+        ordered: true
+        columnNames: true
+        hints:
+          - The `CYCLE` clause goes after the CTE, as in the last example.
+          - Only rows where `is_cycle` is false count as routes.
+          - "SELECT stop, COUNT(*) AS route_count FROM reach WHERE NOT is_cycle AND ___ GROUP BY ___ ORDER BY ___;"
+        explanation: |
+          Hilltop, Mill, Oakvale and Station each have 2 loop-free routes, and Riverside has 1. Each row of the CTE is one route, so `COUNT(*)` per stop counts routes. Harbor is left out, as the prompt asked.
+        difficulty: 2
+
+      - type: fill
+        id: m09-l06-f1
+        prompt: |
+          Fill in the two building blocks of the route search. The first blank adds a stop to the end of a list. The second blank checks whether a stop is already in a list.
+        template: |
+          SELECT ARRAY['Harbor'] ___ CAST('Mill' AS text) AS route,
+                 'Mill' = ___(ARRAY['Harbor', 'Mill']) AS already_there;
+        answers:
+          - ["||"]
+          - ["ANY"]
+        explanation: |
+          `||` joins two things, and with an array on the left it adds the new item to the end. `= ANY(list)` is TRUE when the value matches at least one item in the list. The route search uses both: `r.path || e.to_stop` and `NOT (e.to_stop = ANY(r.path))`.
+
+      - type: read
+        title: The fastest way to each stop
+        md: |
+          Marta's last question: *"What is the quickest way to reach each stop?"*
+
+          The simple routes already give every trip time. For each stop we want the **smallest** `minutes` among its routes. That is `MIN(minutes)` with `GROUP BY stop`, just like the aggregation module.
+
+          We also want the **route** that is fastest, not only its time. The trick is to find the fastest time per stop in a second CTE, and then **join back** to the routes, so only the matching rows remain.
+
+          > [!REAL-WORLD]
+          > Real route planners handle maps with millions of roads and use smarter methods than this. The core idea is the same, though: keep track of where you have been, and compare the totals.
+
+      - type: example
+        title: The fastest route to every stop
+        md: The `fastest` CTE finds the lowest time for each stop. The final join keeps the route whose minutes match that lowest time.
+        sql: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          ),
+          fastest AS (
+              SELECT stop, MIN(minutes) AS best
+              FROM routes
+              GROUP BY stop
+          )
+          SELECT r.stop,
+                 array_to_string(r.path, ' > ') AS route,
+                 r.minutes
+          FROM routes AS r
+          JOIN fastest AS f
+            ON r.stop = f.stop
+           AND r.minutes = f.best
+          ORDER BY r.minutes, r.stop;
+        after: |
+          Six stops. Oakvale and Riverside are both 25 minutes away, so they are sorted by minutes and then by stop name. Station's fastest route is `Harbor > Riverside > Hilltop > Station` (65 minutes), not the 75-minute route through Mill.
+
+      - type: parsons
+        id: m09-l06-o1
+        prompt: |
+          Put the lines of the recursive `routes` CTE in the right order. These are the lines **inside** the parentheses, without the `WITH` line. The first line is the anchor, the row that starts at Harbor.
+        lines:
+          - SELECT 'Harbor', ARRAY['Harbor'], 0
+          - UNION ALL
+          - SELECT e.to_stop, r.path || e.to_stop, r.minutes + e.minutes
+          - FROM edges AS e
+          - JOIN routes AS r ON e.from_stop = r.stop
+          - WHERE NOT (e.to_stop = ANY(r.path))
+        distractors:
+          - WHERE NOT (e.to_stop = ANY(r.stop))
+        runnable: false
+        explanation: |
+          The anchor comes first, then `UNION ALL`, then the recursive part. The recursive part follows each link out of the last stop, adds the stop to the path and adds the minutes. The guard must check `r.path`, because `r.stop` is a single name, not a list.
+
+      - type: exercise
+        id: m09-l06-e5
+        title: Fastest route, with the route text
+        prompt: |
+          The `edges` table is already loaded for you. Find the fastest route from Harbor to each stop. Harbor itself counts, with the route `Harbor` and 0 minutes.
+
+          Show three columns, named exactly `stop`, `route` and `minutes`:
+
+          - `route` is the stops on the fastest route, joined with ` > ` (a space, a greater-than sign, a space).
+
+          Sort by `minutes`, then by `stop`.
+        starter: |
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          )
+          SELECT stop, path, minutes
+          FROM routes
+          ORDER BY minutes, stop;
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          ),
+          fastest AS (
+              SELECT stop, MIN(minutes) AS best
+              FROM routes
+              GROUP BY stop
+          )
+          SELECT r.stop,
+                 array_to_string(r.path, ' > ') AS route,
+                 r.minutes
+          FROM routes AS r
+          JOIN fastest AS f
+            ON r.stop = f.stop
+           AND r.minutes = f.best
+          ORDER BY r.minutes, r.stop;
+        ordered: true
+        columnNames: true
+        hints:
+          - Build all the simple routes first, as in the fastest-route example. Then keep only the fastest one per stop.
+          - Put `MIN(minutes)` in a second CTE, grouped by `stop`.
+          - "FROM routes AS r JOIN fastest AS f ON r.stop = f.stop AND r.minutes = ___"
+        explanation: |
+          Oakvale and Riverside tie at 25 minutes, but they are different stops, so each keeps its own fastest route. Every stop has only one route with its lowest time here, so the join returns exactly one row per stop. If two routes tied for the same stop, both would appear.
+        difficulty: 3
+
+      - type: exercise
+        id: m09-l06-e6
+        title: Two-way roads
+        prompt: |
+          In real life many roads can be driven in **both** directions. Pretend that every link in `edges` also works in reverse, with the same minutes. The `edges` table is already loaded for you.
+
+          Find the fastest time from Harbor to each stop, using both directions. Show `stop` and `fastest` (the lowest minutes), sorted by `stop`.
+        starter: |
+          WITH RECURSIVE routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT e.to_stop,
+                     r.path || e.to_stop,
+                     r.minutes + e.minutes
+              FROM edges AS e
+              JOIN routes AS r ON e.from_stop = r.stop
+              WHERE NOT (e.to_stop = ANY(r.path))
+          )
+          SELECT stop, MIN(minutes) AS fastest
+          FROM routes
+          GROUP BY stop
+          ORDER BY stop;
+        setup: |
+          CREATE TABLE edges (
+              from_stop text,
+              to_stop text,
+              minutes int
+          );
+
+          INSERT INTO edges VALUES
+              ('Harbor', 'Mill', 10),
+              ('Harbor', 'Riverside', 25),
+              ('Mill', 'Oakvale', 15),
+              ('Oakvale', 'Hilltop', 20),
+              ('Hilltop', 'Mill', 5),
+              ('Riverside', 'Hilltop', 10),
+              ('Hilltop', 'Station', 30);
+        solution: |
+          WITH RECURSIVE roads AS (
+              SELECT from_stop, to_stop, minutes
+              FROM edges
+              UNION ALL
+              SELECT to_stop, from_stop, minutes
+              FROM edges
+          ),
+          routes(stop, path, minutes) AS (
+              SELECT 'Harbor', ARRAY['Harbor'], 0
+              UNION ALL
+              SELECT r2.to_stop,
+                     r.path || r2.to_stop,
+                     r.minutes + r2.minutes
+              FROM roads AS r2
+              JOIN routes AS r ON r2.from_stop = r.stop
+              WHERE NOT (r2.to_stop = ANY(r.path))
+          )
+          SELECT stop, MIN(minutes) AS fastest
+          FROM routes
+          GROUP BY stop
+          ORDER BY stop;
+        ordered: true
+        columnNames: true
+        hints:
+          - Start by building a `roads` CTE that holds every link **and** its reverse, joined with `UNION ALL`.
+          - The `roads` CTE is not recursive, but it still goes in the `WITH RECURSIVE` list, next to `routes`.
+          - "FROM roads AS r2 JOIN routes AS r ON r2.from_stop = r.stop"
+        explanation: |
+          With two-way roads, Hilltop can be reached in 15 minutes: Harbor to Mill (10), then Mill to Hilltop (5), using the reverse of the Hilltop to Mill link. The guard still stops every route from revisiting a stop, so the search always finishes.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Stop a loop with a path list
+        sql: |
+          WHERE NOT (e.to_stop = ANY(r.path))
+        note: "In the recursive part, add `r.path || e.to_stop` to the columns so each route remembers its stops."
+      - title: Stop a loop with CYCLE
+        sql: |
+          WITH RECURSIVE reach(stop) AS (
+              ...
+          )
+          CYCLE stop SET is_cycle USING visited_path
+          SELECT stop
+          FROM reach
+          WHERE NOT is_cycle;
+        note: "PostgreSQL 14 and later. `is_cycle` is true on the row that would repeat a stop."
+      - title: Fastest time per stop
+        sql: |
+          SELECT stop, MIN(minutes) AS fastest
+          FROM routes
+          GROUP BY stop;
+        note: "To keep the matching route as well, join `routes` back to this result on `stop` and `minutes`."
 testPool:
   - type: quiz
     id: m09-t01
     lesson: m09-l01
     difficulty: 1
-    question: Placeholder?
-    options: ["a", "b"]
+    question: After you write `WITH big_orders AS (SELECT ...)`, what is `big_orders` in the main query?
+    options:
+      - A temporary named result that exists only for this one statement
+      - A permanent table that is saved in the database
+      - A new column added to the orders table
+      - A copy of the whole database
     answer: 0
-    explanation: placeholder
+    explanation: |
+      A CTE is a named, temporary result. It disappears when the statement ends, so nothing is saved.
+
+  - type: exercise
+    id: m09-t02
+    lesson: m09-l01
+    difficulty: 1
+    prompt: |
+      Use a CTE named `category_prices` to show the average product price in each category. Show `category_id` and `avg_price` (the average `price`, rounded to 2 decimals). Sort by `category_id`.
+    starter: |
+      WITH category_prices AS (
+          SELECT category_id
+          FROM products
+      )
+      SELECT category_id, avg_price
+      FROM category_prices
+      ORDER BY category_id;
+    solution: |
+      WITH category_prices AS (
+          SELECT category_id,
+                 ROUND(AVG(price), 2) AS avg_price
+          FROM products
+          GROUP BY category_id
+      )
+      SELECT category_id, avg_price
+      FROM category_prices
+      ORDER BY category_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - A CTE is written as `WITH name AS ( ... )` before the main `SELECT`.
+      - Inside the CTE, use `AVG(price)` and `GROUP BY category_id`.
+      - "SELECT category_id, ROUND(AVG(price), 2) AS avg_price FROM products GROUP BY ___;"
+    explanation: |
+      The CTE does the grouping, and the main query only picks and sorts the two columns. Eleven categories have products.
+
+  - type: fill
+    id: m09-t03
+    lesson: m09-l01
+    difficulty: 2
+    prompt: |
+      Name the CTE `order_counts` in the `WITH` line, then use that same name in the `FROM` line. Fill in both blanks.
+    template: |
+      WITH ___ AS (
+          SELECT customer_id, COUNT(*) AS order_count
+          FROM orders
+          GROUP BY customer_id
+      )
+      SELECT COUNT(*) AS loyal_customers
+      FROM ___
+      WHERE order_count >= 10;
+    answers:
+      - ["order_counts"]
+      - ["order_counts"]
+    explanation: |
+      You choose a CTE's name. The main query must use exactly the same name in its `FROM` line, so both blanks take `order_counts`.
+
+  - type: exercise
+    id: m09-t04
+    lesson: m09-l02
+    difficulty: 2
+    prompt: |
+      Use two CTEs. The first, `order_totals`, adds up what each customer has spent: for every order, `quantity` times `unit_price` from `order_items`, summed per `customer_id`. Call the total `total_spent`. The second CTE, `big_spenders`, keeps only the customers whose `total_spent` is **above 6000**.
+
+      Show `customer_id` and `total_spent` for those customers. Sort by `total_spent` from highest to lowest, then by `customer_id`.
+    starter: |
+      WITH order_totals AS (
+          SELECT o.customer_id
+          FROM orders AS o
+          JOIN order_items AS oi ON oi.order_id = o.order_id
+      )
+      SELECT customer_id, total_spent
+      FROM order_totals;
+    solution: |
+      WITH order_totals AS (
+          SELECT o.customer_id,
+                 SUM(oi.quantity * oi.unit_price) AS total_spent
+          FROM orders AS o
+          JOIN order_items AS oi ON oi.order_id = o.order_id
+          GROUP BY o.customer_id
+      ),
+      big_spenders AS (
+          SELECT customer_id, total_spent
+          FROM order_totals
+          WHERE total_spent > 6000
+      )
+      SELECT customer_id, total_spent
+      FROM big_spenders
+      ORDER BY total_spent DESC, customer_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - You need two CTEs separated by a comma. The second one reads the first.
+      - Group the order items by customer with `GROUP BY o.customer_id`, and use `SUM(oi.quantity * oi.unit_price)`.
+      - "WHERE total_spent > ___"
+    explanation: |
+      Each CTE is one step. `order_totals` makes one row per customer, and `big_spenders` filters that result. Nine customers spend more than 6000, and the biggest total is about 13,600.
+
+  - type: predict
+    id: m09-t05
+    lesson: m09-l02
+    difficulty: 1
+    question: What single number does this query return?
+    sql: |
+      WITH pricey AS (
+          SELECT category_id
+          FROM products
+          WHERE price > 100
+      ),
+      pricey_categories AS (
+          SELECT DISTINCT category_id
+          FROM pricey
+      )
+      SELECT COUNT(*) AS n
+      FROM pricey_categories;
+    options: ["3", "7", "11", "An error"]
+    answer: 1
+    explanation: |
+      The first CTE keeps the category of every product priced above 100. The second removes repeats with `DISTINCT`, so each category counts once. Seven different categories have such a product.
+
+  - type: quiz
+    id: m09-t06
+    lesson: m09-l02
+    difficulty: 2
+    question: |
+      What happens when you run this query?
+
+      ```sql
+      WITH first_step AS (
+          SELECT * FROM second_step
+      ),
+      second_step AS (
+          SELECT 1 AS n
+      )
+      SELECT * FROM first_step;
+      ```
+    options:
+      - An error, because first_step uses second_step before it is defined
+      - It returns the number 1
+      - It returns no rows
+      - It works, because PostgreSQL reads all the CTEs before running them
+    answer: 0
+    explanation: |
+      In a plain `WITH`, each CTE can only use the CTEs written above it. Put `second_step` first and the query works. This is the "order matters" rule from the chaining lesson.
+
+  - type: quiz
+    id: m09-t07
+    lesson: m09-l03
+    difficulty: 1
+    question: What does `MATERIALIZED` do in `WITH cheap AS MATERIALIZED (SELECT ...)`?
+    options:
+      - It runs the CTE once and keeps its rows, so the main query reads the saved result
+      - It turns the CTE into a permanent table
+      - It doubles the rows that the CTE returns
+      - It stops the CTE from being used more than once
+    answer: 0
+    explanation: |
+      `MATERIALIZED` tells PostgreSQL to compute the CTE on its own, once, and keep the result for the main query. Without it, PostgreSQL may merge a CTE that is used only once into the main query. `NOT MATERIALIZED` asks for that merge.
+
+  - type: exercise
+    id: m09-t08
+    lesson: m09-l03
+    difficulty: 2
+    prompt: |
+      Rewrite a nested subquery as a CTE. Put the order counts in a CTE named `order_counts`, with one row per `customer_id` and `order_count` (the number of orders). Then show the `first_name`, `last_name` and `order_count` of every customer with **17 or more orders**.
+
+      Sort by `order_count` from highest to lowest, then by `customer_id`.
+    starter: |
+      WITH order_counts AS (
+          SELECT customer_id, COUNT(*) AS order_count
+          FROM orders
+          GROUP BY customer_id
+      )
+      SELECT c.first_name, c.last_name
+      FROM order_counts AS oc
+      JOIN customers AS c ON c.customer_id = oc.customer_id
+      ORDER BY c.customer_id;
+    solution: |
+      WITH order_counts AS (
+          SELECT customer_id, COUNT(*) AS order_count
+          FROM orders
+          GROUP BY customer_id
+      )
+      SELECT c.first_name, c.last_name, oc.order_count
+      FROM order_counts AS oc
+      JOIN customers AS c ON c.customer_id = oc.customer_id
+      WHERE oc.order_count >= 17
+      ORDER BY oc.order_count DESC, c.customer_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - "The CTE is the first part: `WITH order_counts AS ( ... )`."
+      - Join `order_counts` to `customers` on `customer_id`, then filter with `WHERE order_count >= 17`.
+      - "SELECT c.first_name, c.last_name, oc.order_count FROM order_counts AS oc JOIN customers AS c ON ___ = ___ WHERE ___ ORDER BY ___;"
+    explanation: |
+      The CTE counts the orders once, and the main query adds the names. Ten customers have 17 or more orders. The highest count is 23, shared by five customers, so `customer_id` decides their order.
+
+  - type: fill
+    id: m09-t09
+    lesson: m09-l03
+    difficulty: 1
+    prompt: |
+      Tell PostgreSQL to compute the CTE once and keep its rows. Fill in the blank with the keyword that forces this.
+    template: |
+      WITH cheap AS ___ (
+          SELECT name, price
+          FROM products
+          WHERE price < 5
+      )
+      SELECT COUNT(*) AS cheap_products
+      FROM cheap;
+    answers:
+      - ["MATERIALIZED"]
+    explanation: |
+      `AS MATERIALIZED (...)` forces the CTE to run on its own before the main query. Without the keyword, PostgreSQL decides for itself, and for a CTE used only once it may merge it into the main query.
+
+  - type: exercise
+    id: m09-t10
+    lesson: m09-l04
+    difficulty: 1
+    prompt: |
+      Use a recursive CTE named `nums` to produce the whole numbers from 1 to 12. Show one column named `n`, sorted from 1 to 12.
+    starter: |
+      WITH RECURSIVE nums(n) AS (
+          SELECT 1
+      )
+      SELECT n
+      FROM nums;
+    solution: |
+      WITH RECURSIVE nums(n) AS (
+          SELECT 1
+          UNION ALL
+          SELECT n + 1
+          FROM nums
+          WHERE n < 12
+      )
+      SELECT n
+      FROM nums
+      ORDER BY n;
+    ordered: true
+    columnNames: true
+    hints:
+      - A recursive CTE starts with an anchor, such as `SELECT 1`.
+      - The recursive part adds 1 to the last number, joined with `UNION ALL`.
+      - "WHERE n < ___ (the rule that stops the loop)"
+    explanation: |
+      The anchor gives 1. Each round adds 1 while the last number is below 12. The row for 12 is made from 11, and then the rule `n < 12` fails for 12, so the loop stops.
+
+  - type: predict
+    id: m09-t11
+    lesson: m09-l04
+    difficulty: 2
+    question: What single number does this query return?
+    sql: |
+      WITH RECURSIVE by_three(n) AS (
+          SELECT 0
+          UNION ALL
+          SELECT n + 3
+          FROM by_three
+          WHERE n < 10
+      )
+      SELECT COUNT(*) AS rows_made
+      FROM by_three;
+    options: ["4", "5", "10", "An error"]
+    answer: 1
+    explanation: |
+      The values are 0, 3, 6, 9 and 12. The rule `n < 10` lets 9 create 12, and then 12 fails the rule, so the loop stops. That makes five rows.
+
+  - type: quiz
+    id: m09-t12
+    lesson: m09-l04
+    difficulty: 1
+    question: |
+      A recursive CTE has no stop rule (no `WHERE` in its recursive part), and the main query has no `LIMIT`. What happens?
+    options:
+      - It keeps adding rows until the app cancels the query
+      - It stops after one round
+      - It returns only the anchor row
+      - It returns an error straight away
+    answer: 0
+    explanation: |
+      Without a stop rule, every round can add another row, so the loop never ends by itself. This app cancels runaway queries after about 20 seconds, but you should always write the stop rule yourself.
+
+  - type: parsons
+    id: m09-t13
+    lesson: m09-l04
+    difficulty: 2
+    prompt: |
+      Put the lines of a countdown from 5 to 1 in the right order. The script must run and show the numbers 5 down to 1, one per row.
+    lines:
+      - WITH RECURSIVE countdown(n) AS (
+      - SELECT 5
+      - UNION ALL
+      - SELECT n - 1
+      - FROM countdown
+      - WHERE n > 1
+      - ")"
+      - SELECT n
+      - FROM countdown
+      - ORDER BY n DESC;
+    distractors:
+      - WHERE n < 1
+    explanation: |
+      The anchor (`SELECT 5`) starts the list. Each round takes one away, and `WHERE n > 1` is the stop rule. The final `SELECT` reads the rows and sorts them from 5 down to 1 with `DESC`.
+
+  - type: exercise
+    id: m09-t14
+    lesson: m09-l05
+    difficulty: 2
+    dataset: company
+    prompt: |
+      Acme's VP of Sales is Amina Nkosi (`emp_id` 4). Using a recursive CTE, list **everyone** in her organisation, at every level. Include Amina herself and people who have left the company.
+
+      Show `emp_id`, `name` (the first name and last name joined with one space) and `depth` (0 for Amina, 1 for her direct reports, and so on). Sort by `depth`, then by `emp_id`.
+    starter: |
+      WITH RECURSIVE team(emp_id, depth) AS (
+          SELECT emp_id, 0
+          FROM employees
+          WHERE emp_id = 4
+      )
+      SELECT emp_id, depth
+      FROM team;
+    solution: |
+      WITH RECURSIVE team(emp_id, name, depth) AS (
+          SELECT emp_id,
+                 first_name || ' ' || last_name,
+                 0
+          FROM employees
+          WHERE emp_id = 4
+          UNION ALL
+          SELECT e.emp_id,
+                 e.first_name || ' ' || e.last_name,
+                 t.depth + 1
+          FROM employees AS e
+          JOIN team AS t ON e.manager_id = t.emp_id
+      )
+      SELECT emp_id, name, depth
+      FROM team
+      ORDER BY depth, emp_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - This is the same pattern as the Layla example. Start with an anchor row, then join `employees` to the team found so far.
+      - Join each employee to the team with `e.manager_id = t.emp_id`, and add 1 to `depth`.
+      - "JOIN team AS t ON e.manager_id = ___"
+    explanation: |
+      Thirteen people in total. Amina is at depth 0, Oscar Lewis and James Miller are at depth 1, and seven people are at depth 3, the deepest level. Mariana Hernandez has left the company, but she is still in the data, so she appears too.
+
+  - type: quiz
+    id: m09-t15
+    lesson: m09-l05
+    difficulty: 1
+    dataset: company
+    question: |
+      In a recursive query that walks **down** an org chart, which join finds the people who report to someone already in the team list?
+    options:
+      - "JOIN team AS t ON e.emp_id = t.manager_id"
+      - "JOIN team AS t ON e.manager_id = t.emp_id"
+      - "JOIN team AS t ON e.dept_id = t.dept_id"
+      - "JOIN team AS t ON e.salary > t.salary"
+    answer: 1
+    explanation: |
+      `e.manager_id = t.emp_id` means "this employee's manager is a person already in the team". The first option walks up the chart instead, from the employee to their boss.
+
+  - type: predict
+    id: m09-t16
+    lesson: m09-l05
+    difficulty: 3
+    dataset: company
+    question: What single number does this query return?
+    sql: |
+      WITH RECURSIVE team(emp_id, depth) AS (
+          SELECT emp_id, 0
+          FROM employees
+          WHERE emp_id = 4
+          UNION ALL
+          SELECT e.emp_id, t.depth + 1
+          FROM employees AS e
+          JOIN team AS t ON e.manager_id = t.emp_id
+          WHERE t.depth < 2
+      )
+      SELECT COUNT(*)
+      FROM team;
+    options: ["3", "6", "7", "13"]
+    answer: 1
+    explanation: |
+      The rule `t.depth < 2` lets rows at depth 0 and 1 create new rows, so the search reaches depth 2 and stops there. That is Amina (1 person), her 2 direct reports and their 3 reports at depth 2: six people. The 7 people at depth 3 are cut off.
+
+  - type: exercise
+    id: m09-t17
+    lesson: m09-l05
+    difficulty: 3
+    dataset: company
+    prompt: |
+      Noor Rahman (`emp_id` 29) wants to see her chain of command, all the way up to the CEO.
+
+      Show `emp_id`, `name` (the first name and last name joined with one space) and `depth`, where depth 0 is Noor herself, depth 1 is her manager, and so on up to the CEO. Sort by `depth`.
+    starter: |
+      WITH RECURSIVE chain(emp_id, manager_id, depth) AS (
+          SELECT emp_id, manager_id, 0
+          FROM employees
+          WHERE emp_id = 29
+      )
+      SELECT emp_id, manager_id, depth
+      FROM chain;
+    solution: |
+      WITH RECURSIVE chain(emp_id, name, manager_id, depth) AS (
+          SELECT emp_id,
+                 first_name || ' ' || last_name,
+                 manager_id,
+                 0
+          FROM employees
+          WHERE emp_id = 29
+          UNION ALL
+          SELECT e.emp_id,
+                 e.first_name || ' ' || e.last_name,
+                 e.manager_id,
+                 c.depth + 1
+          FROM employees AS e
+          JOIN chain AS c ON e.emp_id = c.manager_id
+      )
+      SELECT emp_id, name, depth
+      FROM chain
+      ORDER BY depth;
+    ordered: true
+    columnNames: true
+    hints:
+      - Walk up instead of down. Start at Noor, then join to the boss of each row.
+      - The join is flipped. Match the employee whose `emp_id` equals the current row's `manager_id`.
+      - "JOIN chain AS c ON e.emp_id = c.___"
+    explanation: |
+      Noor reports to Paola Cruz, who reports to Olivia Brooks, then Thiago Rodriguez, then the CEO, Diego Adeyemi. The CEO's `manager_id` is NULL, so the join finds no boss and the search stops by itself.
+
+  - type: parsons
+    id: m09-t18
+    lesson: m09-l05
+    difficulty: 2
+    dataset: company
+    prompt: |
+      Put the lines of a query that lists everyone in Oscar Lewis's team (`emp_id` 11), with each person's depth, in the right order. The query must run.
+    lines:
+      - WITH RECURSIVE team(emp_id, name, depth) AS (
+      - SELECT emp_id, first_name || ' ' || last_name, 0
+      - FROM employees
+      - WHERE emp_id = 11
+      - UNION ALL
+      - SELECT e.emp_id, e.first_name || ' ' || e.last_name, t.depth + 1
+      - FROM employees AS e
+      - JOIN team AS t ON e.manager_id = t.emp_id
+      - ")"
+      - SELECT name, depth
+      - FROM team
+      - ORDER BY depth, name;
+    distractors:
+      - WHERE e.manager_id = t.depth
+    explanation: |
+      The anchor (Oscar, depth 0) comes first, then `UNION ALL`, then the recursive part, which joins employees whose manager is already in the team. The last lines are the main query, which sorts by depth and then by name. Oscar's team has eight people.
+
+  - type: exercise
+    id: m09-t19
+    lesson: m09-l06
+    difficulty: 1
+    setup: |
+      CREATE TABLE edges (
+          from_stop text,
+          to_stop text,
+          minutes int
+      );
+
+      INSERT INTO edges VALUES
+          ('Harbor', 'Mill', 10),
+          ('Harbor', 'Riverside', 25),
+          ('Mill', 'Oakvale', 15),
+          ('Oakvale', 'Hilltop', 20),
+          ('Hilltop', 'Mill', 5),
+          ('Riverside', 'Hilltop', 10),
+          ('Hilltop', 'Station', 30);
+    prompt: |
+      The `edges` table is already loaded for you. It has the same seven links as the first example in this lesson.
+
+      Show `from_stop`, `to_stop` and `minutes` for every link that takes **more than 10 minutes**. Sort by `minutes` from longest to shortest.
+    starter: |
+      SELECT from_stop, to_stop, minutes
+      FROM edges
+      WHERE minutes > 100;
+    solution: |
+      SELECT from_stop, to_stop, minutes
+      FROM edges
+      WHERE minutes > 10
+      ORDER BY minutes DESC;
+    ordered: true
+    columnNames: true
+    hints:
+      - Keep only the rows where `minutes` is bigger than 10.
+      - Use `ORDER BY minutes DESC` to put the longest link first.
+      - "WHERE minutes > ___ ORDER BY ___ DESC;"
+    explanation: |
+      Four links take longer than 10 minutes: Hilltop to Station (30), Harbor to Riverside (25), Oakvale to Hilltop (20) and Mill to Oakvale (15). Links of exactly 10 minutes are left out, because `>` means strictly greater than.
+
+  - type: predict
+    id: m09-t20
+    lesson: m09-l06
+    difficulty: 2
+    question: What single number of rows does this query return?
+    sql: |
+      WITH RECURSIVE edges(from_stop, to_stop) AS (
+          VALUES ('Ash', 'Birch'), ('Birch', 'Ash'), ('Ash', 'Cedar')
+      ),
+      reach(stop) AS (
+          SELECT 'Ash'
+          UNION
+          SELECT e.to_stop
+          FROM edges AS e
+          JOIN reach AS r ON e.from_stop = r.stop
+      )
+      SELECT stop
+      FROM reach;
+    options: ["2", "3", "4", "It never ends"]
+    answer: 1
+    explanation: |
+      Ash leads to Birch and Cedar. Birch leads back to Ash, which is already in the result, so `UNION` drops it. The search ends with three stops: Ash, Birch and Cedar.
+
+  - type: quiz
+    id: m09-t21
+    lesson: m09-l06
+    difficulty: 3
+    question: Why does a loop in a recursive CTE need a stop rule when the query uses `UNION ALL`?
+    options:
+      - UNION ALL keeps every repeated row, so each round can add rows forever unless a stop rule or a cycle check ends the search
+      - UNION ALL sorts the rows, which takes forever on a loop
+      - UNION ALL is not allowed in a recursive CTE, so the query fails
+      - UNION ALL only works on tables, not on CTEs
+    answer: 0
+    explanation: |
+      `UNION ALL` never removes repeated rows. In a loop the same stops come back again and again, so only a stop rule (a `WHERE` on a counter, a path check or the `CYCLE` clause) can end the search. `UNION` would remove exact repeats, but only when the rows are identical.
+
+  - type: exercise
+    id: m09-t22
+    lesson: m09-l06
+    difficulty: 2
+    setup: |
+      CREATE TABLE edges (
+          from_stop text,
+          to_stop text,
+          minutes int
+      );
+
+      INSERT INTO edges VALUES
+          ('Harbor', 'Mill', 10),
+          ('Harbor', 'Riverside', 25),
+          ('Mill', 'Oakvale', 15),
+          ('Oakvale', 'Hilltop', 20),
+          ('Hilltop', 'Mill', 5),
+          ('Riverside', 'Hilltop', 10),
+          ('Hilltop', 'Station', 30);
+    prompt: |
+      The `edges` table is already loaded for you. Start at **Oakvale** and follow the links, counting hops. Stop the search at **2 hops**.
+
+      Show `stop` and `hops` for every stop reached. Sort by `hops`, then by `stop`.
+    starter: |
+      WITH RECURSIVE reach(stop, hops) AS (
+          SELECT 'Harbor', 0
+          UNION ALL
+          SELECT e.to_stop, r.hops + 1
+          FROM edges AS e
+          JOIN reach AS r ON e.from_stop = r.stop
+          WHERE r.hops < 0
+      )
+      SELECT stop, hops
+      FROM reach
+      ORDER BY hops, stop;
+    solution: |
+      WITH RECURSIVE reach(stop, hops) AS (
+          SELECT 'Oakvale', 0
+          UNION ALL
+          SELECT e.to_stop, r.hops + 1
+          FROM edges AS e
+          JOIN reach AS r ON e.from_stop = r.stop
+          WHERE r.hops < 2
+      )
+      SELECT stop, hops
+      FROM reach
+      ORDER BY hops, stop;
+    ordered: true
+    columnNames: true
+    hints:
+      - Change the start from Harbor to Oakvale, and change the stop rule.
+      - "Only rows with fewer than 2 hops may create new rows: WHERE r.hops < ___"
+      - "SELECT 'Oakvale', 0 UNION ALL SELECT e.to_stop, r.hops + 1 ... WHERE r.hops < ___"
+    explanation: |
+      Oakvale is 0 hops away and Hilltop is 1 hop away. Mill and Station are 2 hops away. Their links would lead to 3 hops, which the stop rule does not allow, so the search ends.
+
+  - type: exercise
+    id: m09-t23
+    lesson: m09-l06
+    difficulty: 3
+    setup: |
+      CREATE TABLE edges (
+          from_stop text,
+          to_stop text,
+          minutes int
+      );
+
+      INSERT INTO edges VALUES
+          ('Harbor', 'Mill', 10),
+          ('Harbor', 'Riverside', 25),
+          ('Mill', 'Oakvale', 15),
+          ('Oakvale', 'Hilltop', 20),
+          ('Hilltop', 'Mill', 5),
+          ('Riverside', 'Hilltop', 10),
+          ('Hilltop', 'Station', 30);
+    prompt: |
+      The `edges` table is already loaded for you. Look at the simple routes from Harbor. A simple route never visits a stop twice. The trivial route that stays at Harbor does **not** count.
+
+      Find the stops that have **more than one** simple route. Show `stop` and `route_count` (the number of simple routes that end at that stop), sorted by `stop`.
+    starter: |
+      WITH RECURSIVE routes(stop, path) AS (
+          SELECT 'Harbor', ARRAY['Harbor']
+          UNION ALL
+          SELECT e.to_stop, r.path || e.to_stop
+          FROM edges AS e
+          JOIN routes AS r ON e.from_stop = r.stop
+          WHERE NOT (e.to_stop = ANY(r.path))
+      )
+      SELECT stop, COUNT(*) AS route_count
+      FROM routes
+      WHERE stop <> 'Harbor'
+      GROUP BY stop
+      ORDER BY stop;
+    solution: |
+      WITH RECURSIVE routes(stop, path) AS (
+          SELECT 'Harbor', ARRAY['Harbor']
+          UNION ALL
+          SELECT e.to_stop, r.path || e.to_stop
+          FROM edges AS e
+          JOIN routes AS r ON e.from_stop = r.stop
+          WHERE NOT (e.to_stop = ANY(r.path))
+      )
+      SELECT stop, COUNT(*) AS route_count
+      FROM routes
+      WHERE stop <> 'Harbor'
+      GROUP BY stop
+      HAVING COUNT(*) > 1
+      ORDER BY stop;
+    ordered: true
+    columnNames: true
+    hints:
+      - Start with the simple-route search from the lesson, then count its rows per stop.
+      - After `GROUP BY stop`, a `HAVING` clause filters the groups, just as `WHERE` filters rows.
+      - "... GROUP BY stop HAVING COUNT(*) ___ 1 ORDER BY stop;"
+    explanation: |
+      Four stops can be reached by two different simple routes: Hilltop, Mill, Oakvale and Station. Riverside has only one route, and Harbor is left out. `HAVING` keeps the groups with more than one route, after `GROUP BY` has counted them.
+
+  - type: fill
+    id: m09-t24
+    lesson: m09-l06
+    difficulty: 3
+    prompt: |
+      Fill in the two blanks in the simple-route search. The first blank adds the new stop to the end of the path. The second blank checks the path, so a stop is never visited twice.
+    template: |
+      WITH RECURSIVE edges(from_stop, to_stop) AS (
+          VALUES ('Ash', 'Birch'), ('Birch', 'Ash'), ('Ash', 'Cedar')
+      ),
+      routes(stop, path) AS (
+          SELECT 'Ash', ARRAY['Ash']
+          UNION ALL
+          SELECT e.to_stop, r.path ___ e.to_stop
+          FROM edges AS e
+          JOIN routes AS r ON e.from_stop = r.stop
+          WHERE NOT (e.to_stop = ANY(r.___))
+      )
+      SELECT stop
+      FROM routes;
+    answers:
+      - ["||"]
+      - ["path"]
+    explanation: |
+      `r.path || e.to_stop` adds the new stop to the list, and `NOT (e.to_stop = ANY(r.path))` blocks any stop that is already on it. Without the guard, Birch would lead back to Ash and the search would loop forever.
+
+  - type: exercise
+    id: m09-t25
+    lesson: m09-l02
+    difficulty: 3
+    prompt: |
+      Use two CTEs to find the busiest categories. The first CTE, `product_counts`, counts the products in each category (`category_id` and `product_count`). The second CTE, `busy`, keeps only the categories with **at least 3** products.
+
+      Show the category `name` (from `categories`) and `product_count` for the busy categories. Sort by `product_count` from highest to lowest, then by `name`.
+    starter: |
+      WITH product_counts AS (
+          SELECT category_id, COUNT(*) AS product_count
+          FROM products
+          GROUP BY category_id
+      )
+      SELECT category_id, product_count
+      FROM product_counts
+      ORDER BY product_count DESC;
+    solution: |
+      WITH product_counts AS (
+          SELECT category_id, COUNT(*) AS product_count
+          FROM products
+          GROUP BY category_id
+      ),
+      busy AS (
+          SELECT category_id, product_count
+          FROM product_counts
+          WHERE product_count >= 3
+      )
+      SELECT c.name, b.product_count
+      FROM busy AS b
+      JOIN categories AS c ON c.category_id = b.category_id
+      ORDER BY b.product_count DESC, c.name;
+    ordered: true
+    columnNames: true
+    hints:
+      - Each CTE is one step. The second CTE can read the first one.
+      - Keep the rows where `product_count` is at least 3, then join to `categories` to get the name.
+      - "FROM busy AS b JOIN categories AS c ON c.category_id = ___"
+    explanation: |
+      Eleven categories have at least three products. Kitchen, Peripherals and Phones tie at 8, so the name decides their order. The CTE `busy` reads `product_counts`, which is why the order of the two CTEs matters.
+
+project:
+  id: m09-proj
+  title: Org Chart Explorer
+  icon: "🌳"
+  dataset: company
+  md: |
+    Acme Corp's HR team is building an **Org Chart Explorer**: a small set of queries that answers the questions managers ask every week. Priya from HR gives you the questions one at a time:
+
+    - Who manages the most people?
+    - Who is in Thiago's organisation, at every level?
+    - Who sits above a given person, all the way up to the CEO?
+    - How big is each team, counting everyone below a manager?
+    - What does each team cost in salaries?
+
+    The tasks build on each other. The last question combines the ideas from the whole module: CTEs, a recursive walk down, a recursive walk up, and aggregation.
+
+    > [!TIP]
+    > Build a recursive query in two steps. First run the anchor alone and check its row. Then add the recursive part and check the row count before you move on.
+
+  tasks:
+    - type: exercise
+      id: m09-proj-1
+      title: Priya's first list, the busy managers
+      prompt: |
+        Priya wants the managers with **at least 3 direct reports**. A direct report is an employee whose `manager_id` is that manager's `emp_id`. Count everyone listed under a manager, including people who have left.
+
+        Show the manager's `name` (first name and last name joined with one space) and `direct_reports` (the count). Sort by `direct_reports` from highest to lowest, then by `name`.
+      starter: |
+        WITH direct_counts AS (
+            SELECT manager_id, COUNT(*) AS direct_reports
+            FROM employees
+            GROUP BY manager_id
+        )
+        SELECT manager_id, direct_reports
+        FROM direct_counts
+        ORDER BY direct_reports DESC;
+      solution: |
+        WITH direct_counts AS (
+            SELECT manager_id, COUNT(*) AS direct_reports
+            FROM employees
+            WHERE manager_id IS NOT NULL
+            GROUP BY manager_id
+        )
+        SELECT e.first_name || ' ' || e.last_name AS name,
+               dc.direct_reports
+        FROM direct_counts AS dc
+        JOIN employees AS e ON e.emp_id = dc.manager_id
+        WHERE dc.direct_reports >= 3
+        ORDER BY dc.direct_reports DESC, name;
+      ordered: true
+      columnNames: true
+      hints:
+        - The first CTE counts employees per `manager_id`. Leave out the CEO, whose `manager_id` is NULL.
+        - Join the CTE back to `employees` on the manager's `emp_id` to get the name.
+        - "WHERE dc.direct_reports >= ___"
+      explanation: |
+        Diego Adeyemi, the CEO, has six direct reports. Jun Zhang has four, and Mei Nakamura and Thiago Rodriguez have three each. Ties are sorted by name. The `WHERE` filters the count from the CTE, not the raw employee rows.
+      difficulty: 1
+
+    - type: exercise
+      id: m09-proj-2
+      title: Everyone under Thiago, at every level
+      prompt: |
+        Thiago Rodriguez (`emp_id` 3, VP of Engineering) asks: *"Who is in my organisation, at every level?"* Use a recursive CTE to list Thiago and everyone below him, including people who have left.
+
+        Show `emp_id`, `name` (first name and last name joined with one space) and `depth` (0 for Thiago, 1 for his direct reports, and so on). Sort by `depth`, then by `emp_id`.
+      starter: |
+        WITH RECURSIVE team(emp_id, depth) AS (
+            SELECT emp_id, 0
+            FROM employees
+            WHERE emp_id = 3
+        )
+        SELECT emp_id, depth
+        FROM team;
+      solution: |
+        WITH RECURSIVE team(emp_id, name, depth) AS (
+            SELECT emp_id,
+                   first_name || ' ' || last_name,
+                   0
+            FROM employees
+            WHERE emp_id = 3
+            UNION ALL
+            SELECT e.emp_id,
+                   e.first_name || ' ' || e.last_name,
+                   t.depth + 1
+            FROM employees AS e
+            JOIN team AS t ON e.manager_id = t.emp_id
+        )
+        SELECT emp_id, name, depth
+        FROM team
+        ORDER BY depth, emp_id;
+      ordered: true
+      columnNames: true
+      hints:
+        - "Use the same pattern as the lesson: an anchor row for Thiago, then a recursive part."
+        - "Join `employees` to the team on `e.manager_id = t.emp_id`, and add 1 to `depth`."
+        - "JOIN team AS t ON e.manager_id = ___"
+      explanation: |
+        The team has 21 people in total: Thiago himself and the 20 people below him. The recursive part stops by itself once the newest rows have nobody reporting to them.
+      difficulty: 1
+
+    - type: exercise
+      id: m09-proj-3
+      title: Vikram's chain of command
+      prompt: |
+        Vikram Kumar (`emp_id` 33, Frontend Engineer) must be copied on a message to everyone above him. Walk **up** the chart from Vikram to the CEO.
+
+        Show `emp_id`, `name` (first name and last name joined with one space) and `depth` (0 for Vikram, 1 for his manager, and so on up to the CEO). Sort by `depth`.
+      starter: |
+        WITH RECURSIVE chain(emp_id, manager_id, depth) AS (
+            SELECT emp_id, manager_id, 0
+            FROM employees
+            WHERE emp_id = 33
+        )
+        SELECT emp_id, manager_id, depth
+        FROM chain;
+      solution: |
+        WITH RECURSIVE chain(emp_id, name, manager_id, depth) AS (
+            SELECT emp_id,
+                   first_name || ' ' || last_name,
+                   manager_id,
+                   0
+            FROM employees
+            WHERE emp_id = 33
+            UNION ALL
+            SELECT e.emp_id,
+                   e.first_name || ' ' || e.last_name,
+                   e.manager_id,
+                   c.depth + 1
+            FROM employees AS e
+            JOIN chain AS c ON e.emp_id = c.manager_id
+        )
+        SELECT emp_id, name, depth
+        FROM chain
+        ORDER BY depth;
+      ordered: true
+      columnNames: true
+      hints:
+        - "Walking up flips the join. Find the employee whose `emp_id` equals the current row's `manager_id`."
+        - "The CEO's `manager_id` is NULL, so the search ends there by itself."
+        - "JOIN chain AS c ON e.emp_id = c.___"
+      explanation: |
+        Vikram reports to Jun Zhang, who reports to Layla Khan, who reports to Thiago Rodriguez, who reports to the CEO, Diego Adeyemi. That makes five rows, one per level.
+      difficulty: 2
+
+    - type: exercise
+      id: m09-proj-4
+      title: Reporting lines as text
+      prompt: |
+        Jun Zhang (`emp_id` 19) wants a readable reporting line for each person in his team. Build a `path` text that starts with Jun's name and adds each name below him, joined with ` > ` (a space, a greater-than sign, a space).
+
+        Show only the `path` column, including Jun's own row. Sort by `path`.
+      starter: |
+        WITH RECURSIVE tree(emp_id, path) AS (
+            SELECT emp_id, first_name || ' ' || last_name
+            FROM employees
+            WHERE emp_id = 19
+        )
+        SELECT path
+        FROM tree;
+      solution: |
+        WITH RECURSIVE tree(emp_id, path) AS (
+            SELECT emp_id, first_name || ' ' || last_name
+            FROM employees
+            WHERE emp_id = 19
+            UNION ALL
+            SELECT e.emp_id,
+                   t.path || ' > ' || e.first_name || ' ' || e.last_name
+            FROM employees AS e
+            JOIN tree AS t ON e.manager_id = t.emp_id
+        )
+        SELECT path
+        FROM tree
+        ORDER BY path;
+      ordered: true
+      columnNames: true
+      hints:
+        - "Each round adds one name to the end of the text, so the anchor's `path` is just Jun's name."
+        - "Build the new text with `||`, and put ` > ` between the old text and the new name."
+        - "SELECT e.emp_id, t.path || ' > ' || e.first_name ___ e.last_name FROM employees AS e JOIN tree AS t ON ___"
+      explanation: |
+        The anchor is Jun alone. Each round appends ` > ` and one more name, so the text grows downwards. Sorting by `path` keeps each person's line together, and each name appears after the lead it belongs to.
+      difficulty: 2
+
+    - type: exercise
+      id: m09-proj-5
+      title: How big is each team?
+      prompt: |
+        Priya's next question: *"How many people sit below each manager, at any level?"* This time the team counts everyone below the manager, not just direct reports, and includes people who have left.
+
+        Show the manager's `name` (first name and last name joined with one space) and `team_size` for every manager with **at least 4** people below them. Sort by `team_size` from highest to lowest, then by `name`.
+      starter: |
+        SELECT e.first_name || ' ' || e.last_name AS name,
+               COUNT(*) AS team_size
+        FROM employees AS e
+        GROUP BY e.emp_id, e.first_name, e.last_name
+        ORDER BY team_size DESC;
+      solution: |
+        WITH RECURSIVE above(emp_id, boss_id) AS (
+            SELECT emp_id, manager_id
+            FROM employees
+            WHERE manager_id IS NOT NULL
+            UNION ALL
+            SELECT a.emp_id, e.manager_id
+            FROM above AS a
+            JOIN employees AS e ON e.emp_id = a.boss_id
+            WHERE e.manager_id IS NOT NULL
+        )
+        SELECT b.first_name || ' ' || b.last_name AS name,
+               COUNT(*) AS team_size
+        FROM above AS a
+        JOIN employees AS b ON b.emp_id = a.boss_id
+        GROUP BY b.emp_id, b.first_name, b.last_name
+        HAVING COUNT(*) >= 4
+        ORDER BY team_size DESC, name;
+      ordered: true
+      columnNames: true
+      hints:
+        - "Start with one row for each person and their direct manager. Call the second column `boss_id`."
+        - "In the recursive part, move the boss up one level: join `employees` on `e.emp_id = a.boss_id`, and take that person's `manager_id`."
+        - "Count the rows for each boss with `COUNT(*)`, then keep the big teams with `HAVING COUNT(*) >= 4`."
+      explanation: |
+        This is a new twist on the recursive pattern. The search starts from every employee and walks **up**, and each boss it passes gets one row. Counting rows per boss gives the team size at every level. Diego Adeyemi, the CEO, has 54 people below him: everyone except himself.
+      difficulty: 3
+
+    - type: exercise
+      id: m09-proj-6
+      title: The team payroll report
+      prompt: |
+        Final task. Priya wants a payroll report for each manager's team. Use the same method as the last task, but count **only people who are still employed** (their `terminated_on` is empty). The team is still everyone below the manager, at any level.
+
+        Show `manager` (first name and last name joined with one space), `team_size` (the number of current people below them) and `team_payroll` (the sum of their `salary`). Keep only managers whose `team_size` is at least 5. Sort by `team_payroll` from highest to lowest, then by `manager`.
+      starter: |
+        SELECT e.first_name || ' ' || e.last_name AS manager,
+               COUNT(*) AS team_size
+        FROM employees AS e
+        WHERE e.terminated_on IS NULL
+        GROUP BY e.emp_id, e.first_name, e.last_name
+        ORDER BY team_size DESC;
+      solution: |
+        WITH RECURSIVE above(emp_id, boss_id) AS (
+            SELECT emp_id, manager_id
+            FROM employees
+            WHERE manager_id IS NOT NULL
+            UNION ALL
+            SELECT a.emp_id, e.manager_id
+            FROM above AS a
+            JOIN employees AS e ON e.emp_id = a.boss_id
+            WHERE e.manager_id IS NOT NULL
+        )
+        SELECT b.first_name || ' ' || b.last_name AS manager,
+               COUNT(*) AS team_size,
+               SUM(e.salary) AS team_payroll
+        FROM above AS a
+        JOIN employees AS e ON e.emp_id = a.emp_id
+        JOIN employees AS b ON b.emp_id = a.boss_id
+        WHERE e.terminated_on IS NULL
+        GROUP BY b.emp_id, b.first_name, b.last_name
+        HAVING COUNT(*) >= 5
+        ORDER BY team_payroll DESC, manager;
+      ordered: true
+      columnNames: true
+      hints:
+        - "Keep the same recursive part as the last task. Then join `above` to `employees` on the person (`a.emp_id`), so you can read their `salary` and `terminated_on`."
+        - "Keep only people who are still employed with `WHERE e.terminated_on IS NULL`. This filter applies to the people below the manager, not to the manager."
+        - "SUM(e.salary) AS team_payroll ... HAVING COUNT(*) >= ___"
+      explanation: |
+        Diego's current team has 49 people, and their salaries add up to $6,329,000.00. Thiago Rodriguez's team has 18 current people. The filter applies to the people below each manager, and `HAVING` keeps only the teams with at least five current people.
+      difficulty: 3

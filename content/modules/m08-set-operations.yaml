@@ -502,12 +502,1472 @@ lessons:
           SELECT hired_on FROM staff;
         note: Break a rule and you get an error, or worse, a quietly wrong list when the types happen to match.
 
+  - id: m08-l02
+    title: INTERSECT & EXCEPT
+    summary: Keep the rows two lists share, or subtract one list from another.
+    minutes: 25
+    dataset: school
+    steps:
+      - type: read
+        title: Two clubs, one question
+        md: |
+          Mr. Okafor, the school's activities coordinator, wants to give a **Club Champions** award to
+          students who belong to **both** the Chess Club and the Book Club.
+
+          Then he needs a second list: the Chess Club students who are **not** in the Book Club, so he can
+          invite them to a special chess evening.
+
+          Both questions compare two lists. In the last lesson you stacked lists with `UNION`. Now you will
+          meet two more set operations:
+
+          - `INTERSECT` keeps only the rows that appear in **both** results.
+          - `EXCEPT` keeps the rows of the **first** result that do **not** appear in the second.
+
+          > [!ANALOGY]
+          > Think of two guest lists for two parties. `INTERSECT` finds the people invited to **both** parties.
+          > `EXCEPT` finds the people invited to the first party who were **not** invited to the second.
+
+      - type: example
+        title: Students in both clubs
+        md: |
+          Each club is a list of names. Three tables work together here: `clubs` gives the club's name,
+          `club_members` says who joined which club, and `students` has each person's name.
+
+          Press **Run**.
+        sql: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          INTERSECT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Book Club'
+          ORDER BY student;
+        after: |
+          **4 students**: Aiko Park, Benjamin Kelly, Nora Taylor and Stefan Lindqvist. They are the only
+          names that appear on **both** lists.
+
+          Only the first query names the column (`AS student`). The second query just has to return the same
+          kind of value, one text column, in the same position.
+
+      - type: viz
+        viz: set-ops
+        title: See INTERSECT and EXCEPT with two small lists
+        md: |
+          These are two small sample lists of club members, so you can see the idea at a glance.
+          Click **INTERSECT**, then **EXCEPT**, and watch which names survive.
+        config:
+          a: { name: chess_club, values: [Aiko Park, Amit Lin, Benjamin Kelly, Nora Taylor, Stefan Lindqvist] }
+          b: { name: book_club, values: [Aiko Park, Benjamin Kelly, Felix Reed, Nora Taylor, Stefan Lindqvist] }
+
+      - type: example
+        title: Chess Club students who are not in the Book Club
+        md: |
+          Only one word changes: `INTERSECT` becomes `EXCEPT`.
+        sql: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          EXCEPT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Book Club'
+          ORDER BY student;
+        after: |
+          **10 students**: the 14 Chess Club members minus the 4 who are also in the Book Club. Aiko Park and
+          Nora Taylor are gone, because `EXCEPT` removes every name found on the **second** list.
+
+      - type: example
+        title: Flip the two sides
+        md: |
+          Now swap the clubs: Book Club first, Chess Club second. Everything else stays the same.
+        sql: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Book Club'
+          EXCEPT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          ORDER BY student;
+        after: |
+          Again **10 rows**, but the names are different. These are the Book Club members who are **not** in
+          the Chess Club, such as Aisha Ali and Felix Reed.
+
+          `INTERSECT` does not care which list comes first. `EXCEPT` does. Before you write one, ask yourself:
+          "Which list am I starting from?"
+
+      - type: read
+        title: Three ways to combine two lists
+        md: |
+          `UNION`, `INTERSECT` and `EXCEPT` all compare **whole rows**, and all of them remove copies.
+          Pick the one that matches your question:
+
+          | Keyword | Keeps | Question it answers |
+          |---|---|---|
+          | `UNION` | rows from either list | Who is in **any** club? |
+          | `INTERSECT` | rows on **both** lists | Who is in **both** clubs? |
+          | `EXCEPT` | rows on the first list but **not** the second | Who is in the Chess Club but **not** the Book Club? |
+
+          PostgreSQL also has `INTERSECT ALL` and `EXCEPT ALL`, which keep copies. For example, a row that
+          appears twice on both sides is kept twice by `INTERSECT ALL`. You will rarely need them.
+
+          > [!MISTAKE]
+          > Getting the order of an `EXCEPT` wrong. `A EXCEPT B` and `B EXCEPT A` can return the same **number**
+          > of rows with completely different names. Always ask: "Which list am I starting from?"
+
+      - type: example
+        title: Sort at the very end
+        md: |
+          Each `SELECT` is a complete question, but `ORDER BY` belongs at the **very end** of the whole
+          statement. Run this to see what happens when it sits in the middle.
+        sql: |
+          SELECT first_name
+          FROM students
+          WHERE grade_level = 12
+          ORDER BY first_name
+          EXCEPT
+          SELECT first_name
+          FROM students
+          WHERE grade_level = 9;
+        expectError: true
+        after: |
+          PostgreSQL says `syntax error at or near "EXCEPT"`. The `ORDER BY` ends the first query early, so the
+          database does not understand the `EXCEPT` that follows. Move `ORDER BY first_name` to the bottom of
+          the statement. (Lesson 3 shows how to sort each part on its own, using parentheses.)
+
+      - type: exercise
+        id: m08-l02-e1
+        title: Robotics and Yearbook
+        prompt: |
+          Show one column called `student` with the full name of every student who is in **both** the
+          **Robotics Club** and the **Yearbook Committee**. Sort A to Z.
+        starter: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Robotics Club'
+          ___
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Yearbook Committee'
+          ORDER BY student;
+        solution: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Robotics Club'
+          INTERSECT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Yearbook Committee'
+          ORDER BY student;
+        ordered: true
+        columnNames: true
+        hints:
+          - "It is the Chess and Book Club example again, with two different clubs."
+          - "The keyword that keeps only the names found on both lists is `INTERSECT`."
+          - "SELECT ... WHERE cl.name = 'Robotics Club' ___ SELECT ... WHERE cl.name = 'Yearbook Committee' ORDER BY student;"
+        explanation: |
+          **4 students**: Daichi Jones, Hassan Haddad, Layla Hussain and Marta King. The `ORDER BY student` at the
+          very end sorts the whole result. The column name comes from the first query, so `AS student` goes there.
+        difficulty: 1
+
+      - type: quiz
+        id: m08-l02-q1
+        question: |
+          You have two lists, **A** and **B**. Which keyword returns the rows that are on list **A** but **not**
+          on list **B**?
+        options: ["INTERSECT", "UNION", "EXCEPT", "UNION ALL"]
+        answer: 2
+        explanation: |
+          `EXCEPT` subtracts. It starts with the first list and removes anything that also appears in the
+          second. `INTERSECT` is the opposite idea: it keeps only the rows that both lists share.
+
+      - type: exercise
+        id: m08-l02-e2
+        title: Chess Club, but not the Debate Team
+        prompt: |
+          Show one column called `student` with the full name of every student who is in the **Chess Club**
+          but **not** in the **Debate Team**. Sort A to Z.
+        starter: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          ___
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Debate Team'
+          ORDER BY student;
+        solution: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          EXCEPT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Debate Team'
+          ORDER BY student;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Start with the Chess Club list, then remove anyone who is also on the Debate Team list."
+          - "The keyword that subtracts the second list from the first is `EXCEPT`."
+          - "SELECT ... WHERE cl.name = 'Chess Club' ___ SELECT ... WHERE cl.name = 'Debate Team' ORDER BY student;"
+        explanation: |
+          **13 students.** The Chess Club has 14 members, and Elif Russo is also in the Debate Team, so she is the
+          only name removed. The Chess Club must be the first query, because `EXCEPT` starts from the first list.
+        difficulty: 2
+
+      - type: read
+        title: What about NULL?
+        md: |
+          You met `NULL` in the earlier modules: it means "no value". In a `WHERE` clause, `NULL = NULL` is never
+          true. Set operations work differently: **two NULLs count as the same value**.
+
+          So `INTERSECT` keeps a single NULL row when both sides have one. Try to predict it in the next question.
+
+      - type: predict
+        id: m08-l02-p1
+        question: |
+          How many rows does this query return?
+        sql: |
+          SELECT NULL
+          INTERSECT
+          SELECT NULL;
+        options: ["0 rows", "1 row", "2 rows", "An error"]
+        answer: 1
+        explanation: |
+          `INTERSECT` treats two NULLs as the same value, so one NULL row survives. This surprises most people,
+          because `NULL = NULL` is never true inside a `WHERE` clause. Set operations are the exception.
+
+      - type: fill
+        id: m08-l02-f1
+        prompt: |
+          Complete the query so it lists the `student_id`s that have an enrollment in **2024-Fall** **and** in
+          **2025-Spring**.
+        template: |
+          SELECT student_id
+          FROM enrollments
+          WHERE term = '2024-Fall'
+          ___
+          SELECT student_id
+          FROM enrollments
+          WHERE term = '2025-Spring';
+        answers:
+          - ["INTERSECT"]
+        explanation: |
+          `INTERSECT` keeps only the ids that are on both lists. The result has 108 ids, one per student, because
+          `INTERSECT` also removes copies.
+
+      - type: exercise
+        id: m08-l02-e3
+        title: Fall but not spring
+        prompt: |
+          Show the `first_name` and `last_name` of every student who was enrolled in a **2024-Fall** course but has
+          **no** enrollment in **2025-Spring**. Sort by `last_name`, then by `first_name`.
+        starter: |
+          SELECT first_name, last_name
+          FROM students
+          WHERE student_id IN (
+              SELECT student_id
+              FROM enrollments
+              WHERE term = '2024-Fall'
+              ___
+              SELECT student_id
+              FROM enrollments
+              WHERE term = '2025-Spring'
+          )
+          ORDER BY last_name, first_name;
+        solution: |
+          SELECT first_name, last_name
+          FROM students
+          WHERE student_id IN (
+              SELECT student_id
+              FROM enrollments
+              WHERE term = '2024-Fall'
+              EXCEPT
+              SELECT student_id
+              FROM enrollments
+              WHERE term = '2025-Spring'
+          )
+          ORDER BY last_name, first_name;
+        ordered: true
+        hints:
+          - "First find the student ids in the fall list that are not in the spring list, then look up their names."
+          - "`IN (...)` accepts a list of values from a subquery, and `EXCEPT` removes one list from another."
+          - "... WHERE term = '2024-Fall' ___ SELECT student_id FROM enrollments WHERE term = '2025-Spring' ..."
+        explanation: |
+          **9 students**, such as Marta King and Ruby Robinson. The 108 students who appear in both terms are
+          removed. Sorting by last name, then first name, gives a total order, because no two students in this
+          list share both names.
+        difficulty: 2
+
+      - type: parsons
+        id: m08-l02-o1
+        prompt: |
+          Put the lines in order to list the student ids that are in the **2025-Spring** enrollments but **not**
+          in the **2024-Fall** enrollments. Sort by student id.
+        lines:
+          - SELECT student_id
+          - FROM enrollments
+          - WHERE term = '2025-Spring'
+          - EXCEPT
+          - SELECT student_id
+          - FROM enrollments
+          - WHERE term = '2024-Fall'
+          - ORDER BY student_id;
+        distractors:
+          - INTERSECT
+        explanation: |
+          `EXCEPT` goes between the two halves, and the spring list is the first one, because it is the list you
+          are starting from. `INTERSECT` is the wrong keyword for "not in".
+
+      - type: exercise
+        id: m08-l02-e4
+        title: In exactly one of the two clubs
+        prompt: |
+          Show one column called `student` with the full name of every student who is in **exactly one** of the
+          **Chess Club** and the **Book Club**, but not both. Sort A to Z.
+
+          The starter below runs without an error, but it gives the wrong answer. Fix it.
+        starter: |
+          SELECT s.first_name || ' ' || s.last_name AS student
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          EXCEPT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Book Club'
+          UNION
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Book Club'
+          EXCEPT
+          SELECT s.first_name || ' ' || s.last_name
+          FROM club_members AS cm
+          JOIN clubs AS cl ON cl.club_id = cm.club_id
+          JOIN students AS s ON s.student_id = cm.student_id
+          WHERE cl.name = 'Chess Club'
+          ORDER BY student;
+        solution: |
+          (SELECT s.first_name || ' ' || s.last_name AS student
+           FROM club_members AS cm
+           JOIN clubs AS cl ON cl.club_id = cm.club_id
+           JOIN students AS s ON s.student_id = cm.student_id
+           WHERE cl.name = 'Chess Club'
+           EXCEPT
+           SELECT s.first_name || ' ' || s.last_name
+           FROM club_members AS cm
+           JOIN clubs AS cl ON cl.club_id = cm.club_id
+           JOIN students AS s ON s.student_id = cm.student_id
+           WHERE cl.name = 'Book Club')
+          UNION
+          (SELECT s.first_name || ' ' || s.last_name
+           FROM club_members AS cm
+           JOIN clubs AS cl ON cl.club_id = cm.club_id
+           JOIN students AS s ON s.student_id = cm.student_id
+           WHERE cl.name = 'Book Club'
+           EXCEPT
+           SELECT s.first_name || ' ' || s.last_name
+           FROM club_members AS cm
+           JOIN clubs AS cl ON cl.club_id = cm.club_id
+           JOIN students AS s ON s.student_id = cm.student_id
+           WHERE cl.name = 'Chess Club')
+          ORDER BY student;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The starter stacks two EXCEPT queries. Think about the order in which PostgreSQL reads them."
+          - "`UNION` and `EXCEPT` are read from left to right, so the starter does not do what you want. Wrap each EXCEPT in parentheses."
+          - "(SELECT ... WHERE cl.name = 'Chess Club' EXCEPT SELECT ... WHERE cl.name = 'Book Club') ___ (SELECT ... EXCEPT SELECT ...) ORDER BY student;"
+        explanation: |
+          **20 students**: 10 who are only in the Chess Club, and 10 who are only in the Book Club. Without
+          parentheses, PostgreSQL reads `A EXCEPT B UNION B EXCEPT A` from left to right. It first combines
+          (A minus B) with B, then removes A. That leaves only the 10 Book Club names. Parentheses make each
+          `EXCEPT` a complete unit. The same left-to-right rule applies to `UNION`.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Keep the rows both lists share
+        sql: |
+          SELECT name FROM list_a
+          INTERSECT
+          SELECT name FROM list_b;
+        note: INTERSECT keeps only the rows found on both sides, and removes copies.
+      - title: Keep the rows of the first list only
+        sql: |
+          SELECT name FROM list_a
+          EXCEPT
+          SELECT name FROM list_b;
+        note: The first query is your starting list. Swapping the two queries gives different rows.
+      - title: Rows on exactly one of two lists
+        sql: |
+          (SELECT name FROM list_a EXCEPT SELECT name FROM list_b)
+          UNION
+          (SELECT name FROM list_b EXCEPT SELECT name FROM list_a);
+        note: Wrap each EXCEPT in parentheses. Without them, the left-to-right order gives the wrong rows.
+
+  - id: m08-l03
+    title: Set operations in practice
+    summary: Label each part of a combined report, compare two lists, and sort or limit each part on its own.
+    minutes: 30
+    dataset: shop
+    steps:
+      - type: read
+        title: Priya's quarterly review
+        md: |
+          Priya works on the numbers for ShopSmart. Every quarter she sends the owner a short review: which
+          products need attention, which customers were lost, and one summary with a total.
+
+          Her review is built from several small questions, and each question gives a list. The set
+          operations stack those lists together. Three habits keep her reviews clear:
+
+          1. **Label every part.** A column such as `reason` or `movement` tells the reader where each row came from.
+          2. **Sort once, at the very end**, unless one part needs its own sort. Then wrap that part in parentheses.
+          3. **Check that the two sides line up**: the same number of columns, the same kinds of values, in the same order.
+
+          > [!REAL-WORLD]
+          > Analysts build reports like this all the time. A stacked report with a clear label on each row is
+          > easy to check, and easy for the next person to change.
+
+      - type: example
+        title: Label each row with its source
+        md: |
+          A literal (a value written directly in the query, such as `'Discontinued'`) can be a column too. It
+          gives every row of its part the same label.
+
+          Press **Run** to stack the discontinued products on top of the cheap ones.
+        sql: |
+          SELECT 'Discontinued' AS reason, name
+          FROM products
+          WHERE is_active = false
+          UNION ALL
+          SELECT 'Under $15', name
+          FROM products
+          WHERE price < 15
+          ORDER BY reason, name;
+        after: |
+          **8 rows**: the 4 discontinued products, then the 4 products under $15. Now every row says why it is
+          in the list.
+
+          `ORDER BY reason, name` puts 'Discontinued' first (D comes before U), then sorts the names inside each
+          group. Two sort columns with no ties make the order total.
+
+      - type: example
+        title: Find the products nobody has bought
+        md: |
+          Here you compare two tables. The product catalog lists every product, and `order_items` lists the
+          products that were sold. `EXCEPT` keeps the catalog names that never appear in a sale.
+
+          The `JOIN` gives the order lines their product names (module 6).
+        sql: |
+          SELECT name
+          FROM products
+          EXCEPT
+          SELECT p.name
+          FROM order_items AS oi
+          JOIN products AS p ON p.product_id = oi.product_id
+          ORDER BY name;
+        after: |
+          **5 products** have never been sold: Mysteries of the Deep Sea, Natural Bamboo Hairbrush, Science Lab
+          Starter Kit, Standing Desk 140cm and Zephyr Gaming Laptop X. This is a short list Priya can act on.
+
+      - type: fill
+        id: m08-l03-f1
+        prompt: |
+          Complete the query so it lists the customers who ordered in **2024** but **never** before 2024.
+          Keep only the `customer_id`s.
+        template: |
+          SELECT customer_id
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+          ___
+          SELECT customer_id
+          FROM orders
+          WHERE order_date < '2024-01-01';
+        answers:
+          - ["EXCEPT"]
+        explanation: |
+          `EXCEPT` removes every customer who had an order before 2024. In this data that leaves **49 new
+          customers**. Using `UNION` here would add the old customers back in.
+
+      - type: viz
+        viz: set-ops
+        title: Which buyers were lost, and which are new?
+        md: |
+          These two small lists are made up for illustration: buyers in one year and buyers in the next. Click
+          each button and watch which names survive. Then ask yourself: which list does `EXCEPT` start from?
+        config:
+          a: { name: buyers_2023, values: [Ana, Ben, Chen, Dee] }
+          b: { name: buyers_2024, values: [Ben, Dee, Eli] }
+
+      - type: example
+        title: Combine two summary lines
+        md: |
+          Each part of a `UNION ALL` can be a whole question of its own. Here each part counts customers, so
+          the stacked result is a two-line summary. A sub-query in `FROM` (module 7) holds each `EXCEPT`.
+        sql: |
+          SELECT 'Ordered in 2023 only' AS report,
+                 COUNT(*) AS customers
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date < '2024-01-01'
+              EXCEPT
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+          ) AS only_2023
+          UNION ALL
+          SELECT 'Ordered in 2024 only',
+                 COUNT(*)
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+              EXCEPT
+              SELECT customer_id FROM orders
+              WHERE order_date < '2024-01-01'
+          ) AS only_2024;
+        after: |
+          **2 rows**: 6 customers ordered in 2023 and never came back in 2024, and 49 customers are new in 2024.
+          Each line of the report is a complete question, and `UNION ALL` stacks the answers with their labels.
+
+      - type: example
+        title: Each part with its own LIMIT
+        md: |
+          Priya also wants the two cheapest and the two most expensive products, each group labelled. Each
+          part needs its own `ORDER BY` and `LIMIT`, so each part goes in **parentheses**.
+        sql: |
+          (SELECT 'Cheapest' AS group_name, name, price
+           FROM products
+           ORDER BY price ASC
+           LIMIT 2)
+          UNION ALL
+          (SELECT 'Priciest', name, price
+           FROM products
+           ORDER BY price DESC
+           LIMIT 2)
+          ORDER BY price;
+        after: |
+          **4 rows**, sorted by price: Screen Protector 3-Pack at $9.99 and Natural Bamboo Hairbrush at $12.49
+          are the Cheapest. Zephyr Gaming Laptop X at $1,299.99 and Aurora 16-inch Pro Laptop at $1,499.99
+          are the Priciest.
+
+          The single `ORDER BY price` at the bottom sorts the whole stacked list.
+
+      - type: read
+        title: Which parts need parentheses?
+        md: |
+          Use plain `ORDER BY` or `LIMIT` in the middle of a set operation, and PostgreSQL stops with a syntax
+          error. Wrap that part in parentheses and the error goes away.
+
+          Set operations also have a precedence rule (which operator runs first). `INTERSECT` runs **before**
+          `UNION` and `EXCEPT`, even though the query is read from left to right.
+
+          > [!MISTAKE]
+          > Assuming that `1 UNION 2 INTERSECT 2` is read from left to right. It is not: `INTERSECT` runs
+          > first. Wrap any part you are unsure about in parentheses, and the order is clear to the next reader.
+
+      - type: predict
+        id: m08-l03-p1
+        question: |
+          `INTERSECT` runs before `UNION`. How many rows does this query return?
+        sql: |
+          SELECT 1 AS n
+          UNION
+          SELECT 2
+          INTERSECT
+          SELECT 2;
+        options: ["1 row", "2 rows", "3 rows", "An error"]
+        answer: 1
+        explanation: |
+          First `2 INTERSECT 2` gives 2. Then `UNION` stacks 1 on top of it, so you get 1 and 2: **2 rows**.
+          If you read from left to right, `1 UNION 2` comes first, and `INTERSECT 2` then leaves only 1 row.
+
+      - type: quiz
+        id: m08-l03-q1
+        question: |
+          You want the 2 cheapest and the 2 most expensive products, stacked in one list, with each group labelled.
+          Which query is correct?
+        options:
+          - "SELECT name, price FROM products ORDER BY price LIMIT 2 UNION ALL SELECT name, price FROM products ORDER BY price DESC LIMIT 2"
+          - "(SELECT name, price FROM products ORDER BY price LIMIT 2) UNION ALL (SELECT name, price FROM products ORDER BY price DESC LIMIT 2)"
+          - "SELECT name, price FROM products UNION ALL SELECT name, price FROM products ORDER BY price LIMIT 4"
+        answer: 1
+        explanation: |
+          Only option 2 wraps each part in parentheses. Option 1 fails with a syntax error, because `LIMIT` sits in
+          the middle. Option 3 gives the wrong rows: one `LIMIT 4` at the end keeps the first four rows of the
+          whole list, not two from each side.
+
+      - type: example
+        title: Count the rows from each source
+        md: |
+          Wrap a stacked list in a sub-query, then use `GROUP BY` (module 5) on the label. This counts how many
+          rows each source contributed. Use `UNION ALL`: `UNION` would drop a row that matches another row
+          exactly.
+        sql: |
+          SELECT reason, COUNT(*) AS items
+          FROM (
+              SELECT 'Discontinued' AS reason, name
+              FROM products
+              WHERE is_active = false
+              UNION ALL
+              SELECT 'Under $15', name
+              FROM products
+              WHERE price < 15
+              UNION ALL
+              SELECT 'Over $1,000', name
+              FROM products
+              WHERE price > 1000
+          ) AS review
+          GROUP BY reason
+          ORDER BY reason;
+        after: |
+          **3 rows**: Discontinued 4, Over $1,000 3, Under $15 4. Nothing is counted twice, because no product
+          is in two groups.
+
+      - type: parsons
+        id: m08-l03-o1
+        prompt: |
+          Put the lines in order to count how many rows each source contributes. Sort by the source label.
+        lines:
+          - SELECT reason, COUNT(*) AS items
+          - FROM (
+          - SELECT 'Discontinued' AS reason, name
+          - FROM products
+          - WHERE is_active = false
+          - UNION ALL
+          - SELECT 'Under $15', name
+          - FROM products
+          - WHERE price < 15
+          - ) AS review
+          - GROUP BY reason
+          - ORDER BY reason;
+        distractors:
+          - UNION
+        explanation: |
+          `UNION ALL` joins the two sources and keeps every row, so the counts are correct. `UNION` would be the
+          wrong choice when you are counting.
+
+      - type: exercise
+        id: m08-l03-e1
+        title: A labelled stack
+        prompt: |
+          Show two columns, `reason` and `name`. First list the **discontinued** products, labelled
+          `'Discontinued'`. Then list the products priced **above $1,000**, labelled `'Premium'`. Keep every
+          row. Sort by `reason`, then by `name`.
+        starter: |
+          SELECT 'Discontinued' AS reason, name
+          FROM products
+          WHERE is_active = false
+          ___
+          SELECT 'Premium', name
+          FROM products
+          WHERE price > 1000
+          ORDER BY reason, name;
+        solution: |
+          SELECT 'Discontinued' AS reason, name
+          FROM products
+          WHERE is_active = false
+          UNION ALL
+          SELECT 'Premium', name
+          FROM products
+          WHERE price > 1000
+          ORDER BY reason, name;
+        ordered: true
+        columnNames: true
+        hints:
+          - "It is the labelled-stack example again, with a different label and a different price filter."
+          - "You must keep every row, so use the keyword that stacks without removing copies."
+          - "SELECT 'Discontinued' AS reason, name FROM products WHERE is_active = false ___ SELECT 'Premium', name FROM products WHERE price > 1000 ORDER BY reason, name;"
+        explanation: |
+          **7 rows**: 4 discontinued products, then 3 premium products (the laptops priced above $1,000). Because
+          'Discontinued' comes before 'Premium' in the alphabet, the discontinued rows come first.
+        difficulty: 1
+
+      - type: exercise
+        id: m08-l03-e2
+        title: Customers lost after 2023
+        prompt: |
+          Show the `first_name` and `last_name` of every customer who ordered in **2023** but has **no** order in
+          **2024**. Sort by `last_name`, then by `first_name`.
+        starter: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE customer_id IN (
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2023-01-01'
+                AND order_date < '2024-01-01'
+              ___
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+                AND order_date < '2025-01-01'
+          )
+          ORDER BY last_name, first_name;
+        solution: |
+          SELECT first_name, last_name
+          FROM customers
+          WHERE customer_id IN (
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2023-01-01'
+                AND order_date < '2024-01-01'
+              EXCEPT
+              SELECT customer_id
+              FROM orders
+              WHERE order_date >= '2024-01-01'
+                AND order_date < '2025-01-01'
+          )
+          ORDER BY last_name, first_name;
+        ordered: true
+        hints:
+          - "Find the customer ids from 2023 first, then remove the ones that also appear in 2024."
+          - "The keyword that removes one list from another is `EXCEPT`. The `IN (...)` looks up the names."
+          - "SELECT customer_id FROM orders WHERE order_date >= '2023-01-01' AND order_date < '2024-01-01' ___ SELECT customer_id FROM orders WHERE ... ;"
+        explanation: |
+          **6 customers**, from Samuel Anderson to Diya Rao. `EXCEPT` removes every customer who also ordered in
+          2024, and `IN` then looks up their names. Sorting by last name and then first name gives an order with
+          no ties.
+        difficulty: 2
+
+      - type: exercise
+        id: m08-l03-e3
+        title: A report with a total row
+        prompt: |
+          Build a three-row report with two columns, `report` and `customers`:
+
+          1. `'Ordered in 2023'`: the number of different customers with at least one order in 2023.
+          2. `'Ordered in 2024'`: the number of different customers with at least one order in 2024.
+          3. `'TOTAL (either year)'`: the number of different customers with an order in 2023 **or** 2024.
+
+          Any row order is fine.
+        starter: |
+          SELECT 'Ordered in 2023' AS report,
+                 COUNT(DISTINCT customer_id) AS customers
+          FROM orders
+          WHERE order_date >= '2023-01-01'
+            AND order_date < '2024-01-01'
+          UNION ALL
+          SELECT 'Ordered in 2024',
+                 COUNT(DISTINCT customer_id)
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+            AND order_date < '2025-01-01'
+          ___
+          SELECT 'TOTAL (either year)', COUNT(*)
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2023-01-01'
+                AND order_date < '2024-01-01'
+              UNION
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+                AND order_date < '2025-01-01'
+          ) AS either_year;
+        solution: |
+          SELECT 'Ordered in 2023' AS report,
+                 COUNT(DISTINCT customer_id) AS customers
+          FROM orders
+          WHERE order_date >= '2023-01-01'
+            AND order_date < '2024-01-01'
+          UNION ALL
+          SELECT 'Ordered in 2024',
+                 COUNT(DISTINCT customer_id)
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+            AND order_date < '2025-01-01'
+          UNION ALL
+          SELECT 'TOTAL (either year)', COUNT(*)
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2023-01-01'
+                AND order_date < '2024-01-01'
+              UNION
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+                AND order_date < '2025-01-01'
+          ) AS either_year;
+        columnNames: true
+        hints:
+          - "Each of the first two lines is a single query that counts different customers. The third line is the tricky one."
+          - "For the total, a `UNION` of the two years removes the customers who ordered in both years, so counting its rows gives the number of different customers."
+          - "... ___ SELECT 'TOTAL (either year)', COUNT(*) FROM ( SELECT customer_id FROM orders WHERE ... UNION SELECT customer_id FROM orders WHERE ... ) AS either_year;"
+        explanation: |
+          **91 customers ordered in 2023, 134 in 2024, and 140 in either year.** The total is less than 91 + 134,
+          because 85 customers ordered in both years. `UNION` removes that overlap, so the total row counts each
+          customer once.
+        difficulty: 2
+
+      - type: exercise
+        id: m08-l03-e4
+        title: Products that changed
+        prompt: |
+          Show two columns, `movement` and `product`. List the products that were sold **only in 2023**, labelled
+          `'Dropped'`, and the products that were sold **only in 2024**, labelled `'New'`. Each product appears
+          once. Sort by `movement`, then by `product`.
+
+          A product was sold in a year if it appears in an order line for an order placed in that year.
+        starter: |
+          SELECT 'Dropped' AS movement, product
+          FROM (
+              SELECT p.name AS product
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2023-01-01'
+                AND o.order_date < '2024-01-01'
+              EXCEPT
+              SELECT p.name
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+          ) AS dropped
+          ___
+          SELECT 'New', product
+          FROM (
+              SELECT p.name AS product
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+              EXCEPT
+              SELECT p.name
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2023-01-01'
+                AND o.order_date < '2024-01-01'
+          ) AS added
+          ORDER BY movement, product;
+        solution: |
+          SELECT 'Dropped' AS movement, product
+          FROM (
+              SELECT p.name AS product
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2023-01-01'
+                AND o.order_date < '2024-01-01'
+              EXCEPT
+              SELECT p.name
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+          ) AS dropped
+          UNION ALL
+          SELECT 'New', product
+          FROM (
+              SELECT p.name AS product
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+              EXCEPT
+              SELECT p.name
+              FROM order_items AS oi
+              JOIN orders AS o ON o.order_id = oi.order_id
+              JOIN products AS p ON p.product_id = oi.product_id
+              WHERE o.order_date >= '2023-01-01'
+                AND o.order_date < '2024-01-01'
+          ) AS added
+          ORDER BY movement, product;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Solve two smaller questions first: which products were sold only in 2023, and which only in 2024. Each one is an EXCEPT."
+          - "Put each question in its own sub-query, then stack the two results with a keyword that keeps every row."
+          - "SELECT 'Dropped' AS movement, product FROM (... EXCEPT ...) AS dropped ___ SELECT 'New', product FROM (... EXCEPT ...) AS added ORDER BY movement, product;"
+        explanation: |
+          **11 rows**: 2 dropped products (Desk Mat XL and Plush Dragon, Large) and 9 new products. Each half is an
+          `EXCEPT` in its own sub-query, and `UNION ALL` stacks the two labelled halves. The ORDER BY puts
+          'Dropped' before 'New', then sorts by product name.
+        difficulty: 3
+
+      - type: exercise
+        id: m08-l03-e5
+        title: Budget and flagship picks
+        prompt: |
+          Show two columns, `label` and `name`. Include the **2 cheapest** products, labelled `'Budget'`, and the
+          **1 most expensive** product, labelled `'Flagship'`. Sort by `label`, then by `name`.
+        starter: |
+          (SELECT 'Budget' AS label, name
+           FROM products
+           ORDER BY price
+           LIMIT 2)
+          ___
+          (SELECT 'Flagship', name
+           FROM products
+           ORDER BY price DESC
+           LIMIT 1)
+          ORDER BY label, name;
+        solution: |
+          (SELECT 'Budget' AS label, name
+           FROM products
+           ORDER BY price
+           LIMIT 2)
+          UNION ALL
+          (SELECT 'Flagship', name
+           FROM products
+           ORDER BY price DESC
+           LIMIT 1)
+          ORDER BY label, name;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Each part needs its own ORDER BY and LIMIT, so each part goes in parentheses, as in the cheapest and priciest example."
+          - "Use the keyword that stacks two results and keeps every row."
+          - "(SELECT 'Budget' AS label, name FROM products ORDER BY price LIMIT 2) ___ (SELECT 'Flagship', name FROM products ORDER BY price DESC LIMIT 1) ORDER BY label, name;"
+        explanation: |
+          **3 rows**: Natural Bamboo Hairbrush and Screen Protector 3-Pack as Budget, then Aurora 16-inch Pro Laptop
+          as Flagship. The prices at the cut-off are all different, so the picks are not ambiguous.
+        difficulty: 2
+
+    cheatsheet:
+      - title: Label each part of a stacked report
+        sql: |
+          SELECT 'Discontinued' AS reason, name
+          FROM products
+          WHERE is_active = false
+          UNION ALL
+          SELECT 'Under $15', name
+          FROM products
+          WHERE price < 15
+          ORDER BY reason, name;
+        note: A literal value in the SELECT list labels every row of its part.
+      - title: Compare two lists
+        sql: |
+          SELECT name FROM products
+          EXCEPT
+          SELECT p.name
+          FROM order_items AS oi
+          JOIN products AS p ON p.product_id = oi.product_id;
+        note: EXCEPT shows the names that never appear in the second list.
+      - title: Sort or limit each part on its own
+        sql: |
+          (SELECT name, price FROM products
+           ORDER BY price LIMIT 2)
+          UNION ALL
+          (SELECT name, price FROM products
+           ORDER BY price DESC LIMIT 2)
+          ORDER BY price;
+        note: Wrap each part in parentheses. The last ORDER BY sorts the whole stacked result.
+
 testPool:
   - type: quiz
     id: m08-t01
     lesson: m08-l01
     difficulty: 1
-    question: placeholder
-    options: [a, b]
+    question: |
+      Which keyword stacks two query results **and** removes rows that are exact copies of each other?
+    options: ["UNION ALL", "UNION", "JOIN", "WHERE"]
+    answer: 1
+    explanation: |
+      `UNION` stacks the rows and then removes identical copies. `UNION ALL` stacks them and keeps every copy.
+      `JOIN` adds columns side by side, rather than rows underneath each other.
+
+  - type: predict
+    id: m08-t02
+    lesson: m08-l01
+    difficulty: 2
+    question: |
+      How many rows does this query return?
+    sql: |
+      SELECT city
+      FROM customers
+      WHERE city = 'Denver'
+      UNION ALL
+      SELECT city
+      FROM customers
+      WHERE city = 'Denver';
+    options: ["1 row", "2 rows", "4 rows", "An error"]
+    answer: 2
+    explanation: |
+      Two customers live in Denver, so each half returns 2 rows. `UNION ALL` keeps every copy: 2 + 2 = 4.
+
+  - type: exercise
+    id: m08-t03
+    lesson: m08-l01
+    difficulty: 1
+    title: Managers and cashiers
+    prompt: |
+      Show one column called `person` with the full name of every staff member whose `role` is `'Manager'`
+      or `'Cashier'`. Keep every row, and sort A to Z.
+    solution: |
+      SELECT name AS person
+      FROM staff
+      WHERE role = 'Manager'
+      UNION ALL
+      SELECT name
+      FROM staff
+      WHERE role = 'Cashier'
+      ORDER BY person;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Think of two halves, one for each role. Each half is a simple SELECT with a WHERE clause."
+      - "Use `UNION ALL` to stack the halves, and keep the alias `person` on the first query."
+      - "SELECT name AS person FROM staff WHERE role = 'Manager' ___ SELECT name FROM staff WHERE role = 'Cashier' ORDER BY person;"
+    explanation: |
+      Four rows: the one manager and the three cashiers, sorted by name. The alias sits on the first query,
+      which names the column for the whole result.
+
+  - type: exercise
+    id: m08-t04
+    lesson: m08-l01
+    difficulty: 2
+    title: Two columns on each side
+    prompt: |
+      This query crashes because the two halves return a different number of columns. Fix it so that it
+      returns two columns, `person` and `place`. For Denver customers, show the full name and the city. For
+      bakers, show the staff name and the text `'Bakery'`. Keep every row.
+    starter: |
+      SELECT first_name || ' ' || last_name AS person, city AS place
+      FROM customers
+      WHERE city = 'Denver'
+      UNION ALL
+      SELECT name
+      FROM staff
+      WHERE role = 'Baker';
+    solution: |
+      SELECT first_name || ' ' || last_name AS person, city AS place
+      FROM customers
+      WHERE city = 'Denver'
+      UNION ALL
+      SELECT name, 'Bakery'
+      FROM staff
+      WHERE role = 'Baker';
+    columnNames: true
+    hints:
+      - "Count the columns on each side of the UNION ALL. Do they match?"
+      - "The second half has only one column. Add a second column with the text 'Bakery' after the name."
+      - "SELECT name, ___ FROM staff WHERE role = 'Baker';"
+    explanation: |
+      Four rows: the two Denver customers, then the two bakers. Both sides now return two columns, and the text
+      'Bakery' fills the place column for the staff rows.
+
+  - type: quiz
+    id: m08-t05
+    lesson: m08-l01
+    difficulty: 2
+    question: |
+      Two shops each have a list of sales. You want the total number of sales of each product across both lists.
+      Which keyword should you stack the lists with, and why?
+    options:
+      - "UNION, because it is faster"
+      - "UNION ALL, because it keeps every copy, so no sale is lost from the count"
+      - "INTERSECT, because it finds the products sold twice"
+      - "UNION, because it sorts the products for you"
+    answer: 1
+    explanation: |
+      When you count or add up, every copy matters. `UNION` would merge identical rows, so two identical sales
+      would count as one. `UNION ALL` keeps both.
+
+  - type: fill
+    id: m08-t06
+    lesson: m08-l01
+    difficulty: 2
+    prompt: |
+      Complete the query so it keeps every row from both halves, including the copies. Each half returns the
+      same 5 Austin customers.
+    template: |
+      SELECT city
+      FROM customers
+      WHERE city = 'Austin'
+      UNION ___
+      SELECT city
+      FROM customers
+      WHERE city = 'Austin';
+    answers:
+      - ["ALL"]
+    explanation: |
+      `UNION ALL` keeps every copy, so the 5 Austin rows come back twice: 10 rows in total.
+
+  - type: quiz
+    id: m08-t07
+    lesson: m08-l02
+    difficulty: 1
+    question: |
+      Which set operation returns only the rows that appear on **both** lists?
+    options: ["UNION", "INTERSECT", "EXCEPT", "UNION ALL"]
+    answer: 1
+    explanation: |
+      `INTERSECT` keeps the shared rows. `EXCEPT` subtracts the second list from the first, and the two
+      `UNION` operators add rows together.
+
+  - type: predict
+    id: m08-t08
+    lesson: m08-l02
+    difficulty: 2
+    question: |
+      The first half of this query matches 90 students. How many rows does the whole query return?
+    sql: |
+      SELECT grade_level
+      FROM students
+      WHERE grade_level > 9
+      EXCEPT
+      SELECT grade_level
+      FROM students
+      WHERE grade_level > 10;
+    options: ["1 row", "2 rows", "3 rows", "90 rows"]
     answer: 0
-    explanation: placeholder
+    explanation: |
+      `EXCEPT` compares distinct values. The first half gives the grades 10, 11 and 12, and the second half gives
+      11 and 12. Only grade 10 is left, so the answer is **1 row**, even though 90 students are in the first half.
+
+  - type: exercise
+    id: m08-t09
+    lesson: m08-l02
+    difficulty: 1
+    title: Drama and Debate
+    prompt: |
+      Show one column called `student` with the full name of every student who is in **both** the
+      **Drama Society** and the **Debate Team**. Sort A to Z.
+    solution: |
+      SELECT s.first_name || ' ' || s.last_name AS student
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Drama Society'
+      INTERSECT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Debate Team'
+      ORDER BY student;
+    ordered: true
+    columnNames: true
+    hints:
+      - "You want the names that appear on both lists of club members."
+      - "Use `INTERSECT`, and build each list with the same joins you used in the lesson."
+      - "SELECT ... WHERE cl.name = 'Drama Society' INTERSECT SELECT ... WHERE cl.name = 'Debate Team' ORDER BY student;"
+    explanation: |
+      **4 students**: Diya Malik, Hassan Haddad, Logan Carter and Yuna Sato. `INTERSECT` keeps only the names
+      that appear on both lists.
+
+  - type: exercise
+    id: m08-t10
+    lesson: m08-l02
+    difficulty: 2
+    title: Drama, minus the Environmental Club
+    prompt: |
+      Show one column called `student` with the full name of every student in the **Drama Society** who is
+      **not** in the **Environmental Club**. Sort A to Z.
+    solution: |
+      SELECT s.first_name || ' ' || s.last_name AS student
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Drama Society'
+      EXCEPT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Environmental Club'
+      ORDER BY student;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Start with the Drama Society list, then remove anyone who is also in the Environmental Club."
+      - "The keyword that subtracts one list from another is `EXCEPT`."
+      - "SELECT ... WHERE cl.name = 'Drama Society' ___ SELECT ... WHERE cl.name = 'Environmental Club' ORDER BY student;"
+    explanation: |
+      **20 students**. The Drama Society has 26 members, and 6 of them are also in the Environmental Club.
+      26 minus 6 leaves 20.
+
+  - type: quiz
+    id: m08-t11
+    lesson: m08-l02
+    difficulty: 2
+    question: |
+      Which of these queries is written correctly?
+    options:
+      - "SELECT first_name FROM students WHERE grade_level = 9 ORDER BY first_name UNION SELECT first_name FROM students WHERE grade_level = 10;"
+      - "SELECT first_name FROM students WHERE grade_level = 9 UNION SELECT first_name FROM students WHERE grade_level = 10 ORDER BY first_name;"
+      - "SELECT first_name FROM students ORDER BY first_name WHERE grade_level = 9 UNION SELECT first_name FROM students WHERE grade_level = 10;"
+      - "SELECT first_name, grade_level FROM students WHERE grade_level = 9 UNION SELECT first_name FROM students WHERE grade_level = 10 ORDER BY first_name;"
+    answer: 1
+    explanation: |
+      Option 2 is correct: `ORDER BY` goes at the very end of the whole statement. Option 1 puts `ORDER BY` in
+      the middle, option 3 puts it before `WHERE`, and option 4 gives the two halves different numbers of columns.
+
+  - type: exercise
+    id: m08-t12
+    lesson: m08-l02
+    difficulty: 2
+    title: In neither of two clubs
+    prompt: |
+      Show one column called `student` with the full name of every student who is in the **Photography Club**
+      but in **neither** the **Debate Team** nor the **Yearbook Committee**. Sort A to Z.
+    solution: |
+      SELECT s.first_name || ' ' || s.last_name AS student
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Photography Club'
+      EXCEPT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Debate Team'
+      EXCEPT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Yearbook Committee'
+      ORDER BY student;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Two students can be removed in turn. Start with the Photography Club list."
+      - "Each removal is an `EXCEPT`, and they run from left to right."
+      - "SELECT ... WHERE cl.name = 'Photography Club' EXCEPT SELECT ... WHERE cl.name = 'Debate Team' ___ SELECT ... WHERE cl.name = 'Yearbook Committee' ORDER BY student;"
+    explanation: |
+      **9 students**. Starting from the Photography Club, `EXCEPT` removes the Debate Team names first, and then
+      the Yearbook Committee names.
+
+  - type: parsons
+    id: m08-t13
+    lesson: m08-l02
+    difficulty: 2
+    prompt: |
+      Put the lines in order to list the student ids that are in **both** the **Debate Team** and the
+      **Drama Society**. Sort by student id.
+    lines:
+      - SELECT cm.student_id
+      - FROM club_members AS cm
+      - JOIN clubs AS cl ON cl.club_id = cm.club_id
+      - WHERE cl.name = 'Debate Team'
+      - INTERSECT
+      - SELECT cm.student_id
+      - FROM club_members AS cm
+      - JOIN clubs AS cl ON cl.club_id = cm.club_id
+      - WHERE cl.name = 'Drama Society'
+      - ORDER BY student_id;
+    distractors:
+      - EXCEPT
+    explanation: |
+      `INTERSECT` keeps the ids found on both lists. The first query names the column `student_id`, so the
+      final `ORDER BY student_id` can use that name.
+
+  - type: exercise
+    id: m08-t14
+    lesson: m08-l02
+    difficulty: 3
+    title: In two clubs, but not a third
+    prompt: |
+      Show one column called `student` with the full name of every student who is in **both** the
+      **Drama Society** and the **Book Club**, but **not** in the **Environmental Club**. Sort A to Z.
+    solution: |
+      SELECT s.first_name || ' ' || s.last_name AS student
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Drama Society'
+      INTERSECT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Book Club'
+      EXCEPT
+      SELECT s.first_name || ' ' || s.last_name
+      FROM club_members AS cm
+      JOIN clubs AS cl ON cl.club_id = cm.club_id
+      JOIN students AS s ON s.student_id = cm.student_id
+      WHERE cl.name = 'Environmental Club'
+      ORDER BY student;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Build the set of students in both the Drama Society and the Book Club first."
+      - "Then remove the students who are in the Environmental Club. Each step is one set operation."
+      - "SELECT ... 'Drama Society' INTERSECT SELECT ... 'Book Club' ___ SELECT ... 'Environmental Club' ORDER BY student;"
+    explanation: |
+      **3 students**: Benjamin Kelly, Ingrid Moreau and Yuna Sato. The Drama Society and Book Club share 6 members,
+      and 3 of those 6 are also in the Environmental Club. `INTERSECT` runs first, so the query reads as expected.
+
+  - type: quiz
+    id: m08-t15
+    lesson: m08-l03
+    difficulty: 1
+    question: |
+      Why add a label such as `'Discontinued' AS reason` to each part of a stacked report?
+    options:
+      - "It makes the query run faster."
+      - "It shows the reader which part each row came from."
+      - "It removes duplicate rows."
+      - "UNION requires a label on every part."
+    answer: 1
+    explanation: |
+      A label tells the reader where each row came from. It does not change the speed or the duplicates, and no
+      set operation requires it.
+
+  - type: predict
+    id: m08-t16
+    lesson: m08-l03
+    difficulty: 2
+    question: |
+      How many rows does this query return?
+    sql: |
+      SELECT 1 AS n
+      UNION
+      SELECT 1
+      INTERSECT
+      SELECT 2;
+    options: ["0 rows", "1 row", "2 rows", "An error"]
+    answer: 1
+    explanation: |
+      `INTERSECT` runs first: `1 INTERSECT 2` is empty, because the two sides share no value. Then `UNION` adds
+      the 1 from the first query, so the result is **1 row**. Read strictly from left to right, `(1 UNION 1)
+      INTERSECT 2` would give 0 rows.
+
+  - type: exercise
+    id: m08-t17
+    lesson: m08-l03
+    difficulty: 2
+    title: Pricey products nobody bought
+    prompt: |
+      Show one column called `product` with the names of products priced **$100 or more** that were
+      **never sold**. Sort A to Z.
+    solution: |
+      SELECT name AS product
+      FROM products
+      WHERE price >= 100
+      EXCEPT
+      SELECT p.name
+      FROM order_items AS oi
+      JOIN products AS p ON p.product_id = oi.product_id
+      ORDER BY product;
+    ordered: true
+    columnNames: true
+    hints:
+      - "Start from the catalog, keeping only products priced $100 or more."
+      - "Then remove every product name that appears in an order line."
+      - "SELECT name AS product FROM products WHERE price >= 100 ___ SELECT p.name FROM order_items AS oi JOIN products AS p ON ... ORDER BY product;"
+    explanation: |
+      **2 products**: Standing Desk 140cm ($449.99) and Zephyr Gaming Laptop X ($1,299.99). The price filter goes
+      on the first query, and the second query supplies every name that was sold.
+
+  - type: exercise
+    id: m08-t18
+    lesson: m08-l03
+    difficulty: 3
+    title: Corporate customers who are new in 2024
+    prompt: |
+      Show the `first_name` and `last_name` of every **Corporate** customer (`segment = 'Corporate'`) who
+      ordered in **2024** but never ordered in **2023**. Sort by `last_name`, then by `first_name`.
+    solution: |
+      SELECT first_name, last_name
+      FROM customers
+      WHERE segment = 'Corporate'
+        AND customer_id IN (
+            SELECT customer_id
+            FROM orders
+            WHERE order_date >= '2024-01-01'
+              AND order_date < '2025-01-01'
+            EXCEPT
+            SELECT customer_id
+            FROM orders
+            WHERE order_date >= '2023-01-01'
+              AND order_date < '2024-01-01'
+        )
+      ORDER BY last_name, first_name;
+    ordered: true
+    hints:
+      - "First find the customers who ordered in 2024, then remove the ones who also ordered in 2023."
+      - "`EXCEPT` removes the 2023 customers, and `IN (...)` checks each customer against that list."
+      - "... WHERE segment = 'Corporate' AND customer_id IN ( SELECT customer_id FROM orders WHERE ... EXCEPT SELECT customer_id FROM orders WHERE ... ) ORDER BY last_name, first_name;"
+    explanation: |
+      **14 customers**. The `EXCEPT` builds the set of customers who ordered in 2024 but not in 2023, the `IN`
+      checks each customer against it, and the `segment` filter keeps only Corporate customers.
+
+  - type: parsons
+    id: m08-t19
+    lesson: m08-l03
+    difficulty: 2
+    prompt: |
+      Put the lines in order to show the cheapest product and the most expensive product, each labelled, sorted
+      by price.
+    lines:
+      - (SELECT 'Cheapest' AS label, name, price
+      - FROM products
+      - ORDER BY price
+      - LIMIT 1)
+      - UNION ALL
+      - (SELECT 'Most expensive', name, price
+      - FROM products
+      - ORDER BY price DESC
+      - LIMIT 1)
+      - ORDER BY price;
+    distractors:
+      - INTERSECT
+    explanation: |
+      Each part needs its own `ORDER BY` and `LIMIT`, so each part is wrapped in parentheses. The result has
+      2 rows: Screen Protector 3-Pack at $9.99, and Aurora 16-inch Pro Laptop at $1,499.99.
+
+  - type: fill
+    id: m08-t20
+    lesson: m08-l03
+    difficulty: 2
+    prompt: |
+      Complete the query so it counts the rows that each source contributed.
+    template: |
+      SELECT reason, ___(*) AS items
+      FROM (
+          SELECT 'Discontinued' AS reason, name
+          FROM products
+          WHERE is_active = false
+          UNION ALL
+          SELECT 'Premium', name
+          FROM products
+          WHERE price > 1000
+      ) AS review
+      GROUP BY reason
+      ORDER BY reason;
+    answers:
+      - ["COUNT"]
+    explanation: |
+      `COUNT(*)` counts the rows in each group. The result has 2 rows: Discontinued 4 and Premium 3.

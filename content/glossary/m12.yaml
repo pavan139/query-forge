@@ -1,0 +1,70 @@
+glossary:
+  - term: INSERT
+    definition: A statement that adds one or more new rows to a table. You name the table, list the columns, and give the values with VALUES.
+    example: "INSERT INTO suppliers (supplier_id, name, country) VALUES (9, 'Nimbus Co.', 'Canada');"
+    module: m12
+
+  - term: Default value
+    definition: The value the database stores in a column when your INSERT leaves that column out. Columns with no default get NULL.
+    example: "order_items.discount has the default 0, so a new line without a discount shows 0.00."
+    module: m12
+
+  - term: UPDATE
+    definition: A statement that changes rows that already exist. SET says which columns change and to what, and WHERE says which rows change.
+    example: "UPDATE products SET price = 849.99 WHERE product_id = 1;"
+    module: m12
+
+  - term: DELETE
+    definition: A statement that removes rows from a table. Without a WHERE clause, every row is removed.
+    example: "DELETE FROM reviews WHERE rating = 1;"
+    module: m12
+
+  - term: TRUNCATE
+    definition: A statement that empties a whole table in one quick step. It has no WHERE clause and is refused when another table points at it.
+    example: "TRUNCATE TABLE reviews;"
+    module: m12
+
+  - term: RETURNING
+    definition: A clause at the end of an INSERT, UPDATE, DELETE or MERGE that sends back the rows the statement changed, so you can check them without a second SELECT.
+    example: "DELETE FROM reviews WHERE rating = 1 RETURNING review_id, rating;"
+    module: m12
+
+  - term: Look first
+    definition: The safety habit of running a change's WHERE clause as a SELECT, to see which rows the change would touch, before running the change itself.
+    example: "SELECT product_id FROM products WHERE stock_qty = 0;  -- then UPDATE with the same WHERE"
+    module: m12
+
+  - term: Constraint
+    definition: A rule that a table enforces on its rows. The database refuses any statement that would break a constraint, such as a price of 0 or a duplicate primary key.
+    example: "products.price must be greater than 0."
+    module: m12
+
+  - term: CREATE TABLE AS
+    definition: A statement that creates a new table and fills it with the result of a SELECT. Adding WITH NO DATA creates an empty table with the same columns.
+    example: "CREATE TABLE out_of_stock AS SELECT product_id, name FROM products WHERE stock_qty = 0;"
+    module: m12
+
+  - term: ON CONFLICT
+    definition: A clause after an INSERT that says what to do when a row would break a unique key. DO NOTHING skips the row, and DO UPDATE changes the row that already exists.
+    example: "INSERT INTO suppliers (supplier_id, name, country) VALUES (1, 'X', 'Y') ON CONFLICT (supplier_id) DO NOTHING;"
+    module: m12
+
+  - term: UPSERT
+    definition: Adding a row if it is new, or updating it if its key already exists, in a single statement. In PostgreSQL it is written as INSERT ... ON CONFLICT.
+    example: "Loading a supplier feed that contains both new and known suppliers in one statement."
+    module: m12
+
+  - term: EXCLUDED
+    definition: Inside ON CONFLICT ... DO UPDATE, the word EXCLUDED means the row you tried to insert. The existing row is called by its table name.
+    example: "DO UPDATE SET contact_email = EXCLUDED.contact_email"
+    module: m12
+
+  - term: Staging table
+    definition: A holding table for incoming data. The new data waits there and is checked before it changes the real table.
+    example: "A count_sheet table with the columns product_id and counted, filled from the warehouse list."
+    module: m12
+
+  - term: MERGE
+    definition: A statement that compares a source list with a target table and, in one go, updates matched rows, inserts rows that are only in the source, and updates or deletes rows that are only in the target.
+    example: "MERGE INTO products AS p USING count_sheet AS s ON p.product_id = s.product_id WHEN MATCHED THEN UPDATE SET stock_qty = s.counted;"
+    module: m12

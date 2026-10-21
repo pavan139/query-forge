@@ -3060,6 +3060,671 @@ lessons:
           )
           SELECT * FROM ranked WHERE rn <= 3;
         note: Window functions are not allowed in WHERE, HAVING or GROUP BY. Calculate in a CTE, filter outside.
+  - id: m11-l06
+    title: "Window functions in practice"
+    summary: Build a bank report with running balances, category shares, rank changes and windows over totals.
+    minutes: 34
+    steps:
+      - type: read
+        title: The monthly report that needs everything
+        md: |
+          Every month, the branch managers at Harbor Bank get one report. It always answers the same four questions:
+
+          1. What is each account's **balance** after every transaction?
+          2. What **share** of card spending does each merchant or category take?
+          3. Which categories **climbed** or **fell** in the spending ranking since last month?
+          4. Which category is the **top spender** each month, and how big is its share?
+
+          You already own every tool you need. Module 10 gave you `OVER`, `PARTITION BY`, ranks and `LAG`. The last lessons added frames, distribution functions and named windows. Today they all work together on real bank data.
+
+          > [!REAL-WORLD]
+          > Analysts in banks, shops and streaming services write reports like this every week. The questions change, but the building blocks stay the same.
+
+      - type: example
+        title: Running balance for one account
+        md: |
+          Account 1 is a checking account. Its first transaction is an opening balance of 5,075.00 on 1 January. The window adds up the amounts in time order, so every row shows the balance **after** that transaction.
+        sql: |
+          SELECT
+              txn_time,
+              amount,
+              SUM(amount) OVER (
+                  PARTITION BY account_id
+                  ORDER BY txn_time, txn_id
+              ) AS balance
+          FROM transactions
+          WHERE account_id = 1
+          ORDER BY txn_time, txn_id
+          LIMIT 8;
+        after: |
+          Eight rows, one per transaction, in time order. The `balance` column starts at 5,075.00 and moves up and down with every row. On 2 February it reaches 5,212.45 after a deposit of 320.00, then falls to 5,037.50 after a payment of 174.95.
+
+          The running total is a **window** over the account's rows. Nothing is collapsed, so you still see every transaction.
+
+      - type: read
+        title: Reading the OVER brackets
+        md: |
+          Read the window one part at a time:
+
+          - `SUM(amount)` is what you add up.
+          - `PARTITION BY account_id` starts a **fresh** total for each account.
+          - `ORDER BY txn_time, txn_id` sets the order in which the amounts are added. `txn_id` breaks any tie in the time, so the order always comes out the same.
+
+          If you leave out `ORDER BY`, the window covers the whole group on every row, and you do not get a running balance at all.
+
+          > [!TIP]
+          > Always finish the `ORDER BY` of a running total with a unique column, such as an id. Two transactions at exactly the same second could otherwise appear in either order.
+
+      - type: viz
+        viz: window
+        title: Watch the running balance grow
+        md: |
+          Two accounts with three movements each. Click **running_sum**, then **lag**. Click any row to see which rows its window uses. The running total of account B never looks at account A.
+        config:
+          table:
+            name: account_moves
+            columns: [account, step, amount]
+            rows:
+              - [A, 1, 500]
+              - [A, 2, -120]
+              - [A, 3, 80]
+              - [B, 1, 900]
+              - [B, 2, -300]
+              - [B, 3, -150]
+          partitionBy: account
+          orderBy: step
+          value: amount
+          functions: [running_sum, lag]
+
+      - type: example
+        title: Forget PARTITION BY and the balances mix together
+        md: |
+          This query runs without any error. The numbers, however, are wrong. Without `PARTITION BY`, the running total continues across **all** accounts at once.
+        sql: |
+          SELECT
+              account_id,
+              txn_id,
+              amount,
+              SUM(amount) OVER (
+                  ORDER BY txn_time, txn_id
+              ) AS running_total
+          FROM transactions
+          ORDER BY txn_time, txn_id
+          LIMIT 5;
+        after: |
+          Look at row 2. The running total is 26,275.00, which is 5,075.00 (account 1) plus 21,200.00 (account 2). Two different customers' money has been added together, so the number means nothing for either of them.
+
+          > [!MISTAKE]
+          > A window with no `PARTITION BY` treats the whole table as one group. SQL will not warn you. Ask yourself every time: "running total of **what**, for **which** group?"
+
+      - type: exercise
+        id: m11-l06-e1
+        title: Account 2, first five moves
+        difficulty: 1
+        prompt: |
+          Show the first 5 transactions of account 2 in time order (`txn_time`, then `txn_id`). Show these columns, in this order: `txn_time`, `amount` and `balance`, where `balance` is the running total of `amount`.
+        starter: |
+          SELECT
+          FROM transactions
+          WHERE account_id = 2;
+        solution: |
+          SELECT
+              txn_time,
+              amount,
+              SUM(amount) OVER (
+                  ORDER BY txn_time, txn_id
+              ) AS balance
+          FROM transactions
+          WHERE account_id = 2
+          ORDER BY txn_time, txn_id
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - You need one window, `SUM(amount) OVER (...)`. Its job is to add the amounts up in time order.
+          - Inside the brackets, put `ORDER BY txn_time, txn_id`. Name the total `balance` with `AS`.
+          - "SELECT txn_time, amount, SUM(amount) OVER (ORDER BY ___, ___) AS balance FROM transactions WHERE account_id = 2 ORDER BY ___, ___ LIMIT 5;"
+        explanation: |
+          The first row is the opening balance of 21,200.00. The second row is 1,010.00 going out on 2 January, so the balance drops to 20,190.00.
+
+          `WHERE` keeps only account 2, so you do not need `PARTITION BY` here. Sorting by `txn_id` as the second key is still good practice, because it keeps the order the same every time.
+
+      - type: read
+        title: Aggregates first, windows second
+        md: |
+          Here is the order in which SQL works. A `GROUP BY` runs **first** and collapses rows into one row per group. Window functions run **after** that, so they can look at the grouped rows.
+
+          > [!ANALOGY]
+          > Picture a teacher with a gradebook. First she works out each student's total score (the `GROUP BY`). Then she compares each student with the class total (the window). The class total is a sum of the student totals, so you write it as `SUM(SUM(...)) OVER (...)`.
+
+          Here is the pattern on its own:
+
+          ```sql
+          SELECT
+              category,
+              SUM(-amount) AS spent,
+              SUM(SUM(-amount)) OVER () AS all_spent
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+          GROUP BY category;
+          ```
+
+          The inner `SUM(-amount)` is the usual total for each group. The outer `SUM(...) OVER ()` adds up those group totals across the whole result.
+
+      - type: example
+        title: Each merchant's share of its category
+        md: |
+          Travel is one of seven card categories. Inside travel, each merchant's share is its total divided by the **travel** total. The `PARTITION BY category` in the window makes the total restart for each category.
+        sql: |
+          SELECT
+              merchant,
+              ROUND(-SUM(amount), 2) AS spent,
+              ROUND(
+                  100 * -SUM(amount)
+                  / SUM(-SUM(amount))
+                        OVER (PARTITION BY category),
+                  1
+              ) AS pct_of_category
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+            AND category = 'travel'
+          GROUP BY category, merchant
+          ORDER BY spent DESC;
+        after: |
+          Eight merchants. `SkyHop Airlines` takes 21.5% of travel spending, and the eight percentages add up to 100.0.
+
+          `GROUP BY category, merchant` is needed because the window uses `category`. Every column you name in `PARTITION BY` must also be grouped or aggregated.
+
+      - type: exercise
+        id: m11-l06-e2
+        title: Groceries, merchant by merchant
+        difficulty: 2
+        prompt: |
+          For card payments in the `groceries` category, show each `merchant`, its total `spent` (rounded to 2 decimals) and its share of groceries as `pct_of_category` (rounded to 1 decimal). Show these columns, in this order: `merchant`, `spent`, `pct_of_category`. Sort by `spent` from highest to lowest, then by `merchant` A to Z.
+        solution: |
+          SELECT
+              merchant,
+              ROUND(-SUM(amount), 2) AS spent,
+              ROUND(
+                  100 * -SUM(amount)
+                  / SUM(-SUM(amount))
+                        OVER (PARTITION BY category),
+                  1
+              ) AS pct_of_category
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+            AND category = 'groceries'
+          GROUP BY category, merchant
+          ORDER BY spent DESC, merchant;
+        ordered: true
+        columnNames: true
+        hints:
+          - Start from the travel example and change the category name.
+          - The window stays the same. Each merchant's total is divided by the total of its category.
+          - "SELECT merchant, ROUND(-SUM(amount), 2) AS spent, ROUND(100 * -SUM(amount) / SUM(-SUM(amount)) OVER (___), 1) AS pct_of_category FROM transactions WHERE txn_type = 'card_payment' AND category = 'groceries' GROUP BY ___, ___ ORDER BY spent DESC, merchant;"
+        explanation: |
+          Five merchants. `Corner Grocer` takes 24.0% of grocery spending, and the five percentages add up to 100.0.
+
+          The `ORDER BY` lists `merchant` as a tie-breaker, so two merchants with exactly the same spending would still come out in a fixed order.
+
+      - type: exercise
+        id: m11-l06-e3
+        title: Each category's share of everything
+        difficulty: 2
+        prompt: |
+          For card payments, show each `category`, its total `spent` (rounded to 2 decimals) and its share of **all** card spending as `pct_of_all` (rounded to 1 decimal). Show these columns, in this order: `category`, `spent`, `pct_of_all`. Sort by `pct_of_all` from highest to lowest.
+        solution: |
+          SELECT
+              category,
+              ROUND(-SUM(amount), 2) AS spent,
+              ROUND(
+                  100 * -SUM(amount)
+                  / SUM(-SUM(amount)) OVER (),
+                  1
+              ) AS pct_of_all
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+          GROUP BY category
+          ORDER BY pct_of_all DESC;
+        ordered: true
+        columnNames: true
+        hints:
+          - This is the travel idea with no PARTITION BY. There is only one total, all card spending.
+          - Put `SUM(-SUM(amount)) OVER ()` in the denominator, then divide each category's total by it.
+          - "SELECT category, ROUND(-SUM(amount), 2) AS spent, ROUND(100 * -SUM(amount) / SUM(-SUM(amount)) OVER (), 1) AS pct_of_all FROM transactions WHERE txn_type = 'card_payment' GROUP BY ___ ORDER BY pct_of_all DESC;"
+        explanation: |
+          Utilities is the biggest slice at 32.4%, then shopping at 21.5%. The seven percentages add up to 100.0.
+
+          `OVER ()` has nothing inside the brackets, so the window covers every row of the result. That is why the denominator is the total of all card spending.
+
+      - type: predict
+        id: m11-l06-p1
+        question: |
+          This query shows each category's card spending and a `grand_total` column. What does `grand_total` show on each row?
+        sql: |
+          SELECT
+              category,
+              ROUND(-SUM(amount), 2) AS spent,
+              SUM(SUM(-amount)) OVER () AS grand_total
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+          GROUP BY category;
+        options:
+          - "The spending of that row's category only"
+          - "The total of all card payments, repeated on every row"
+          - "The total of the first category only"
+          - "An error, because SUM is used twice"
+        answer: 1
+        explanation: |
+          Every row shows the same number, 110,590.84, which is the total of all card payments. The inner `SUM` makes each category's total. The outer `SUM(...) OVER ()` adds those totals together and repeats the result on every row.
+
+      - type: read
+        title: Did a category climb? Comparing with last month
+        md: |
+          Now the question every manager asks: did a category **climb** or **fall** in the ranking since last month? A rank of 1 means the biggest spender, so a climb means the rank number gets **smaller**.
+
+          Two steps are needed:
+
+          1. **Rank inside each month.** `RANK() OVER (PARTITION BY month_start ORDER BY spent DESC)` gives each category its place for that month.
+          2. **Look back one month.** `LAG(rnk) OVER (PARTITION BY category ORDER BY month_start)` gives the rank from the month before.
+
+          The catch: you cannot put one window function inside another one, and you cannot use an alias from the same `SELECT` in another expression. So each step gets its own CTE layer. Layers are easy to read, and each one has one job.
+
+      - type: example
+        title: Category ranks, March compared with February
+        md: |
+          Three layers, each with one job:
+
+          - `monthly` adds up the card spending per category and month.
+          - `ranked` gives each category its rank within its month.
+          - `compared` adds last month's rank with `LAG`.
+
+          The last `SELECT` keeps only March. This is the "filter a window result in an outer layer" pattern from the last lesson.
+        sql: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month_start,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY category, date_trunc('month', txn_time)::date
+          ),
+          ranked AS (
+              SELECT
+                  category,
+                  month_start,
+                  RANK() OVER (
+                      PARTITION BY month_start
+                      ORDER BY spent DESC
+                  ) AS rnk
+              FROM monthly
+          ),
+          compared AS (
+              SELECT
+                  category,
+                  month_start,
+                  rnk,
+                  LAG(rnk) OVER (
+                      PARTITION BY category
+                      ORDER BY month_start
+                  ) AS prev_rnk
+              FROM ranked
+          )
+          SELECT
+              category,
+              rnk AS march_rank,
+              prev_rnk AS feb_rank
+          FROM compared
+          WHERE month_start = '2024-03-01'
+          ORDER BY march_rank;
+        after: |
+          Shopping is the top spender in March, up from third place in February. Utilities slipped from first to second. Entertainment is last in March, after being fifth in February.
+
+          `LAG` can only see `rnk` because `rnk` was finished in the layer before. That is the layering rule in action.
+
+      - type: example
+        title: One layer too few (expected error)
+        expectError: true
+        md: |
+          What happens if you try to do all of it in one `SELECT`, putting `RANK()` inside `LAG()`?
+        sql: |
+          SELECT
+              txn_id,
+              LAG(RANK() OVER (ORDER BY amount))
+                  OVER (ORDER BY txn_id) AS prev_rank
+          FROM transactions;
+        after: |
+          The error says it plainly: **window function calls cannot be nested**. The fix is one more layer. Compute `RANK()` in one CTE, then call `LAG()` on that column in the next CTE, exactly like the query above.
+
+          > [!MISTAKE]
+          > Many learners write `LAG(RANK() OVER ...)` and expect it to work. It never does. Two window functions need two layers.
+
+      - type: quiz
+        id: m11-l06-q1
+        question: |
+          Why does the rank-change query need three CTE layers (`monthly`, `ranked`, `compared`) instead of one `SELECT`?
+        options:
+          - "A window function cannot sit inside another one, so LAG must read a rank that an earlier layer has already calculated."
+          - "LAG only works inside a CTE, never in a plain SELECT."
+          - "RANK() needs a GROUP BY that cannot appear in the same query."
+          - "Splitting a query into layers makes PostgreSQL skip the sorting step."
+        answer: 0
+        explanation: |
+          `LAG` cannot be wrapped around `RANK()` in one expression. The rank is calculated in one layer, and `LAG` reads that column in the next layer.
+
+          The other three answers are not true. `LAG` works in any `SELECT`, `RANK()` does not need a `GROUP BY`, and layers do not skip any sorting.
+
+      - type: fill
+        id: m11-l06-f1
+        prompt: Complete the query so that each transaction shows the amount of the previous transaction on the same account. Order the transactions by `txn_time`.
+        template: |
+          SELECT
+              txn_id,
+              amount,
+              LAG(___) OVER (
+                  PARTITION BY ___
+                  ORDER BY ___
+              ) AS previous_amount
+          FROM transactions
+          WHERE account_id = 1
+          ORDER BY txn_time
+          LIMIT 4;
+        answers:
+          - ["amount"]
+          - ["account_id"]
+          - ["txn_time"]
+        explanation: |
+          `LAG(amount)` reads the amount one row earlier. `PARTITION BY account_id` keeps each account separate, and `ORDER BY txn_time` says which row came first. The first transaction has no earlier row, so its previous amount is NULL.
+
+      - type: exercise
+        id: m11-l06-e4
+        title: Who moved between May and June?
+        difficulty: 2
+        prompt: |
+          Compare the card-spending ranks of **May** and **June 2024**. Show each category whose rank **changed** between the two months. Show these columns, in this order: `category`, `may_rank`, `june_rank`. Sort by `june_rank`.
+        starter: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month_start,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY category, date_trunc('month', txn_time)::date
+          )
+          SELECT *
+          FROM monthly;
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month_start,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY category, date_trunc('month', txn_time)::date
+          ),
+          ranked AS (
+              SELECT
+                  category,
+                  month_start,
+                  RANK() OVER (
+                      PARTITION BY month_start
+                      ORDER BY spent DESC
+                  ) AS rnk
+              FROM monthly
+          ),
+          compared AS (
+              SELECT
+                  category,
+                  month_start,
+                  rnk,
+                  LAG(rnk) OVER (
+                      PARTITION BY category
+                      ORDER BY month_start
+                  ) AS prev_rnk
+              FROM ranked
+          )
+          SELECT
+              category,
+              prev_rnk AS may_rank,
+              rnk AS june_rank
+          FROM compared
+          WHERE month_start = '2024-06-01'
+            AND prev_rnk <> rnk
+          ORDER BY june_rank;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter already has the monthly totals. Add a layer that ranks the categories inside each month.
+          - Add one more layer with `LAG(rnk)` to get the rank from the month before. Filter on June only in the last `SELECT`.
+          - "... SELECT category, prev_rnk AS may_rank, rnk AS june_rank FROM compared WHERE month_start = '2024-06-01' AND ___ <> ___ ORDER BY june_rank;"
+        explanation: |
+          Six categories changed place. Groceries climbed from third to second, while shopping slipped from second to third. Utilities stayed first in both months, so it is not in the list.
+
+          `prev_rnk <> rnk` is a simple test for "the rank changed".
+
+      - type: stepper
+        title: The top category each month, one layer at a time
+        md: |
+          The next exercise needs the biggest category of every month, plus its share of that month. Click through the stages to build it. Each stage adds one layer. Stages 1 and 2 use January only, to keep the tables small.
+        stages:
+          - label: 1. Spend per category
+            md: Start with card spending per category for January.
+            sql: |
+              SELECT
+                  category,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+                AND txn_time < '2024-02-01'
+              GROUP BY category
+              ORDER BY spent DESC;
+          - label: 2. Rank in January
+            md: Add a rank. Without a PARTITION BY, RANK() ranks the whole result as one group.
+            sql: |
+              WITH january AS (
+                  SELECT
+                      category,
+                      ROUND(-SUM(amount), 2) AS spent
+                  FROM transactions
+                  WHERE txn_type = 'card_payment'
+                    AND txn_time < '2024-02-01'
+                  GROUP BY category
+              )
+              SELECT
+                  category,
+                  spent,
+                  RANK() OVER (ORDER BY spent DESC) AS rnk
+              FROM january
+              ORDER BY rnk;
+          - label: 3. Rank within every month
+            md: Now use PARTITION BY month_start, so each month gets its own ranking. The outer layer keeps rank 1.
+            sql: |
+              WITH monthly AS (
+                  SELECT
+                      category,
+                      date_trunc('month', txn_time)::date AS month_start,
+                      ROUND(-SUM(amount), 2) AS spent
+                  FROM transactions
+                  WHERE txn_type = 'card_payment'
+                  GROUP BY category, date_trunc('month', txn_time)::date
+              ),
+              ranked AS (
+                  SELECT
+                      category,
+                      month_start,
+                      spent,
+                      RANK() OVER (
+                          PARTITION BY month_start
+                          ORDER BY spent DESC
+                      ) AS rnk
+                  FROM monthly
+              )
+              SELECT
+                  category,
+                  month_start,
+                  spent
+              FROM ranked
+              WHERE rnk = 1
+              ORDER BY month_start;
+          - label: 4. Add the share of the month
+            md: The ranked layer also calculates each category's share of its month. The outer query still keeps rank 1.
+            sql: |
+              WITH monthly AS (
+                  SELECT
+                      category,
+                      date_trunc('month', txn_time)::date AS month_start,
+                      ROUND(-SUM(amount), 2) AS spent
+                  FROM transactions
+                  WHERE txn_type = 'card_payment'
+                  GROUP BY category, date_trunc('month', txn_time)::date
+              ),
+              ranked AS (
+                  SELECT
+                      category,
+                      month_start,
+                      spent,
+                      RANK() OVER (
+                          PARTITION BY month_start
+                          ORDER BY spent DESC
+                      ) AS rnk,
+                      ROUND(
+                          100 * spent
+                          / SUM(spent)
+                                OVER (PARTITION BY month_start),
+                          1
+                      ) AS pct_of_month
+                  FROM monthly
+              )
+              SELECT
+                  month_start,
+                  category,
+                  spent,
+                  pct_of_month
+              FROM ranked
+              WHERE rnk = 1
+              ORDER BY month_start;
+
+      - type: exercise
+        id: m11-l06-e5
+        title: When one category dominates
+        difficulty: 3
+        prompt: |
+          For each month, find the category with the biggest card spending (rank 1). Keep a month only when that category took **more than 40%** of the month's card spending. Show these columns, in this order: `month_start`, `category`, `spent`, `pct_of_month` (rounded to 1 decimal). Sort by `month_start`.
+        solution: |
+          WITH monthly AS (
+              SELECT
+                  category,
+                  date_trunc('month', txn_time)::date AS month_start,
+                  ROUND(-SUM(amount), 2) AS spent
+              FROM transactions
+              WHERE txn_type = 'card_payment'
+              GROUP BY category, date_trunc('month', txn_time)::date
+          ),
+          ranked AS (
+              SELECT
+                  category,
+                  month_start,
+                  spent,
+                  RANK() OVER (
+                      PARTITION BY month_start
+                      ORDER BY spent DESC
+                  ) AS rnk,
+                  ROUND(
+                      100 * spent
+                      / SUM(spent)
+                            OVER (PARTITION BY month_start),
+                      1
+                  ) AS pct_of_month
+              FROM monthly
+          )
+          SELECT
+              month_start,
+              category,
+              spent,
+              pct_of_month
+          FROM ranked
+          WHERE rnk = 1
+            AND pct_of_month > 40
+          ORDER BY month_start;
+        ordered: true
+        columnNames: true
+        hints:
+          - Start from the last stepper stage. Its only job is to find rank 1 for each month.
+          - Add a second condition to the outer `WHERE`. The percentage must be greater than 40.
+          - "... FROM ranked WHERE rnk = 1 AND pct_of_month > ___ ORDER BY ___;"
+        explanation: |
+          Four months pass the test: February, March, June and September. In March, shopping took 48.9% of card spending, the biggest share of any month. The percentage is worked out in the `ranked` layer, so the outer `WHERE` can filter on it.
+
+      - type: parsons
+        id: m11-l06-o1
+        prompt: Put the lines in the right order to list each category's card spending and its share of the total, biggest share first.
+        lines:
+          - WITH totals AS (
+          - SELECT category, SUM(-amount) AS spent
+          - FROM transactions
+          - WHERE txn_type = 'card_payment'
+          - GROUP BY category)
+          - SELECT category, spent,
+          - ROUND(100 * spent / SUM(spent) OVER (), 1) AS pct
+          - FROM totals
+          - ORDER BY pct DESC;
+        distractors:
+          - WHERE RANK() OVER (ORDER BY spent) = 1
+        explanation: |
+          The CTE comes first, and the final `SELECT` reads from `totals`. The window `SUM(spent) OVER ()` adds up all categories, so each percentage is a share of the whole. `ORDER BY pct DESC` can use the calculated `pct` column.
+
+          The distractor would fail, because window functions are not allowed in `WHERE`.
+
+      - type: read
+        title: Your window toolkit, put to work
+        md: |
+          You have now used every tool in this module:
+
+          - **Frames** (`ROWS`, `RANGE`, `GROUPS`) to say which rows a window may see.
+          - **Named windows** (`WINDOW`) so you repeat yourself less.
+          - **Distribution functions** (`NTILE`, `PERCENT_RANK`, percentiles) to place values on a scale.
+          - **Layers** (CTEs) so you can compare and filter window results.
+          - **Windows over totals** (`SUM(SUM(...)) OVER (...)`) to compare each group with the whole.
+
+          > [!REAL-WORLD]
+          > Most real reports are a stack of these layers: a CTE that totals things, a window that ranks or compares them, and an outer `SELECT` that keeps the rows that matter. When a query looks scary, split it into layers and read one layer at a time.
+
+          The next module changes the data itself with `INSERT`, `UPDATE` and `DELETE`. Everything in this module only reads data, so you can experiment freely.
+    cheatsheet:
+      - title: Running total per group
+        sql: |
+          SUM(amount) OVER (
+              PARTITION BY account_id
+              ORDER BY txn_time, txn_id
+          )
+        note: PARTITION BY restarts the total for each group. ORDER BY sets the sequence. End the ORDER BY with a unique column.
+      - title: Share of a total
+        sql: |
+          ROUND(
+              100 * SUM(x) / SUM(SUM(x)) OVER (),
+              1
+          )
+        note: The inner SUM makes group totals. SUM(...) OVER () adds all of them. Use OVER (PARTITION BY category) for a share within each category.
+      - title: Compare with last period
+        sql: |
+          WITH ranked AS (
+              SELECT category, month_start,
+                     RANK() OVER (
+                         PARTITION BY month_start
+                         ORDER BY spent DESC
+                     ) AS rnk
+              FROM monthly
+          )
+          SELECT category, month_start, rnk,
+                 LAG(rnk) OVER (
+                     PARTITION BY category
+                     ORDER BY month_start
+                 ) AS prev_rnk
+          FROM ranked;
+        note: You cannot nest window functions. Calculate RANK in one layer, then LAG in the next.
 testPool:
   - type: quiz
     id: m11-t01
@@ -3071,3 +3736,906 @@ testPool:
     answer: 1
     explanation: |
       1 before + the row itself + 2 after = 4.
+
+  - type: exercise
+    id: m11-t02
+    lesson: m11-l01
+    difficulty: 1
+    prompt: |
+      For account 3, show the first 5 transactions in time order (`txn_time`, then `txn_id`). Show these columns, in this order: `txn_time`, `amount` and `avg_2`. The `avg_2` column is the average of this row's amount and the amount of the row just before it, rounded to 2 decimals. The first row has no row before it, so its `avg_2` is its own amount.
+    solution: |
+      SELECT
+          txn_time,
+          amount,
+          ROUND(
+              AVG(amount) OVER (
+                  ORDER BY txn_time, txn_id
+                  ROWS BETWEEN 1 PRECEDING
+                           AND CURRENT ROW
+              ),
+              2
+          ) AS avg_2
+      FROM transactions
+      WHERE account_id = 3
+      ORDER BY txn_time, txn_id
+      LIMIT 5;
+    ordered: true
+    columnNames: true
+    hints:
+      - You need a window with a frame. Write it as `ROWS BETWEEN 1 PRECEDING AND CURRENT ROW`.
+      - Put the frame inside `OVER (...)`, after `ORDER BY txn_time, txn_id`. Wrap the average in `ROUND(..., 2)`.
+      - "SELECT txn_time, amount, ROUND(AVG(amount) OVER (ORDER BY txn_time, txn_id ROWS BETWEEN ___ PRECEDING AND ___), 2) AS avg_2 FROM transactions WHERE account_id = 3 ORDER BY txn_time, txn_id LIMIT 5;"
+    explanation: |
+      The second row averages 1,350.00 and 4,965.00, which gives 3,157.50. The third row averages 4,965.00 and -1,400.00, which gives 1,782.50.
+
+      A `ROWS` frame counts rows, not dates, so every average uses exactly the rows you asked for.
+
+  - type: exercise
+    id: m11-t03
+    lesson: m11-l01
+    difficulty: 3
+    prompt: |
+      For each month of 2024, count the transactions across all accounts. Show these columns, in this order: `month_start` (the first day of the month), `txn_count` and `centered_3`. The `centered_3` column is the average of the counts for the month before, this month and the month after, rounded to 1 decimal. For January and December, use only the months that exist. Sort by `month_start`.
+    solution: |
+      WITH monthly AS (
+          SELECT
+              date_trunc('month', txn_time)::date AS month_start,
+              COUNT(*) AS txn_count
+          FROM transactions
+          GROUP BY date_trunc('month', txn_time)::date
+      )
+      SELECT
+          month_start,
+          txn_count,
+          ROUND(
+              AVG(txn_count) OVER (
+                  ORDER BY month_start
+                  ROWS BETWEEN 1 PRECEDING
+                           AND 1 FOLLOWING
+              ),
+              1
+          ) AS centered_3
+      FROM monthly
+      ORDER BY month_start;
+    ordered: true
+    columnNames: true
+    hints:
+      - Count the transactions per month in a CTE first, then add the window in the outer query.
+      - The frame `ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING` covers the row before, the current row and the row after.
+      - "WITH monthly AS (SELECT date_trunc('month', txn_time)::date AS month_start, COUNT(*) AS txn_count FROM transactions GROUP BY ___) SELECT month_start, txn_count, ROUND(AVG(txn_count) OVER (ORDER BY month_start ROWS BETWEEN ___ PRECEDING AND ___ FOLLOWING), 1) AS centered_3 FROM monthly ORDER BY month_start;"
+    explanation: |
+      January has no month before it, so its average uses only January and February: (436 + 292) / 2 = 364.0. Every other month averages three months.
+
+      The counts are worked out in the CTE first, so the window has one row per month to work with.
+
+  - type: quiz
+    id: m11-t04
+    lesson: m11-l01
+    difficulty: 1
+    question: |
+      A row sits in the middle of a table. How many rows does the frame `ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING` include?
+    options: ["1", "2", "3", "4"]
+    answer: 1
+    explanation: |
+      `2 PRECEDING` is two rows before the current row and `1 PRECEDING` is one row before it. Those two rows are the frame. The current row itself is not included.
+
+  - type: predict
+    id: m11-t05
+    lesson: m11-l01
+    difficulty: 2
+    question: |
+      What is `two_row_sum` on the third row of this result?
+    sql: |
+      SELECT
+          txn_id,
+          amount,
+          SUM(amount) OVER (
+              ORDER BY txn_id
+              ROWS BETWEEN 1 PRECEDING
+                       AND CURRENT ROW
+          ) AS two_row_sum
+      FROM transactions
+      WHERE account_id = 1
+      ORDER BY txn_id
+      LIMIT 3;
+    options: ["-118.65", "4956.35", "-39.95", "4996.30"]
+    answer: 0
+    explanation: |
+      The third row is transaction 283, worth -39.95. Its frame holds the current row and the row before it, transaction 208, worth -78.70. Adding them gives -118.65.
+
+      `WHERE` runs before the window, so the frame only contains account 1's rows.
+
+  - type: exercise
+    id: m11-t06
+    lesson: m11-l02
+    difficulty: 2
+    prompt: |
+      For user 2, show the first 10 days of `daily_steps` in date order. Show these columns, in this order: `day`, `steps` and `steps_last_3_days`. The `steps_last_3_days` column is the total steps of that day plus the steps of the 2 calendar days before it. Use a `RANGE` frame with an interval, so the distance is counted in days. Days without a row count as zero.
+    solution: |
+      SELECT
+          day,
+          steps,
+          SUM(steps) OVER (
+              ORDER BY day
+              RANGE BETWEEN INTERVAL '2 days' PRECEDING
+                        AND CURRENT ROW
+          ) AS steps_last_3_days
+      FROM daily_steps
+      WHERE user_id = 2
+      ORDER BY day
+      LIMIT 10;
+    ordered: true
+    columnNames: true
+    hints:
+      - Use `RANGE`, not `ROWS`. You want the distance in days, not in rows.
+      - Inside the brackets write `ORDER BY day`, then `RANGE BETWEEN INTERVAL '2 days' PRECEDING AND CURRENT ROW`.
+      - "SELECT day, steps, SUM(steps) OVER (ORDER BY day RANGE BETWEEN ___ PRECEDING AND CURRENT ROW) AS steps_last_3_days FROM daily_steps WHERE user_id = 2 ORDER BY day LIMIT 10;"
+    explanation: |
+      On 4 March the window covers 2, 3 and 4 March: 7,459 + 7,469 + 6,802 = 21,730. The 1 March row is more than two days earlier, so it is left out.
+
+      On 14 March no earlier row falls within two days, so the value is just that day's 11,578 steps.
+
+  - type: quiz
+    id: m11-t07
+    lesson: m11-l02
+    difficulty: 2
+    question: |
+      Two rows have the same `ORDER BY` value. With the default frame, what does a running total on the **first** of them include?
+    options:
+      - "Only its own value"
+      - "Its own value and the earlier rows, but not the other row with the same value"
+      - "Its own value, the earlier rows and the other row with the same value"
+      - "The total of the whole table"
+    answer: 2
+    explanation: |
+      The default frame is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. Rows with the same `ORDER BY` value are called peers, and a RANGE frame always includes all peers of the current row. So the first of the two rows already contains the second one.
+
+  - type: predict
+    id: m11-t08
+    lesson: m11-l02
+    difficulty: 2
+    question: |
+      What is the value of `n` on the **first** row of this result?
+    sql: |
+      SELECT
+          event_name,
+          COUNT(*) OVER (ORDER BY event_name) AS n
+      FROM events
+      WHERE user_id = 3
+      ORDER BY event_name;
+    options: ["1", "3", "4", "0"]
+    answer: 1
+    explanation: |
+      The three `app_open` rows have the same `ORDER BY` value, so they are peers. The default frame includes all peers, so every `app_open` row shows n = 3, not 1, 2 and 3.
+
+  - type: fill
+    id: m11-t09
+    lesson: m11-l02
+    difficulty: 2
+    prompt: |
+      Complete the frame so that each day shows the steps of that day plus the steps of the 2 calendar days before it.
+    template: |
+      SELECT
+          day,
+          steps,
+          SUM(steps) OVER (
+              ORDER BY day
+              RANGE BETWEEN ___ PRECEDING
+                        AND CURRENT ROW
+          ) AS steps_last_3_days
+      FROM daily_steps
+      WHERE user_id = 2
+      ORDER BY day
+      LIMIT 10;
+    answers:
+      - ["INTERVAL '2 days'", "INTERVAL '2 day'"]
+    explanation: |
+      `INTERVAL '2 days'` measures the distance in dates, not rows. A day with no data does not change which days fall inside the window.
+
+  - type: exercise
+    id: m11-t10
+    lesson: m11-l03
+    difficulty: 1
+    prompt: |
+      Show each `language` once, with the title of its earliest film. The earliest film has the lowest `release_year`. If two films share the year, use the lower `movie_id`. Show these columns, in this order: `language` and `earliest_title`. Sort by `language`.
+    solution: |
+      SELECT DISTINCT
+          language,
+          FIRST_VALUE(title) OVER (
+              PARTITION BY language
+              ORDER BY release_year, movie_id
+          ) AS earliest_title
+      FROM movies
+      ORDER BY language;
+    ordered: true
+    columnNames: true
+    hints:
+      - Use `FIRST_VALUE(title)` in a window that restarts for each language.
+      - The window gives the same title on every film of a language, so `DISTINCT` keeps one row per language.
+      - "SELECT DISTINCT language, FIRST_VALUE(title) OVER (PARTITION BY ___ ORDER BY ___, ___) AS earliest_title FROM movies ORDER BY language;"
+    explanation: |
+      Ten languages, one row each. For English the earliest film is The Long Way to Dawn. The window looks at every film of the language, and `DISTINCT` then removes the repeated rows.
+
+  - type: quiz
+    id: m11-t11
+    lesson: m11-l03
+    difficulty: 2
+    question: |
+      Using the default frame, what does `NTH_VALUE(title, 3) OVER (ORDER BY release_year, movie_id)` show on the **second** row of the table?
+    options: ["The title of the first row", "The title of the third row", "NULL", "An error, because the frame is too small"]
+    answer: 2
+    explanation: |
+      On the second row, the default frame contains only the first two rows. There is no third row yet, so `NTH_VALUE` returns NULL. A value appears from the third row onwards.
+
+  - type: predict
+    id: m11-t12
+    lesson: m11-l03
+    difficulty: 2
+    question: |
+      What is `next_year` on the movie with `movie_id` 3?
+    sql: |
+      SELECT
+          movie_id,
+          release_year,
+          LAST_VALUE(release_year) OVER (
+              ORDER BY movie_id
+              ROWS BETWEEN CURRENT ROW
+                       AND 1 FOLLOWING
+          ) AS next_year
+      FROM movies
+      WHERE movie_id <= 3
+      ORDER BY movie_id;
+    options: ["1976", "1982", "1975", "NULL"]
+    answer: 1
+    explanation: |
+      The frame of each row is the current row plus the next row, so the next row's year is shown. But `WHERE` keeps only movies 1 to 3 before the window runs. Movie 3 has no next row in that result, so its frame holds only itself, and `next_year` is its own release year, 1982.
+
+  - type: fill
+    id: m11-t13
+    lesson: m11-l03
+    difficulty: 2
+    prompt: |
+      Complete the frame so that every film released in 2020 or later shows the longest such film of its age rating. The films are ordered by `duration_min` and then `movie_id`, so the last row of each rating is its longest film.
+    template: |
+      SELECT
+          title,
+          age_rating,
+          duration_min,
+          LAST_VALUE(title) OVER (
+              PARTITION BY age_rating
+              ORDER BY duration_min, movie_id
+              ROWS BETWEEN ___ AND ___
+          ) AS longest_in_rating
+      FROM movies
+      WHERE release_year >= 2020
+      ORDER BY age_rating, duration_min, movie_id;
+    answers:
+      - ["UNBOUNDED PRECEDING"]
+      - ["UNBOUNDED FOLLOWING"]
+    explanation: |
+      `UNBOUNDED PRECEDING` starts the frame at the first row of the rating, and `UNBOUNDED FOLLOWING` ends it at the last row. The whole group is now visible, so `LAST_VALUE` returns the real last row.
+
+  - type: exercise
+    id: m11-t14
+    lesson: m11-l04
+    difficulty: 1
+    prompt: |
+      For each `age_rating`, find the 90th percentile of `duration_min`, rounded to 1 decimal. Use `PERCENTILE_CONT`. Show these columns, in this order: `age_rating` and `p90_minutes`. Sort by `age_rating`.
+    solution: |
+      SELECT
+          age_rating,
+          ROUND(
+              PERCENTILE_CONT(0.9) WITHIN GROUP (
+                  ORDER BY duration_min
+              )::numeric,
+              1
+          ) AS p90_minutes
+      FROM movies
+      GROUP BY age_rating
+      ORDER BY age_rating;
+    ordered: true
+    columnNames: true
+    hints:
+      - A percentile is a group summary, so use `GROUP BY age_rating` and no `OVER`.
+      - The syntax is `PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY duration_min)`.
+      - "SELECT age_rating, ROUND(PERCENTILE_CONT(___) WITHIN GROUP (ORDER BY ___)::numeric, 1) AS p90_minutes FROM movies GROUP BY ___ ORDER BY age_rating;"
+    explanation: |
+      About 90% of PG-13 films run for less than 140.7 minutes. The `::numeric` cast is needed, because `PERCENTILE_CONT` returns a double precision number, and PostgreSQL has no `ROUND(double, 1)` for it.
+
+  - type: quiz
+    id: m11-t15
+    lesson: m11-l04
+    difficulty: 1
+    question: |
+      What does `PERCENT_RANK()` return for the **smallest** value in a column?
+    options: ["0", "1", "0.5", "NULL"]
+    answer: 0
+    explanation: |
+      `PERCENT_RANK` is `(rank - 1) / (number of rows - 1)`. The smallest value has rank 1, so the result is 0. The largest value gets 1.
+
+  - type: predict
+    id: m11-t16
+    lesson: m11-l04
+    difficulty: 3
+    question: |
+      How many films end up in tile 1 of this result?
+    sql: |
+      SELECT
+          tile,
+          COUNT(*) AS films
+      FROM (
+          SELECT NTILE(3) OVER (ORDER BY movie_id) AS tile
+          FROM movies
+          WHERE movie_id <= 8
+      ) t
+      GROUP BY tile
+      ORDER BY tile;
+    options: ["2", "3", "4", "8"]
+    answer: 1
+    explanation: |
+      Eight films are split into three tiles. When the rows do not divide evenly, the first tiles get the extra rows, so the sizes are 3, 3 and 2. Tile 1 holds three films.
+
+  - type: fill
+    id: m11-t17
+    lesson: m11-l04
+    difficulty: 2
+    prompt: |
+      Complete the query to find the median (the 50th percentile) of `box_office_musd`. Films with a NULL box office are ignored.
+    template: |
+      SELECT
+          PERCENTILE_CONT(___) WITHIN GROUP (
+              ORDER BY ___
+          ) AS median_box_office
+      FROM movies;
+    answers:
+      - ["0.5"]
+      - ["box_office_musd"]
+    explanation: |
+      `PERCENTILE_CONT(0.5)` is the median. Its `ORDER BY` names the column to measure. The median box office is 106.7 million dollars, well below the average of 233.55, because a few huge hits pull the average up.
+
+  - type: exercise
+    id: m11-t18
+    lesson: m11-l05
+    difficulty: 1
+    prompt: |
+      For films released in 2020 or later, number the films within each `age_rating`, from the newest release to the oldest. Define one named window called `newest_first` in a `WINDOW` clause and use it with `ROW_NUMBER()`. Break ties in the release year with `movie_id`. Show these columns, in this order: `age_rating`, `title`, `release_year` and `pos`. Sort by `age_rating`, then `pos`.
+    solution: |
+      SELECT
+          age_rating,
+          title,
+          release_year,
+          ROW_NUMBER() OVER newest_first AS pos
+      FROM movies
+      WHERE release_year >= 2020
+      WINDOW newest_first AS (
+          PARTITION BY age_rating
+          ORDER BY release_year DESC, movie_id
+      )
+      ORDER BY age_rating, pos;
+    ordered: true
+    columnNames: true
+    hints:
+      - Use `ROW_NUMBER()` with an `OVER` clause that names the window.
+      - The `WINDOW` clause goes after `WHERE` and before `ORDER BY`, as `WINDOW newest_first AS (...)`.
+      - "SELECT age_rating, title, release_year, ROW_NUMBER() OVER ___ AS pos FROM movies WHERE release_year >= 2020 WINDOW newest_first AS (PARTITION BY ___ ORDER BY ___ DESC, ___) ORDER BY age_rating, pos;"
+    explanation: |
+      Fifteen films. Each rating starts again at 1 with its newest film. Defining the window once means the partition and the sort order can never disagree between columns.
+
+  - type: exercise
+    id: m11-t19
+    lesson: m11-l05
+    difficulty: 3
+    prompt: |
+      For each `language` that has at least 3 films with a known budget, show its top 2 films by `budget_musd`. Ignore films with a NULL budget. If two films have the same budget, the lower `movie_id` comes first. Show these columns, in this order: `language`, `pos`, `title` and `budget_musd`, where `pos` is 1 for the top film and 2 for the runner-up. Sort by `language`, then `pos`.
+    solution: |
+      WITH ranked AS (
+          SELECT
+              language,
+              title,
+              budget_musd,
+              ROW_NUMBER() OVER by_budget AS pos,
+              COUNT(*) OVER (
+                  PARTITION BY language
+              ) AS n
+          FROM movies
+          WHERE budget_musd IS NOT NULL
+          WINDOW by_budget AS (
+              PARTITION BY language
+              ORDER BY budget_musd DESC, movie_id
+          )
+      )
+      SELECT
+          language,
+          pos,
+          title,
+          budget_musd
+      FROM ranked
+      WHERE n >= 3
+        AND pos <= 2
+      ORDER BY language, pos;
+    ordered: true
+    columnNames: true
+    hints:
+      - Number the films in a CTE, then filter in the outer query. Window functions cannot go in `WHERE`.
+      - Count the films per language in the same CTE with `COUNT(*) OVER (PARTITION BY language)`, so the outer `WHERE` can check `n >= 3`.
+      - "WITH ranked AS (SELECT language, title, budget_musd, ROW_NUMBER() OVER by_budget AS pos, COUNT(*) OVER (PARTITION BY ___) AS n FROM movies WHERE ___ IS NOT NULL WINDOW by_budget AS (PARTITION BY ___ ORDER BY ___ DESC, movie_id)) SELECT ... FROM ranked WHERE n >= 3 AND pos <= 2 ORDER BY language, pos;"
+    explanation: |
+      Only four languages qualify: English, French, German and Spanish. English has the biggest budget in the list, 293.0 million dollars for The Cloud Cobbler.
+
+      The named window `by_budget` is defined once and used by `ROW_NUMBER()`. The count `n` sits in the same layer, so the outer `WHERE` can filter on it.
+
+  - type: quiz
+    id: m11-t20
+    lesson: m11-l05
+    difficulty: 2
+    question: |
+      Which order do the clauses appear in, in a `SELECT` that uses a `WINDOW` clause?
+    options:
+      - "WHERE, GROUP BY, HAVING, WINDOW, ORDER BY"
+      - "WINDOW, WHERE, GROUP BY, HAVING, ORDER BY"
+      - "WHERE, WINDOW, GROUP BY, HAVING, ORDER BY"
+      - "WHERE, GROUP BY, WINDOW, ORDER BY, HAVING"
+    answer: 0
+    explanation: |
+      `WINDOW` comes after `HAVING` and before `ORDER BY`. The other three orders put it in the wrong place, and PostgreSQL reports a syntax error for each of them.
+
+  - type: parsons
+    id: m11-t21
+    lesson: m11-l05
+    difficulty: 3
+    prompt: |
+      Put the lines in the right order to find the shortest film of each `age_rating`. Use a CTE to number the films inside each rating, then keep only number 1.
+    lines:
+      - WITH ranked AS (
+      - SELECT title, age_rating, duration_min,
+      - ROW_NUMBER() OVER (PARTITION BY age_rating ORDER BY duration_min, movie_id) AS pos
+      - FROM movies)
+      - SELECT title, age_rating, duration_min
+      - FROM ranked
+      - WHERE pos = 1
+      - ORDER BY age_rating;
+    distractors:
+      - WHERE ROW_NUMBER() OVER (ORDER BY duration_min) = 1
+    explanation: |
+      The CTE comes first. The filter `pos = 1` can only see `pos` after it has been calculated in the layer before. The distractor cannot be used, because window functions are not allowed in `WHERE`.
+
+  - type: exercise
+    id: m11-t22
+    lesson: m11-l06
+    difficulty: 2
+    prompt: |
+      For accounts 1 to 5, show the balance after each account's last transaction. Use a running total of `amount` in time order (`txn_time`, then `txn_id`). Show these columns, in this order: `account_id` and `final_balance`. Sort by `account_id`.
+    solution: |
+      WITH running AS (
+          SELECT
+              account_id,
+              txn_time,
+              txn_id,
+              SUM(amount) OVER (
+                  PARTITION BY account_id
+                  ORDER BY txn_time, txn_id
+              ) AS balance,
+              ROW_NUMBER() OVER (
+                  PARTITION BY account_id
+                  ORDER BY txn_time DESC, txn_id DESC
+              ) AS last_pos
+          FROM transactions
+          WHERE account_id BETWEEN 1 AND 5
+      )
+      SELECT
+          account_id,
+          balance AS final_balance
+      FROM running
+      WHERE last_pos = 1
+      ORDER BY account_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - Calculate the running total in a CTE. Add a second window that numbers each account's transactions from the newest to the oldest.
+      - In the outer query, keep only the row where that number is 1.
+      - "WITH running AS (SELECT account_id, txn_time, txn_id, SUM(amount) OVER (PARTITION BY account_id ORDER BY ___, ___) AS balance, ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_time DESC, ___ DESC) AS last_pos FROM transactions WHERE account_id BETWEEN 1 AND 5) SELECT account_id, balance AS final_balance FROM running WHERE last_pos = 1 ORDER BY account_id;"
+    explanation: |
+      Five rows. Account 3 finishes with the biggest balance, 33,301.71. The running total is worked out in the CTE, and the "last row" filter sits in the outer query.
+
+  - type: exercise
+    id: m11-t23
+    lesson: m11-l06
+    difficulty: 3
+    prompt: |
+      For the `travel` category of card payments, show each month's top merchant: the merchant with the highest card spending that month. Show these columns, in this order: `month_start`, `merchant`, `spent` (rounded to 2 decimals) and `pct` (its share of that month's travel spending, rounded to 1 decimal). Sort by `month_start`.
+    solution: |
+      WITH monthly AS (
+          SELECT
+              merchant,
+              date_trunc('month', txn_time)::date AS month_start,
+              ROUND(-SUM(amount), 2) AS spent
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+            AND category = 'travel'
+          GROUP BY merchant,
+                   date_trunc('month', txn_time)::date
+      ),
+      ranked AS (
+          SELECT
+              merchant,
+              month_start,
+              spent,
+              RANK() OVER (
+                  PARTITION BY month_start
+                  ORDER BY spent DESC
+              ) AS rnk,
+              ROUND(
+                  100 * spent
+                  / SUM(spent)
+                        OVER (PARTITION BY month_start),
+                  1
+              ) AS pct
+          FROM monthly
+      )
+      SELECT
+          month_start,
+          merchant,
+          spent,
+          pct
+      FROM ranked
+      WHERE rnk = 1
+      ORDER BY month_start;
+    ordered: true
+    columnNames: true
+    hints:
+      - Total each merchant per month in a CTE first.
+      - In the next layer, rank the merchants inside each month and calculate each share with `SUM(spent) OVER (PARTITION BY month_start)`.
+      - "WITH monthly AS (SELECT merchant, date_trunc('month', txn_time)::date AS month_start, ROUND(-SUM(amount), 2) AS spent FROM transactions WHERE txn_type = 'card_payment' AND category = 'travel' GROUP BY ___) ... SELECT ... FROM ranked WHERE rnk = 1 ORDER BY month_start;"
+    explanation: |
+      Twelve months, one top merchant each. In October, SkyHop Airlines took 47.0% of that month's travel spending. Each share is measured inside its own month, so the shares never add up across months.
+
+  - type: exercise
+    id: m11-t24
+    lesson: m11-l06
+    difficulty: 1
+    prompt: |
+      For account 4, show each transaction in time order (`txn_time`, then `txn_id`). Show these columns, in this order: `txn_time`, `amount` and `txns_so_far`. The `txns_so_far` column is how many of account 4's transactions have happened so far, counting this one.
+    solution: |
+      SELECT
+          txn_time,
+          amount,
+          COUNT(*) OVER (
+              ORDER BY txn_time, txn_id
+          ) AS txns_so_far
+      FROM transactions
+      WHERE account_id = 4
+      ORDER BY txn_time, txn_id;
+    ordered: true
+    columnNames: true
+    hints:
+      - A running count is a window `COUNT(*)` with an `ORDER BY` inside the brackets.
+      - Filter to account 4 in `WHERE`, and put `ORDER BY txn_time, txn_id` inside `OVER (...)`.
+      - "SELECT txn_time, amount, COUNT(*) OVER (ORDER BY ___, ___) AS txns_so_far FROM transactions WHERE account_id = ___ ORDER BY ___, ___;"
+    explanation: |
+      Account 4 has 21 transactions, so the last row shows 21. `WHERE` keeps only one account, so you do not need `PARTITION BY` here.
+
+  - type: parsons
+    id: m11-t25
+    lesson: m11-l06
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to show each month's card spending and how much it changed from the month before.
+    lines:
+      - WITH monthly AS (
+      - SELECT date_trunc('month', txn_time)::date AS month_start,
+      - ROUND(-SUM(amount), 2) AS spent
+      - FROM transactions
+      - WHERE txn_type = 'card_payment'
+      - GROUP BY date_trunc('month', txn_time)::date)
+      - SELECT month_start, spent,
+      - spent - LAG(spent) OVER (ORDER BY month_start) AS change_vs_prev
+      - FROM monthly
+      - ORDER BY month_start;
+    distractors:
+      - HAVING LAG(spent) OVER (ORDER BY month_start) > 0
+    explanation: |
+      The totals come first, in the CTE. Then `LAG` reads the previous month's total. January has no earlier month, so its change is NULL.
+
+      The distractor fails, because window functions are not allowed in `HAVING`.
+
+project:
+  id: m11-proj
+  title: Streaming Trends
+  icon: "📺"
+  dataset: movies
+  md: |
+    FlickNest's content team meets every Monday with one question: *what is really trending, and is it growing?*
+
+    You will answer it with the viewing log (`watch_history`), the catalog (`movies`) and the ratings. The seven tasks build on each other: first the monthly trend, then the most-watched films, then the rating leaders, and finally a hit list that combines everything.
+
+    Each task says exactly which columns to show and in which order. Read them carefully.
+  tasks:
+    - type: exercise
+      id: m11-proj-1
+      title: Is viewing growing?
+      difficulty: 1
+      prompt: |
+        Count the plays in each month of 2024, using `started_at`. Show these columns, in this order: `month_start` (the first day of the month), `plays` and `trend_3m`. The `trend_3m` column is the average of this month's plays and the two months before it, rounded to 1 decimal. For January and February, use only the months that exist. Sort by `month_start`.
+      solution: |
+        WITH monthly AS (
+            SELECT
+                date_trunc('month', started_at)::date AS month_start,
+                COUNT(*) AS plays
+            FROM watch_history
+            GROUP BY date_trunc('month', started_at)::date
+        )
+        SELECT
+            month_start,
+            plays,
+            ROUND(
+                AVG(plays) OVER (
+                    ORDER BY month_start
+                    ROWS BETWEEN 2 PRECEDING
+                             AND CURRENT ROW
+                ),
+                1
+            ) AS trend_3m
+        FROM monthly
+        ORDER BY month_start;
+      ordered: true
+      columnNames: true
+      hints:
+        - Count the plays per month in a CTE first.
+        - A 3-month average uses the frame `ROWS BETWEEN 2 PRECEDING AND CURRENT ROW`.
+        - "WITH monthly AS (SELECT date_trunc('month', started_at)::date AS month_start, COUNT(*) AS plays FROM watch_history GROUP BY ___) SELECT month_start, plays, ROUND(AVG(plays) OVER (ORDER BY month_start ROWS BETWEEN ___ PRECEDING AND CURRENT ROW), 1) AS trend_3m FROM monthly ORDER BY month_start;"
+      explanation: |
+        Plays rose from 507 in March to 826 in June. The trend lags behind the raw numbers: June's trend is 691.3, not 826, because the average still includes April and May.
+
+    - type: exercise
+      id: m11-proj-2
+      title: Which films carry the viewing?
+      difficulty: 1
+      prompt: |
+        Find the five most-watched films: most plays first, then title A to Z. For each one show `title`, `plays` and `cumulative_pct`. The `cumulative_pct` column is the running share of **all** plays, from the first film down to this one, rounded to 1 decimal. Show the columns in that order.
+      solution: |
+        WITH film_plays AS (
+            SELECT
+                m.title,
+                COUNT(*) AS plays
+            FROM watch_history w
+            JOIN movies m
+                ON m.movie_id = w.movie_id
+            GROUP BY m.movie_id, m.title
+        )
+        SELECT
+            title,
+            plays,
+            ROUND(
+                100 * SUM(plays) OVER (
+                    ORDER BY plays DESC, title
+                    ROWS BETWEEN UNBOUNDED PRECEDING
+                             AND CURRENT ROW
+                )
+                / SUM(plays) OVER (),
+                1
+            ) AS cumulative_pct
+        FROM film_plays
+        ORDER BY plays DESC, title
+        LIMIT 5;
+      ordered: true
+      columnNames: true
+      hints:
+        - Count the plays per film in a CTE. Join `watch_history` to `movies` to get the title.
+        - For the running share, use `SUM(plays) OVER (ORDER BY plays DESC, title ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`.
+        - "... ROUND(100 * SUM(plays) OVER (ORDER BY ___ DESC, title ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) / SUM(plays) OVER (), 1) AS cumulative_pct FROM film_plays ORDER BY plays DESC, title LIMIT 5;"
+      explanation: |
+        The top film, Rain Over Valparaiso, has 167 plays. That is 4.6% of all 3,654 plays. The top five films together account for 18.9%.
+
+    - type: exercise
+      id: m11-proj-3
+      title: The best film of each decade
+      difficulty: 2
+      prompt: |
+        Find the most-watched film of each release decade. A decade is the release year rounded down to the decade, so 1994 belongs to 1990. Count the plays per film. Within each decade, the film with the most plays comes first; if two films have the same number of plays, the title that comes first alphabetically wins. Show `decade`, `title` and `plays` for the first film of each decade, sorted by `decade`.
+      solution: |
+        WITH per_film AS (
+            SELECT
+                m.movie_id,
+                m.title,
+                (m.release_year / 10) * 10 AS decade,
+                COUNT(*) AS plays
+            FROM watch_history w
+            JOIN movies m
+                ON m.movie_id = w.movie_id
+            GROUP BY m.movie_id, m.title, m.release_year
+        ),
+        ranked AS (
+            SELECT
+                decade,
+                title,
+                plays,
+                ROW_NUMBER() OVER (
+                    PARTITION BY decade
+                    ORDER BY plays DESC, title
+                ) AS pos
+            FROM per_film
+        )
+        SELECT
+            decade,
+            title,
+            plays
+        FROM ranked
+        WHERE pos = 1
+        ORDER BY decade;
+      ordered: true
+      columnNames: true
+      hints:
+        - Count the plays per film in a CTE first. Keep the release year, because you need it for the decade.
+        - Number the films inside each decade with `ROW_NUMBER()`, ordered by plays from highest to lowest and then by title. Keep number 1 in the outer query, because window functions cannot go in `WHERE`.
+        - "WITH per_film AS (... ), ranked AS (SELECT decade, title, plays, ROW_NUMBER() OVER (PARTITION BY ___ ORDER BY plays DESC, ___) AS pos FROM per_film) SELECT decade, title, plays FROM ranked WHERE pos = 1 ORDER BY ___;"
+      explanation: |
+        Six decades, six winners. Rain Over Valparaiso, from the 2020s with 167 plays, is the most-watched film in the whole catalog. Integer division drops the decimals: 1994 / 10 gives 199, and 199 * 10 gives 1990.
+
+    - type: exercise
+      id: m11-proj-4
+      title: Popularity quartiles
+      difficulty: 2
+      prompt: |
+        Split the 109 films that have at least one play into four nearly equal-sized popularity groups (quartiles) with `NTILE(4)`. Order the films by plays from highest to lowest, then by title A to Z, so quartile 1 holds the most-watched films. For each quartile show `quartile`, `films` (how many films), `min_plays` and `max_plays`. Sort by `quartile`.
+      solution: |
+        WITH per_film AS (
+            SELECT
+                m.title,
+                COUNT(*) AS plays
+            FROM watch_history w
+            JOIN movies m
+                ON m.movie_id = w.movie_id
+            GROUP BY m.movie_id, m.title
+        ),
+        quartiled AS (
+            SELECT
+                title,
+                plays,
+                NTILE(4) OVER (
+                    ORDER BY plays DESC, title
+                ) AS quartile
+            FROM per_film
+        )
+        SELECT
+            quartile,
+            COUNT(*) AS films,
+            MIN(plays) AS min_plays,
+            MAX(plays) AS max_plays
+        FROM quartiled
+        GROUP BY quartile
+        ORDER BY quartile;
+      ordered: true
+      columnNames: true
+      hints:
+        - Count the plays per film in a CTE, as in the last task.
+        - "`NTILE(4) OVER (ORDER BY plays DESC, title)` puts each film into a group from 1 to 4."
+        - In the outer query, group by `quartile` and use `COUNT(*)`, `MIN(plays)` and `MAX(plays)`.
+      explanation: |
+        When 109 films do not divide evenly by 4, NTILE gives the first group one extra film. Quartile 1 has 28 films, and its least-watched film still has 44 plays. The most-watched film of quartile 4 has only 13.
+
+    - type: exercise
+      id: m11-proj-5
+      title: How long do people watch?
+      difficulty: 2
+      prompt: |
+        For each `device`, find the median and the 90th percentile of `minutes_watched`. Round both to 1 decimal. Show `device`, `median_minutes` and `p90_minutes`, sorted by `device`.
+      solution: |
+        SELECT
+            device,
+            ROUND(
+                PERCENTILE_CONT(0.5) WITHIN GROUP (
+                    ORDER BY minutes_watched
+                )::numeric,
+                1
+            ) AS median_minutes,
+            ROUND(
+                PERCENTILE_CONT(0.9) WITHIN GROUP (
+                    ORDER BY minutes_watched
+                )::numeric,
+                1
+            ) AS p90_minutes
+        FROM watch_history
+        GROUP BY device
+        ORDER BY device;
+      ordered: true
+      columnNames: true
+      hints:
+        - Percentiles are group summaries, so use `GROUP BY device`.
+        - The syntax is `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY minutes_watched)`. Use 0.9 for the 90th percentile.
+        - Wrap each one in `ROUND(... ::numeric, 1)` to get one decimal.
+      explanation: |
+        On TV the median play lasts 45.0 minutes. The 90th percentile is between 116.7 and 118.0 minutes on every device, so the longest tenth of plays looks alike everywhere.
+
+    - type: exercise
+      id: m11-proj-6
+      title: Within reach of the best
+      difficulty: 3
+      prompt: |
+        Only films with at least 5 ratings count. For each film, compute its average rating rounded to 2 decimals (`avg_stars`) and count its ratings (`n`). Group the films by release decade (1994 belongs to 1990). Within each decade, find the best average (`best_in_decade`). Keep only the films whose `avg_stars` is at least `best_in_decade - 0.20`, comparing the rounded averages. Show `decade`, `title`, `avg_stars`, `n` and `best_in_decade`, sorted by `decade`, then `avg_stars` from highest to lowest, then `title`.
+      solution: |
+        WITH rated AS (
+            SELECT
+                m.movie_id,
+                m.title,
+                (m.release_year / 10) * 10 AS decade,
+                ROUND(AVG(r.stars), 2) AS avg_stars,
+                COUNT(*) AS n
+            FROM ratings r
+            JOIN movies m
+                ON m.movie_id = r.movie_id
+            GROUP BY m.movie_id, m.title, m.release_year
+            HAVING COUNT(*) >= 5
+        ),
+        best AS (
+            SELECT
+                decade,
+                title,
+                avg_stars,
+                n,
+                FIRST_VALUE(avg_stars) OVER (
+                    PARTITION BY decade
+                    ORDER BY avg_stars DESC, title
+                ) AS best_in_decade
+            FROM rated
+        )
+        SELECT
+            decade,
+            title,
+            avg_stars,
+            n,
+            best_in_decade
+        FROM best
+        WHERE avg_stars >= best_in_decade - 0.20
+        ORDER BY decade, avg_stars DESC, title;
+      ordered: true
+      columnNames: true
+      hints:
+        - Build the averages in a CTE first. Use `HAVING COUNT(*) >= 5` to keep only films with at least 5 ratings.
+        - In the next layer, use `FIRST_VALUE(avg_stars) OVER (PARTITION BY decade ORDER BY avg_stars DESC, title)` to get the best average of each decade.
+        - "... WHERE avg_stars >= best_in_decade - ___ ORDER BY decade, avg_stars DESC, title;"
+      explanation: |
+        Fourteen films qualify. In the 2020s the best average is 4.60 (Moonwalk Motel, from 5 ratings), so the cut-off is 4.40 and The Last Terraformer, at 4.42, stays on the list.
+
+    - type: exercise
+      id: m11-proj-7
+      title: The hit list
+      difficulty: 3
+      prompt: |
+        Build the hit list. Only films with at least 20 plays are in the race. Among those films, compute the `PERCENT_RANK()` of plays, rounded to 2 decimals, where 0 means least watched and 1 means most watched. Keep the films whose percent rank is 0.90 or more. Show `title`, `plays` and `pct_rank`, sorted by `plays` from highest to lowest, then `title`.
+      solution: |
+        WITH hits AS (
+            SELECT
+                m.title,
+                COUNT(*) AS plays
+            FROM watch_history w
+            JOIN movies m
+                ON m.movie_id = w.movie_id
+            GROUP BY m.movie_id, m.title
+            HAVING COUNT(*) >= 20
+        ),
+        scored AS (
+            SELECT
+                title,
+                plays,
+                ROUND(
+                    PERCENT_RANK() OVER (ORDER BY plays)::numeric,
+                    2
+                ) AS pct_rank
+            FROM hits
+        )
+        SELECT
+            title,
+            plays,
+            pct_rank
+        FROM scored
+        WHERE pct_rank >= 0.9
+        ORDER BY plays DESC, title;
+      ordered: true
+      columnNames: true
+      hints:
+        - Keep only films with at least 20 plays in a CTE, using `HAVING COUNT(*) >= 20`.
+        - In the next layer, calculate `PERCENT_RANK() OVER (ORDER BY plays)`. It only sees the films in the first layer.
+        - "... WHERE pct_rank >= ___ ORDER BY plays DESC, title;"
+      explanation: |
+        Seven films make the hit list. Rain Over Valparaiso is at 1.00, the top of the race. PERCENT_RANK counts only the 62 films with at least 20 plays, not the whole catalog.
+
