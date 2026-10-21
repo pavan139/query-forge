@@ -258,8 +258,8 @@ lessons:
           > into an *alias* (a nickname).
 
           > [!REAL-WORLD]
-          > In professional code, `SELECT *` is a classic remark in code reviews. Listing exactly the
-          > columns you need makes queries faster, safer and easier to understand.
+          > Many teams avoid `SELECT *` in production code, and code reviewers often flag it. Listing
+          > exactly the columns you need keeps queries lighter, safer and easier to understand.
 
           Next up: giving your columns **friendlier names** with aliases.
     cheatsheet:
@@ -451,7 +451,7 @@ lessons:
           FROM menu_items;
         columnNames: true
         hints:
-          - Every alias needs AS. The last one has a space and brackets, so it needs double quotes.
+          - Every alias needs AS. The last one has a space and parentheses, so it needs double quotes.
           - "price AS \"Price\", calories AS \"Energy (kcal)\""
           - "SELECT name AS \"Item\", category AS ___, price AS ___, calories AS ___ FROM menu_items;"
         explanation: |
@@ -487,7 +487,7 @@ lessons:
         hints:
           - Run it and read the message. It points at the first alias.
           - Aliases use double quotes (or no quotes at all), not single quotes.
-          - "SELECT name AS \"Item\", price AS \"Cost\" FROM menu_items;"
+          - "SELECT name AS \"Item\", price AS ___ FROM menu_items;"
         explanation: |
           Single quotes are for text values, double quotes are for names. Writing `AS item, ... AS cost`
           without any quotes works too.
@@ -602,21 +602,8 @@ lessons:
           For every menu item, `price * 2` was calculated from that row's price. The table itself is
           unchanged: the new column exists only in your result.
 
-          Notice the alias `double_price`. Always give calculated columns an alias!
-
-      - type: quiz
-        id: m01-l03-q1
-        question: |
-          What heading does PostgreSQL give to a calculated column with **no alias**, like `price * 2`?
-        options:
-          - "?column?"
-          - "price * 2"
-          - "calculated"
-          - "No heading at all"
-        answer: 0
-        explanation: |
-          PostgreSQL labels unnamed expressions `?column?`, which tells you nothing. That's why
-          calculated columns should always get an alias with `AS`.
+          Notice the alias `double_price`. Always give calculated columns an alias! Without one,
+          PostgreSQL would call the column `?column?`, which tells you nothing.
 
       - type: example
         title: A day's pay
@@ -757,7 +744,7 @@ lessons:
         prompt: |
           Every **100 loyalty points** earns one free drink. Show each customer's `first_name` and the
           exact number of drinks they have earned (points ÷ 100, **with decimals**), with the heading
-          **drinks_earned**.
+          **drinks_earned**. Any number of decimal places is fine.
         starter: |
           SELECT first_name, loyalty_points / 100 AS drinks_earned
           FROM customers;
@@ -768,7 +755,7 @@ lessons:
         hints:
           - If your numbers have no decimals, you divided two whole numbers.
           - Make the 100 a decimal number.
-          - "loyalty_points / 100.0"
+          - "SELECT first_name, loyalty_points / ___ AS drinks_earned FROM customers;"
         explanation: |
           With `100.0`, Dmitri's 850 points become 8.5 drinks. With plain `100` they'd have been cut off
           to 8. (Sometimes that's what you want: `/ 100` tells you how many *complete* free drinks
@@ -822,7 +809,7 @@ lessons:
         hints:
           - You can chain several operators in one expression.
           - Multiplication happens before the + 20, so the order works out naturally.
-          - "hourly_rate * 8 * 5 + 20 AS weekly_pay"
+          - "SELECT name, hourly_rate * 8 * ___ + 20 AS weekly_pay FROM staff;"
         explanation: |
           Maria Santos: 28.50 × 8 × 5 = 1140.00, plus 20 = **1160.00**. Chaining operators is fine as long
           as you respect the order of operations.
@@ -839,24 +826,13 @@ lessons:
         explanation: |
           `*` multiplies. `price * 3` is the price of three items.
 
-      - type: parsons
-        id: m01-l03-o1
-        prompt: |
-          Put the lines in the right order to show each team member's `name` and daily pay
-          (`hourly_rate` × 8).
-        lines:
-          - "SELECT name,"
-          - "hourly_rate * 8 AS daily_pay"
-          - "FROM staff;"
-        explanation: |
-          The calculation is just another item in the `SELECT` list, with its alias.
-
       - type: exercise
         id: m01-l03-e5
         title: The happy-hour board
         prompt: |
           Build the happy-hour board with three columns: `name` as **Item**, `price` as **Regular**, and
-          the price with **20% off** (price × 0.8) as **Happy Hour**.
+          the price with **20% off** (price × 0.8) as **Happy Hour**. Decimals are fine: you don't
+          need to round yet (that comes in module 4).
         starter: |
           SELECT name, price
           FROM menu_items;
@@ -1114,15 +1090,15 @@ lessons:
       - type: example
         title: "|| versus CONCAT"
         md: |
-          The same label built two ways. Scroll down to the Smoked Salmon Bagel, Tiramisu Cup, Green Detox
-          Juice and Berry Smoothie.
+          The same label built two ways. Look at the four items with no calorie count: Smoked Salmon
+          Bagel, Tiramisu Cup, Green Detox Juice and Berry Smoothie.
         sql: |
           SELECT name || ' (' || calories || ' cal)' AS with_pipes,
                  CONCAT(name, ' (', calories, ' cal)') AS with_concat
           FROM menu_items;
         after: |
           For those four items, `with_pipes` shows **NULL** while `with_concat` shows something like
-          `Tiramisu Cup ( cal)`. The empty brackets are what's left when NULL counts as empty text.
+          `Tiramisu Cup ( cal)`. The gap after the `(` is where the NULL was: CONCAT counts it as empty text.
 
       - type: exercise
         id: m01-l04-e4
@@ -1190,7 +1166,7 @@ lessons:
         hints:
           - The apostrophe in Maria's ends the text too early.
           - Double the apostrophe to include it in the text.
-          - "SELECT 'Maria''s special' AS board;"
+          - "SELECT 'Maria___s special' AS board;"
         explanation: |
           Inside a text literal, `''` (two single quotes) stands for one apostrophe.
         difficulty: 2
@@ -1206,17 +1182,6 @@ lessons:
           - ["||"]
         explanation: |
           `||` glues text together.
-
-      - type: parsons
-        id: m01-l04-o1
-        prompt: |
-          Put the lines in the right order to show each customer's full name and their city.
-        lines:
-          - "SELECT first_name || ' ' || last_name AS full_name,"
-          - "city"
-          - "FROM customers;"
-        explanation: |
-          The joined text is one item in the `SELECT` list, followed by a comma and the next column.
 
       - type: exercise
         id: m01-l04-e6
@@ -1469,14 +1434,14 @@ lessons:
           Prove it to yourself with the next example.
 
       - type: example
-        title: DISTINCT with brackets
+        title: DISTINCT with parentheses
         md: |
           Compare this with the earlier "unique combinations" example.
         sql: |
           SELECT DISTINCT(category), is_vegan
           FROM menu_items;
         after: |
-          The same **10 rows** as before. The brackets around `category` changed nothing: `DISTINCT` still
+          The same **10 rows** as before. The parentheses around `category` changed nothing: `DISTINCT` still
           compares `category` and `is_vegan` together.
 
       - type: exercise
@@ -1529,16 +1494,6 @@ lessons:
           - ["DISTINCT"]
         explanation: |
           `DISTINCT` goes right after `SELECT`.
-
-      - type: parsons
-        id: m01-l05-o1
-        prompt: |
-          Put the lines in the right order to list each menu category once.
-        lines:
-          - "SELECT DISTINCT category"
-          - "FROM menu_items;"
-        explanation: |
-          `DISTINCT` is part of the `SELECT` line, before the column list.
 
       - type: exercise
         id: m01-l05-e6
@@ -1594,9 +1549,8 @@ lessons:
       - type: read
         title: A quick peek
         md: |
-          The `orders` table has 180 rows. Before building anything with it, you just want a **quick look**
-          at what the data looks like. Printing all 180 rows would be overkill. Imagine a table with
-          *millions* of rows!
+          Maria asks, *"What do our orders look like?"* The `orders` table has 180 rows. Printing all of
+          them would be overkill, and real tables can have *millions* of rows. You just want a **quick look**.
 
           `LIMIT n` goes at the **very end** of a query and says "stop after n rows":
 
@@ -1664,7 +1618,7 @@ lessons:
         id: m01-l06-e1
         title: Meet five customers
         prompt: |
-          Show the `first_name` and `city` of the first 5 rows of `customers`.
+          Show the `first_name` and `city` of the first 5 rows of `customers` (picking specific rows comes in module 3).
         starter: |
           SELECT first_name, city
           FROM customers;
@@ -1684,7 +1638,7 @@ lessons:
         id: m01-l06-e2
         title: Peek at tips
         prompt: |
-          Show the `item_id`, `quantity` and `tip` of the first 12 rows of `orders`.
+          Show the `item_id`, `quantity` and `tip` of the first 12 rows of `orders` (picking specific rows comes in module 3).
         starter: |
           SELECT
           FROM orders
@@ -1749,19 +1703,6 @@ lessons:
           With the `--`, the `category` line is ignored, so you see only two columns. Remove the dashes and
           the column comes back. This trick is a favourite for testing a query piece by piece.
 
-      - type: quiz
-        id: m01-l06-q2
-        question: Which line is a valid SQL comment?
-        options:
-          - "`-- remember to check the prices`"
-          - "`// remember to check the prices`"
-          - "`<!-- remember to check the prices -->`"
-          - "`remember to check the prices`"
-        answer: 0
-        explanation: |
-          Line comments start with two dashes `--`. Block comments are written `/* ... */`. The other
-          styles are comment syntax from other languages, and PostgreSQL would report an error.
-
       - type: predict
         id: m01-l06-p1
         question: How many columns and rows will this query return?
@@ -1784,8 +1725,8 @@ lessons:
         id: m01-l06-e3
         title: The swallowed FROM
         prompt: |
-          Show the `name` and `price` of the first 5 menu items. A comment accidentally swallowed part of the
-          query. Fix it!
+          Show the `name` and `price` of the first 5 rows of `menu_items` (picking specific rows comes in module 3).
+          A comment accidentally swallowed part of the query. Fix it!
 
           *Remember: a `--` comment runs until the end of the line.*
         starter: |
@@ -1841,7 +1782,7 @@ lessons:
         sql: |
           select name,price,category from menu_items limit 5;
         after: |
-          The result is the same 5 rows. After pressing **Format**, the editor shows something like:
+          The result is the same 5 rows. After pressing **Format**, the editor shows:
 
           ```sql
           SELECT
@@ -1927,8 +1868,9 @@ lessons:
         id: m01-l06-e4
         title: The tasting card
         prompt: |
-          Show the first 6 rows of `menu_items` with two columns: `name` with the heading **Item**, and
-          the price for two (`price * 2`) with the heading **Price for Two**.
+          Show the first 6 rows of `menu_items` (picking specific rows comes in module 3) with two columns:
+          `name` with the heading **Item**, and the price for two (`price * 2`) with the heading
+          **Price for Two**.
         starter: |
           SELECT name, price
           FROM menu_items;
@@ -1950,7 +1892,8 @@ lessons:
         id: m01-l06-e5
         title: Order summaries
         prompt: |
-          Show the first 10 rows of `orders` as a single column called **summary**, with text like
+          Show the first 10 rows of `orders` (picking specific rows comes in module 3) as a single column called
+          **summary**, with text like
           `Order #1 paid by card`: the text `Order #`, the `order_id`, the text ` paid by `, and the
           `payment_method`.
         starter: |
@@ -1982,7 +1925,7 @@ lessons:
           - **Peek** with `LIMIT`, **explain** with comments, and **format** your SQL neatly.
 
           > [!REAL-WORLD]
-          > Before touching an unfamiliar table, almost every analyst runs `SELECT * ... LIMIT 10` first. It
+          > Before touching an unfamiliar table, many analysts run `SELECT * ... LIMIT 10` first. It
           > is the SQL version of "let me just have a look".
 
           Now put it all to work in the module project: **The Café Menu Board**. ☕
@@ -2156,7 +2099,7 @@ testPool:
       - "staff_id AS \"Badge No\""
       - "SELECT staff_id AS \"Badge No\", name AS ___, hired_on AS ___, hourly_rate AS ___ FROM staff;"
     explanation: |
-      Four aliases in double quotes. Special characters such as `$`, `/` and brackets are fine inside
+      Four aliases in double quotes. Special characters such as `$`, `/` and parentheses are fine inside
       double quotes. Only the headings change; the data and the table stay the same.
 
   # ---- Lesson 3: Calculations in SELECT -------------------------------------------
@@ -2245,7 +2188,7 @@ testPool:
     title: Calories on the poster
     prompt: |
       A health poster shows each item's calories as a percentage of a 2,000-calorie day. Show each menu
-      item's `name` and `calories` ÷ 2000 × 100 (keep the decimals) with the heading **pct_of_day**.
+      item's `name` and `calories` ÷ 2000 × 100 (keep the decimals) with the heading **pct_of_day**. Any number of decimal places is fine.
 
       The starter query shows only zeros (and NULLs). Fix it!
     starter: |
@@ -2350,7 +2293,7 @@ testPool:
       - "The literals are ': $', '/h = $' and '/day'. The daily pay is a calculation inside the chain."
       - "SELECT name || ': $' || hourly_rate || '/h = $' || (hourly_rate * ___) || '/day' AS pay_note FROM staff;"
     explanation: |
-      Text, columns and a calculation, all in one `||` chain. The brackets around `hourly_rate * 8` are
+      Text, columns and a calculation, all in one `||` chain. The parentheses around `hourly_rate * 8` are
       optional (`*` is calculated before `||`), but they make the intent clear to the reader.
 
   # ---- Lesson 5: DISTINCT ------------------------------------------------------------
@@ -2412,7 +2355,7 @@ testPool:
       - "An error"
     answer: 0
     explanation: |
-      `DISTINCT` is a keyword for the **whole row**, so the brackets around `city` change nothing. The
+      `DISTINCT` is a keyword for the **whole row**, so the parentheses around `city` change nothing. The
       query looks at `city` and `joined_on` together, and since all 28 join dates are different, no
       row is a duplicate. To get 5 rows, select only `city`.
 
@@ -2506,7 +2449,8 @@ testPool:
     difficulty: 3
     title: Order tags
     prompt: |
-      Show the first 5 rows of `orders` with two columns: **order_ref**, the text `ORD-` followed by the
+      Show the first 5 rows of `orders` (picking specific rows comes in module 3) with two columns: **order_ref**,
+      the text `ORD-` followed by the
       `order_id` (like `ORD-1`), and **tip_doubled**, the `tip` multiplied by 2.
     starter: |
       SELECT 'ORD-' || order_id AS order_ref
@@ -2628,8 +2572,8 @@ project:
         *"For the chalkboard, I want each item on one line,"* says Maria. *"Like this: Espresso (Coffee) -
         $2.50."*
 
-        Show one column called **board_line** that joins the `name`, a space and the `category` in
-        brackets, then the text ` - $` and the `price`.
+        Show one column called **board_line** that joins the `name`, a space, the `category` in
+        parentheses, then the text ` - $` and the `price`.
       starter: |
         SELECT name, category, price
         FROM menu_items;
@@ -2639,7 +2583,7 @@ project:
         FROM menu_items;
       columnNames: true
       hints:
-        - Join the pieces with ||, using text literals for the brackets and the dash.
+        - Join the pieces with ||, using text literals for the parentheses and the dash.
         - "The literal pieces are ' (' and ') - $'"
         - "SELECT name || ' (' || category || ') - $' || ___ AS board_line FROM menu_items;"
       explanation: |
@@ -2675,7 +2619,7 @@ project:
       prompt: |
         *"Let's preview the new board with the winter prices,"* says Maria. *"Just the first 8 items."*
 
-        Show the first 8 rows of `menu_items` with two columns:
+        Show the first 8 rows of `menu_items` (picking specific rows comes in module 3) with two columns:
 
         - **board_line**: text like `Drip Coffee (Coffee) - $2.00`, built like in Job 4 but with the
           **winter price** (`price + 0.50`);

@@ -169,14 +169,14 @@ challenges:
     module: m05
     tags: [aggregation, filter, pivot, coalesce]
     prompt: |
-      The bank wants a quarterly pivot of card spending for 2024. Each row is a spending category, and the columns are the four quarters.
+      The bank wants a quarterly pivot of its **large** card payments in 2024. Each row is a spending category, and the columns are the four quarters (`q1` is January to March, `q2` is April to June, and so on).
 
-      Look only at transactions whose `txn_type` is `card_payment`. Show these columns, in this order:
+      Look only at transactions whose `txn_type` is `card_payment` and whose `amount` is `-200` or less (a payment of 200 dollars or more). Show these columns, in this order:
 
       - `category`
-      - `q1`, `q2`, `q3`, `q4`: the money spent in each quarter, as a positive amount rounded to 2 decimals. A quarter with no spending in a category must show `0`, not an empty value.
+      - `q1`, `q2`, `q3`, `q4`: the money spent in each quarter, as a positive amount rounded to 2 decimals. A quarter with no large payments in a category must show `0`, not an empty value.
 
-      Sort by `category`.
+      A category with no large card payments at all does not appear. Sort by `category`.
     solution: |
       SELECT category,
              COALESCE(ROUND(-SUM(amount) FILTER (
@@ -193,17 +193,18 @@ challenges:
              ), 2), 0) AS q4
       FROM transactions
       WHERE txn_type = 'card_payment'
+        AND amount <= -200
       GROUP BY category
       ORDER BY category;
     ordered: true
     hints:
       - "This is a pivot: one row per category, one column per quarter. Each quarter column is a conditional sum."
-      - "SUM(...) FILTER (WHERE EXTRACT(QUARTER FROM txn_time) = 1) adds up only the rows from quarter 1. An empty group gives NULL, so wrap it in COALESCE(..., 0)."
-      - "SELECT category, COALESCE(ROUND(-SUM(amount) FILTER (WHERE ___), 2), 0) AS q1, ... FROM transactions WHERE txn_type = 'card_payment' GROUP BY category ORDER BY category;"
+      - "SUM(...) FILTER (WHERE EXTRACT(QUARTER FROM txn_time) = 1) adds up only the rows from quarter 1. When no row matches, the result is NULL, so wrap it in COALESCE(..., 0)."
+      - "SELECT category, COALESCE(ROUND(-SUM(amount) FILTER (WHERE ___), 2), 0) AS q1, ... FROM transactions WHERE txn_type = 'card_payment' AND ___ GROUP BY category ORDER BY category;"
     explanation: |
       A **pivot** turns the values of one column (here the quarter) into separate columns. Each quarter column is a sum with a condition attached, so it only adds the rows from that quarter.
 
-      `SUM` returns `NULL` when no rows match. `COALESCE(..., 0)` turns that `NULL` into a `0`, which is what a report should show. The same pivot can be written with `SUM(CASE WHEN ... THEN -amount END)`.
+      `SUM` returns `NULL` when no rows match. For example, there is no large `entertainment` payment before October, so its `q1`, `q2` and `q3` would be `NULL` without `COALESCE(..., 0)`. The same pivot can be written with `SUM(CASE WHEN ... THEN -amount END)`.
 
   - id: ch-i-007
     title: Customers who never ordered
@@ -435,7 +436,9 @@ challenges:
     explanation: |
       A **self join** lines a table up against itself. Here, `e` is the employee row and `m` is the manager row, and `manager_id` links them.
 
-      The manager may be in another department or may have left the company. An inner join still shows the row, because the manager's row exists. The one person with no manager (the CEO) is skipped automatically.
+      The `WHERE` filter applies to the employee row `e` only, so the manager row `m` can be from any department. For example, Thiago Rodriguez (the VP of Engineering) reports to the CEO, who works in Executive, and his row is still listed.
+
+      A person with no manager has `NULL` in `manager_id`, and an inner join drops that row. In this company only the CEO has no manager, and the CEO is not in Engineering, so nobody is dropped here.
 
   - id: ch-i-014
     title: Products that sell together
@@ -488,9 +491,20 @@ challenges:
     difficulty: hard
     dataset: bank
     module: m06
-    tags: [join, non-equi-join, values, banding]
+    tags: [join, non-equi-join, lookup-table, banding]
+    setup: |
+      CREATE TABLE rate_bands (
+          band TEXT PRIMARY KEY,
+          from_rate NUMERIC(5,2) NOT NULL,
+          below_rate NUMERIC(5,2) NOT NULL
+      );
+      INSERT INTO rate_bands (band, from_rate, below_rate)
+      VALUES ('low', 0, 5),
+             ('medium', 5, 10),
+             ('high', 10, 15),
+             ('very high', 15, 100);
     prompt: |
-      The lending team sorts loans into rate bands. Use this band table, which you type inside your query:
+      The lending team sorts loans into rate bands. The bands are stored in a small table called `rate_bands`, which already exists:
 
       | band | from_rate | below_rate |
       |---|---|---|
@@ -501,18 +515,13 @@ challenges:
 
       A loan belongs to a band when its `annual_rate` is **at least** `from_rate` and **below** `below_rate`.
 
-      For each **active** loan, show `loan_id`, `annual_rate` and `band`. Sort by `loan_id`.
+      For each **active** loan (`status` is `active`), show `loan_id`, `annual_rate` and `band`. Sort by `loan_id`.
     solution: |
       SELECT l.loan_id,
              l.annual_rate,
              b.band
       FROM loans l
-      JOIN (VALUES
-          ('low', 0, 5),
-          ('medium', 5, 10),
-          ('high', 10, 15),
-          ('very high', 15, 100)
-      ) AS b(band, from_rate, below_rate)
+      JOIN rate_bands b
           ON l.annual_rate >= b.from_rate
          AND l.annual_rate < b.below_rate
       WHERE l.status = 'active'
@@ -521,11 +530,11 @@ challenges:
     hints:
       - "This join is not an equals match. A loan matches a band when its rate falls inside the band's range."
       - "Use >= for the lower limit and < for the upper limit, so that a rate of exactly 5 lands in medium and not in low."
-      - "FROM loans l JOIN (VALUES ...) AS b(band, from_rate, below_rate) ON l.annual_rate >= b.from_rate AND ___ WHERE l.status = 'active';"
+      - "FROM loans l JOIN rate_bands b ON l.annual_rate >= b.from_rate AND ___ WHERE l.status = 'active' ORDER BY l.loan_id;"
     explanation: |
       A **non-equi join** matches rows with a condition such as `>=` and `<` instead of `=`. It is the right tool for ranges like price bands or tax brackets.
 
-      `VALUES` builds a small table inside the query, so you do not need to create one. Choosing `<` for the upper limit means that every rate belongs to exactly one band.
+      Choosing `<` for the upper limit means that every rate belongs to exactly one band. With `<=` on both ends, a rate of exactly 5 would match two bands and the loan would appear twice.
 
   - id: ch-i-016
     title: Headcount without double counting
@@ -1042,10 +1051,12 @@ challenges:
       Then give each student a letter:
 
       - `A` for an average of 90 or more
-      - `B` for 80 up to 89.99
-      - `C` for 70 up to 79.99
-      - `D` for 60 up to 69.99
-      - `F` for less than 60
+      - `B` for an average of 80 or more, but less than 90
+      - `C` for an average of 70 or more, but less than 80
+      - `D` for an average of 60 or more, but less than 70
+      - `F` for an average below 60
+
+      Use the exact (unrounded) average when you decide the letter. For example, an average of 79.99 is still a `C`.
 
       Use one CTE for the averages and a second CTE for the letters. Show `letter` and `students` (how many students received that letter). Sort by `letter`.
     solution: |
@@ -1168,7 +1179,7 @@ challenges:
     explanation: |
       The recursive CTE collects every category under each top-level department, at any depth. Then the products are joined to those categories.
 
-      `COUNT(p.product_id)` counts only real products, so a department with no matching products shows `0`. `COUNT(*)` would also count the empty rows that the `LEFT JOIN` keeps, giving a wrong number instead of `0`.
+      `COUNT(p.product_id)` counts only real products, so a department with no products at all would show `0`. `COUNT(*)` would also count the empty rows that the `LEFT JOIN` keeps. For example, Electronics has no products of its own (only its sub-categories do), so `COUNT(*)` would say 25 instead of the correct 24.
 
   - id: ch-i-033
     title: Quiet days on the tablet
@@ -1216,7 +1227,7 @@ challenges:
 
       Use two CTEs. The first keeps the debits of 500 or more, which are the rows where `amount` is `-500` or less. The second groups those debits by account and by clock hour, and keeps the groups with at least four debits.
 
-      Show `account_id`, `hour` (the start of the clock hour), `debits` (how many debits) and `total_debited` (the total of those debits as a positive amount, rounded to 2 decimals). Sort by `account_id`.
+      Show `account_id`, `hour` (the start of the clock hour), `debits` (how many debits) and `total_debited` (the total of those debits as a positive amount, rounded to 2 decimals). Sort by `account_id`, then by `hour`.
     solution: |
       WITH big_debits AS (
           SELECT account_id,
@@ -1240,7 +1251,7 @@ challenges:
              debits,
              total_debited
       FROM bursts
-      ORDER BY account_id;
+      ORDER BY account_id, hour;
     ordered: true
     hints:
       - "First build big_debits with a WHERE on amount. Then group the rows of that CTE, not of the whole table."
@@ -1410,7 +1421,7 @@ challenges:
     prompt: |
       The HR team wants to compare each Engineering salary with the department average. Look at the people in Engineering (`dept_id` 2), including former employees.
 
-      Show `emp_id`, `first_name`, `salary` and `dept_avg`. The `dept_avg` column is the average salary of the Engineering department, rounded to 2 decimals. It must show the same value on every row, next to each salary, and each row must still be one person.
+      Show `emp_id`, `first_name`, `salary` and `dept_avg`. The `dept_avg` column is the average salary of **all the people in this list** (former employees included), rounded to 2 decimals. It must show the same value on every row, next to each salary, and each row must still be one person.
 
       Sort by `emp_id`.
     solution: |
@@ -1678,7 +1689,7 @@ challenges:
     difficulty: hard
     dataset: movies
     module: m10
-    tags: [window, dense-rank, aggregation, having]
+    tags: [window, dense-rank, cte, ties]
     prompt: |
       FlickNest wants a short list of its best-rated films. Only films with **at least 5** ratings count.
 
@@ -1686,34 +1697,41 @@ challenges:
 
       Show `place` (the dense rank), `title`, `avg_stars` (the average, rounded to 2 decimals) and `ratings` (the number of ratings). Keep only the films in places 1, 2 and 3. Sort by `place`, then by `title`.
     solution: |
-      SELECT place,
-             title,
-             avg_stars,
-             ratings
-      FROM (
+      WITH film_avgs AS (
           SELECT m.title,
-                 ROUND(AVG(r.stars), 2) AS avg_stars,
-                 COUNT(*) AS ratings,
-                 DENSE_RANK() OVER (
-                     ORDER BY AVG(r.stars) DESC
-                 ) AS place
+                 AVG(r.stars) AS avg_stars,
+                 COUNT(*) AS ratings
           FROM movies m
           JOIN ratings r
               ON r.movie_id = m.movie_id
           GROUP BY m.movie_id, m.title
           HAVING COUNT(*) >= 5
-      ) AS ranked
+      ),
+      ranked AS (
+          SELECT title,
+                 avg_stars,
+                 ratings,
+                 DENSE_RANK() OVER (
+                     ORDER BY avg_stars DESC
+                 ) AS place
+          FROM film_avgs
+      )
+      SELECT place,
+             title,
+             ROUND(avg_stars, 2) AS avg_stars,
+             ratings
+      FROM ranked
       WHERE place <= 3
       ORDER BY place, title;
     ordered: true
     hints:
-      - "First group the ratings by movie and keep the movies with at least five ratings. Then rank the groups."
-      - "A window function can use an aggregate: DENSE_RANK() OVER (ORDER BY AVG(r.stars) DESC) ranks the grouped rows."
-      - "The rank must be calculated in a subquery, then filtered in the outer query with WHERE place <= 3."
+      - "Work in steps. First find one row per film (its average and its number of ratings), keeping only films with at least five ratings. A CTE is a good place for this."
+      - "Rank in a second step: DENSE_RANK() OVER (ORDER BY avg_stars DESC) on the rows of the first step."
+      - "The rank cannot be used in WHERE in the same SELECT. Put the ranking in one CTE, then filter with WHERE place <= 3 in the final SELECT."
     explanation: |
-      `RANK` skips numbers after a tie (1, 1, 3), while `DENSE_RANK` does not (1, 1, 2). Use `DENSE_RANK` when you want the top three distinct values, not the top three rows.
+      `RANK` skips numbers after a tie (1, 1, 3), while `DENSE_RANK` does not (1, 1, 2). Use `DENSE_RANK` when you want the top three distinct values, not the top three rows. Here two films tie at 4.6 stars, so place 3 has two films.
 
-      The window is applied after `GROUP BY` and `HAVING`, so it ranks only the films that passed the filter.
+      The average is rounded only in the last step. Ranking uses the exact average, so a rounded display value can never change the order.
 
   - id: ch-i-046
     title: Midterm scores against the course average
@@ -1730,7 +1748,7 @@ challenges:
       - `student_id`
       - `score`
       - `course_avg`: the average score of all midterms of course `1`, rounded to 1 decimal
-      - `vs_avg`: `score` minus the average, rounded to 1 decimal. A positive value means above average.
+      - `vs_avg`: `score` minus the **exact** average (not the rounded `course_avg`), rounded to 1 decimal. A positive value means above average.
 
       Sort by `exam_id`.
     solution: |
@@ -1894,7 +1912,7 @@ challenges:
     explanation: |
       `ROWS` counts a fixed number of rows, while `RANGE` counts rows whose ordering value falls inside a range. With timestamps, a 7-day `RANGE` works even when the plays are not evenly spaced.
 
-      The default frame for a window with `ORDER BY` is `RANGE ... CURRENT ROW`, and it includes all rows with the same value as the current row. That is why a unique tie-breaker is so useful.
+      A `RANGE` frame treats rows with exactly the same `ORDER BY` value as *peers*, and peers always get the same frame. A `RANGE` frame with an interval such as `INTERVAL '7 days' PRECEDING` needs exactly one `ORDER BY` column, here the timestamp. Adding `watch_id` to the window's `ORDER BY` would give an error.
 
   - id: ch-i-051
     title: First and last transaction of each account
@@ -2061,7 +2079,7 @@ challenges:
       - `year_rank`: the rank among the films with the same `release_year`
       - `rating_rank`: the rank among the films with the same `age_rating`
 
-      Use `RANK()` for both. Give tied films the same rank.
+      Use `RANK()` for both. Give tied films the same rank. Rank only within this list of films (2021 to 2024, with a known box office), not against the rest of the catalog.
 
       Show `title`, `release_year`, `age_rating`, `box_office_musd`, `year_rank` and `rating_rank`. Sort by `release_year`, then by `year_rank`, then by `title`.
     solution: |
@@ -2167,7 +2185,7 @@ challenges:
     prompt: |
       The marketing team keeps a small table called `coupons`. Every coupon that expired **before 1 June 2024** must be switched off by setting `active` to `FALSE`.
 
-      All other coupons must stay exactly as they are. Coupon 5 is already switched off, and it expired after 1 June, so leave it alone.
+      All other coupons must stay exactly as they are. Coupon 5 is already switched off, and its expiry date (30 June 2024) is not before 1 June, so leave it alone.
 
       Write only your `UPDATE` statement. The app then shows the whole `coupons` table sorted by `coupon_id`.
     solution: |
@@ -2502,14 +2520,14 @@ challenges:
     prompt: |
       A bookshop is building a `books` table. Create it with exactly these columns, in this order:
 
-      - `book_id`: a whole number, the primary key
-      - `title`: text, required (it cannot be empty)
-      - `isbn`: text of up to 13 characters, optional, and it must be unique (`UNIQUE`)
-      - `published_on`: a date, optional
-      - `price`: a number with up to 6 digits, 2 of them after the decimal point, required
-      - `in_print`: true or false, required, and it is `TRUE` when no value is given
+      - `book_id`: `INTEGER`, the primary key
+      - `title`: `TEXT`, required (`NOT NULL`)
+      - `isbn`: `VARCHAR(13)` (text of up to 13 characters), optional, and it must be unique (`UNIQUE`)
+      - `published_on`: `DATE`, optional
+      - `price`: `NUMERIC(6,2)` (up to 6 digits, 2 of them after the decimal point), required
+      - `in_print`: `BOOLEAN`, required, and `TRUE` when no value is given
 
-      Write only your `CREATE TABLE` statement. The app then shows the structure of the `books` table: each column's name, type, size, whether it can be empty, and its default.
+      Write only your `CREATE TABLE` statement. The app then shows the structure of the `books` table: each column's name, type (with its size), whether it is required, its default value, and whether it is a `PRIMARY KEY` or `UNIQUE`.
     solution: |
       CREATE TABLE books (
           book_id INTEGER PRIMARY KEY,
@@ -2520,22 +2538,33 @@ challenges:
           in_print BOOLEAN NOT NULL DEFAULT TRUE
       );
     check: |
-      SELECT column_name,
-             data_type,
-             character_maximum_length,
-             numeric_precision,
-             is_nullable,
-             column_default
-      FROM information_schema.columns
-      WHERE table_name = 'books'
-      ORDER BY ordinal_position;
+      SELECT a.attname AS column_name,
+             format_type(a.atttypid, a.atttypmod) AS data_type,
+             a.attnotnull AS required,
+             pg_get_expr(d.adbin, d.adrelid) AS default_value,
+             (SELECT CASE k.contype
+                         WHEN 'p' THEN 'PRIMARY KEY'
+                         ELSE 'UNIQUE'
+                     END
+              FROM pg_constraint k
+              WHERE k.conrelid = a.attrelid
+                AND k.contype IN ('p', 'u')
+                AND k.conkey = ARRAY[a.attnum]) AS key_type
+      FROM pg_attribute a
+      LEFT JOIN pg_attrdef d
+          ON d.adrelid = a.attrelid
+         AND d.adnum = a.attnum
+      WHERE a.attrelid = 'books'::regclass
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+      ORDER BY a.attnum;
     ordered: true
     hints:
       - "Each column needs a name and a data type, then optional rules such as NOT NULL, UNIQUE or DEFAULT."
-      - "VARCHAR(13) is text of up to 13 characters. NUMERIC(6,2) is a number with 6 digits in total, 2 after the point."
+      - "A PRIMARY KEY column is automatically required. Write NOT NULL only on the columns that need it and are not the key."
       - "CREATE TABLE books (book_id INTEGER PRIMARY KEY, title TEXT NOT NULL, isbn VARCHAR(13) ___, ...);"
     explanation: |
-      Choosing the right type is the first design decision. `NUMERIC(6,2)` stores money exactly, which `REAL` or `DOUBLE PRECISION` cannot do, because they round in binary.
+      Choosing the right type is the first design decision. `NUMERIC(6,2)` stores money exactly, which `REAL` or `DOUBLE PRECISION` cannot do, because they round in binary. In PostgreSQL, `VARCHAR(13)` and `TEXT` work the same way. The `(13)` only adds a limit on the length.
 
       `NOT NULL` makes a column required, `UNIQUE` stops two rows sharing a value, and `DEFAULT` fills in a value when the insert does not give one. A `PRIMARY KEY` is both unique and required.
 
@@ -2559,25 +2588,32 @@ challenges:
     prompt: |
       The gym club wants every member to have a membership `plan`. The table `members` already exists and already holds three members.
 
-      Add a column called `plan` to `members`. It holds short text of up to 10 characters, it cannot be empty, and its default value is `free`. The three existing members must get `free` automatically.
+      Add a column called `plan` to `members`. Its type is `VARCHAR(10)` (short text of up to 10 characters), it is required (`NOT NULL`), and its default value is `free`. The three existing members must get `free` automatically.
 
-      Write only your `ALTER TABLE` statement. The app then shows each member's `member_id`, `full_name` and `plan`.
+      Write only your `ALTER TABLE` statement. The app then adds a fourth member without giving a plan, and shows every member's `member_id`, `full_name` and `plan`, together with whether the `plan` column is required and its type.
     solution: |
       ALTER TABLE members
       ADD COLUMN plan VARCHAR(10) NOT NULL DEFAULT 'free';
     check: |
-      SELECT member_id,
-             full_name,
-             plan
-      FROM members
-      ORDER BY member_id;
+      INSERT INTO members (member_id, full_name, joined_on)
+      VALUES (4, 'Dev Patel', '2024-06-03');
+      SELECT m.member_id,
+             m.full_name,
+             m.plan,
+             a.attnotnull AS plan_required,
+             format_type(a.atttypid, a.atttypmod) AS plan_type
+      FROM members m
+      CROSS JOIN pg_attribute a
+      WHERE a.attrelid = 'members'::regclass
+        AND a.attname = 'plan'
+      ORDER BY m.member_id;
     ordered: true
     hints:
       - "ALTER TABLE changes a table that already exists. ADD COLUMN adds a new column."
       - "When you add a NOT NULL column to a table that has rows, the DEFAULT gives the existing rows a value."
       - "ALTER TABLE members ADD COLUMN plan VARCHAR(10) NOT NULL ___;"
     explanation: |
-      `ALTER TABLE ... ADD COLUMN` changes the structure of a table without losing its data. Adding `NOT NULL` to a table with rows only works if a `DEFAULT` is given, because the existing rows need a value.
+      `ALTER TABLE ... ADD COLUMN` changes the structure of a table without losing its data. Adding `NOT NULL` to a table with rows only works if a `DEFAULT` is given, because the existing rows need a value. The same default also fills in new rows that do not give a plan, like the fourth member the app adds.
 
       Plan the change before you run it on a real table. Adding a column is quick and safe, but changing a column's type can rewrite the whole table.
 
@@ -2590,10 +2626,10 @@ challenges:
     prompt: |
       A small library needs two tables. Write the `CREATE TABLE` statements for both:
 
-      - `authors`: `author_id` (a whole number, the primary key) and `name` (text, required)
-      - `books`: `book_id` (a whole number, the primary key), `title` (text, required) and `author_id` (a whole number). `author_id` must always point to an existing author, and when an author is deleted, their books must be deleted too (`ON DELETE CASCADE`).
+      - `authors`: `author_id` (`INTEGER`, the primary key) and `name` (`TEXT`, required)
+      - `books`: `book_id` (`INTEGER`, the primary key), `title` (`TEXT`, required) and `author_id` (`INTEGER`, required). Every book must point to an existing author (a foreign key to `authors`), and when an author is deleted, their books must be deleted too (`ON DELETE CASCADE`).
 
-      Create `authors` before `books`. Write only your `CREATE TABLE` statements. The app then adds two authors and three books, deletes author 1, and shows the books that are left, sorted by `book_id`.
+      Create `authors` before `books`. Write only your `CREATE TABLE` statements. The app then adds two authors and three books, deletes author 1, and shows the books that are left, sorted by `book_id`, together with whether `books.author_id` is required.
     solution: |
       CREATE TABLE authors (
           author_id INTEGER PRIMARY KEY,
@@ -2615,20 +2651,24 @@ challenges:
              (12, 'Paper Bridges', 1);
       DELETE FROM authors
       WHERE author_id = 1;
-      SELECT book_id,
-             title,
-             author_id
-      FROM books
-      ORDER BY book_id;
+      SELECT b.book_id,
+             b.title,
+             b.author_id,
+             a.attnotnull AS author_id_required
+      FROM books b
+      CROSS JOIN pg_attribute a
+      WHERE a.attrelid = 'books'::regclass
+        AND a.attname = 'author_id'
+      ORDER BY b.book_id;
     ordered: true
     hints:
       - "A FOREIGN KEY column refers to the primary key of another table. Write it as REFERENCES authors (author_id)."
       - "ON DELETE CASCADE is written after the REFERENCES part. It tells the database to delete the child rows too."
-      - "author_id INTEGER REFERENCES authors (author_id) ___"
+      - "author_id INTEGER NOT NULL REFERENCES authors (author_id) ___"
     explanation: |
-      A **foreign key** keeps your data consistent: a book cannot point to an author who does not exist. `ON DELETE CASCADE` decides what happens when the parent row is deleted. Other options include `RESTRICT` (refuse the delete) and `SET NULL` (keep the book but clear its author).
+      A **foreign key** keeps your data consistent: a book cannot point to an author who does not exist. `ON DELETE CASCADE` decides what happens when the parent row is deleted. Other options include `RESTRICT` (refuse the delete) and `SET NULL` (keep the book but clear its author, which only works when the column allows `NULL`).
 
-      Without a foreign key, you could leave orphan books that belong to nobody. Notice that the check deletes the author, and the books for that author disappear automatically.
+      Without a foreign key, you could leave orphan books that belong to nobody. Notice that the app deletes author 1, and the books of that author disappear automatically.
 
   - id: ch-i-067
     title: Let the database number the rows

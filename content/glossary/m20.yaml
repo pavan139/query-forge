@@ -68,3 +68,8 @@ glossary:
     definition: "In dbt (data build tool), one SQL SELECT saved in a file. The file name becomes a table or view, and models refer to each other by name with ref()."
     example: "FROM {{ ref('delivered_lines') }}"
     module: m20
+
+  - term: Grain
+    definition: "What one row of a table or query result stands for. Orders have one row per order; order_items have one row per product line. Joining tables can change the grain, which is how rows get repeated and totals get too big."
+    example: "orders JOIN order_items: one row per order line, so COUNT(*) counts lines and COUNT(DISTINCT order_id) counts orders."
+    module: m20

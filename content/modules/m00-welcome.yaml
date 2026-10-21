@@ -9,8 +9,8 @@ description: |
   how to use the SQL workspace (the editor, the **Run** button and the result grid), why **errors are
   your friends**, and how the pieces of a database fit together.
 
-  There is no pressure here: you work on a tiny practice café called **Bean & Bloom**, every run starts
-  from a fresh copy of the data, and you literally cannot break anything.
+  There is no pressure here: you work on a tiny practice café called **Bean & Bloom**. Every run starts
+  again from the café's original data, so you literally cannot break anything.
 dataset: cafe
 lessons:
   - id: m00-l01
@@ -40,12 +40,12 @@ lessons:
           > A table is just like a spreadsheet in Excel or Google Sheets: a grid of rows and columns.
           > If you have ever made a shopping list in a spreadsheet, you already understand the idea!
 
-          Ready? Let's talk to the café's database. It takes just one line.
+          Ready? Let's talk to the café's database. It takes just one short query.
 
       - type: example
         title: Your first query
         md: |
-          Press the blue **Run** button below. That's all you have to do!
+          Press the **Run** button below. That's all you have to do!
         sql: |
           SELECT *
           FROM menu_items;
@@ -75,7 +75,7 @@ lessons:
 
           > [!TIP]
           > Table and column names use underscores instead of spaces (`menu_items`, not
-          > `menu items`), because SQL reads a space as "this word is finished".
+          > `menu items`), because a space would split the name into two words, and SQL would get confused.
 
       - type: quiz
         id: m00-l01-q1
@@ -113,7 +113,7 @@ lessons:
 
           > [!NOTE]
           > The database inside this app is **PostgreSQL**: a free, professional database used by
-          > real companies all over the world. Everything you learn here works on the job.
+          > real companies all over the world. The SQL you learn here is the kind professionals write at work.
 
       - type: example
         title: Choose just the columns you want
@@ -129,18 +129,6 @@ lessons:
 
           The columns show up in the order you list them. This is how you ask for *just* what you
           need.
-
-      - type: quiz
-        id: m00-l01-q2
-        question: In `SELECT name, price FROM menu_items;`, which keyword says **which table** to read from?
-        options:
-          - "SELECT"
-          - "FROM"
-          - "name"
-          - "price"
-        answer: 1
-        explanation: |
-          `FROM` names the table. `SELECT` lists the columns you want to see.
 
       - type: example
         title: Same recipe, different table
@@ -398,19 +386,6 @@ lessons:
           Because Check compares **results**, not exact wording, there are usually many correct ways
           to write the same query.
 
-      - type: quiz
-        id: m00-l02-q1
-        question: What does the **Check answer** button do?
-        options:
-          - "Runs your query and compares its result with the correct result"
-          - "Saves your query for later"
-          - "Deletes your query"
-          - "Makes your query run faster"
-        answer: 0
-        explanation: |
-          **Check answer** compares what your query *returns* with the expected result. **Run** only
-          shows you what your query returns, without grading it.
-
       - type: example
         title: Edit it and run it again
         md: |
@@ -515,15 +490,17 @@ lessons:
           Only 5 rows! Each row is one order: who ordered (`customer_id`), what (`item_id`), how many
           (`quantity`), when (`order_time`) and more.
 
-          Without any sorting, the database simply hands back rows in whatever order it finds them,
-          usually the order they were stored. Sorting is the topic of module 3, and you'll learn
-          `LIMIT` properly in module 1.
+          Without any sorting, the database gives the rows back in **no guaranteed order**. In this course
+          they usually come back in the order they were stored, but never rely on that in real work.
+          Sorting is the topic of module 3, and you'll learn more about `LIMIT` in module 1.
 
       - type: exercise
         id: m00-l02-e3
         title: A short peek
         prompt: |
           Show **every column** of the **first 6 rows** of `menu_items`.
+
+          *We haven't learned how to rearrange rows yet, so they come back in the order they were stored.*
         starter: |
           SELECT *
           FROM menu_items
@@ -605,8 +582,8 @@ lessons:
         md: |
           Here's something that might surprise you: **nothing you do here can break the café.**
 
-          Every time you press **Run**, the database starts from a fresh copy of the café's data.
-          Whatever happened in the previous run is gone.
+          Every time you press **Run**, the database starts again from the café's **original data**.
+          Whatever a previous run changed is gone.
 
           Let's prove it with something that sounds scary. The next example uses a command called
           `DELETE`, which erases rows. Don't try to understand it yet; it is just a sneak peek at
@@ -633,7 +610,7 @@ lessons:
           FROM orders
           LIMIT 3;
         after: |
-          The orders are back! This run started from a fresh copy of the data, so the deletion from
+          The orders are back! This run started again from the original data, so the deletion from
           the last run never happened here.
 
           > [!WARNING]
@@ -696,7 +673,7 @@ lessons:
           - Type in the **editor**, press **Run** (Ctrl/⌘ + Enter) and read the **result grid**.
           - Use **Check answer** on exercises, **Get a hint** when stuck, and **Tables** to look up
             names.
-          - Every run starts from a **fresh copy** of the data, so experiment freely.
+          - Every run starts again from the **original data**, so experiment freely.
           - `LIMIT n` is a handy way to peek at a long table.
 
           > [!TIP]
@@ -812,19 +789,6 @@ lessons:
           Table names must match exactly. `customer` and `customers` are two different words to the
           database.
         difficulty: 1
-
-      - type: quiz
-        id: m00-l03-q1
-        question: |
-          PostgreSQL says: `relation "staf" does not exist`. What is the problem?
-        options:
-          - "There is no table with that name, probably a typo for `staff`"
-          - "The query is missing its semicolon"
-          - "A column name is misspelled"
-          - "The database is offline"
-        answer: 0
-        explanation: |
-          "Relation" means table. A message about a *column* would say `column "..." does not exist`.
 
       - type: exercise
         id: m00-l03-e3
@@ -1017,8 +981,9 @@ lessons:
           - "`SELECT name, FROM staff;`"
         answer: [0, 1]
         explanation: |
-          Keywords and table names aren't case-sensitive, so the first two work. The third has the
-          typo `FORM`, and the fourth has a comma too many before `FROM`.
+          Keywords and unquoted table or column names aren't case-sensitive. PostgreSQL folds them to
+          lower case, so `Staff` is read as `staff`. The first two work. The third has the typo `FORM`,
+          and the fourth has a comma too many before `FROM`.
 
       - type: fill
         id: m00-l03-f1
@@ -1180,7 +1145,7 @@ lessons:
           - "Then scan the staff_id column for the number 7."
         explanation: |
           Staff member **7** is **Omar Haddad**. Case closed: *Jack Scott bought a Caramel Latte, served
-          by Omar Haddad.* You just joined three tables by hand! In module 6 you'll teach the database to
+          by Omar Haddad.* You just joined three tables by hand! In module 6 you'll ask the database to
           do this for you in one query.
         difficulty: 1
 
@@ -1194,7 +1159,7 @@ lessons:
           - Names can **change** or be misspelled. An id never changes.
           - A short number is quicker for the computer to look up.
 
-          So every table has a column whose value is **different in every row and never empty**. It is
+          So each table here has a column whose value is **different in every row and never empty**. It is
           called the **primary key**. In `customers` it is `customer_id`.
 
           A column in *another* table that stores such an id is called a **foreign key**. For example,
@@ -1247,19 +1212,6 @@ lessons:
           The headers say `text`, `numeric`, `integer`, `boolean` and `date`. Notice that numbers are
           lined up on the **right** and text on the left, and that `is_vegan` holds only `true` or
           `false`.
-
-      - type: quiz
-        id: m00-l04-q2
-        question: |
-          A column records whether a customer has a loyalty card: yes or no. Which type fits best?
-        options:
-          - "boolean"
-          - "date"
-          - "integer"
-          - "timestamp"
-        answer: 0
-        explanation: |
-          A yes/no answer is exactly what `boolean` is for: `true` or `false`.
 
       - type: exercise
         id: m00-l04-e2
@@ -1432,19 +1384,6 @@ lessons:
           | `INSERT` / `UPDATE` / `DELETE` | add, change or remove rows | 12 |
           | `CREATE TABLE` | design a new table | 13 |
 
-      - type: quiz
-        id: m00-l04-q4
-        question: Which keyword will you use (in module 6) to combine two tables using their ids?
-        options:
-          - "JOIN"
-          - "LIMIT"
-          - "SELECT"
-          - "ORDER BY"
-        answer: 0
-        explanation: |
-          `JOIN` links the rows of two tables, for example orders and customers, through their ids.
-          That is exactly what you did by hand in this lesson.
-
       - type: exercise
         id: m00-l04-e5
         title: The raw trail
@@ -1579,13 +1518,14 @@ testPool:
       You ran a query that deleted every order. Then you ran a new `SELECT * FROM orders;`. What do
       you see?
     options:
-      - "All the orders again, because every run starts from a fresh copy of the data"
+      - "All the orders again, because every run starts from the original data"
       - "An empty table, because the orders are gone forever"
       - "An error message"
       - "Half of the orders"
     answer: 0
     explanation: |
-      In the lessons, every Run starts from the original data. That is why experimenting is safe.
+      In the lessons, every Run starts from the original data. The app quietly restores that data when
+      an earlier Run changed it, so the deleted orders are back. That is why experimenting is safe.
   - type: exercise
     id: m00-t07
     lesson: m00-l02
@@ -1776,7 +1716,9 @@ testPool:
     id: m00-t18
     lesson: m00-l04
     difficulty: 2
-    question: How many of the 4 result rows will show **NULL** in the `email` column?
+    question: |
+      How many of the 4 result rows will show **NULL** in the `email` column?
+      (We haven't learned how to rearrange rows yet, so they come back in the order they were stored.)
     sql: |
       SELECT first_name, email
       FROM customers
@@ -1804,10 +1746,11 @@ testPool:
   - type: exercise
     id: m00-t20
     lesson: m00-l04
-    difficulty: 3
+    difficulty: 2
     prompt: |
-      Maria wants to know which of the first 15 orders have no tip recorded. Show the `order_id`,
-      `payment_method` and `tip` of the **first 15 rows** of `orders`.
+      Maria is checking the tips on the first 15 orders. Show the `order_id`, `payment_method`
+      and `tip` of the **first 15 rows** of `orders`. A NULL in `tip` means no tip was recorded.
+      (We haven't learned how to rearrange rows yet, so they come back in the order they were stored.)
     starter: |
       SELECT
       FROM orders

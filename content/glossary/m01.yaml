@@ -23,6 +23,10 @@ glossary:
     definition: Anything that produces a value, such as a column, a number, a piece of text or a calculation like price * 2. Expressions can sit in the SELECT list, and they should get an alias.
     example: "SELECT price * 2 AS price_for_two FROM menu_items;"
     module: m01
+  - term: Operator
+    definition: A symbol that does a calculation or joins values. + - * / work on numbers, and || joins text.
+    example: "SELECT 2 + 3 AS total, 'Hi' || '!' AS greeting;"
+    module: m01
   - term: Order of operations
     definition: The rule for which part of a calculation happens first. Multiplication and division come before addition and subtraction, and parentheses override everything.
     example: "SELECT 2 + 3 * 4, (2 + 3) * 4;   -- 14 and 20"

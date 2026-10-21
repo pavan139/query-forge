@@ -43,6 +43,10 @@ glossary:
     definition: SQL's way of saying "there is no value here". It can mean unknown, missing or not applicable. NULL is not the number 0 and not an empty piece of text.
     example: "The Tiramisu Cup has NULL calories: nobody measured them yet."
     module: m00
+  - term: Keyword
+    definition: "A word in SQL with a fixed meaning, such as SELECT, FROM or WHERE. Keywords are not case-sensitive, so select and SELECT work the same."
+    example: "SELECT name FROM menu_items;  -- SELECT and FROM are keywords."
+    module: m00
   - term: Syntax error
     definition: An error that means PostgreSQL could not understand the grammar of your query, for example a misspelled keyword or a missing comma. The mistake is usually at the word named in the message or just before it.
     example: "SELCT * FROM menu_items;  -- syntax error at or near \"SELCT\""

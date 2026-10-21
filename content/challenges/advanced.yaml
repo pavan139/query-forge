@@ -1889,3 +1889,636 @@ challenges:
       Averages can be misleading when a few very long workouts pull them up. **Percentiles** describe the spread: the median is the middle workout, and the 90th percentile is the length that 90 out of 100 workouts stay under.
 
       `PERCENTILE_CONT` interpolates between two values when the position falls between them. `PERCENTILE_DISC` always returns a value from the data instead. Both are valid; the choice should be stated in every report.
+
+  - id: ch-a-048
+    title: Card payments far above the normal range
+    difficulty: expert
+    dataset: bank
+    module: m19
+    tags: [outliers, percentile, iqr, fraud]
+    prompt: |
+      Harbor Bank's fraud model needs the card payments that are unusually large compared with all the other card payments. Use the **IQR rule**:
+
+      - For each card payment, `spend` is `-amount` (a positive number).
+      - Find Q1 and Q3 of `spend` over **all** card payments. Q1 is the 25th percentile and Q3 is the 75th percentile, both with `PERCENTILE_CONT` (the continuous percentile).
+      - IQR = Q3 - Q1. The **upper fence** = Q3 + 3 × IQR.
+      - An outlier is a card payment whose `spend` is **above** the upper fence.
+
+      Show `txn_id`, `account_id`, `txn_time` and `spend`. Sort by `spend` (highest first), then by `txn_id`.
+    solution: |
+      WITH card AS (
+          SELECT txn_id, account_id, txn_time,
+                 -amount::numeric AS spend
+          FROM transactions
+          WHERE txn_type = 'card_payment'
+      ),
+      quartiles AS (
+          SELECT PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY spend)::numeric AS q1,
+                 PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY spend)::numeric AS q3
+          FROM card
+      ),
+      limits AS (
+          SELECT q3 + 3 * (q3 - q1) AS upper_fence
+          FROM quartiles
+      )
+      SELECT c.txn_id, c.account_id, c.txn_time, c.spend
+      FROM card c
+      CROSS JOIN limits l
+      WHERE c.spend > l.upper_fence
+      ORDER BY c.spend DESC, c.txn_id;
+    ordered: true
+    hints:
+      - "Start with the card payments, and turn the amount into a positive spend with -amount."
+      - "PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY spend) gives Q1, and 0.75 gives Q3. Put both in a CTE with one row."
+      - "Compare every card payment with the fence using CROSS JOIN with that one-row CTE. The fence is Q3 + 3 * (Q3 - Q1)."
+    explanation: |
+      Averages and standard deviations are pulled up by the very outliers you want to find. **Quartiles** are much less affected, so the IQR rule is a sturdy first filter for unusual values. Using 3 × IQR, rather than 1.5 × IQR, flags only the far-out values.
+
+      This is a statistical rule, not proof of fraud. Real teams combine several signals (place, merchant, time, device) before they block a card.
+
+  - id: ch-a-049
+    title: A two-year rating window by release year
+    difficulty: expert
+    dataset: movies
+    module: m11
+    tags: [range-frame, window, aggregation, weighted-average]
+    prompt: |
+      FlickNest asks how the ratings of each release year compare with the year before.
+
+      For each release year from **2020 to 2024**, show these columns:
+
+      - `release_year`
+      - `ratings`: how many ratings the films released that year have received
+      - `avg_this_year`: the average of those ratings' `stars`, rounded to 2 decimals
+      - `avg_two_years`: the average of the `stars` of all ratings for films released **that year or the year before**, rounded to 2 decimals
+
+      Average **the ratings**, not the averages of each film or year. Sort by `release_year`.
+    solution: |
+      WITH per_year AS (
+          SELECT m.release_year,
+                 COUNT(r.stars) AS ratings,
+                 SUM(r.stars) AS total_stars
+          FROM movies m
+          JOIN ratings r ON r.movie_id = m.movie_id
+          GROUP BY m.release_year
+      ),
+      windowed AS (
+          SELECT release_year, ratings, total_stars,
+                 SUM(total_stars) OVER w AS two_year_total,
+                 SUM(ratings) OVER w AS two_year_count
+          FROM per_year
+          WINDOW w AS (
+              ORDER BY release_year
+              RANGE BETWEEN 1 PRECEDING AND CURRENT ROW
+          )
+      )
+      SELECT release_year,
+             ratings,
+             ROUND(total_stars / ratings, 2) AS avg_this_year,
+             ROUND(two_year_total / two_year_count, 2) AS avg_two_years
+      FROM windowed
+      WHERE release_year >= 2020
+      ORDER BY release_year;
+    ordered: true
+    hints:
+      - "First add up, for each release year, the number of ratings and the sum of their stars."
+      - "RANGE BETWEEN 1 PRECEDING AND CURRENT ROW looks at release years, not at rows. It covers the current year and the year before."
+      - "Divide the summed stars by the summed number of ratings inside the window. Filter release_year >= 2020 at the end, so the year 2019 is still part of the 2020 window."
+    explanation: |
+      `RANGE` with a number offset works on the **values** of the `ORDER BY` column. Here it means "the year itself and one year back", even if some years have no films. A `ROWS` window would count rows, which is the wrong unit for years.
+
+      The average of averages is a classic mistake. Each year has a different number of ratings, so the right answer uses total stars divided by total ratings.
+
+  - id: ch-a-050
+    title: Revenue by department, from the category tree
+    difficulty: expert
+    dataset: shop
+    module: m09
+    tags: [recursive, hierarchy, join, aggregation]
+    prompt: |
+      The shop's categories form a tree. Six top-level categories are **departments**, and the other categories sit under them. Every product belongs to one category, and every category belongs to exactly one department.
+
+      For each department, show these columns:
+
+      - `department`: the department's name
+      - `orders`: how many different **delivered** orders contain a product from that department
+      - `revenue`: the delivered revenue of the department, as the sum of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals
+
+      Sort by `revenue`, highest first.
+    solution: |
+      WITH RECURSIVE tree AS (
+          SELECT category_id, category_id AS department_id
+          FROM categories
+          WHERE parent_id IS NULL
+          UNION ALL
+          SELECT c.category_id, t.department_id
+          FROM categories c
+          JOIN tree t ON c.parent_id = t.category_id
+      )
+      SELECT d.name AS department,
+             COUNT(DISTINCT o.order_id) AS orders,
+             ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+      FROM tree t
+      JOIN categories d ON d.category_id = t.department_id
+      JOIN products p ON p.category_id = t.category_id
+      JOIN order_items i ON i.product_id = p.product_id
+      JOIN orders o ON o.order_id = i.order_id AND o.status = 'delivered'
+      GROUP BY d.name
+      ORDER BY revenue DESC;
+    ordered: true
+    hints:
+      - "Walk down the tree with a recursive CTE. The top-level rows (parent_id IS NULL) are the starting point."
+      - "Carry the department id along with each row, so every category knows its top-level department."
+      - "Join the tree to products, then order_items, then delivered orders, and GROUP BY the department name."
+    explanation: |
+      Real data is often a **tree**: departments, sub-categories and so on. A recursive CTE walks down that tree once, and carrying the top-level id along lets you roll everything up to the department in one query.
+
+      `COUNT(DISTINCT o.order_id)` counts each order once, even when it contains several products from the same department. Without `DISTINCT`, that order would be counted once per line.
+
+  - id: ch-a-051
+    title: A calendar that shows the zero days
+    difficulty: expert
+    dataset: app
+    module: m16
+    tags: [generate-series, left-join, date, count]
+    prompt: |
+      The coach wants a daily chart of how many users reached the goal of **10,000 steps** (`steps` of 10000 or more) in `daily_steps`.
+
+      Show every day from **27 May 2024 to 3 June 2024** (both days included). A day when no user reached the goal must still appear, with `0`.
+
+      Show `day` and `users_10k` (how many users reached 10,000 steps that day). Sort by `day`.
+    solution: |
+      SELECT d::date AS day,
+             COUNT(s.user_id) AS users_10k
+      FROM generate_series(
+               DATE '2024-05-27',
+               DATE '2024-06-03',
+               INTERVAL '1 day'
+           ) AS d
+      LEFT JOIN daily_steps s
+             ON s.day = d::date
+            AND s.steps >= 10000
+      GROUP BY d
+      ORDER BY d;
+    ordered: true
+    hints:
+      - "generate_series(start, stop, step) makes a list of values. With dates and INTERVAL '1 day', it lists one row per day."
+      - "LEFT JOIN that list to daily_steps. Put the steps condition in the ON clause, so days without a match are kept."
+      - "COUNT(s.user_id) counts only the matched rows, so a day with no match shows 0. COUNT(*) would show 1 for that day."
+    explanation: |
+      When a report should show every day, start from a **calendar** and join the data to it. `generate_series` builds that calendar on the fly, so you do not need a table of dates.
+
+      The condition on `steps` belongs in `ON`, not `WHERE`. In `WHERE`, it would remove the days with no match, which is exactly the rows you need to keep. The data stops on 31 May, so June shows 0: that means "no data", which is not the same as "nobody walked".
+
+  - id: ch-a-052
+    title: The management chain of each engineer
+    difficulty: expert
+    dataset: company
+    module: m09
+    tags: [recursive, hierarchy, string, path]
+    prompt: |
+      For each **current** Engineering employee (`dept_id` 2, with an empty `terminated_on`), build the management chain from the top of the company down to that person.
+
+      - Use the full name (first name, a space, last name) of each person in the chain.
+      - Put ` > ` (a space, a greater-than sign, a space) between the names.
+      - The chain starts with the CEO and ends with the employee. The CEO has no `manager_id`.
+
+      Show `emp_id` and `chain`, sorted by `emp_id`.
+    solution: |
+      WITH RECURSIVE chain AS (
+          SELECT e.emp_id,
+                 e.manager_id,
+                 e.first_name || ' ' || e.last_name AS path
+          FROM employees e
+          WHERE e.dept_id = 2
+            AND e.terminated_on IS NULL
+          UNION ALL
+          SELECT c.emp_id,
+                 m.manager_id,
+                 m.first_name || ' ' || m.last_name
+                     || ' > ' || c.path
+          FROM chain c
+          JOIN employees m ON m.emp_id = c.manager_id
+      )
+      SELECT emp_id, path AS chain
+      FROM chain
+      WHERE manager_id IS NULL
+      ORDER BY emp_id;
+    ordered: true
+    hints:
+      - "Walk upwards: start with each engineer, then join to their manager, then to the manager's manager, until there is nobody above."
+      - "Each step puts the manager's name in front of the path: m.first_name || ' ' || m.last_name || ' > ' || c.path."
+      - "The last row of each chain is the one whose manager_id IS NULL. That is the CEO's row, and it holds the full path."
+    explanation: |
+      The same recursive CTE can walk **up** a hierarchy as well as down. You start at the bottom and each step adds a level above, so the text grows from the employee to the top.
+
+      The result shows one line per engineer that anyone can read: a complete "who reports to whom" path. A `path` array with `array_to_string` is an alternative that is easier to change later.
+
+  - id: ch-a-053
+    title: Sync the price list with the supplier feed
+    difficulty: expert
+    dataset: shop
+    module: m12
+    tags: [merge, dml, sync, upsert]
+    setup: |
+      CREATE TABLE price_list (
+          product_id integer PRIMARY KEY,
+          price numeric(10,2) NOT NULL
+      );
+      INSERT INTO price_list (product_id, price) VALUES
+          (1, 100.00), (2, 50.00), (3, 20.00), (4, 10.00);
+      CREATE TABLE price_feed (
+          product_id integer PRIMARY KEY,
+          price numeric(10,2) NOT NULL
+      );
+      INSERT INTO price_feed (product_id, price) VALUES
+          (2, 55.00), (3, 20.00), (5, 99.00), (6, 12.50);
+    prompt: |
+      Our table `price_list` holds our prices. The supplier sends a new list in the table `price_feed`. Both tables have the columns `product_id` and `price`.
+
+      **`price_list` today**
+
+      | product_id | price |
+      |---|---|
+      | 1 | 100.00 |
+      | 2 | 50.00 |
+      | 3 | 20.00 |
+      | 4 | 10.00 |
+
+      **`price_feed` (the new supplier list)**
+
+      | product_id | price |
+      |---|---|
+      | 2 | 55.00 |
+      | 3 | 20.00 |
+      | 5 | 99.00 |
+      | 6 | 12.50 |
+
+      Write **one `MERGE` statement** that makes `price_list` match `price_feed`:
+
+      - a product in both tables gets the feed's price, but only when the price is different
+      - a product that is only in the feed is inserted
+      - a product that is only in `price_list` is deleted
+
+      The app then shows `price_list` sorted by `product_id`.
+    solution: |
+      MERGE INTO price_list t
+      USING price_feed s
+         ON t.product_id = s.product_id
+      WHEN MATCHED AND t.price <> s.price THEN
+          UPDATE SET price = s.price
+      WHEN NOT MATCHED THEN
+          INSERT (product_id, price)
+          VALUES (s.product_id, s.price)
+      WHEN NOT MATCHED BY SOURCE THEN
+          DELETE;
+    check: |
+      SELECT product_id, price
+      FROM price_list
+      ORDER BY product_id;
+    ordered: true
+    hints:
+      - "MERGE INTO target USING source ON the match condition, then list one WHEN clause for each kind of match."
+      - "WHEN MATCHED AND t.price <> s.price THEN UPDATE SET price = s.price"
+      - "WHEN NOT MATCHED THEN INSERT (...) VALUES (...) adds the new products, and WHEN NOT MATCHED BY SOURCE THEN DELETE removes the discontinued ones."
+    explanation: |
+      `MERGE` (added in PostgreSQL 15) is the standard way to **synchronise** a table with a new list. Before it, you needed an `UPDATE`, an `INSERT` and a `DELETE` that each repeated the join.
+
+      The `AND t.price <> s.price` condition means that unchanged rows are not rewritten. `NOT MATCHED BY SOURCE` handles rows that exist only in the target, which is the case people most often forget. Preview the rows with a `SELECT` first, as you would before a plain `DELETE`.
+
+  - id: ch-a-054
+    title: A function that returns a table
+    difficulty: expert
+    dataset: shop
+    module: m17
+    tags: [plpgsql, function, returns-table, top-n]
+    prompt: |
+      Customer service often needs the biggest delivered orders of one customer. Write a PL/pgSQL function named `customer_top_orders`.
+
+      - It takes two integer arguments: `p_customer_id` and `p_count`.
+      - It returns a table with three columns: `order_id` (integer), `order_date` (date) and `order_total` (numeric).
+      - The rows are the **delivered** orders of that customer. The `order_total` is the sum of `quantity * unit_price * (1 - discount)` over the order's lines, rounded to 2 decimals.
+      - Return only the `p_count` biggest orders, biggest first. Break ties with `order_id`.
+
+      The app then calls `customer_top_orders(6, 3)` and shows the result, sorted by `order_total` (highest first).
+    solution: |
+      CREATE FUNCTION customer_top_orders(p_customer_id integer,
+                                          p_count integer)
+      RETURNS TABLE (order_id integer,
+                     order_date date,
+                     order_total numeric)
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+          RETURN QUERY
+          SELECT o.order_id,
+                 o.order_date,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2)
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.customer_id = p_customer_id
+            AND o.status = 'delivered'
+          GROUP BY o.order_id, o.order_date
+          ORDER BY SUM(i.quantity * i.unit_price * (1 - i.discount)) DESC,
+                   o.order_id
+          LIMIT p_count;
+      END;
+      $$;
+    check: |
+      SELECT order_id, order_date, order_total
+      FROM customer_top_orders(6, 3)
+      ORDER BY order_total DESC;
+    ordered: true
+    hints:
+      - "RETURNS TABLE (...) lists the columns the function gives back. Its names must match the names in the prompt."
+      - "Inside the body, RETURN QUERY SELECT ... sends the rows of that query back as the result."
+      - "Finish the query with ORDER BY ... LIMIT p_count. The parameter p_count can be used directly in LIMIT."
+    explanation: |
+      A **function that returns a table** behaves like a view that accepts parameters. You call it in the `FROM` clause, the same way you would use a table.
+
+      The `p_` prefix matters here: the output columns such as `order_id` also exist in the query, and a parameter with the same name would make the body ambiguous. `RETURN QUERY` is the PL/pgSQL way to return the rows of a query.
+
+  - id: ch-a-055
+    title: The customers behind half of the card spending
+    difficulty: expert
+    dataset: bank
+    module: m19
+    tags: [pareto, running-total, window, cumulative]
+    prompt: |
+      Harbor Bank wants to know which customers make up half of all card spending. This is a Pareto analysis.
+
+      - A customer's `card_spend` is the total of `-amount` over all their `card_payment` transactions, on all of their accounts. Round it to 2 decimals.
+      - Rank the customers from the highest `card_spend` to the lowest. Break ties by `customer_id`.
+      - Add up the spending in that order. Keep every customer **up to and including** the first one whose running total reaches half of all card spending.
+
+      Show `customer_id`, `full_name`, `card_spend` and `cumulative_pct`. The `cumulative_pct` is the running total as a percentage of all card spending, rounded to 1 decimal. Sort by `card_spend` (highest first), then by `customer_id`.
+    solution: |
+      WITH spend AS (
+          SELECT c.customer_id, c.full_name,
+                 ROUND(SUM(-t.amount), 2) AS card_spend
+          FROM customers c
+          JOIN accounts a ON a.customer_id = c.customer_id
+          JOIN transactions t ON t.account_id = a.account_id
+          WHERE t.txn_type = 'card_payment'
+          GROUP BY c.customer_id, c.full_name
+      ),
+      running AS (
+          SELECT customer_id, full_name, card_spend,
+                 SUM(card_spend) OVER (
+                     ORDER BY card_spend DESC, customer_id
+                     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                 ) AS running_spend,
+                 SUM(card_spend) OVER () AS total_spend
+          FROM spend
+      )
+      SELECT customer_id, full_name, card_spend,
+             ROUND(100.0 * running_spend / total_spend, 1) AS cumulative_pct
+      FROM running
+      WHERE running_spend - card_spend < 0.5 * total_spend
+      ORDER BY card_spend DESC, customer_id;
+    ordered: true
+    hints:
+      - "First total the card spending for each customer. Remember that card payments are negative, so use -amount."
+      - "A running total is SUM(card_spend) OVER (ORDER BY card_spend DESC, customer_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)."
+      - "Keep a customer when the running total BEFORE them is still below half the total: running_total - card_spend < 0.5 * total."
+    explanation: |
+      The **Pareto principle** says a small group often produces most of the result. Here you find the smallest group of customers that covers half of the spending.
+
+      The condition "up to and including the one who crosses the line" is written as "the total before this customer is below half". A common mistake is to stop *before* the crossing customer, which would leave out the very customer who takes you past 50%.
+
+  - id: ch-a-056
+    title: Order totals in two currencies, after cleaning
+    difficulty: expert
+    dataset: messy
+    module: m18
+    tags: [data-cleaning, duplicates, text-to-number, aggregation]
+    prompt: |
+      The orders export stores amounts and currencies in many different ways. Clean them, then total the orders for each currency.
+
+      **Step 1: remove the duplicates.** Two rows are duplicates when `order_ref`, `customer_email`, `order_date`, `amount`, `currency` and `status` are all the same. Ignore `row_id`, and count each duplicate only once.
+
+      **Step 2: clean the currency.** Remove spaces at the start and end, then make it uppercase. `USD` and `$` mean USD. `EUR` means EUR. Leave out rows whose currency is empty or NULL.
+
+      **Step 3: clean the amount.** Remove spaces at the start and end, then remove every `$` and every `,`. Turn an amount written in brackets, such as `(45.00)`, into a negative number, `-45.00`. Leave out amounts that are NULL, empty or `N/A`. Also leave out the three amounts that look like test entries: `999999.99`, `1000000` and `0.01`.
+
+      Show these columns:
+
+      - `currency` (`USD` or `EUR`)
+      - `orders` (how many rows are left)
+      - `total_amount` (the sum of the amounts, rounded to 2 decimals)
+      - `avg_amount` (the average amount, rounded to 2 decimals)
+
+      Sort by `currency`.
+    solution: |
+      WITH unique_rows AS (
+          SELECT DISTINCT order_ref, customer_email, order_date,
+                          amount, currency, status
+          FROM raw_orders
+      ),
+      cleaned AS (
+          SELECT CASE
+                     WHEN UPPER(BTRIM(currency)) IN ('USD', '$') THEN 'USD'
+                     WHEN UPPER(BTRIM(currency)) = 'EUR' THEN 'EUR'
+                 END AS currency_code,
+                 REPLACE(REPLACE(REPLACE(REPLACE(BTRIM(amount),
+                     '$', ''), ',', ''), '(', '-'), ')', '') AS amount_text
+          FROM unique_rows
+      )
+      SELECT currency_code AS currency,
+             COUNT(*) AS orders,
+             ROUND(SUM(amount_text::numeric), 2) AS total_amount,
+             ROUND(AVG(amount_text::numeric), 2) AS avg_amount
+      FROM cleaned
+      WHERE currency_code IS NOT NULL
+        AND amount_text ~ '^-?[0-9]+(\.[0-9]+)?$'
+        AND amount_text NOT IN ('999999.99', '1000000', '0.01')
+      GROUP BY currency_code
+      ORDER BY currency_code;
+    ordered: true
+    hints:
+      - "Start with a CTE that removes the duplicates: SELECT DISTINCT over the six columns named in the prompt. row_id is left out on purpose."
+      - "In a second CTE, clean the currency and the amount with UPPER, BTRIM and REPLACE. The cleaned amount is still text, so convert it with ::numeric later."
+      - "Keep the rows with a known currency and a number-like amount, then GROUP BY currency and use COUNT(*), SUM and AVG."
+    explanation: |
+      Cleaning works best in **layers**, and the order matters. Remove duplicates from the raw values first, because a clean-up step can make two different raw rows look the same. Then normalise each column, then filter, then aggregate.
+
+      The amounts are still text after cleaning, so the code checks the shape with a regular expression before the `::numeric` cast. A cast on `'N/A'` would stop the whole query with an error. Keeping EUR and USD in separate rows is deliberate: the export has no exchange rates, so the two currencies must not be added together.
+
+  - id: ch-a-057
+    title: Why are the card totals too high?
+    difficulty: expert
+    dataset: bank
+    module: m20
+    tags: [debugging, fan-out, join, aggregation]
+    prompt: |
+      A colleague wrote the query in the starter box to find the 10 customers with the highest card spending. For some customers the totals are too high, and some customers are missing from the list.
+
+      Find the problem and fix the query. Show `customer_id`, `full_name` and `card_spend` (the total of `-amount` over the customer's card payments, rounded to 2 decimals). Show the 10 customers with the highest `card_spend`, highest first, then by `customer_id`.
+
+      Keep the meaning of card spending the same. Count each card payment once, and include every customer who has card payments, whether or not they have a loan.
+    starter: |
+      SELECT c.customer_id,
+             c.full_name,
+             ROUND(SUM(-t.amount), 2) AS card_spend
+      FROM customers c
+      JOIN accounts a ON a.customer_id = c.customer_id
+      JOIN transactions t ON t.account_id = a.account_id
+      JOIN loans l ON l.customer_id = c.customer_id
+      WHERE t.txn_type = 'card_payment'
+      GROUP BY c.customer_id, c.full_name
+      ORDER BY card_spend DESC, c.customer_id
+      LIMIT 10;
+    solution: |
+      SELECT c.customer_id,
+             c.full_name,
+             ROUND(SUM(-t.amount), 2) AS card_spend
+      FROM customers c
+      JOIN accounts a ON a.customer_id = c.customer_id
+      JOIN transactions t ON t.account_id = a.account_id
+      WHERE t.txn_type = 'card_payment'
+      GROUP BY c.customer_id, c.full_name
+      ORDER BY card_spend DESC, c.customer_id
+      LIMIT 10;
+    ordered: true
+    hints:
+      - "Ask which table has more than one row for each customer. Joining to such a table repeats every card payment once for each matching row."
+      - "The loans table has one row per loan. A customer with two loans has each card payment counted twice. An inner JOIN also removes customers who have no loan at all."
+      - "Card spending does not need loans. Remove the JOIN to loans, and keep the other joins as they are."
+    explanation: |
+      This is a **fan-out** bug. A join that matches several rows multiplies the rows you are adding up. Each card payment was copied once for every loan its customer had, so the sums were too big. Customers without a loan vanished because the inner join found no match for them.
+
+      The fix is to join only the tables the question needs. When a total looks wrong, count the rows after each join: joining to the "one" side keeps the count the same, while joining to the "many" side multiplies it. Always know the grain of your result: one row per what?
+  - id: ch-a-058
+    title: Which categories earn the most, and their share
+    difficulty: expert
+    dataset: shop
+    module: m11
+    tags: [window, aggregate-of-aggregate, share, group-by]
+    prompt: |
+      The category team wants to see how much of the shop's delivered revenue each product category brings in, and what share of the total that is.
+
+      Use each product's own `category_id` (not its parent category). Only **delivered** orders count. The revenue of an order line is `quantity * unit_price * (1 - discount)`.
+
+      For each category with at least one delivered sale, show these columns:
+
+      - `category`: the category name
+      - `revenue`: the category's revenue, rounded to 2 decimals
+      - `share_pct`: the category's revenue as a percentage of the **total** revenue of all categories, rounded to 1 decimal
+
+      Sort by `revenue`, highest first.
+    solution: |
+      WITH lines AS (
+          SELECT c.name AS category,
+                 i.quantity * i.unit_price * (1 - i.discount) AS line_total
+          FROM order_items i
+          JOIN orders o ON o.order_id = i.order_id
+                       AND o.status = 'delivered'
+          JOIN products p ON p.product_id = i.product_id
+          JOIN categories c ON c.category_id = p.category_id
+      )
+      SELECT category,
+             ROUND(SUM(line_total), 2) AS revenue,
+             ROUND(100.0 * SUM(line_total)
+                   / SUM(SUM(line_total)) OVER (), 1) AS share_pct
+      FROM lines
+      GROUP BY category
+      ORDER BY revenue DESC;
+    ordered: true
+    hints:
+      - "First compute the revenue of each order line, for delivered orders only. Put that in a CTE called lines."
+      - "GROUP BY category gives the revenue per category. The total of all categories is SUM(SUM(line_total)) OVER ()."
+      - "share_pct = 100.0 * SUM(line_total) / SUM(SUM(line_total)) OVER (). Multiplying by 100.0 keeps the division from losing its decimals."
+    explanation: |
+      You can put an aggregate **inside** a window function. `SUM(SUM(line_total)) OVER ()` first adds up the lines of each category, then adds up those category totals across the whole result. The empty `OVER ()` means "all rows", so every category gets the same grand total.
+
+      This is the standard way to report "share of total" in one query. A subquery that computes the grand total would give the same numbers.
+
+  - id: ch-a-059
+    title: Actor names in credit style
+    difficulty: expert
+    dataset: movies
+    module: m16
+    tags: [regex, regexp-replace, string, aggregation]
+    prompt: |
+      Credits are often printed as `Last, First`, and posters use initials. For each actor with **at least 15 acting credits** (rows of `movie_cast` where `role` is `actor`), show these columns:
+
+      - `person_id`
+      - `credit_name`: the name written as `Last, First` (for example `Kang, Mei`)
+      - `initials`: the first letter of the first name and the first letter of the last name, each followed by a dot (for example `M.K.`)
+      - `credits`: how many acting credits the person has
+
+      Sort by `credits` (highest first), then by `person_id`.
+    solution: |
+      SELECT p.person_id,
+             regexp_replace(p.full_name, '^(\S+) (\S+)$', '\2, \1')
+                 AS credit_name,
+             regexp_replace(p.full_name, '^(\S)\S* (\S)\S*$', '\1.\2.')
+                 AS initials,
+             COUNT(*) AS credits
+      FROM people p
+      JOIN movie_cast c
+        ON c.person_id = p.person_id
+       AND c.role = 'actor'
+      GROUP BY p.person_id, p.full_name
+      HAVING COUNT(*) >= 15
+      ORDER BY credits DESC, p.person_id;
+    ordered: true
+    hints:
+      - "regexp_replace(text, pattern, replacement) changes only the part of the text that matches a regular expression."
+      - "Round brackets in the pattern capture a part of the match. The replacement can then put those captured parts back in a new order, with a number for each captured part."
+      - "For credit_name, capture the first and the last name, then write the last name first, followed by a comma and a space. For initials, capture only the first letter of each name and add a dot."
+    explanation: |
+      **Regular expressions** let you describe a text pattern once and rewrite every value that matches it. Here one pattern splits a name into two parts and the replacement puts them in a new order.
+
+      Only the people's names are cleaned here, not the data in the table. Always test a pattern on a few rows before you use it on a whole table, because a pattern that is too loose can change text you did not mean to touch.
+
+  - id: ch-a-060
+    title: The two priciest products each top customer bought
+    difficulty: expert
+    dataset: shop
+    module: m16
+    tags: [lateral, top-n, join, subquery]
+    prompt: |
+      Marketing wants to suggest a few products to the three best customers. Find the **3 best customers**: the ones with the highest total of `quantity * unit_price * (1 - discount)` over their **delivered** order lines. Break ties by `customer_id`.
+
+      For each of these 3 customers, list the **2 most expensive products** they have bought in delivered orders. Use the product's current `price` from `products`. If two products have the same price, the one whose name comes first alphabetically comes first.
+
+      Show `customer_id`, `product_name` (the product's `name`) and `price`. Sort by `customer_id`, then by `price` (highest first), then by `product_name`.
+    solution: |
+      WITH top_customers AS (
+          SELECT o.customer_id
+          FROM orders o
+          JOIN order_items i ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY o.customer_id
+          ORDER BY SUM(i.quantity * i.unit_price * (1 - i.discount)) DESC,
+                   o.customer_id
+          LIMIT 3
+      )
+      SELECT tc.customer_id,
+             bought.product_name,
+             bought.price
+      FROM top_customers tc
+      CROSS JOIN LATERAL (
+          SELECT p.name AS product_name, p.price
+          FROM products p
+          WHERE p.product_id IN (
+              SELECT i.product_id
+              FROM order_items i
+              JOIN orders o ON o.order_id = i.order_id
+              WHERE o.customer_id = tc.customer_id
+                AND o.status = 'delivered'
+          )
+          ORDER BY p.price DESC, p.name
+          LIMIT 2
+      ) bought
+      ORDER BY tc.customer_id, bought.price DESC, bought.product_name;
+    ordered: true
+    hints:
+      - "First find the three best customers in a CTE: group the delivered order lines by customer, sort by the total, and use LIMIT 3."
+      - "For each of those customers you need a short top-2 list. CROSS JOIN LATERAL lets a subquery use the current customer's id, and LIMIT 2 keeps two rows."
+      - "Inside the LATERAL, choose the products the customer bought (WHERE p.product_id IN (...)), then ORDER BY p.price DESC, p.name and LIMIT 2."
+    explanation: |
+      This is "top N per group" again, but the groups come from a first query. The **LATERAL** subquery runs once for each of the three customers, so each one gets their own two products.
+
+      Two prices appear in this data. `order_items.unit_price` is what the customer paid, while `products.price` is today's catalogue price. The question asks for the catalogue price, so the answer uses `products`. Adding the name as a second sort key keeps the result the same every time.

@@ -237,6 +237,21 @@ lessons:
           | Insert, or update if the key exists | `INSERT ... ON CONFLICT (id) DO UPDATE` | `INSERT ... ON DUPLICATE KEY UPDATE` | `MERGE` | `INSERT ... ON CONFLICT (id) DO UPDATE` |
           | First row per group | `DISTINCT ON (col)` | `ROW_NUMBER()` in a subquery | `ROW_NUMBER()` in a subquery | `ROW_NUMBER()` in a subquery |
 
+          **Oracle, BigQuery and Snowflake**
+
+          | Task | Oracle | BigQuery | Snowflake |
+          |---|---|---|---|
+          | First 5 rows | `FETCH FIRST 5 ROWS ONLY` | `LIMIT 5` | `LIMIT 5` |
+          | Join text | `a \|\| b` | `CONCAT(a, b)` | `a \|\| b` |
+          | Match ignoring capitals | `UPPER(a) LIKE UPPER(b)` | `LOWER(a) LIKE LOWER(b)` | `ILIKE` |
+          | Join text per group | `LISTAGG(x, ', ') WITHIN GROUP (ORDER BY x)` | `STRING_AGG(x, ', ')` | `LISTAGG(x, ', ')` |
+          | Today's date | `CURRENT_DATE` | `CURRENT_DATE()` | `CURRENT_DATE()` |
+          | Filter on a window result | subquery or CTE | `QUALIFY` | `QUALIFY` |
+
+          Oracle's `FETCH FIRST` needs version 12c or newer. Older Oracle code uses
+          `WHERE ROWNUM <= 5` instead. Oracle also has a famous surprise: it treats an
+          empty text `''` as `NULL`, while PostgreSQL keeps the two apart.
+
           Some features belong to one product only. `QUALIFY` (filter on a window
           function result directly) exists in BigQuery and Snowflake, but not in
           PostgreSQL. In PostgreSQL you wrap the window function in a subquery or a
@@ -271,6 +286,20 @@ lessons:
         explanation: |
           `TOP` is a SQL Server word. The other three use `LIMIT`, `FETCH FIRST`
           or `ILIKE`, which PostgreSQL understands.
+
+      - type: quiz
+        id: m20-l01-q3
+        question: "A Snowflake query ends with QUALIFY ROW_NUMBER() OVER (...) = 1. What is the PostgreSQL way to get the same rows?"
+        options:
+          - "Replace QUALIFY with WHERE in the same query"
+          - "Put the window function in a subquery or CTE, then filter on it in the outer WHERE"
+          - "Replace QUALIFY with HAVING"
+          - "Keep QUALIFY, because PostgreSQL 18 supports it"
+        answer: 1
+        explanation: |
+          PostgreSQL has no `QUALIFY`, and it does not allow a window function directly in
+          `WHERE` or `HAVING`. Calculate the number in a subquery or CTE, then filter it
+          in the outer query. You did this in the window functions module.
 
       - type: predict
         id: m20-l01-p1
@@ -803,7 +832,7 @@ lessons:
         columnNames: true
         hints:
           - Sort the orders from newest to oldest, then take the first five.
-          - Two orders share the date 2024-12-29. The higher `order_id` must come first.
+          - Several orders share the date 2024-12-29, and the fifth place is one of them. The higher `order_id` must come first.
           - "SELECT order_id, order_date, status FROM orders ORDER BY order_date ___, order_id ___ LIMIT ___;"
         explanation: |
           Listing the three columns by name keeps the result small and clear. The
@@ -1124,7 +1153,7 @@ lessons:
 
       - type: example
         title: The LEFT JOIN that became an INNER JOIN
-        md: Count all customers, and count the customers who have a delivered order. The total should be 150.
+        md: This query is meant to count every customer, so the answer should be 150. Run it and check.
         sql: |
           SELECT COUNT(DISTINCT c.customer_id) AS customers
           FROM customers AS c
@@ -1430,10 +1459,15 @@ lessons:
           points of a star:
 
           ```text
-                    dim_customer
+          dim_customer ---+
                           |
-             dim_product--fact_sales
+                     fact_sales
+                          |
+          dim_product ----+
           ```
+
+          Real warehouses usually have more points on the star, for example a
+          calendar table. We will build the two that matter most here.
 
           Every report starts from the fact table, then adds the dimensions it needs.
           That is why the report query is short: one fact table and a few simple joins.
@@ -1484,6 +1518,12 @@ lessons:
           own ids, or a file can be reloaded with new numbers. If the fact table uses
           the warehouse's own key, the link between facts and dimensions is safe, and
           only the dimension needs a change.
+
+          > [!NOTE]
+          > `ROW_NUMBER()` is a quick way to build a small dimension in one query. A
+          > production warehouse usually hands out each key once, for example with an
+          > `IDENTITY` column, and never renumbers it, so old facts keep pointing at
+          > the right row.
 
       - type: example
         title: Flatten a dimension
@@ -1539,6 +1579,8 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
                  AS customer_key,
                  customer_id,
+                 first_name,
+                 last_name,
                  state
           FROM customers;
 
@@ -1546,6 +1588,7 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
                  AS product_key,
                  p.product_id,
+                 p.name AS product_name,
                  c.name AS category_name
           FROM products AS p
           JOIN categories AS c
@@ -1557,6 +1600,7 @@ lessons:
                  dp.product_key,
                  o.order_date,
                  o.status AS order_status,
+                 i.quantity,
                  i.quantity * i.unit_price * (1 - i.discount)
                      AS sales_amount
           FROM order_items AS i
@@ -1616,15 +1660,15 @@ lessons:
 
       - type: fill
         id: m20-l04-f1
-        prompt: "Complete the query. The key must count 1, 2, 3 ... in supplier order."
+        prompt: "Complete the query so that `supplier_key` counts 1, 2, 3 ... in order of `supplier_id`. Type the function name together with its brackets."
         template: |
           SELECT ___ OVER (ORDER BY supplier_id) AS supplier_key,
                  supplier_id,
                  name AS supplier_name
           FROM suppliers;
         answers:
-          - ["ROW_NUMBER()"]
-        explanation: "`ROW_NUMBER()` numbers the rows in the order given by `ORDER BY`. Without an `ORDER BY`, the numbers could come out in any order."
+          - ["ROW_NUMBER()", "RANK()", "DENSE_RANK()"]
+        explanation: "`ROW_NUMBER()` numbers the rows in the order given by `ORDER BY`. Without an `ORDER BY`, the numbers could come out in any order. `RANK()` would also give 1, 2, 3 here, because every `supplier_id` is different, but `ROW_NUMBER()` never repeats a number, which is what a key needs."
 
       - type: read
         title: Dimensions change
@@ -1798,7 +1842,7 @@ lessons:
         title: Build fact_sales
         prompt: |
           The tables `dim_customer` and `dim_product` already exist. They were built
-          as in the example, so you can use them.
+          exactly as in the two exercises above, so you can use them.
 
           Create a table called `fact_sales` with one row for each order line. Use
           these columns, in this order:
@@ -1817,6 +1861,8 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
                  AS customer_key,
                  customer_id,
+                 first_name,
+                 last_name,
                  state
           FROM customers;
 
@@ -1824,6 +1870,7 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
                  AS product_key,
                  p.product_id,
+                 p.name AS product_name,
                  c.name AS category_name
           FROM products AS p
           JOIN categories AS c
@@ -1878,6 +1925,8 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
                  AS customer_key,
                  customer_id,
+                 first_name,
+                 last_name,
                  state
           FROM customers;
 
@@ -1885,6 +1934,7 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
                  AS product_key,
                  p.product_id,
+                 p.name AS product_name,
                  c.name AS category_name
           FROM products AS p
           JOIN categories AS c
@@ -1896,6 +1946,7 @@ lessons:
                  dp.product_key,
                  o.order_date,
                  o.status AS order_status,
+                 i.quantity,
                  i.quantity * i.unit_price * (1 - i.discount)
                      AS sales_amount
           FROM order_items AS i
@@ -1948,6 +1999,8 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
                  AS customer_key,
                  customer_id,
+                 first_name,
+                 last_name,
                  state
           FROM customers;
 
@@ -1955,6 +2008,7 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
                  AS product_key,
                  p.product_id,
+                 p.name AS product_name,
                  c.name AS category_name
           FROM products AS p
           JOIN categories AS c
@@ -1966,6 +2020,7 @@ lessons:
                  dp.product_key,
                  o.order_date,
                  o.status AS order_status,
+                 i.quantity,
                  i.quantity * i.unit_price * (1 - i.discount)
                      AS sales_amount
           FROM order_items AS i
@@ -2006,13 +2061,14 @@ lessons:
         dataset: blank
         prompt: |
           Ana (`customer_id` 1) moved from Austin to Denver on **2024-03-01**. The
-          table `dim_customer_t2` already has her Austin row, which starts on
-          2023-01-01 and has no end yet.
+          table `dim_customer_t2` already has her Austin row. It starts on
+          2023-01-01, and its `valid_to` of `9999-12-31` means "no end yet". It is
+          the only current row for customer 1.
 
           Keep her history, Type 2 style. Write two statements:
 
-          1. Close the Austin row: set `valid_to` to `'2024-02-29'` and `is_current`
-             to `FALSE`.
+          1. Close the Austin row (customer 1, the row that is still current): set
+             `valid_to` to `'2024-02-29'` and `is_current` to `FALSE`.
           2. Add a Denver row for customer 1 with `city` `'Denver'`, `valid_from`
              `'2024-03-01'`, `valid_to` `'9999-12-31'` and `is_current` `TRUE`.
 
@@ -2076,6 +2132,8 @@ lessons:
           SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
                  AS customer_key,
                  customer_id,
+                 first_name,
+                 last_name,
                  state
           FROM customers;
         note: "CREATE TABLE ... AS SELECT builds a table from a query."
@@ -2161,7 +2219,7 @@ lessons:
       - type: read
         title: Ties at the edge of a list
         md: |
-          In the previous lesson you saw that a `LIMIT` needs a tie-breaker. The test
+          Earlier in this module you saw that a `LIMIT` needs a tie-breaker. The test
           is to look at the values right at the edge. Group the top prices and count
           how many products share each price.
 
@@ -2258,7 +2316,7 @@ lessons:
 
       - type: fill
         id: m20-l05-f1
-        prompt: "Show 0 instead of NULL when there are no products with a negative price. Complete the query."
+        prompt: "Show the total `price` of the products with a negative price as 0 instead of NULL. Complete the query."
         template: |
           SELECT COALESCE(___, 0) AS total
           FROM products
@@ -2317,7 +2375,7 @@ lessons:
         explanation: |
           140 customers have at least one order, and 10 have none. The two counts add
           up to the 150 customers, which is a useful check of your query.
-        difficulty: 1
+        difficulty: 2
 
       - type: exercise
         id: m20-l05-e3
@@ -2326,8 +2384,9 @@ lessons:
           For the customers with `customer_id` from 138 to 142, show two columns:
 
           - `customer_id`
-          - `total_spent`: the total of their orders, rounded to 2 decimal places.
-            A customer with no orders must show `0`, not `NULL`.
+          - `total_spent`: the total of all their orders, whatever the status,
+            rounded to 2 decimal places. A customer with no orders must show `0`,
+            not `NULL`.
 
           Sort the rows by `customer_id`.
         starter: |
@@ -2403,6 +2462,11 @@ lessons:
           Both totals are 263,983.37, so the two sources agree. This is a reconciliation.
           If the numbers had differed, the next step would be to find the orders
           that caused the gap.
+
+          The rounding step matters. Payments are recorded in whole cents for each
+          order, so the order totals must be rounded the same way. If you add up the
+          unrounded lines and round only at the end, you get 263,983.52: 15 cents
+          too much, and a false alarm.
         difficulty: 2
 
       - type: exercise
@@ -2451,8 +2515,11 @@ lessons:
           - "...WHERE t.status ___ 'cancelled' AND p.order_id IS ___ ORDER BY t.order_id;"
         explanation: |
           Fifteen orders are waiting for payment or have a missing payment row. The
-          `COALESCE` makes the `paid` column show 0 for them. Finding these orders is the
-          reconciliation step; the next step is to decide what they mean.
+          `COALESCE` makes the `paid` column show 0 for them. Together they are worth
+          $6,179.31, which is exactly the gap between all non-cancelled orders and the
+          payments received. Finding these orders is the reconciliation step; the next
+          step is to decide what they mean. Six of them are delivered orders from
+          October and November, and those deserve a phone call.
         difficulty: 3
 
       - type: exercise
@@ -2682,7 +2749,7 @@ lessons:
 
       - type: fill
         id: m20-l06-f1
-        prompt: "Complete the query. It keeps only the newest order of each customer 1 to 3."
+        prompt: "Complete the query. It keeps only the newest order of each customer, for customers 1 to 3. Type the function name together with its brackets."
         template: |
           SELECT customer_id, order_id, order_date
           FROM (
@@ -2697,8 +2764,8 @@ lessons:
           WHERE rn = 1
           ORDER BY customer_id;
         answers:
-          - ["ROW_NUMBER()"]
-        explanation: "`ROW_NUMBER()` gives each row of a customer a number from 1 upwards. The `PARTITION BY` restarts the numbers for each customer, and `rn = 1` keeps the newest."
+          - ["ROW_NUMBER()", "RANK()", "DENSE_RANK()"]
+        explanation: "`ROW_NUMBER()` gives each row of a customer a number from 1 upwards. The `PARTITION BY` restarts the numbers for each customer, and `rn = 1` keeps the newest. `RANK()` and `DENSE_RANK()` give the same answer here, because `order_id` breaks every tie. `ROW_NUMBER()` is the safest choice for \"keep exactly one row\"."
 
       - type: exercise
         id: m20-l06-e1
@@ -3009,7 +3076,8 @@ lessons:
           # Unsafe. Do not do this. Example only.
           state = input("State? ")
           cur.execute(
-              "SELECT COUNT(*) FROM customers WHERE state = '" + state + "'"
+              "SELECT COUNT(*) FROM customers "
+              "WHERE state = '" + state + "'"
           )
           ```
 
@@ -3035,7 +3103,7 @@ lessons:
         title: "The same idea inside SQL: a prepared query"
         md: |
           PostgreSQL has its own placeholder, `$1`. A `PREPARE` statement stores a query
-          with a slot in it. `EXECUTE` fills the slot with a value. Drivers use the same
+          with a slot in it. `EXECUTE` fills the slot with a value. Drivers use a similar
           idea behind the scenes.
         sql: |
           PREPARE state_count (text) AS
@@ -3058,14 +3126,22 @@ lessons:
           ```python
           # Example only. This does not run in SQL Quest.
           import pandas as pd
+          from sqlalchemy import create_engine
 
+          engine = create_engine(
+              "postgresql+psycopg://analyst@localhost/shop"
+          )
           df = pd.read_sql(
               "SELECT state, COUNT(*) AS customers "
               "FROM customers GROUP BY state",
-              conn,
+              engine,
           )
           print(df.head())
           ```
+
+          pandas works best with a **SQLAlchemy engine**, a helper library that holds
+          the connection details. The address says: PostgreSQL, using the `psycopg`
+          driver, user `analyst`, on this computer, database `shop`.
 
           > [!TIP]
           > Do the heavy work in SQL: joins, filters and sums. Then pull only the small
@@ -3392,7 +3468,8 @@ lessons:
         explanation: |
           Customer 6 has $8,458.40 delivered, customer 10 has $7,227.87, and customer 141
           has no orders, so the view shows 0. The condition is in `ON`, which keeps
-          every customer, the lesson from the debugging module.
+          every customer. That is the lesson from the debugging lesson earlier in this
+          module.
         difficulty: 3
 
       - type: exercise
@@ -3449,14 +3526,13 @@ lessons:
               SELECT COUNT(*) FROM customers WHERE state = $1;
           EXECUTE state_count ('CA');
         note: "In Python, use %s and pass the value separately. Never join text into the SQL."
-      - title: Keep every customer
+      - title: Build views in layers
         sql: |
-          SELECT c.customer_id, COUNT(o.order_id) AS orders
-          FROM customers AS c
-          LEFT JOIN orders AS o
-                 ON o.customer_id = c.customer_id
-          GROUP BY c.customer_id;
-        note: "LEFT JOIN keeps customers with no orders, and COUNT(column) gives 0 for them."
+          CREATE VIEW v_big_states AS
+          SELECT state, customers
+          FROM v_state_customers
+          WHERE customers >= 15;
+        note: "A view can read another view. Each layer adds one named rule."
 
 
 testPool:
@@ -3480,8 +3556,9 @@ testPool:
     lesson: m20-l01
     difficulty: 2
     prompt: |
-      Show the `name` of every product whose name contains the word "lamp",
-      whatever the capitals. Sort the rows by `name`.
+      Show the `name` of every product whose name contains the letters `lamp`
+      anywhere, even in the middle of a word, and whatever the capitals. Sort the
+      rows by `name`.
     solution: |
       SELECT name
       FROM products
@@ -3494,8 +3571,9 @@ testPool:
       - "`ILIKE` ignores capitals, and `%` matches any text."
       - "SELECT name FROM products WHERE name ___ '%lamp%' ORDER BY name;"
     explanation: |
-      `ILIKE` finds "Floor Lamp" and "Headlamp" even though their capital letters
-      differ from the pattern. With `LIKE` you would have to match the exact case.
+      `ILIKE` finds "Floor Lamp, Brass" and "Headlamp 400 Lumens" even though their
+      capital letters differ from the pattern. With `LIKE` only "Headlamp" would
+      match, because it is the only name with a lowercase `lamp`.
 
   - type: predict
     id: m20-t03
@@ -3567,15 +3645,23 @@ testPool:
     id: m20-t06
     lesson: m20-l02
     difficulty: 2
-    question: "What does this query return?"
+    question: "What happens when this query runs?"
     sql: |
-      SELECT COUNT(DISTINCT city) AS cities
-      FROM customers;
-    options: ["12", "14", "150", "An error"]
-    answer: 1
+      SELECT customer_id, o.order_id
+      FROM customers AS c
+      JOIN orders AS o
+           ON o.customer_id = c.customer_id;
+    options:
+      - "It returns 900 rows"
+      - "It returns 150 rows"
+      - "It returns 140 rows"
+      - "An error"
+    answer: 3
+    expectError: true
     explanation: |
-      The customers live in 14 different cities. `DISTINCT` counts each city once,
-      and there are 150 customers, but 150 is not the number of cities.
+      Both tables have a `customer_id` column, so PostgreSQL stops with
+      `column reference "customer_id" is ambiguous`. Put the table alias in front of
+      every column that appears in more than one table, such as `c.customer_id`.
 
   - type: exercise
     id: m20-t07
@@ -3676,14 +3762,15 @@ testPool:
     dataset: blank
     prompt: |
       Ben (`customer_id` 2) moved from Boston to Chicago on **2023-06-01**. The
-      table `dim_customer_t2` already has his Boston row, which has no end yet.
+      table `dim_customer_t2` already has his Boston row. Its `valid_to` of
+      `9999-12-31` means "no end yet", and it is the only current row for customer 2.
 
       Keep his history, Type 2 style. Write two statements:
 
-      1. Close the Boston row: set `valid_to` to `'2023-05-31'` and `is_current`
-         to `FALSE`.
-      2. Add a Chicago row for customer 2 with `valid_from` `'2023-06-01'`,
-         `valid_to` `'9999-12-31'` and `is_current` `TRUE`.
+      1. Close the Boston row (customer 2, the row that is still current): set
+         `valid_to` to `'2023-05-31'` and `is_current` to `FALSE`.
+      2. Add a Chicago row for customer 2 with `city` `'Chicago'`, `valid_from`
+         `'2023-06-01'`, `valid_to` `'9999-12-31'` and `is_current` `TRUE`.
     setup: |
       CREATE TABLE dim_customer_t2 (
           customer_sk INTEGER GENERATED ALWAYS AS IDENTITY
@@ -3781,40 +3868,40 @@ testPool:
     id: m20-t15
     lesson: m20-l05
     difficulty: 2
-    prompt: "Put the lines in the right order to count the products in each category that has at least two products. Sort by the count, then by category."
+    prompt: "Put the lines in the right order to check for ties: list the three highest prices that more than one product shares, with how many products share each."
     lines:
-      - SELECT c.name AS category, COUNT(*) AS products
-      - FROM categories AS c
-      - JOIN products AS p
-      -      ON p.category_id = c.category_id
-      - GROUP BY c.name
-      - HAVING COUNT(*) >= 2
-      - ORDER BY products DESC, category;
+      - SELECT price, COUNT(*) AS products
+      - FROM products
+      - GROUP BY price
+      - HAVING COUNT(*) > 1
+      - ORDER BY price DESC
+      - LIMIT 3;
     distractors:
-      - WHERE COUNT(*) >= 2
+      - WHERE COUNT(*) > 1
 
   - type: exercise
     id: m20-t16
     lesson: m20-l06
     difficulty: 2
     prompt: |
-      Find the **third highest distinct price** in `products`.
+      Find the **fifth highest distinct price** in `products`.
 
       Show one column, `price`, with one row. Count each price value once.
     solution: |
       SELECT DISTINCT price
       FROM products
       ORDER BY price DESC
-      LIMIT 1 OFFSET 2;
+      LIMIT 1 OFFSET 4;
     columnNames: true
     hints:
       - "Use `DISTINCT` so that each price counts once."
-      - "`OFFSET` skips a number of rows. Here it skips two distinct prices."
+      - "`OFFSET` skips a number of rows. Here it skips four distinct prices."
       - "SELECT DISTINCT price FROM products ORDER BY price ___ LIMIT 1 OFFSET ___;"
     explanation: |
-      The highest distinct prices are 1499.99, 1299.99 and then 1099.99. Skipping two
-      values leaves 1099.99. Without `DISTINCT`, the 899.99 pair would not matter here,
-      but a repeated top price would.
+      The highest distinct prices are 1499.99, 1299.99, 1099.99, 899.99 and then
+      699.99. Skipping four values leaves 699.99. Without `DISTINCT`, the two 899.99
+      products would fill places four and five, and the query would wrongly answer
+      899.99.
 
   - type: fill
     id: m20-t17
@@ -4119,7 +4206,7 @@ project:
         - A `LEFT JOIN` to `suppliers` keeps the products without a supplier.
         - "...FROM products AS p JOIN categories AS c ON c.category_id = p.category_id ___ JOIN suppliers ..."
       explanation: |
-        Products 47 and 60 have no supplier, so their `supplier_name` is NULL. An
+        Products 47, 50 and 60 have no supplier, so their `supplier_name` is NULL. An
         inner join to `suppliers` would have removed them from the dimension without
         any warning.
 
