@@ -1,0 +1,993 @@
+challenges:
+  - id: ch-i-001
+    title: Who ordered each month in 2024
+    difficulty: medium
+    dataset: shop
+    module: m05
+    tags: [aggregation, count-distinct, group-by, dates]
+    prompt: |
+      The sales team wants to know how many **different** customers placed an order in each month of 2024.
+
+      Show:
+
+      - `month`: the order month as text in the form `YYYY-MM` (for example `2024-03`)
+      - `customers`: the number of different customers who placed at least one order that month
+
+      Count every order, whatever its status. Sort by `month`.
+    solution: |
+      SELECT to_char(order_date, 'YYYY-MM') AS month,
+             COUNT(DISTINCT customer_id) AS customers
+      FROM orders
+      WHERE order_date >= '2024-01-01'
+        AND order_date < '2025-01-01'
+      GROUP BY to_char(order_date, 'YYYY-MM')
+      ORDER BY month;
+    ordered: true
+    hints:
+      - "Group the orders by month. Use COUNT(DISTINCT ...) so that a customer who ordered twice in the same month is counted once."
+      - "to_char(order_date, 'YYYY-MM') turns a date into text such as 2024-03. Write the same expression in GROUP BY."
+      - "SELECT to_char(order_date, 'YYYY-MM') AS month, COUNT(DISTINCT customer_id) AS customers FROM orders WHERE ___ GROUP BY ___ ORDER BY month;"
+    explanation: |
+      `COUNT(DISTINCT customer_id)` counts each customer once per group, even when they placed several orders in that month. A plain `COUNT(customer_id)` would count orders instead of people.
+
+      `to_char` formats a date as text, so `'YYYY-MM'` gives one label per month. The two `WHERE` conditions select the whole of 2024. Comparing with `>=` and `<` works for any date column, and it can use an index on `order_date` if one exists.
+
+  - id: ch-i-002
+    title: Exam results by exam type
+    difficulty: medium
+    dataset: school
+    module: m05
+    tags: [aggregation, avg, min-max, group-by]
+    prompt: |
+      The principal wants a summary of every exam result, with one row for each exam type.
+
+      Show `exam_type`, `exams` (how many results), `avg_score` (the average score rounded to 1 decimal place), `lowest` (the lowest score) and `highest` (the highest score).
+
+      Sort by `exam_type`.
+    solution: |
+      SELECT exam_type,
+             COUNT(*) AS exams,
+             ROUND(AVG(score), 1) AS avg_score,
+             MIN(score) AS lowest,
+             MAX(score) AS highest
+      FROM exam_scores
+      GROUP BY exam_type
+      ORDER BY exam_type;
+    ordered: true
+    hints:
+      - "Group the rows by exam_type. Every column you pick must either be the grouped column or an aggregate such as AVG, MIN or MAX."
+      - "AVG(score) gives the average, MIN(score) the lowest and MAX(score) the highest. ROUND(..., 1) keeps one decimal."
+      - "SELECT exam_type, COUNT(*) AS exams, ROUND(AVG(score), 1) AS avg_score, ___ FROM exam_scores GROUP BY ___ ORDER BY exam_type;"
+    explanation: |
+      Four aggregates run on the same group at once: `COUNT(*)`, `AVG`, `MIN` and `MAX`. Each one looks at every row in its group and returns a single value.
+
+      `AVG` returns a `numeric` value with many decimals, so `ROUND(..., 1)` makes it readable. The sort is alphabetical: final, midterm, quiz.
+
+  - id: ch-i-003
+    title: Where the card money goes
+    difficulty: medium
+    dataset: bank
+    module: m05
+    tags: [aggregation, having, group-by, sign]
+    prompt: |
+      The spending team wants to see which card categories customers use most. Look only at transactions whose `txn_type` is `card_payment`.
+
+      Keep only the categories with **more than 200** card payments. Show `category`, `payments` (the number of card payments) and `total_spent` (the total spent in dollars as a positive number, rounded to 2 decimals).
+
+      Sort by `total_spent` from highest to lowest.
+    solution: |
+      SELECT category,
+             COUNT(*) AS payments,
+             ROUND(-SUM(amount), 2) AS total_spent
+      FROM transactions
+      WHERE txn_type = 'card_payment'
+      GROUP BY category
+      HAVING COUNT(*) > 200
+      ORDER BY total_spent DESC;
+    ordered: true
+    hints:
+      - "Filter the rows to card payments first, then group them by category."
+      - "Money going out is negative in this table. Use -SUM(amount) to show it as a positive number. A HAVING clause filters groups after they are made."
+      - "SELECT category, COUNT(*) AS payments, ROUND(-SUM(amount), 2) AS total_spent FROM transactions WHERE ___ GROUP BY category HAVING ___ ORDER BY total_spent DESC;"
+    explanation: |
+      `WHERE` removes rows before grouping, so only card payments are counted. `HAVING` removes whole groups after the counting, so the test `COUNT(*) > 200` is written there, not in `WHERE`.
+
+      The bank stores spending as negative numbers. Writing `-SUM(amount)` flips the sign so the totals read as money spent.
+
+  - id: ch-i-004
+    title: Languages with at least three films
+    difficulty: medium
+    dataset: movies
+    module: m05
+    tags: [aggregation, having, avg, nulls]
+    prompt: |
+      The FlickNest programming team wants to know which film languages have at least three films in the catalog.
+
+      For each language with **three or more** films, show:
+
+      - `language`
+      - `films`: the number of films (every film counts here, even if its box office is unknown)
+      - `avg_minutes`: the average running time, rounded to the nearest whole minute
+      - `avg_box_office_musd`: the average worldwide box office in millions of dollars, rounded to 1 decimal. Only films with a known box office are used for this average.
+
+      Sort by `films` from highest to lowest, then by `language`.
+    solution: |
+      SELECT language,
+             COUNT(*) AS films,
+             ROUND(AVG(duration_min)) AS avg_minutes,
+             ROUND(AVG(box_office_musd), 1) AS avg_box_office_musd
+      FROM movies
+      GROUP BY language
+      HAVING COUNT(*) >= 3
+      ORDER BY films DESC, language;
+    ordered: true
+    hints:
+      - "Group the films by language and keep only the groups with at least three films, using HAVING."
+      - "AVG ignores NULL values, so a film with an unknown box office is left out of that average automatically. COUNT(*) still counts it."
+      - "SELECT language, COUNT(*) AS films, ROUND(AVG(duration_min)) AS avg_minutes, ___ FROM movies GROUP BY language HAVING ___ ORDER BY films DESC, language;"
+    explanation: |
+      `COUNT(*)` counts rows, but `AVG(box_office_musd)` counts only the rows where the value is not `NULL`. This is why the two averages in this query can be based on different numbers of films.
+
+      Sorting by `films` and then by `language` gives a total order, so every run returns the rows in the same sequence.
+
+  - id: ch-i-005
+    title: Hiring by year, with a twist
+    difficulty: medium
+    dataset: company
+    module: m05
+    tags: [aggregation, filter, having, dates]
+    prompt: |
+      HR wants to know how many people were hired each year, and how many of those hires were **not** full-time (part-time or contractor).
+
+      Use each employee's `hire_date` to find the year. Show `hire_year` (as a whole number), `hires` (all employees hired that year, including people who have left the company) and `non_full_time` (the hires whose `employment_type` is not `full_time`).
+
+      Keep only the years with **at least three** hires. Sort by `hire_year`.
+    solution: |
+      SELECT EXTRACT(YEAR FROM hire_date)::int AS hire_year,
+             COUNT(*) AS hires,
+             COUNT(*) FILTER (
+                 WHERE employment_type <> 'full_time'
+             ) AS non_full_time
+      FROM employees
+      GROUP BY EXTRACT(YEAR FROM hire_date)::int
+      HAVING COUNT(*) >= 3
+      ORDER BY hire_year;
+    ordered: true
+    hints:
+      - "Group the employees by the year of their hire_date, then count the rows in each group."
+      - "COUNT(*) FILTER (WHERE ...) counts only the rows that match the condition inside the group."
+      - "SELECT EXTRACT(YEAR FROM hire_date)::int AS hire_year, COUNT(*) AS hires, COUNT(*) FILTER (WHERE ___) AS non_full_time FROM employees GROUP BY ___ HAVING ___ ORDER BY hire_year;"
+    explanation: |
+      `FILTER` is a short way to count only some rows in a group. It is the same idea as `SUM(CASE WHEN ... THEN 1 END)`, and it reads more clearly.
+
+      You can use the whole expression `EXTRACT(YEAR FROM hire_date)::int` in both `SELECT` and `GROUP BY`. The `::int` turns the year into a whole number, so it prints as `2019` and not `2019.0`.
+
+  - id: ch-i-006
+    title: Card spending by quarter
+    difficulty: hard
+    dataset: bank
+    module: m05
+    tags: [aggregation, filter, pivot, coalesce]
+    prompt: |
+      The bank wants a quarterly pivot of card spending for 2024. Each row is a spending category, and the columns are the four quarters.
+
+      Look only at transactions whose `txn_type` is `card_payment`. Show these columns, in this order:
+
+      - `category`
+      - `q1`, `q2`, `q3`, `q4`: the money spent in each quarter, as a positive amount rounded to 2 decimals. A quarter with no spending in a category must show `0`, not an empty value.
+
+      Sort by `category`.
+    solution: |
+      SELECT category,
+             COALESCE(ROUND(-SUM(amount) FILTER (
+                 WHERE EXTRACT(QUARTER FROM txn_time) = 1
+             ), 2), 0) AS q1,
+             COALESCE(ROUND(-SUM(amount) FILTER (
+                 WHERE EXTRACT(QUARTER FROM txn_time) = 2
+             ), 2), 0) AS q2,
+             COALESCE(ROUND(-SUM(amount) FILTER (
+                 WHERE EXTRACT(QUARTER FROM txn_time) = 3
+             ), 2), 0) AS q3,
+             COALESCE(ROUND(-SUM(amount) FILTER (
+                 WHERE EXTRACT(QUARTER FROM txn_time) = 4
+             ), 2), 0) AS q4
+      FROM transactions
+      WHERE txn_type = 'card_payment'
+      GROUP BY category
+      ORDER BY category;
+    ordered: true
+    hints:
+      - "This is a pivot: one row per category, one column per quarter. Each quarter column is a conditional sum."
+      - "SUM(...) FILTER (WHERE EXTRACT(QUARTER FROM txn_time) = 1) adds up only the rows from quarter 1. An empty group gives NULL, so wrap it in COALESCE(..., 0)."
+      - "SELECT category, COALESCE(ROUND(-SUM(amount) FILTER (WHERE ___), 2), 0) AS q1, ... FROM transactions WHERE txn_type = 'card_payment' GROUP BY category ORDER BY category;"
+    explanation: |
+      A **pivot** turns the values of one column (here the quarter) into separate columns. Each quarter column is a sum with a condition attached, so it only adds the rows from that quarter.
+
+      `SUM` returns `NULL` when no rows match. `COALESCE(..., 0)` turns that `NULL` into a `0`, which is what a report should show. The same pivot can be written with `SUM(CASE WHEN ... THEN -amount END)`.
+
+  - id: ch-i-007
+    title: Customers who never ordered
+    difficulty: medium
+    dataset: shop
+    module: m06
+    tags: [join, left-join, anti-join, nulls]
+    prompt: |
+      The marketing team wants to send a welcome offer to every customer who has **never** placed an order.
+
+      Find them. Show `customer_id`, `first_name`, `last_name` and `email` for each customer with no order at all. Sort by `customer_id`.
+    solution: |
+      SELECT c.customer_id,
+             c.first_name,
+             c.last_name,
+             c.email
+      FROM customers c
+      LEFT JOIN orders o
+          ON o.customer_id = c.customer_id
+      WHERE o.order_id IS NULL
+      ORDER BY c.customer_id;
+    ordered: true
+    hints:
+      - "Start with all customers and try to attach each one's orders. Keep only the customers who get no match."
+      - "A LEFT JOIN keeps every row of the left table. A customer with no orders gets NULL in the order columns."
+      - "FROM customers c LEFT JOIN orders o ON ___ WHERE o.order_id IS NULL ORDER BY c.customer_id;"
+    explanation: |
+      A `LEFT JOIN` keeps every row from the left table. When nothing matches on the right, the right-hand columns are `NULL`. Testing `o.order_id IS NULL` then finds the customers with no orders.
+
+      This pattern is called an *anti-join*. You will also see it written with `NOT EXISTS`, which gives the same result.
+
+  - id: ch-i-008
+    title: Who works where in Engineering and Finance
+    difficulty: medium
+    dataset: company
+    module: m06
+    tags: [join, inner-join, alias, filter]
+    prompt: |
+      Office managers want a list of **current** staff in two departments: Engineering and Finance. A person is current when `terminated_on` is empty.
+
+      Show `department` (the name from the `departments` table), `full_name` (first name, a space, then last name), `job_title` and `city` for these people.
+
+      Sort by `department`, then by `full_name`.
+    solution: |
+      SELECT d.name AS department,
+             e.first_name || ' ' || e.last_name AS full_name,
+             e.job_title,
+             e.city
+      FROM employees e
+      JOIN departments d
+          ON d.dept_id = e.dept_id
+      WHERE d.name IN ('Engineering', 'Finance')
+        AND e.terminated_on IS NULL
+      ORDER BY department, full_name;
+    ordered: true
+    hints:
+      - "You need two tables: employees has the people and departments has the names."
+      - "Join the tables on dept_id, then keep the two department names and the people who are not terminated."
+      - "FROM employees e JOIN departments d ON ___ WHERE d.name IN (...) AND e.terminated_on IS NULL ORDER BY department, full_name;"
+    explanation: |
+      `JOIN` keeps only the rows that match on both sides. Each employee row is paired with the one department row that has the same `dept_id`.
+
+      Filtering on `terminated_on IS NULL` is the way to say "still employed". Use `IS NULL`, never `= NULL`, because `NULL` is not equal to anything, not even to another `NULL`.
+
+  - id: ch-i-009
+    title: Who directed the non-English films
+    difficulty: medium
+    dataset: movies
+    module: m06
+    tags: [join, three-tables, filter, role]
+    prompt: |
+      FlickNest wants to feature the directors of films that were **not** made in English.
+
+      For each film whose `language` is not `English`, show `title`, `release_year` and the director's `full_name`. Use the `movie_cast` table, and keep only the rows whose `role` is `director`.
+
+      Sort by `release_year`, then by `title`.
+    solution: |
+      SELECT m.title,
+             m.release_year,
+             p.full_name AS director
+      FROM movies m
+      JOIN movie_cast mc
+          ON mc.movie_id = m.movie_id
+      JOIN people p
+          ON p.person_id = mc.person_id
+      WHERE mc.role = 'director'
+        AND m.language <> 'English'
+      ORDER BY m.release_year, m.title;
+    ordered: true
+    hints:
+      - "A film is linked to its people through movie_cast, and each people row holds a name. You need both joins."
+      - "movie_cast also contains actors and writers. Keep only the rows where role = 'director'."
+      - "FROM movies m JOIN movie_cast mc ON ___ JOIN people p ON ___ WHERE mc.role = 'director' AND m.language <> 'English';"
+    explanation: |
+      `movie_cast` is a link table: one row per person per film per role. Joining it to `people` gives the names, and the `role` filter keeps only the director rows.
+
+      Without the role filter, a film with an actor and a writer would appear more than once. Always think about which rows a join brings in.
+
+  - id: ch-i-010
+    title: Seattle savings and credit accounts
+    difficulty: medium
+    dataset: bank
+    module: m06
+    tags: [join, three-tables, filter, alias]
+    prompt: |
+      The risk team reviews the **savings and credit** accounts owned by customers who live in Seattle. Each account is managed by one branch.
+
+      Show `account_id`, `full_name` (the customer's name), `status` (the account's status) and `branch_name` (the name of the branch that manages the account). Include only accounts whose `account_type` is `savings` or `credit`, and whose customer's `city` is `Seattle`.
+
+      Sort by `account_id`.
+    solution: |
+      SELECT a.account_id,
+             c.full_name,
+             a.status,
+             b.name AS branch_name
+      FROM accounts a
+      JOIN customers c
+          ON c.customer_id = a.customer_id
+      JOIN branches b
+          ON b.branch_id = a.branch_id
+      WHERE a.account_type IN ('savings', 'credit')
+        AND c.city = 'Seattle'
+      ORDER BY a.account_id;
+    ordered: true
+    hints:
+      - "You need three tables: accounts, customers and branches. Each one links to the next."
+      - "accounts has customer_id and branch_id. Join customers on the first one and branches on the second."
+      - "FROM accounts a JOIN customers c ON ___ JOIN branches b ON ___ WHERE a.account_type IN ('savings', 'credit') AND c.city = 'Seattle';"
+    explanation: |
+      Joins can be chained: `accounts` → `customers` and `accounts` → `branches`. Each `JOIN` adds the columns of one more table to every row.
+
+      Use table aliases (`a`, `c`, `b`) so each column name says which table it comes from. Two tables both have a `name` column in many databases, so the alias prevents confusion.
+
+  - id: ch-i-011
+    title: Seniors who have not joined a club
+    difficulty: medium
+    dataset: school
+    module: m06
+    tags: [join, left-join, anti-join, nulls]
+    prompt: |
+      The guidance office wants to invite every **senior** (grade 12) who does not belong to any club yet.
+
+      Show `student_id`, `first_name`, `last_name` and `email` for these students. The `email` can be empty for some students. Sort by `student_id`.
+    solution: |
+      SELECT s.student_id,
+             s.first_name,
+             s.last_name,
+             s.email
+      FROM students s
+      LEFT JOIN club_members cm
+          ON cm.student_id = s.student_id
+      WHERE cm.club_id IS NULL
+        AND s.grade_level = 12
+      ORDER BY s.student_id;
+    ordered: true
+    hints:
+      - "Use a LEFT JOIN from students to club_members, so that students with no club membership are kept."
+      - "After a LEFT JOIN, a student with no club has NULL in the club_members columns. Test for that in WHERE."
+      - "FROM students s LEFT JOIN club_members cm ON ___ WHERE cm.club_id IS NULL AND s.grade_level = 12 ORDER BY s.student_id;"
+    explanation: |
+      This is the anti-join pattern again: keep the left rows that have no match on the right. The grade filter applies to `students`, so it goes in `WHERE` as well.
+
+      A student can join several clubs. That is fine here, because a student with at least one club is removed by the `IS NULL` test.
+
+  - id: ch-i-012
+    title: Delivered revenue by category
+    difficulty: hard
+    dataset: shop
+    module: m06
+    tags: [join, multi-table, aggregation, revenue]
+    prompt: |
+      The category managers want to know how much money each product category earned from **delivered** orders.
+
+      Join the orders to their lines, the lines to their products, and the products to their categories. Show `category` (the category name) and `revenue`: the total of `quantity * unit_price * (1 - discount)` over all lines, rounded to 2 decimals. Use only orders whose `status` is `delivered`.
+
+      Sort by `revenue` from highest to lowest, then by `category`.
+    solution: |
+      SELECT cat.name AS category,
+             ROUND(SUM(i.quantity * i.unit_price
+                 * (1 - i.discount)), 2) AS revenue
+      FROM orders o
+      JOIN order_items i
+          ON i.order_id = o.order_id
+      JOIN products p
+          ON p.product_id = i.product_id
+      JOIN categories cat
+          ON cat.category_id = p.category_id
+      WHERE o.status = 'delivered'
+      GROUP BY cat.category_id, cat.name
+      ORDER BY revenue DESC, category;
+    ordered: true
+    hints:
+      - "Follow the chain: orders, then order_items, then products, then categories. Each join uses one key."
+      - "The discount is a fraction, so 1 - discount is the share you keep. Multiply it by quantity and unit_price."
+      - "FROM orders o JOIN order_items i ON ___ JOIN products p ON ___ JOIN categories cat ON ___ WHERE o.status = 'delivered' GROUP BY ___;"
+    explanation: |
+      Four tables are joined in a chain, and then one row per category is produced with `SUM`. The sum of all categories equals the total revenue of delivered orders.
+
+      Notice that the `status` filter is on `orders`, the table that holds the status. Filtering on the table that has the column is the safest way to avoid mistakes.
+
+  - id: ch-i-013
+    title: Who reports to whom in Engineering
+    difficulty: hard
+    dataset: company
+    module: m06
+    tags: [join, self-join, alias]
+    prompt: |
+      The Engineering team wants a simple reporting list. Look at the **current** people in Engineering (`dept_id` 2, with `terminated_on` empty).
+
+      For each of them, show `emp_id`, `employee` (the employee's first name, a space, then last name), `manager` (the manager's full name in the same format) and `manager_title` (the manager's `job_title`). Skip anyone who has no manager.
+
+      Sort by `emp_id`.
+    solution: |
+      SELECT e.emp_id,
+             e.first_name || ' ' || e.last_name AS employee,
+             m.first_name || ' ' || m.last_name AS manager,
+             m.job_title AS manager_title
+      FROM employees e
+      JOIN employees m
+          ON m.emp_id = e.manager_id
+      WHERE e.dept_id = 2
+        AND e.terminated_on IS NULL
+      ORDER BY e.emp_id;
+    ordered: true
+    hints:
+      - "A self join uses the same table twice, with two different aliases, such as e (the employee) and m (the manager)."
+      - "Each employee's manager_id is the emp_id of the manager's row. Join on that pair of columns."
+      - "FROM employees e JOIN employees m ON m.emp_id = e.___ WHERE e.dept_id = 2 AND e.terminated_on IS NULL ORDER BY e.emp_id;"
+    explanation: |
+      A **self join** lines a table up against itself. Here, `e` is the employee row and `m` is the manager row, and `manager_id` links them.
+
+      The manager may be in another department or may have left the company. An inner join still shows the row, because the manager's row exists. The one person with no manager (the CEO) is skipped automatically.
+
+  - id: ch-i-014
+    title: Products that sell together
+    difficulty: hard
+    dataset: shop
+    module: m06
+    tags: [join, self-join, aggregation, basket]
+    prompt: |
+      The merchandising team wants to know which products are often bought in the **same** order. This is called market-basket analysis.
+
+      Look only at delivered orders. For each pair of different products that appear together in at least eight delivered orders, show:
+
+      - `product_a`: the name of the product with the smaller `product_id`
+      - `product_b`: the name of the other product
+      - `orders_together`: the number of delivered orders that contain both products
+
+      Count each pair once. Sort by `orders_together` from highest to lowest, then by `product_a`, then by `product_b`.
+    solution: |
+      SELECT pa.name AS product_a,
+             pb.name AS product_b,
+             COUNT(*) AS orders_together
+      FROM order_items a
+      JOIN order_items b
+          ON b.order_id = a.order_id
+         AND b.product_id > a.product_id
+      JOIN orders o
+          ON o.order_id = a.order_id
+      JOIN products pa
+          ON pa.product_id = a.product_id
+      JOIN products pb
+          ON pb.product_id = b.product_id
+      WHERE o.status = 'delivered'
+      GROUP BY a.product_id, pa.name,
+               b.product_id, pb.name
+      HAVING COUNT(*) >= 8
+      ORDER BY orders_together DESC,
+               product_a, product_b;
+    ordered: true
+    hints:
+      - "Join order_items to itself on the same order_id, so that each row can see the other products in that order."
+      - "Use b.product_id > a.product_id so that each pair appears once, and so a product is never paired with itself."
+      - "Group by the two products, then keep the groups with COUNT(*) >= 8 using HAVING."
+    explanation: |
+      The **self join** on `order_items` pairs every product with every other product in the same order. The condition `b.product_id > a.product_id` removes the mirror image (B with A) and the pair of a product with itself.
+
+      Filtering with `HAVING` after grouping keeps only the pairs that really occur often. This kind of analysis is used for "customers also bought" suggestions.
+
+  - id: ch-i-015
+    title: Put each loan in a rate band
+    difficulty: hard
+    dataset: bank
+    module: m06
+    tags: [join, non-equi-join, values, banding]
+    prompt: |
+      The lending team sorts loans into rate bands. Use this band table, which you type inside your query:
+
+      | band | from_rate | below_rate |
+      |---|---|---|
+      | low | 0 | 5 |
+      | medium | 5 | 10 |
+      | high | 10 | 15 |
+      | very high | 15 | 100 |
+
+      A loan belongs to a band when its `annual_rate` is **at least** `from_rate` and **below** `below_rate`.
+
+      For each **active** loan, show `loan_id`, `annual_rate` and `band`. Sort by `loan_id`.
+    solution: |
+      SELECT l.loan_id,
+             l.annual_rate,
+             b.band
+      FROM loans l
+      JOIN (VALUES
+          ('low', 0, 5),
+          ('medium', 5, 10),
+          ('high', 10, 15),
+          ('very high', 15, 100)
+      ) AS b(band, from_rate, below_rate)
+          ON l.annual_rate >= b.from_rate
+         AND l.annual_rate < b.below_rate
+      WHERE l.status = 'active'
+      ORDER BY l.loan_id;
+    ordered: true
+    hints:
+      - "This join is not an equals match. A loan matches a band when its rate falls inside the band's range."
+      - "Use >= for the lower limit and < for the upper limit, so that a rate of exactly 5 lands in medium and not in low."
+      - "FROM loans l JOIN (VALUES ...) AS b(band, from_rate, below_rate) ON l.annual_rate >= b.from_rate AND ___ WHERE l.status = 'active';"
+    explanation: |
+      A **non-equi join** matches rows with a condition such as `>=` and `<` instead of `=`. It is the right tool for ranges like price bands or tax brackets.
+
+      `VALUES` builds a small table inside the query, so you do not need to create one. Choosing `<` for the upper limit means that every rate belongs to exactly one band.
+
+  - id: ch-i-016
+    title: Headcount without double counting
+    difficulty: hard
+    dataset: company
+    module: m06
+    tags: [join, fan-out, count-distinct, left-join]
+    prompt: |
+      The finance team wants one line per department: how many people work there, and how many hours a week the department puts into projects.
+
+      Count **every** row in the `employees` table, including former employees, and every row in `project_assignments`. Show these columns, in this order:
+
+      - `department`: the department name
+      - `headcount`: the number of different employees in the department (0 if there are none)
+      - `weekly_hours`: the total `hours_per_week` of all project assignments of those employees (0 if there are none)
+
+      Include every department, even one with no employees. Sort by `department`.
+
+      Count each person once, even when that person has several project assignments.
+    solution: |
+      SELECT d.name AS department,
+             COUNT(DISTINCT e.emp_id) AS headcount,
+             COALESCE(SUM(pa.hours_per_week), 0) AS weekly_hours
+      FROM departments d
+      LEFT JOIN employees e
+          ON e.dept_id = d.dept_id
+      LEFT JOIN project_assignments pa
+          ON pa.emp_id = e.emp_id
+      GROUP BY d.dept_id, d.name
+      ORDER BY department;
+    ordered: true
+    hints:
+      - "Start from departments with LEFT JOIN, so that a department with no employees still appears."
+      - "One employee can have many assignment rows after the second join. COUNT(*) would count those rows, not people."
+      - "COUNT(DISTINCT e.emp_id) counts each employee once. COALESCE(SUM(...), 0) turns an empty sum into 0."
+    explanation: |
+      This is the **fan-out** trap. Joining employees to assignments repeats each employee once per assignment, so `COUNT(*)` gives too big a number. `COUNT(DISTINCT e.emp_id)` counts each person once.
+
+      Research has no employees, so it still appears in the report with 0 headcount. Always check that your report has the number of groups you expect.
+
+  - id: ch-i-017
+    title: Products priced above the average
+    difficulty: medium
+    dataset: shop
+    module: m07
+    tags: [subquery, scalar-subquery, aggregation, filter]
+    prompt: |
+      The buyers want to review the premium part of the catalog. The average price is taken over **all** 60 products, including inactive ones.
+
+      Show `product_id`, `name` and `price` for every product whose price is **above** that average. Sort by `price` from highest to lowest, then by `product_id`.
+    solution: |
+      SELECT product_id, name, price
+      FROM products
+      WHERE price > (
+          SELECT AVG(price)
+          FROM products
+      )
+      ORDER BY price DESC, product_id;
+    ordered: true
+    hints:
+      - "Work out the average price first. A subquery in brackets can return one value, which you then compare with each product's price."
+      - "WHERE price > (SELECT AVG(price) FROM products) compares every product with the single average value."
+      - "SELECT product_id, name, price FROM products WHERE price > (SELECT ___ FROM products) ORDER BY price DESC, product_id;"
+    explanation: |
+      A subquery in brackets that returns one value can be used anywhere a single value can, such as on one side of `>`. The database runs it once and compares the result with every row.
+
+      Use `ORDER BY price DESC, product_id` so that products with the same price always come out in the same order.
+
+  - id: ch-i-018
+    title: Students in Linda Park's spring classes
+    difficulty: medium
+    dataset: school
+    module: m07
+    tags: [subquery, in, nested, filter]
+    prompt: |
+      Linda Park (the teacher with `teacher_id` 1) wants a list of the students in her classes this spring. A student counts when they are enrolled in **any** course that Linda Park teaches, in the term `2025-Spring`.
+
+      Show `student_id`, `first_name` and `last_name`. Sort by `student_id`.
+    solution: |
+      SELECT student_id, first_name, last_name
+      FROM students
+      WHERE student_id IN (
+          SELECT student_id
+          FROM enrollments
+          WHERE term = '2025-Spring'
+            AND course_id IN (
+                SELECT course_id
+                FROM courses
+                WHERE teacher_id = 1
+            )
+      )
+      ORDER BY student_id;
+    ordered: true
+    hints:
+      - "Find the courses that teacher 1 teaches first. Then find the enrollments in those courses for the 2025-Spring term."
+      - "The inner subquery returns a list of course_id values. IN checks whether a value is in that list."
+      - "SELECT ... FROM students WHERE student_id IN (SELECT student_id FROM enrollments WHERE term = '2025-Spring' AND course_id IN (SELECT ___ FROM courses WHERE ___));"
+    explanation: |
+      `IN` with a subquery checks whether a value appears in the list that the subquery returns. You can nest one `IN` inside another, reading from the inside out: courses, then enrollments, then students.
+
+      A student who is in two of her courses still appears only once, because `IN` asks a yes-or-no question for each student.
+
+  - id: ch-i-019
+    title: Films nobody has rated yet
+    difficulty: medium
+    dataset: movies
+    module: m07
+    tags: [subquery, not-exists, anti-join, filter]
+    prompt: |
+      FlickNest wants to promote films that have **no ratings at all** yet.
+
+      Show `movie_id`, `title` and `release_year` for each film that has no row in the `ratings` table. Sort by `movie_id`.
+    solution: |
+      SELECT m.movie_id,
+             m.title,
+             m.release_year
+      FROM movies m
+      WHERE NOT EXISTS (
+          SELECT 1
+          FROM ratings r
+          WHERE r.movie_id = m.movie_id
+      )
+      ORDER BY m.movie_id;
+    ordered: true
+    hints:
+      - "For each film, ask: is there any row in ratings for this movie? You want the films where the answer is no."
+      - "NOT EXISTS (SELECT 1 FROM ratings r WHERE r.movie_id = m.movie_id) is true only when the inner query finds nothing."
+      - "SELECT m.movie_id, m.title, m.release_year FROM movies m WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE ___) ORDER BY m.movie_id;"
+    explanation: |
+      `EXISTS` asks whether the subquery finds at least one row. `NOT EXISTS` is true when it finds none. The subquery only needs to find a match, so `SELECT 1` is enough.
+
+      `NOT EXISTS` also behaves well when a column has `NULL` values. Remember this, because `NOT IN` does not always behave the same way (you will see it in the next challenge).
+
+  - id: ch-i-020
+    title: Current employees who manage nobody
+    difficulty: medium
+    dataset: company
+    module: m07
+    tags: [subquery, not-in, nulls, filter]
+    prompt: |
+      HR wants to know which **current** employees (those with `terminated_on` empty) do not manage anybody. Someone manages another person when that person's `manager_id` is their `emp_id`.
+
+      Show `emp_id`, `first_name`, `last_name` and `job_title` for these employees. Sort by `emp_id`.
+    solution: |
+      SELECT emp_id,
+             first_name,
+             last_name,
+             job_title
+      FROM employees
+      WHERE terminated_on IS NULL
+        AND emp_id NOT IN (
+            SELECT manager_id
+            FROM employees
+            WHERE manager_id IS NOT NULL
+        )
+      ORDER BY emp_id;
+    ordered: true
+    hints:
+      - "Make a list of all the manager_id values in employees. Keep the employees whose emp_id is not on that list."
+      - "The CEO has no manager, so manager_id is NULL for that row. Remove those NULLs from the list before you use NOT IN."
+      - "WHERE terminated_on IS NULL AND emp_id NOT IN (SELECT manager_id FROM employees WHERE ___)"
+    explanation: |
+      `NOT IN` is a trap when the list contains a `NULL`. For example, `5 NOT IN (1, NULL)` is not true, so the row is dropped, and the whole query returns nothing.
+
+      That is why the subquery has `WHERE manager_id IS NOT NULL`. The same question can also be written with `NOT EXISTS`, which does not have this trap.
+
+  - id: ch-i-021
+    title: Above their own department's average
+    difficulty: hard
+    dataset: company
+    module: m07
+    tags: [subquery, correlated, aggregation, filter]
+    prompt: |
+      The pay committee wants to find people who earn **more than the average salary of their own department**.
+
+      For every employee whose `dept_id` is not empty, compare the employee's `salary` with the average salary of everyone in the same department. Include former employees in the averages, and include the employee themselves in the average.
+
+      Show `emp_id`, `dept_id` and `salary` for each employee whose salary is above that average. Sort by `dept_id`, then by `emp_id`.
+    solution: |
+      SELECT e.emp_id,
+             e.dept_id,
+             e.salary
+      FROM employees e
+      WHERE e.dept_id IS NOT NULL
+        AND e.salary > (
+            SELECT AVG(x.salary)
+            FROM employees x
+            WHERE x.dept_id = e.dept_id
+        )
+      ORDER BY e.dept_id, e.emp_id;
+    ordered: true
+    hints:
+      - "The subquery for the average has to be different for each employee, because each one has a different department. It refers to the outer row."
+      - "Inside the subquery, the condition x.dept_id = e.dept_id links the average to the current employee's department."
+      - "WHERE e.salary > (SELECT AVG(x.salary) FROM employees x WHERE x.dept_id = e.dept_id)"
+    explanation: |
+      This is a **correlated subquery**. It refers to the outer row (`e`), so the database runs it again for every employee. That is clear to read, but on a big table a window function or a CTE can be faster (you will meet those in later challenges).
+
+      The average includes the employee's own salary, which is fair for this question. Think about which rows the question asks you to include.
+
+  - id: ch-i-022
+    title: Orders per customer by segment
+    difficulty: hard
+    dataset: shop
+    module: m07
+    tags: [subquery, derived-table, aggregation, nested-aggregation]
+    prompt: |
+      The loyalty team wants to know how many orders a typical customer places in each segment. Only customers who placed at least one order count, and every order counts whatever its status.
+
+      First count the orders of each customer. Then, for each `segment`, show:
+
+      - `segment`
+      - `customers_with_orders`: the number of customers in that segment who placed at least one order
+      - `avg_orders`: the average number of orders per such customer, rounded to 2 decimals
+
+      Sort by `segment`.
+    solution: |
+      SELECT t.segment,
+             COUNT(*) AS customers_with_orders,
+             ROUND(AVG(t.order_count), 2) AS avg_orders
+      FROM (
+          SELECT c.customer_id,
+                 c.segment,
+                 COUNT(o.order_id) AS order_count
+          FROM customers c
+          JOIN orders o
+              ON o.customer_id = c.customer_id
+          GROUP BY c.customer_id, c.segment
+      ) AS t
+      GROUP BY t.segment
+      ORDER BY t.segment;
+    ordered: true
+    hints:
+      - "This is an aggregate of an aggregate. First build one row per customer with a count, in a subquery in FROM."
+      - "The outer query then groups those rows by segment and takes the average of the counts."
+      - "SELECT t.segment, COUNT(*), ROUND(AVG(t.order_count), 2) FROM (SELECT ... GROUP BY ...) AS t GROUP BY t.segment;"
+    explanation: |
+      A **derived table** is a subquery in the `FROM` clause. You can give it a name (here `t`) and then use it like a table.
+
+      Averaging per-customer counts is different from dividing all orders by all customers, because customers with no orders must be left out first. The join already removes them.
+
+  - id: ch-i-023
+    title: Loans bigger than every Tacoma loan
+    difficulty: hard
+    dataset: bank
+    module: m07
+    tags: [subquery, all, comparison, set]
+    prompt: |
+      The lending team is looking for unusually large loans. Find every loan whose `principal` is **larger than every** loan that belongs to a customer who lives in `Tacoma`.
+
+      Show `loan_id`, `customer_id` and `principal` for these loans. Sort by `loan_id`.
+    solution: |
+      SELECT l.loan_id,
+             l.customer_id,
+             l.principal
+      FROM loans l
+      WHERE l.principal > ALL (
+          SELECT t.principal
+          FROM loans t
+          JOIN customers c
+              ON c.customer_id = t.customer_id
+          WHERE c.city = 'Tacoma'
+      )
+      ORDER BY l.loan_id;
+    ordered: true
+    hints:
+      - "Find the principal of every Tacoma loan first. Then find the loans that are bigger than all of those values."
+      - "> ALL means greater than every value in the list. The list is the result of a subquery."
+      - "SELECT l.loan_id, l.customer_id, l.principal FROM loans l WHERE l.principal > ___ (SELECT ___ FROM ...) ORDER BY l.loan_id;"
+    explanation: |
+      `> ALL (list)` is true only when the value is bigger than the largest value in the list. `> ANY (list)` is true when it is bigger than at least one value.
+
+      A Tacoma loan is never bigger than itself, so no Tacoma loan can appear in the result. Check that you understand why before moving on.
+
+  - id: ch-i-024
+    title: The busiest actors
+    difficulty: hard
+    dataset: movies
+    module: m07
+    tags: [subquery, having, aggregation, average]
+    prompt: |
+      FlickNest wants a list of its busiest actors. An actor is busy when their number of **acting** credits is above the average number of acting credits across all actors.
+
+      An acting credit is a row in `movie_cast` with `role` equal to `actor`. The average is taken over the actors who have at least one acting credit.
+
+      Show `person_id`, `full_name` and `acting_credits` for the busy actors. Sort by `acting_credits` from highest to lowest, then by `person_id`.
+    solution: |
+      SELECT p.person_id,
+             p.full_name,
+             COUNT(*) AS acting_credits
+      FROM people p
+      JOIN movie_cast mc
+          ON mc.person_id = p.person_id
+      WHERE mc.role = 'actor'
+      GROUP BY p.person_id, p.full_name
+      HAVING COUNT(*) > (
+          SELECT AVG(per_actor.credits)
+          FROM (
+              SELECT COUNT(*) AS credits
+              FROM movie_cast
+              WHERE role = 'actor'
+              GROUP BY person_id
+          ) AS per_actor
+      )
+      ORDER BY acting_credits DESC, p.person_id;
+    ordered: true
+    hints:
+      - "Count the acting credits per person first. Then compare each person's count with a single average value."
+      - "A subquery can go inside HAVING, because HAVING works on the group's count. The average is itself a subquery of counts."
+      - "HAVING COUNT(*) > (SELECT AVG(credits) FROM (SELECT COUNT(*) AS credits FROM movie_cast WHERE ___ GROUP BY person_id) AS per_actor)"
+    explanation: |
+      This query uses a subquery twice. The inner one counts credits for each actor, and its result (the average of those counts) is used in the `HAVING` test of the outer query.
+
+      Keep `ORDER BY ... person_id` so that actors with the same number of credits always appear in the same order.
+
+  - id: ch-i-025
+    title: Subjects across teachers and courses
+    difficulty: medium
+    dataset: school
+    module: m08
+    tags: [union, set-operations, literal, order-by]
+    prompt: |
+      The school office is building a list of subjects. A subject counts when a teacher is responsible for it (the `subject` column of `teachers`), and also when a course is taught in it (the `subject` column of `courses`).
+
+      Make one list with two columns: `subject` and `source`. Use the text `teacher` for subjects from the teachers table, and the text `course` for subjects from the courses table. Each pair of subject and source must appear only once.
+
+      Sort by `subject`, then by `source`.
+    solution: |
+      SELECT subject, 'teacher' AS source
+      FROM teachers
+      UNION
+      SELECT subject, 'course'
+      FROM courses
+      ORDER BY subject, source;
+    ordered: true
+    hints:
+      - "UNION stacks two result sets on top of each other. Both must have the same number of columns."
+      - "Add a fixed text value such as 'teacher' in one query and 'course' in the other, so you can tell the rows apart."
+      - "SELECT subject, 'teacher' AS source FROM teachers UNION SELECT subject, ___ FROM courses ORDER BY subject, source;"
+    explanation: |
+      `UNION` joins two result sets and removes duplicate rows. A subject that appears in both tables with the same label is listed once, because the pair (subject, source) is the same.
+
+      Use `UNION ALL` instead when you want to keep every row, including duplicates. The labels make it clear which table each row came from.
+
+  - id: ch-i-026
+    title: Corporate customers who bought both bottle and blender
+    difficulty: medium
+    dataset: shop
+    module: m08
+    tags: [intersect, set-operations, join, customers]
+    prompt: |
+      The bundle team wants the **Corporate** customers (those whose `segment` is `Corporate`) who have bought **both** the `Blender Pro 1200` and the `Insulated Water Bottle 1L` at some time. Count any order, whatever its status.
+
+      Show `customer_id` for each of these customers. Sort by `customer_id`.
+    solution: |
+      SELECT o.customer_id
+      FROM orders o
+      JOIN customers c
+          ON c.customer_id = o.customer_id
+      JOIN order_items i
+          ON i.order_id = o.order_id
+      JOIN products p
+          ON p.product_id = i.product_id
+      WHERE c.segment = 'Corporate'
+        AND p.name = 'Blender Pro 1200'
+      INTERSECT
+      SELECT o.customer_id
+      FROM orders o
+      JOIN customers c
+          ON c.customer_id = o.customer_id
+      JOIN order_items i
+          ON i.order_id = o.order_id
+      JOIN products p
+          ON p.product_id = i.product_id
+      WHERE c.segment = 'Corporate'
+        AND p.name = 'Insulated Water Bottle 1L'
+      ORDER BY customer_id;
+    ordered: true
+    hints:
+      - "Write one query for each product: the Corporate customers who bought the blender, and the Corporate customers who bought the bottle."
+      - "INTERSECT keeps only the rows that appear in both results."
+      - "SELECT ... WHERE c.segment = 'Corporate' AND p.name = 'Blender Pro 1200' INTERSECT SELECT ... WHERE ___ ORDER BY customer_id;"
+    explanation: |
+      `INTERSECT` returns the rows that are in both results. Here, that means customers who appear in both lists of buyers. A customer who bought the same product twice still counts once.
+
+      Each side needs the joins from `orders` to `products`, because only `products` has the name, and the join to `customers` gives the segment. `ORDER BY` at the end sorts the combined result.
+
+  - id: ch-i-027
+    title: Employees not on any project
+    difficulty: medium
+    dataset: company
+    module: m08
+    tags: [except, set-operations, anti-join]
+    prompt: |
+      HR wants to know which employees are **not** assigned to any project yet.
+
+      Show `emp_id` for each employee who has no row in `project_assignments`. Sort by `emp_id`.
+    solution: |
+      SELECT emp_id
+      FROM employees
+      EXCEPT
+      SELECT emp_id
+      FROM project_assignments
+      ORDER BY emp_id;
+    ordered: true
+    hints:
+      - "Start with the list of all employees, then remove the employees who appear in project_assignments."
+      - "EXCEPT returns the rows of the first query that are not in the second query."
+      - "SELECT emp_id FROM employees EXCEPT SELECT emp_id FROM ___ ORDER BY emp_id;"
+    explanation: |
+      `EXCEPT` keeps the rows in the first result that do not appear in the second. It works like a set difference, and it removes duplicates.
+
+      You could write the same answer with `NOT EXISTS` or `LEFT JOIN ... IS NULL`. `EXCEPT` is shorter when you compare two lists of the same kind of value.
+
+  - id: ch-i-028
+    title: Rated, watched or both, per user
+    difficulty: hard
+    dataset: movies
+    module: m08
+    tags: [set-operations, union, intersect, except, correlated]
+    prompt: |
+      The product team is studying how users interact with films. For each user whose `user_id` is from 1 to 10, count the following, using **different** films each time:
+
+      - `touched`: the films the user has rated **or** watched
+      - `rated_and_watched`: the films the user has **both** rated and watched
+      - `only_watched`: the films the user has watched but **never** rated
+
+      Use the `ratings` table for ratings and the `watch_history` table for watching. Show `user_id`, `touched`, `rated_and_watched` and `only_watched`, sorted by `user_id`.
+
+      A user with no activity shows `0` in every column.
+    solution: |
+      SELECT u.user_id,
+             (SELECT COUNT(*) FROM (
+                 SELECT movie_id FROM ratings
+                 WHERE user_id = u.user_id
+                 UNION
+                 SELECT movie_id FROM watch_history
+                 WHERE user_id = u.user_id
+             ) AS x) AS touched,
+             (SELECT COUNT(*) FROM (
+                 SELECT movie_id FROM ratings
+                 WHERE user_id = u.user_id
+                 INTERSECT
+                 SELECT movie_id FROM watch_history
+                 WHERE user_id = u.user_id
+             ) AS y) AS rated_and_watched,
+             (SELECT COUNT(*) FROM (
+                 SELECT movie_id FROM watch_history
+                 WHERE user_id = u.user_id
+                 EXCEPT
+                 SELECT movie_id FROM ratings
+                 WHERE user_id = u.user_id
+             ) AS z) AS only_watched
+      FROM users u
+      WHERE u.user_id <= 10
+      ORDER BY u.user_id;
+    ordered: true
+    hints:
+      - "Each column is a count of a set. Build the set with UNION, INTERSECT or EXCEPT, then count its rows with COUNT(*)."
+      - "UNION removes duplicates, so a film that is both rated and watched counts only once in touched."
+      - "Inside each subquery, filter both tables with the same user: WHERE user_id = u.user_id."
+    explanation: |
+      Set operations can be nested inside subqueries. Here the outer query gives one row per user, and each count is a small set query that uses that user's rows.
+
+      `UNION` gives the films touched by either activity, `INTERSECT` the films in both, and `EXCEPT` the films watched but not rated. Notice that `EXCEPT` is not symmetric: the order of its two sides matters.

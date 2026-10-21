@@ -466,6 +466,491 @@ lessons:
           ORDER BY category_id, price DESC, name;
         note: "The first ORDER BY column must match the DISTINCT ON column."
 
+  - id: m20-l02
+    title: "Write SQL your team can read"
+    summary: Name, format, comment and order your queries so that a colleague, or you six months later, can understand them and trust the result.
+    minutes: 30
+    steps:
+      - type: read
+        title: The query that worked
+        md: |
+          Priya leads the analytics team at ShopSmart. She opens your query and sees
+          a block of text that runs off the screen. The numbers are right, but she
+          cannot tell what the query does without reading every word.
+
+          Your query is not wrong. It is **hard to read**, and hard-to-read queries
+          are hard to check, fix and hand over. Professional SQL is written for the
+          next person, and that person is often you, six months later.
+
+          > [!ANALOGY]
+          > A recipe card only works if someone else can follow it. A good query is
+          > like a recipe with clear steps, named ingredients and a note that says why
+          > the lemon goes in.
+
+      - type: read
+        title: The messy version
+        md: |
+          This is the kind of query that works but is hard to check. Do not run it.
+          Just notice what makes it difficult.
+
+          ```sql
+          select c.first_name,c.last_name,count(o.order_id) as n from customers c left join orders o on o.customer_id=c.customer_id where c.state='CA' group by c.first_name,c.last_name,c.customer_id order by n desc limit 5;
+          ```
+
+          Nothing is wrong with the words. The problem is the layout: everything is on
+          one line, the column `n` says little, and the `ORDER BY` has no tie-breaker.
+
+      - type: read
+        title: Six habits of production SQL
+        md: |
+          Good teams agree on a few habits and apply them every time:
+
+          1. **Keywords in CAPITALS**, and names in lowercase `snake_case`.
+          2. **One clause per line**, with each column of a `SELECT` on its own line.
+          3. **Clear names** for columns, and short, obvious table aliases.
+          4. **Comments** that explain *why*, not *what*.
+          5. **Name the columns you need.** Avoid `SELECT *` in finished queries.
+          6. **A complete `ORDER BY`.** Add a tie-breaker so the order never changes.
+
+          You will practise each habit in this lesson.
+
+      - type: example
+        title: The same query, written for a reader
+        md: The same question as the messy version. Each clause has its own line.
+        sql: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name,
+                 COUNT(o.order_id) AS order_count
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          WHERE c.state = 'CA'
+          GROUP BY c.customer_id, c.first_name, c.last_name
+          ORDER BY order_count DESC, c.customer_id
+          LIMIT 5;
+        after: |
+          Read it from top to bottom: which columns, from which table, joined to
+          which orders, for which state, grouped how, sorted how, and how many rows.
+
+          The `c.customer_id` at the end of `ORDER BY` is a **tie-breaker**. It decides
+          the order when two customers have the same number of orders.
+
+      - type: example
+        title: Names that explain themselves
+        md: |
+          Avoid names such as `t1`, `x` or `tmp`. Use `snake_case` for multi-word
+          names, and use an alias such as `customer_count` to name a result.
+        sql: |
+          SELECT state,
+                 COUNT(*) AS customer_count
+          FROM customers
+          GROUP BY state
+          ORDER BY customer_count DESC, state
+          LIMIT 3;
+        after: |
+          The column is called `customer_count`, so anyone reading the result knows
+          what the number means. Without `AS`, PostgreSQL would name the column
+          `count`, which says much less.
+
+      - type: read
+        title: Comments explain the why
+        md: |
+          A **comment** is text the database ignores. It is written for the people
+          who read the query.
+
+          - `-- text` ignores everything after the two dashes on that line.
+          - `/* text */` ignores everything between the markers, even over several lines.
+
+          Write comments that explain a decision, such as why a status is left out.
+          A comment such as `-- select the name` adds nothing, because the SQL already
+          says that.
+
+      - type: example
+        title: A comment that explains a decision
+        md: Only delivered orders count as sales. The comment says why.
+        sql: |
+          -- Revenue counts delivered orders only. Cancelled and
+          -- returned orders are left out on purpose.
+          SELECT ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2)
+                 AS delivered_revenue
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          WHERE o.status = 'delivered';
+        after: |
+          One row with the total of all delivered orders, after each line's discount.
+          PostgreSQL skips the comment lines completely, so they cost nothing when the
+          query runs.
+
+      - type: read
+        title: Why avoid SELECT *?
+        md: |
+          `SELECT *` means "every column". It is handy when you explore a table for the
+          first time. In a finished query it causes three problems:
+
+          - The result changes when someone adds a column to the table.
+          - You fetch data you never look at, which is slow on big tables.
+          - In a join, two tables can have a column with the same name, and the result
+            shows both, which is confusing.
+
+          > [!REAL-WORLD]
+          > Many teams have a rule against `SELECT *` in production code. A report that
+          > suddenly shows a new column can break a dashboard that is shared with
+          > managers.
+
+      - type: example
+        title: SELECT * in a join shows the same name twice
+        md: Here `SELECT *` joins the category tree to itself. Look at the column names.
+        sql: |
+          SELECT *
+          FROM categories AS parent
+          JOIN categories AS child
+               ON child.parent_id = parent.category_id
+          ORDER BY child.category_id;
+        after: |
+          The result has `category_id`, `name` and `parent_id` **twice**, once for
+          the parent and once for the child. Named columns, such as `parent.name` and
+          `child.name`, would avoid the confusion.
+
+      - type: example
+        title: Ambiguous means "could be either"
+        md: Now name the columns, but forget the table alias on `order_id`, which both tables have.
+        sql: |
+          SELECT order_id, o.status
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id;
+        expectError: true
+        after: |
+          PostgreSQL cannot tell which `order_id` you mean, so it stops with
+          `column reference "order_id" is ambiguous`. The fix is to write `o.order_id`.
+
+          > [!MISTAKE]
+          > A query can work on one table and fail after a join, when a second table
+          > has a column with the same name. Put the table alias in front of any
+          > column name that appears in more than one table.
+
+      - type: read
+        title: Same question, same answer
+        md: |
+          Imagine a report that lists the three most expensive products. On Monday
+          the list is correct. On Tuesday a new price is added, two products cost the
+          same, and the list shows them in a different order. Nobody changed the
+          products, but the report changed.
+
+          SQL promises no order unless you ask for one with `ORDER BY`. If two rows
+          have the same sort value, the database may return them in either order. Add
+          a **tie-breaker**: a unique column, such as an id, that gives every row a
+          clear place. This is called **deterministic ordering**.
+
+      - type: example
+        title: A tie-breaker at the cut-off
+        md: The four most expensive products. Two products cost 899.99, and they sit right at the cut-off.
+        sql: |
+          SELECT product_id, name, price
+          FROM products
+          ORDER BY price DESC, product_id
+          LIMIT 4;
+        after: |
+          Product 1 is the fourth row, because its `product_id` is smaller than the
+          id of the other 899.99 product. Each run gives the same four rows. Without
+          `product_id`, the fourth place could go to either product.
+
+      - type: read
+        title: Name each step with a CTE
+        md: |
+          A **CTE** (a named query that starts with `WITH`, which you met in the CTE
+          module) lets you name each step of a report. Read the steps from top to
+          bottom, like a checklist: first choose the rows, then count them, then add
+          names.
+
+          Give each CTE a name that says what it holds, such as `delivered` or
+          `customer_totals`. Separate the blocks with commas.
+
+      - type: example
+        title: A report in three named steps
+        md: The five customers with the most delivered orders, with their names.
+        sql: |
+          WITH delivered AS (
+              SELECT customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          ),
+          customer_totals AS (
+              SELECT customer_id,
+                     COUNT(*) AS delivered_orders
+              FROM delivered
+              GROUP BY customer_id
+          )
+          SELECT c.first_name,
+                 c.last_name,
+                 t.delivered_orders
+          FROM customer_totals AS t
+          JOIN customers AS c
+               ON c.customer_id = t.customer_id
+          ORDER BY t.delivered_orders DESC, c.customer_id
+          LIMIT 5;
+        after: |
+          `delivered` picks the rows, `customer_totals` counts them, and the last
+          `SELECT` adds names and sorting. If the report looks wrong, you can run
+          one step at a time to find where it goes wrong.
+
+      - type: quiz
+        id: m20-l02-q1
+        question: "Which query follows the production habits best?"
+        options:
+          - "select * from orders where status='delivered'"
+          - "SELECT order_id, order_date, status FROM orders WHERE status = 'delivered' ORDER BY order_date, order_id;"
+          - "SELECT * FROM orders o, customers c WHERE o.customer_id = c.customer_id"
+          - "SELECT order_id FROM orders ORDER BY order_date LIMIT 10"
+        answer: 1
+        explanation: |
+          The second query names its columns, uses uppercase keywords, ends with a
+          semicolon and sorts with a tie-breaker. The others use `SELECT *`, have
+          no tie-breaker, or mix the old comma join with `SELECT *`.
+
+      - type: predict
+        id: m20-l02-p1
+        question: "What is the name of the second column in the result of this query?"
+        sql: |
+          SELECT state, COUNT(*)
+          FROM customers
+          GROUP BY state
+          ORDER BY state
+          LIMIT 3;
+        options: ["count", "COUNT(*)", "customers", "An error"]
+        answer: 0
+        explanation: |
+          PostgreSQL names an unaliased `COUNT(*)` column `count`. Add `AS customer_count`
+          to choose a name that explains the number.
+
+      - type: fill
+        id: m20-l02-f1
+        prompt: "Complete the query. The CTE is named `delivered_orders`, and the final step counts its rows."
+        template: |
+          WITH ___ AS (
+              SELECT order_id
+              FROM orders
+              WHERE status = 'delivered'
+          )
+          SELECT COUNT(*)
+          FROM ___;
+        answers:
+          - ["delivered_orders"]
+          - ["delivered_orders"]
+        explanation: "A CTE is named right after `WITH`, and you use that same name in the `FROM` of the final step."
+
+      - type: parsons
+        id: m20-l02-o1
+        prompt: "Put the lines in a clear order: the three customers with the most delivered orders."
+        lines:
+          - SELECT c.first_name, c.last_name, COUNT(*) AS delivered_orders
+          - FROM customers AS c
+          - JOIN orders AS o
+          -      ON o.customer_id = c.customer_id
+          - WHERE o.status = 'delivered'
+          - GROUP BY c.customer_id, c.first_name, c.last_name
+          - ORDER BY delivered_orders DESC, c.customer_id
+          - LIMIT 3;
+        distractors:
+          - HAVING o.status = 'delivered'
+
+      - type: exercise
+        id: m20-l02-e1
+        title: The five most expensive active products
+        prompt: |
+          Show `product_id`, `name` and `price` of the **5 most expensive products that
+          are still for sale** (`is_active` is true).
+
+          Sort them by `price` from highest to lowest. If two products have the same
+          price, sort them by `product_id` from lowest to highest.
+        solution: |
+          SELECT product_id, name, price
+          FROM products
+          WHERE is_active
+          ORDER BY price DESC, product_id
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - Filter the rows to active products first, then sort them.
+          - Sort by price from highest to lowest, then by product_id as the tie-breaker.
+          - "SELECT product_id, name, price FROM products WHERE ___ ORDER BY ___ DESC, ___ LIMIT ___;"
+        explanation: |
+          `WHERE is_active` keeps only the products still for sale, since the column
+          is true or false. The `product_id` tie-breaker makes the order complete, so
+          the two products costing 899.99 always appear in the same order.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l02-e2
+        title: The five most recent orders
+        prompt: |
+          Show `order_id`, `order_date` and `status` for the **5 most recent orders**.
+          Newest means the latest `order_date`. If two orders share a date, the one
+          with the higher `order_id` is newer.
+
+          Show the newest order first.
+        solution: |
+          SELECT order_id, order_date, status
+          FROM orders
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - Sort the orders from newest to oldest, then take the first five.
+          - Two orders share the date 2024-12-29. The higher `order_id` must come first.
+          - "SELECT order_id, order_date, status FROM orders ORDER BY order_date ___, order_id ___ LIMIT ___;"
+        explanation: |
+          Listing the three columns by name keeps the result small and clear. The
+          second column in `ORDER BY` breaks ties on the same date, so the five rows
+          are always the same.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l02-e3
+        title: Customers who never ordered
+        prompt: |
+          Use a CTE named `buyers` that lists each `customer_id` found in `orders`,
+          once per customer.
+
+          Then show `customer_id`, `first_name` and `last_name` of every customer
+          who is **not** in `buyers`. Sort the rows by `customer_id`.
+        solution: |
+          WITH buyers AS (
+              SELECT DISTINCT customer_id
+              FROM orders
+          )
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name
+          FROM customers AS c
+          LEFT JOIN buyers AS b
+                 ON b.customer_id = c.customer_id
+          WHERE b.customer_id IS NULL
+          ORDER BY c.customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - "The CTE is `WITH buyers AS (SELECT DISTINCT customer_id FROM orders)`."
+          - A LEFT JOIN keeps every customer. Customers without a match get NULL in the `buyers` columns.
+          - "...LEFT JOIN buyers AS b ON b.customer_id = c.customer_id WHERE b.customer_id ___ NULL;"
+        explanation: |
+          Customers who never ordered have no row in `buyers`, so the LEFT JOIN gives
+          them NULL. Keeping only the NULL rows finds them. Ten customers, numbered
+          141 to 150, never ordered.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l02-e4
+        title: Top 3 customers in 2024, with a CTE
+        prompt: |
+          Use a CTE named `revenue_2024` that holds, for each `customer_id`, the total
+          revenue of its **delivered** orders placed in **2024**. Use the line
+          formula `quantity * unit_price * (1 - discount)`.
+
+          Then show the **3 customers with the highest revenue**, with the columns
+          `first_name`, `last_name` and `revenue`. Round `revenue` to 2 decimal
+          places. Sort by revenue from highest to lowest, then by `customer_id`.
+        solution: |
+          WITH revenue_2024 AS (
+              SELECT o.customer_id,
+                     SUM(i.quantity * i.unit_price * (1 - i.discount)) AS revenue
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              WHERE o.status = 'delivered'
+                AND o.order_date >= '2024-01-01'
+                AND o.order_date < '2025-01-01'
+              GROUP BY o.customer_id
+          )
+          SELECT c.first_name,
+                 c.last_name,
+                 ROUND(r.revenue, 2) AS revenue
+          FROM revenue_2024 AS r
+          JOIN customers AS c
+               ON c.customer_id = r.customer_id
+          ORDER BY r.revenue DESC, c.customer_id
+          LIMIT 3;
+        ordered: true
+        columnNames: true
+        hints:
+          - Build the CTE first. It needs orders, order_items, the status and the 2024 dates.
+          - Group the CTE by `customer_id`, and add up the line formula with SUM.
+          - "...GROUP BY o.customer_id) SELECT c.first_name, c.last_name, ROUND(r.revenue, 2) AS revenue FROM revenue_2024 AS r JOIN customers AS c ON c.customer_id = r.customer_id ORDER BY ___ LIMIT ___;"
+        explanation: |
+          The CTE does the heavy lifting, and the final `SELECT` only adds names and
+          sorting. Dates are written as a range (`>= 2024-01-01` and `< 2025-01-01`),
+          which is the safe pattern for a whole year, even if the column later
+          holds a time of day.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l02-e5
+        title: Clean up this query
+        prompt: |
+          The starter query works, but it breaks several habits: it uses `SELECT *`,
+          it has no table aliases and no names for the columns.
+
+          Rewrite it so it shows `order_item_id`, `order_id`, `product_name` and
+          `quantity`, for order lines with a `quantity` of 3 or more. Get the
+          product name from `products.name`, and rename it `product_name`.
+
+          Sort by `quantity` from highest to lowest, then by `order_item_id`, and
+          show the first 5 rows.
+        starter: |
+          select * from order_items i join products p on p.product_id = i.product_id where i.quantity >= 3 order by i.quantity desc limit 5;
+        solution: |
+          SELECT i.order_item_id,
+                 i.order_id,
+                 p.name AS product_name,
+                 i.quantity
+          FROM order_items AS i
+          JOIN products AS p
+               ON p.product_id = i.product_id
+          WHERE i.quantity >= 3
+          ORDER BY i.quantity DESC, i.order_item_id
+          LIMIT 5;
+        ordered: true
+        columnNames: true
+        hints:
+          - Choose the four columns by name, and write `i.` or `p.` in front of each one.
+          - "The name comes from `products`, so write `p.name AS product_name`."
+          - "...ORDER BY i.quantity DESC, i.order_item_id LIMIT 5;"
+        explanation: |
+          The starter returns every column and gives no order to the rows with the
+          same quantity. The solution keeps only the four columns the reader needs,
+          and the `order_item_id` tie-breaker makes the five rows stable.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Readable layout
+        sql: |
+          SELECT c.customer_id,
+                 c.first_name
+          FROM customers AS c
+          WHERE c.state = 'CA'
+          ORDER BY c.customer_id
+          LIMIT 5;
+        note: "One clause per line. Name every column you need."
+      - title: Name a result
+        sql: "SELECT state, COUNT(*) AS customer_count FROM customers GROUP BY state;"
+        note: "Without AS, the count column is called count."
+      - title: Complete ORDER BY
+        sql: "ORDER BY price DESC, product_id;"
+        note: "Add a unique column as the tie-breaker so the order never changes."
+      - title: Name each step with a CTE
+        sql: |
+          WITH delivered AS (
+              SELECT customer_id
+              FROM orders
+              WHERE status = 'delivered'
+          )
+          SELECT COUNT(*) FROM delivered;
+        note: "Each CTE is a named step. Use -- for a comment on one line."
+
   # @@NEXT_LESSON@@
 
 testPool:
