@@ -991,3 +991,1874 @@ challenges:
       Set operations can be nested inside subqueries. Here the outer query gives one row per user, and each count is a small set query that uses that user's rows.
 
       `UNION` gives the films touched by either activity, `INTERSECT` the films in both, and `EXCEPT` the films watched but not rated. Notice that `EXCEPT` is not symmetric: the order of its two sides matters.
+
+  - id: ch-i-029
+    title: Our most active customers
+    difficulty: medium
+    dataset: shop
+    module: m09
+    tags: [cte, aggregation, join, filter]
+    prompt: |
+      The customer success team wants to call the customers who place the most orders.
+
+      Use a CTE named `order_counts` to count the orders of each customer. Every order counts, whatever its status.
+
+      Show `customer_id`, `first_name`, `last_name` and `order_count` for the customers with **more than 18** orders. Sort by `order_count` from highest to lowest, then by `customer_id`.
+    solution: |
+      WITH order_counts AS (
+          SELECT customer_id,
+                 COUNT(*) AS order_count
+          FROM orders
+          GROUP BY customer_id
+      )
+      SELECT c.customer_id,
+             c.first_name,
+             c.last_name,
+             oc.order_count
+      FROM order_counts oc
+      JOIN customers c
+          ON c.customer_id = oc.customer_id
+      WHERE oc.order_count > 18
+      ORDER BY oc.order_count DESC, c.customer_id;
+    ordered: true
+    hints:
+      - "A CTE is a named query placed before the main SELECT, with WITH name AS (...). Build the order counts first."
+      - "Count the orders per customer_id, then join the result to customers to get the names. Keep the counts above 18."
+      - "WITH order_counts AS (SELECT customer_id, COUNT(*) AS order_count FROM orders GROUP BY customer_id) SELECT ... FROM order_counts oc JOIN customers c ON ___ WHERE ___;"
+    explanation: |
+      A **CTE** (common table expression) gives a name to a query, so the main query can read it like a table. It makes long queries easier to read, one step at a time.
+
+      Here the filter `> 18` is applied to the count. The numbers are small, but the same pattern works for any filter.
+
+  - id: ch-i-030
+    title: Letter grades for the fall term
+    difficulty: medium
+    dataset: school
+    module: m09
+    tags: [cte, case, aggregation, chained-ctes]
+    prompt: |
+      The report cards use letter grades. For each student, take the average of their final scores in the **2024-Fall** term. Only courses that have a final score count.
+
+      Then give each student a letter:
+
+      - `A` for an average of 90 or more
+      - `B` for 80 up to 89.99
+      - `C` for 70 up to 79.99
+      - `D` for 60 up to 69.99
+      - `F` for less than 60
+
+      Use one CTE for the averages and a second CTE for the letters. Show `letter` and `students` (how many students received that letter). Sort by `letter`.
+    solution: |
+      WITH averages AS (
+          SELECT student_id,
+                 AVG(final_score) AS avg_score
+          FROM enrollments
+          WHERE term = '2024-Fall'
+            AND final_score IS NOT NULL
+          GROUP BY student_id
+      ),
+      graded AS (
+          SELECT CASE
+                     WHEN avg_score >= 90 THEN 'A'
+                     WHEN avg_score >= 80 THEN 'B'
+                     WHEN avg_score >= 70 THEN 'C'
+                     WHEN avg_score >= 60 THEN 'D'
+                     ELSE 'F'
+                 END AS letter
+          FROM averages
+      )
+      SELECT letter,
+             COUNT(*) AS students
+      FROM graded
+      GROUP BY letter
+      ORDER BY letter;
+    ordered: true
+    hints:
+      - "The first CTE gives one average per student. The second CTE turns each average into a letter with CASE."
+      - "Remember that the rows with NULL final scores must be left out before you average."
+      - "WITH averages AS (...), graded AS (SELECT CASE WHEN avg_score >= 90 THEN 'A' ... END AS letter FROM averages) SELECT letter, COUNT(*) ..."
+    explanation: |
+      Several CTEs are separated by commas, and each one can use the one before it. This is a pipeline: raw enrollments, then one average per student, then one letter per student, then the count.
+
+      Writing the thresholds from the highest to the lowest means each `WHEN` only needs one test. The final `ELSE` catches everything below 60.
+
+  - id: ch-i-031
+    title: Biggest teams in the company
+    difficulty: hard
+    dataset: company
+    module: m09
+    tags: [cte, recursive, hierarchy, aggregation]
+    prompt: |
+      HR wants to know which managers have the biggest teams. A person is in a manager's team when they report to that manager directly, or report to someone who reports to the manager, and so on.
+
+      Use a recursive CTE to walk down the reporting chain. Count everyone in the `employees` table, including former employees.
+
+      Show `emp_id`, `full_name` (first name, a space, then last name) and `team_size` for each manager with **at least 10** people in their team. Sort by `team_size` from highest to lowest, then by `emp_id`.
+    solution: |
+      WITH RECURSIVE chain AS (
+          SELECT manager_id AS top_id,
+                 emp_id AS report_id
+          FROM employees
+          WHERE manager_id IS NOT NULL
+          UNION ALL
+          SELECT c.top_id,
+                 e.emp_id
+          FROM chain c
+          JOIN employees e
+              ON e.manager_id = c.report_id
+      )
+      SELECT m.emp_id,
+             m.first_name || ' ' || m.last_name AS full_name,
+             COUNT(*) AS team_size
+      FROM chain c
+      JOIN employees m
+          ON m.emp_id = c.top_id
+      GROUP BY m.emp_id, m.first_name, m.last_name
+      HAVING COUNT(*) >= 10
+      ORDER BY team_size DESC, m.emp_id;
+    ordered: true
+    hints:
+      - "The first part of the recursive CTE holds the direct reports: pairs of (manager, employee). The second part adds the reports of each employee found so far."
+      - "Keep the manager as the top_id column all the way down, so each row says which manager the person belongs to."
+      - "WITH RECURSIVE chain AS (SELECT manager_id AS top_id, emp_id AS report_id FROM employees WHERE ___ UNION ALL SELECT c.top_id, e.emp_id FROM chain c JOIN employees e ON ___) SELECT ... GROUP BY ... HAVING COUNT(*) >= 10;"
+    explanation: |
+      A **recursive CTE** has two parts joined by `UNION ALL`. The first part gives the starting rows (direct reports). The second part repeats itself, joining to the rows found so far, until no new rows appear.
+
+      Here each row of `chain` is one (manager, person) pair at any depth. Counting the rows for each manager gives the team size, including people several levels below.
+
+  - id: ch-i-032
+    title: Products in each department, sub-categories included
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, recursive, hierarchy, aggregation, left-join]
+    prompt: |
+      The catalog team groups the categories into departments. A department is a top-level category, which means a category with no parent. It includes its own products and the products of every sub-category below it, at any depth.
+
+      Use a recursive CTE to walk down the category tree. For each department, show `department` (its name) and `products` (the number of products in the department, including the products of all its sub-categories). Count every product, active or not.
+
+      Show a department with no products as `0`. Sort by `department`.
+    solution: |
+      WITH RECURSIVE tree AS (
+          SELECT category_id AS dept_id,
+                 category_id
+          FROM categories
+          WHERE parent_id IS NULL
+          UNION ALL
+          SELECT t.dept_id,
+                 c.category_id
+          FROM tree t
+          JOIN categories c
+              ON c.parent_id = t.category_id
+      )
+      SELECT d.name AS department,
+             COUNT(p.product_id) AS products
+      FROM tree t
+      JOIN categories d
+          ON d.category_id = t.dept_id
+      LEFT JOIN products p
+          ON p.category_id = t.category_id
+      GROUP BY d.category_id, d.name
+      ORDER BY department;
+    ordered: true
+    hints:
+      - "Keep the department id in every row of the recursive CTE, so you always know which top-level category a row belongs to."
+      - "Each row of the tree is a (department, category) pair. Join the products to the category in that pair."
+      - "Use COUNT(p.product_id), not COUNT(*), so that a department with no products gives 0."
+    explanation: |
+      The recursive CTE collects every category under each top-level department, at any depth. Then the products are joined to those categories.
+
+      `COUNT(p.product_id)` counts only real products, so a department with no matching products shows `0`. `COUNT(*)` would count the one row produced by the `LEFT JOIN` and show `1` by mistake.
+
+  - id: ch-i-033
+    title: Quiet days on the tablet
+    difficulty: hard
+    dataset: movies
+    module: m09
+    tags: [cte, recursive, date-series, left-join]
+    prompt: |
+      The FlickNest team wants to know which days in **January 2024** had **no** playback on a tablet. The `watch_history` table has the time of each play in `started_at`, and the device in `device`.
+
+      Use a recursive CTE to make a list of all 31 days of January 2024. Then find the days with no tablet playback at all. Show `day` (as a date) for each of these days. Sort by `day`.
+    solution: |
+      WITH RECURSIVE days AS (
+          SELECT DATE '2024-01-01' AS day
+          UNION ALL
+          SELECT (day + 1)::date
+          FROM days
+          WHERE day < DATE '2024-01-31'
+      )
+      SELECT d.day
+      FROM days d
+      LEFT JOIN watch_history w
+          ON w.started_at::date = d.day
+         AND w.device = 'tablet'
+      WHERE w.watch_id IS NULL
+      ORDER BY d.day;
+    ordered: true
+    hints:
+      - "Start the recursive CTE at 2024-01-01 and add one day at a time until 2024-01-31."
+      - "Left join the days to the plays, then keep the days where no play matched."
+      - "The device test belongs in the ON clause with the join. Put it in WHERE and the days with no tablet play disappear."
+    explanation: |
+      A recursive CTE is a handy way to generate a list of dates, even when the table has gaps. A `LEFT JOIN` from the list of dates keeps the days that have no matching rows.
+
+      The condition on `device` must be part of the `ON` clause. If you move it to `WHERE`, the rows that had no match are removed before the `IS NULL` test can keep them.
+
+  - id: ch-i-034
+    title: Bursts of large debits
+    difficulty: hard
+    dataset: bank
+    module: m09
+    tags: [cte, pipeline, aggregation, fraud-check]
+    prompt: |
+      The fraud team looks for bursts of large debits. A burst is an account with **at least four** debits of **500 or more** inside the same clock hour, for example between 02:00:00 and 02:59:59.
+
+      Use two CTEs. The first keeps the debits of 500 or more, which are the rows where `amount` is `-500` or less. The second groups those debits by account and by clock hour, and keeps the groups with at least four debits.
+
+      Show `account_id`, `hour` (the start of the clock hour), `debits` (how many debits) and `total_debited` (the total of those debits as a positive amount, rounded to 2 decimals). Sort by `account_id`.
+    solution: |
+      WITH big_debits AS (
+          SELECT account_id,
+                 txn_time,
+                 amount
+          FROM transactions
+          WHERE amount <= -500
+      ),
+      bursts AS (
+          SELECT account_id,
+                 date_trunc('hour', txn_time) AS hour,
+                 COUNT(*) AS debits,
+                 ROUND(-SUM(amount), 2) AS total_debited
+          FROM big_debits
+          GROUP BY account_id,
+                   date_trunc('hour', txn_time)
+          HAVING COUNT(*) >= 4
+      )
+      SELECT account_id,
+             hour,
+             debits,
+             total_debited
+      FROM bursts
+      ORDER BY account_id;
+    ordered: true
+    hints:
+      - "First build big_debits with a WHERE on amount. Then group the rows of that CTE, not of the whole table."
+      - "date_trunc('hour', txn_time) rounds a timestamp down to the start of its hour, so all rows in the same hour get the same value."
+      - "WITH big_debits AS (SELECT ... WHERE amount <= -500), bursts AS (SELECT ... GROUP BY account_id, date_trunc('hour', txn_time) HAVING ___) SELECT ... FROM bursts ..."
+    explanation: |
+      Each CTE does one job: the first chooses the rows, and the second summarises them. Testing the pieces one at a time is a good habit, so you can run `SELECT * FROM big_debits` on its own to check it.
+
+      `date_trunc` is a handy way to group timestamps by hour, day or month. The bank records money out as negative amounts, so `-SUM(amount)` shows the total as a positive number.
+
+  - id: ch-i-035
+    title: Customers who spend more than twice the average
+    difficulty: hard
+    dataset: shop
+    module: m09
+    tags: [cte, pipeline, aggregation, cross-join]
+    prompt: |
+      The VIP team wants the customers who spend a lot. Look only at **delivered** orders. For each customer with at least one delivered order, work out their total delivered spend: the sum of `quantity * unit_price * (1 - discount)` over all their delivered order lines.
+
+      Use one CTE for each customer's spend. Use a second CTE for the average of those spends, over the same customers.
+
+      Show `customer_id`, `full_name` (first name, a space, then last name) and `spend` (rounded to 2 decimals) for every customer whose spend is **more than twice** that average. Sort by `spend` from highest to lowest, then by `customer_id`.
+    solution: |
+      WITH customer_spend AS (
+          SELECT o.customer_id,
+                 SUM(i.quantity * i.unit_price
+                     * (1 - i.discount)) AS spend
+          FROM orders o
+          JOIN order_items i
+              ON i.order_id = o.order_id
+          WHERE o.status = 'delivered'
+          GROUP BY o.customer_id
+      ),
+      average_spend AS (
+          SELECT AVG(spend) AS avg_spend
+          FROM customer_spend
+      )
+      SELECT c.customer_id,
+             c.first_name || ' ' || c.last_name AS full_name,
+             ROUND(cs.spend, 2) AS spend
+      FROM customer_spend cs
+      JOIN customers c
+          ON c.customer_id = cs.customer_id
+      CROSS JOIN average_spend a
+      WHERE cs.spend > 2 * a.avg_spend
+      ORDER BY spend DESC, c.customer_id;
+    ordered: true
+    hints:
+      - "Make the first CTE one row per customer with their delivered spend, using a GROUP BY."
+      - "The second CTE has a single row with the average of the first CTE. Attach that single row to every customer with CROSS JOIN."
+      - "WHERE cs.spend > 2 * a.avg_spend compares each customer with the average."
+    explanation: |
+      Averaging per-customer totals is different from averaging individual order lines. Here each customer counts once, so a big spender does not pull the average up in a misleading way.
+
+      `CROSS JOIN` pairs every row with a single-row CTE. It is safe here only because the average CTE has exactly one row.
+
+  - id: ch-i-036
+    title: How much of each budget is committed to projects
+    difficulty: hard
+    dataset: company
+    module: m09
+    tags: [cte, pipeline, aggregation, percentage]
+    prompt: |
+      The finance team checks how much of each department's yearly budget is already committed to projects. Use the `projects` table for the project budgets and the `departments` table for the department budgets.
+
+      Use one CTE to add up the project budgets for each department. Then compare that total with the department's `budget`.
+
+      Show each department whose project budgets add up to **at least 25%** of its budget:
+
+      - `department`: the department name
+      - `project_total`: the sum of its project budgets
+      - `budget`: the department's budget
+      - `committed_pct`: the project total as a percentage of the budget, rounded to 1 decimal
+
+      Sort by `committed_pct` from highest to lowest, then by `department`.
+    solution: |
+      WITH project_totals AS (
+          SELECT dept_id,
+                 SUM(budget) AS project_total
+          FROM projects
+          GROUP BY dept_id
+      )
+      SELECT d.name AS department,
+             pt.project_total,
+             d.budget,
+             ROUND(100 * pt.project_total
+                   / d.budget, 1) AS committed_pct
+      FROM project_totals pt
+      JOIN departments d
+          ON d.dept_id = pt.dept_id
+      WHERE pt.project_total >= 0.25 * d.budget
+      ORDER BY committed_pct DESC, department;
+    ordered: true
+    hints:
+      - "Add up the project budgets per dept_id in the CTE, then join the CTE to departments to get the department budget."
+      - "Compare the two numbers with a WHERE clause. 25% is the same as 0.25 times the budget."
+      - "percentage = 100 * project_total / budget. Write 100 first so the division is not done in whole numbers."
+    explanation: |
+      A CTE that does one job (here, adding up projects) keeps the final query short. Joining the CTE back to `departments` brings in the department name and budget.
+
+      The budgets are `numeric` values, so the division gives decimals. Multiplying by 100 before dividing reads more naturally as a percentage.
+
+  - id: ch-i-037
+    title: Every city reachable from Seattle
+    difficulty: hard
+    dataset: blank
+    module: m09
+    tags: [cte, recursive, graph, cycle, array]
+    setup: |
+      CREATE TABLE routes (
+          from_city TEXT NOT NULL,
+          to_city TEXT NOT NULL
+      );
+      INSERT INTO routes (from_city, to_city) VALUES
+          ('Seattle', 'Portland'),
+          ('Portland', 'Sacramento'),
+          ('Sacramento', 'Los Angeles'),
+          ('Los Angeles', 'San Diego'),
+          ('Seattle', 'Spokane'),
+          ('Spokane', 'Boise'),
+          ('Boise', 'Portland'),
+          ('Portland', 'Seattle'),
+          ('Denver', 'Boise');
+    prompt: |
+      The logistics team has a table called `routes`. Each row is a one-way road from `from_city` to `to_city`. Some roads go in a circle, such as Portland back to Seattle.
+
+      Find every city you can reach from **Seattle** by following roads, and the **fewest stops** it takes to get there. Seattle itself is not in the answer. A city directly on a road from Seattle needs 1 stop, a city two roads away needs 2 stops, and so on.
+
+      Use a recursive CTE, and stop following a path when it would visit a city it has already visited, so the query never runs forever. Show `city` and `stops`, sorted by `stops`, then by `city`.
+    solution: |
+      WITH RECURSIVE reach AS (
+          SELECT to_city AS city,
+                 1 AS stops,
+                 ARRAY[from_city, to_city] AS path
+          FROM routes
+          WHERE from_city = 'Seattle'
+          UNION ALL
+          SELECT r.to_city,
+                 reach.stops + 1,
+                 reach.path || r.to_city
+          FROM reach
+          JOIN routes r
+              ON r.from_city = reach.city
+          WHERE NOT (r.to_city = ANY (reach.path))
+      )
+      SELECT city,
+             MIN(stops) AS stops
+      FROM reach
+      GROUP BY city
+      ORDER BY stops, city;
+    ordered: true
+    hints:
+      - "Start with the roads that leave Seattle. Each recursive step follows one more road and adds 1 to the stop count."
+      - "Keep an array of the cities on the path. Skip a road when its destination is already in that array, which stops the loop."
+      - "A city can be reached by several paths, so take MIN(stops) for each city at the end."
+    explanation: |
+      A recursive CTE is the standard way to walk a graph. The `path` array remembers the cities on the way, so a road that leads back to a visited city is skipped. Without that check, the Portland to Seattle road would make the query repeat forever.
+
+      Because a city can be reached by several routes of different lengths, `MIN(stops)` picks the shortest one. This is the same idea as a shortest-path search on a map.
+
+  - id: ch-i-038
+    title: Each Engineering salary next to the department average
+    difficulty: medium
+    dataset: company
+    module: m10
+    tags: [window, over, partition-by, aggregation]
+    prompt: |
+      The HR team wants to compare each Engineering salary with the department average. Look at the people in Engineering (`dept_id` 2), including former employees.
+
+      Show `emp_id`, `first_name`, `salary` and `dept_avg`. The `dept_avg` column is the average salary of the Engineering department, rounded to 2 decimals. It must show the same value on every row, next to each salary, and each row must still be one person.
+
+      Sort by `emp_id`.
+    solution: |
+      SELECT emp_id,
+             first_name,
+             salary,
+             ROUND(AVG(salary) OVER (
+                 PARTITION BY dept_id
+             ), 2) AS dept_avg
+      FROM employees
+      WHERE dept_id = 2
+      ORDER BY emp_id;
+    ordered: true
+    hints:
+      - "A window function with OVER () calculates an aggregate but keeps every row. It is different from GROUP BY, which would merge the rows."
+      - "AVG(salary) OVER (PARTITION BY dept_id) gives the average for the row's department, repeated on every row of that department."
+      - "SELECT emp_id, first_name, salary, ROUND(AVG(salary) OVER (___), 2) AS dept_avg FROM employees WHERE dept_id = 2 ORDER BY emp_id;"
+    explanation: |
+      A window function does a calculation over a group of rows, but it keeps every row. `PARTITION BY dept_id` says which rows form the group.
+
+      With `GROUP BY` you would get one row for the department. The window version keeps the person-level rows, so you can see each salary next to the average.
+
+  - id: ch-i-039
+    title: Which lines make up each order
+    difficulty: medium
+    dataset: shop
+    module: m10
+    tags: [window, over, partition-by, percentage]
+    prompt: |
+      Finance wants to see which product lines make up most of each order. For the orders with `order_id` 1, 2 and 3, look at each order line's value before any discount. The value of a line is `quantity * unit_price`.
+
+      Show these columns:
+
+      - `order_id`
+      - `order_item_id`
+      - `line_value`: the value of the line, rounded to 2 decimals
+      - `share_pct`: the line's value as a percentage of the total value of its order, rounded to 1 decimal
+
+      Sort by `order_id`, then by `order_item_id`.
+    solution: |
+      SELECT order_id,
+             order_item_id,
+             ROUND(quantity * unit_price, 2) AS line_value,
+             ROUND(100 * (quantity * unit_price)
+                   / SUM(quantity * unit_price) OVER (
+                         PARTITION BY order_id
+                     ), 1) AS share_pct
+      FROM order_items
+      WHERE order_id IN (1, 2, 3)
+      ORDER BY order_id, order_item_id;
+    ordered: true
+    hints:
+      - "The total of an order is a sum over all its lines. A window SUM with PARTITION BY order_id gives that total on every line."
+      - "Divide the line value by the window total, then multiply by 100 to get a percentage."
+      - "ROUND(100 * (quantity * unit_price) / SUM(quantity * unit_price) OVER (PARTITION BY ___), 1)"
+    explanation: |
+      Partitioning by `order_id` restarts the window for each order, so each line is compared only with the lines of its own order. The `WHERE` clause runs first, so the totals include every line of the three orders.
+
+      Writing `100 *` before the division keeps the result a decimal number and gives a percentage that is easy to read.
+
+  - id: ch-i-040
+    title: Row number and rank in a midterm
+    difficulty: medium
+    dataset: school
+    module: m10
+    tags: [window, row-number, rank, ties]
+    prompt: |
+      The school wants to compare two kinds of ranking for the **midterm** of course `2`, using only the midterms taken before 1 January 2025 (`exam_date` earlier than `2025-01-01`). Some students have the same score.
+
+      For each of these midterm results, show:
+
+      - `student_id`
+      - `score`
+      - `row_num`: the position from 1 to n, from the highest score to the lowest, using `ROW_NUMBER`. When two scores are the same, the lower `student_id` comes first.
+      - `score_rank`: the position using `RANK`. Students with the same score share the same rank.
+
+      Sort by `row_num`.
+    solution: |
+      SELECT student_id,
+             score,
+             ROW_NUMBER() OVER (
+                 ORDER BY score DESC, student_id
+             ) AS row_num,
+             RANK() OVER (
+                 ORDER BY score DESC
+             ) AS score_rank
+      FROM exam_scores
+      WHERE course_id = 2
+        AND exam_type = 'midterm'
+        AND exam_date < '2025-01-01'
+      ORDER BY row_num;
+    ordered: true
+    hints:
+      - "ROW_NUMBER gives every row its own number, even when scores are equal. Add student_id to ORDER BY to make the order fixed."
+      - "RANK gives tied rows the same number, then skips the next numbers. Two rows at rank 1 are followed by rank 3."
+      - "SELECT student_id, score, ROW_NUMBER() OVER (ORDER BY score DESC, ___) AS row_num, RANK() OVER (ORDER BY ___ DESC) AS score_rank FROM exam_scores WHERE ... ORDER BY row_num;"
+    explanation: |
+      `ROW_NUMBER` always gives 1, 2, 3 and so on, so two students with the same score get different numbers. `RANK` gives them the same number and then leaves a gap.
+
+      When you need a single unique position, such as to pick exactly one row per group, use `ROW_NUMBER` with a tie-breaker. When you want to show a real leaderboard, `RANK` is usually the right choice.
+
+  - id: ch-i-041
+    title: The two best-paid people in each department
+    difficulty: hard
+    dataset: company
+    module: m10
+    tags: [window, row-number, top-n-per-group, subquery]
+    prompt: |
+      HR wants the two best-paid **current** employees in each department. Current means `terminated_on` is empty. Employees with no department are left out.
+
+      Rank the employees within each department by `salary`, highest first. If two people have the same salary, the one with the lower `emp_id` ranks first. Use `ROW_NUMBER` for the ranking.
+
+      Show `dept_id`, `emp_id`, `first_name`, `salary` and `pay_rank` (1 for the best-paid person). Keep only the ranks 1 and 2. Sort by `dept_id`, then by `pay_rank`.
+    solution: |
+      SELECT dept_id,
+             emp_id,
+             first_name,
+             salary,
+             pay_rank
+      FROM (
+          SELECT dept_id,
+                 emp_id,
+                 first_name,
+                 salary,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY dept_id
+                     ORDER BY salary DESC, emp_id
+                 ) AS pay_rank
+          FROM employees
+          WHERE terminated_on IS NULL
+            AND dept_id IS NOT NULL
+      ) AS ranked
+      WHERE pay_rank <= 2
+      ORDER BY dept_id, pay_rank;
+    ordered: true
+    hints:
+      - "You cannot use a window function in WHERE. Put the ranking in a subquery and filter the ranks in the outer query."
+      - "PARTITION BY dept_id starts the numbering again for each department. ORDER BY salary DESC, emp_id gives a fixed order."
+      - "SELECT ... FROM (SELECT ..., ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY ___) AS pay_rank FROM employees WHERE ___) AS ranked WHERE pay_rank <= 2;"
+    explanation: |
+      This is the classic **top-N per group** pattern: rank inside a subquery, then keep the top rows outside. Filtering in the same `SELECT` as the window function does not work, because windows are calculated after `WHERE`.
+
+      The tie-breaker `emp_id` makes sure exactly two people are chosen per department, even when two salaries are the same.
+
+  - id: ch-i-042
+    title: Each customer's latest order
+    difficulty: hard
+    dataset: shop
+    module: m10
+    tags: [window, row-number, deduplication, subquery]
+    prompt: |
+      The retention team wants each customer's most recent order. Look only at the customers with `customer_id` from 1 to 15.
+
+      For each of these customers who has placed at least one order, show `customer_id`, `order_id`, `order_date` and `status` of their most recent order. Two orders on the same date are compared by `order_id`: the higher `order_id` is the more recent one. Use `ROW_NUMBER`.
+
+      Sort by `customer_id`.
+    solution: |
+      SELECT customer_id,
+             order_id,
+             order_date,
+             status
+      FROM (
+          SELECT customer_id,
+                 order_id,
+                 order_date,
+                 status,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY customer_id
+                     ORDER BY order_date DESC,
+                              order_id DESC
+                 ) AS rn
+          FROM orders
+          WHERE customer_id BETWEEN 1 AND 15
+      ) AS ranked
+      WHERE rn = 1
+      ORDER BY customer_id;
+    ordered: true
+    hints:
+      - "Number the orders of each customer, newest first, with ROW_NUMBER and PARTITION BY customer_id."
+      - "Keep only the row numbered 1. Put that test in an outer query, because WHERE cannot see the window result."
+      - "ORDER BY order_date DESC, order_id DESC means the newest date comes first, and the higher id wins a tie."
+    explanation: |
+      Keeping one row per group with `ROW_NUMBER() ... WHERE rn = 1` is a very common pattern. It is also a way to remove duplicates while keeping one chosen row.
+
+      The second column in `ORDER BY` decides which row is kept when the dates are equal. Without it the result could change from one run to the next.
+
+  - id: ch-i-043
+    title: Running balance of one account
+    difficulty: hard
+    dataset: bank
+    module: m10
+    tags: [window, running-total, sum-over, order-by]
+    prompt: |
+      The bank wants to see how the balance of account `3` changes over time. Start from zero before the first transaction. The running balance after each transaction is the sum of all amounts up to and including that transaction.
+
+      Show `txn_id`, `txn_time`, `amount`, `txn_type` and `balance` for every transaction on account `3`. The `balance` column is the running balance, rounded to 2 decimals.
+
+      Sort by `txn_time`, then by `txn_id`.
+    solution: |
+      SELECT txn_id,
+             txn_time,
+             amount,
+             txn_type,
+             ROUND(SUM(amount) OVER (
+                 ORDER BY txn_time, txn_id
+             ), 2) AS balance
+      FROM transactions
+      WHERE account_id = 3
+      ORDER BY txn_time, txn_id;
+    ordered: true
+    hints:
+      - "A running total is a window SUM with an ORDER BY inside OVER. The sum grows one row at a time."
+      - "Put the time and then the id in the ORDER BY, so two transactions at the same time always come in the same order."
+      - "SUM(amount) OVER (ORDER BY txn_time, txn_id)"
+    explanation: |
+      `SUM(...) OVER (ORDER BY ...)` adds up the rows from the start of the window to the current row. Adding `ORDER BY` inside `OVER` is what turns a total into a running total.
+
+      The `txn_id` tie-breaker matters when two transactions share a timestamp. Without it, the running balance could be different on each run.
+
+  - id: ch-i-044
+    title: Salary changes and the change from the last salary
+    difficulty: hard
+    dataset: company
+    module: m10
+    tags: [window, lag, salary, history]
+    prompt: |
+      The pay team wants to see the salary history of employees 23 and 40 with the size of each change. Use the `salary_history` table.
+
+      For each row of these two employees, show:
+
+      - `emp_id`
+      - `effective_date`
+      - `salary`: the salary from that date on
+      - `previous_salary`: the salary on the row before, which is empty for the first row of each employee
+      - `change_amount`: `salary` minus `previous_salary`, which is empty for the first row of each employee
+
+      Sort by `emp_id`, then by `effective_date`.
+    solution: |
+      SELECT emp_id,
+             effective_date,
+             salary,
+             LAG(salary) OVER (
+                 PARTITION BY emp_id
+                 ORDER BY effective_date
+             ) AS previous_salary,
+             salary - LAG(salary) OVER (
+                 PARTITION BY emp_id
+                 ORDER BY effective_date
+             ) AS change_amount
+      FROM salary_history
+      WHERE emp_id IN (23, 40)
+      ORDER BY emp_id, effective_date;
+    ordered: true
+    hints:
+      - "LAG(column) returns the value from the previous row in the window. It returns NULL for the first row."
+      - "Use PARTITION BY emp_id so that the previous row always belongs to the same employee, and ORDER BY effective_date so that the rows are in date order."
+      - "salary - LAG(salary) OVER (PARTITION BY emp_id ORDER BY effective_date) gives the change."
+    explanation: |
+      `LAG` looks back one row inside the window. It is the simplest way to compare a row with the one before it, such as this month's sales with last month's.
+
+      Any arithmetic with `NULL` gives `NULL`, so the first row of each employee has an empty change. That is correct, because there is nothing before it to compare with.
+
+  - id: ch-i-045
+    title: Best-rated films with DENSE_RANK
+    difficulty: hard
+    dataset: movies
+    module: m10
+    tags: [window, dense-rank, aggregation, having]
+    prompt: |
+      FlickNest wants a short list of its best-rated films. Only films with **at least 5** ratings count.
+
+      Rank the films by their average `stars`, highest first, using `DENSE_RANK`. Films with the same average share a rank, and the next rank has no gap.
+
+      Show `place` (the dense rank), `title`, `avg_stars` (the average, rounded to 2 decimals) and `ratings` (the number of ratings). Keep only the films in places 1, 2 and 3. Sort by `place`, then by `title`.
+    solution: |
+      SELECT place,
+             title,
+             avg_stars,
+             ratings
+      FROM (
+          SELECT m.title,
+                 ROUND(AVG(r.stars), 2) AS avg_stars,
+                 COUNT(*) AS ratings,
+                 DENSE_RANK() OVER (
+                     ORDER BY AVG(r.stars) DESC
+                 ) AS place
+          FROM movies m
+          JOIN ratings r
+              ON r.movie_id = m.movie_id
+          GROUP BY m.movie_id, m.title
+          HAVING COUNT(*) >= 5
+      ) AS ranked
+      WHERE place <= 3
+      ORDER BY place, title;
+    ordered: true
+    hints:
+      - "First group the ratings by movie and keep the movies with at least five ratings. Then rank the groups."
+      - "A window function can use an aggregate: DENSE_RANK() OVER (ORDER BY AVG(r.stars) DESC) ranks the grouped rows."
+      - "The rank must be calculated in a subquery, then filtered in the outer query with WHERE place <= 3."
+    explanation: |
+      `RANK` skips numbers after a tie (1, 1, 3), while `DENSE_RANK` does not (1, 1, 2). Use `DENSE_RANK` when you want the top three distinct values, not the top three rows.
+
+      The window is applied after `GROUP BY` and `HAVING`, so it ranks only the films that passed the filter.
+
+  - id: ch-i-046
+    title: Midterm scores against the course average
+    difficulty: hard
+    dataset: school
+    module: m10
+    tags: [window, avg-over, partition-by, comparison]
+    prompt: |
+      The school wants to see how each **midterm** result in course `1` compares with the course average. Use every midterm result for course `1`, whatever the date.
+
+      For each result, show:
+
+      - `exam_id`
+      - `student_id`
+      - `score`
+      - `course_avg`: the average score of all midterms of course `1`, rounded to 1 decimal
+      - `vs_avg`: `score` minus the average, rounded to 1 decimal. A positive value means above average.
+
+      Sort by `exam_id`.
+    solution: |
+      SELECT exam_id,
+             student_id,
+             score,
+             ROUND(AVG(score) OVER (
+                 PARTITION BY course_id
+             ), 1) AS course_avg,
+             ROUND(score - AVG(score) OVER (
+                 PARTITION BY course_id
+             ), 1) AS vs_avg
+      FROM exam_scores
+      WHERE course_id = 1
+        AND exam_type = 'midterm'
+      ORDER BY exam_id;
+    ordered: true
+    hints:
+      - "The average over the same group can be a window: AVG(score) OVER (PARTITION BY course_id). It is repeated on every row."
+      - "Subtract that window average from the row's score, just like any other number."
+      - "Filter to course 1 and midterms in the WHERE clause, so that the average is taken only over those rows."
+    explanation: |
+      Window functions can be combined with normal arithmetic. Here the average is calculated once per group, and each row compares its own score with it.
+
+      Because `WHERE` runs before the window functions, the average is taken only over the rows that passed the filter.
+
+  - id: ch-i-047
+    title: Days between each order of one customer
+    difficulty: hard
+    dataset: shop
+    module: m10
+    tags: [window, lag, dates, interval]
+    prompt: |
+      The retention team wants to know how often customer `6` (Noor Haddad) places an order. For each order of this customer, show the number of days since her previous order.
+
+      Show these columns:
+
+      - `order_id`
+      - `order_date`
+      - `previous_date`: the date of the previous order, which is empty for the first order
+      - `days_since_previous`: the number of days between `previous_date` and `order_date`, which is empty for the first order
+
+      Sort by `order_date`, then by `order_id`.
+    solution: |
+      SELECT order_id,
+             order_date,
+             LAG(order_date) OVER (
+                 ORDER BY order_date, order_id
+             ) AS previous_date,
+             order_date - LAG(order_date) OVER (
+                 ORDER BY order_date, order_id
+             ) AS days_since_previous
+      FROM orders
+      WHERE customer_id = 6
+      ORDER BY order_date, order_id;
+    ordered: true
+    hints:
+      - "Use LAG(order_date) to get the previous row's date. Order the window by order_date, then by order_id."
+      - "Subtracting two dates gives the number of days between them."
+      - "order_date - LAG(order_date) OVER (ORDER BY order_date, order_id)"
+    explanation: |
+      `LAG` is a clean way to compare each row with the one before it, without joining the table to itself.
+
+      Put the filter `customer_id = 6` in `WHERE`, so the window only sees that customer's orders. Subtracting two `date` values gives a whole number of days.
+
+  - id: ch-i-048
+    title: Smoothing the activity on one account
+    difficulty: medium
+    dataset: bank
+    module: m11
+    tags: [window, rows-frame, moving-average, frame]
+    prompt: |
+      The bank wants a smoothed view of the activity on account `4`. For each transaction, compute the moving average of `amount` over that transaction and the **two** transactions before it, in time order.
+
+      The first two transactions have fewer than three rows to average. For them, average only the rows that exist.
+
+      Show `txn_id`, `txn_time`, `amount` and `moving_avg` (rounded to 2 decimals). Sort by `txn_time`, then by `txn_id`.
+    solution: |
+      SELECT txn_id,
+             txn_time,
+             amount,
+             ROUND(AVG(amount) OVER (
+                 ORDER BY txn_time, txn_id
+                 ROWS BETWEEN 2 PRECEDING
+                          AND CURRENT ROW
+             ), 2) AS moving_avg
+      FROM transactions
+      WHERE account_id = 4
+      ORDER BY txn_time, txn_id;
+    ordered: true
+    hints:
+      - "A frame says which rows of the window are used for each row. ROWS BETWEEN 2 PRECEDING AND CURRENT ROW means this row and the two before it."
+      - "The frame needs an ORDER BY, so the 'two before' means the two earlier transactions in time order."
+      - "AVG(amount) OVER (ORDER BY txn_time, txn_id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)"
+    explanation: |
+      A **window frame** limits which rows the function looks at. `ROWS BETWEEN 2 PRECEDING AND CURRENT ROW` gives a moving average of three rows. At the start of the list there are fewer rows, and the average simply uses what exists.
+
+      Moving averages smooth noisy numbers, so trends are easier to see. The same frame works for a moving sum or a moving count.
+
+  - id: ch-i-049
+    title: Quartile groups in Engineering
+    difficulty: medium
+    dataset: company
+    module: m11
+    tags: [window, ntile, quartiles, ordering]
+    prompt: |
+      HR wants to split the Engineering department (`dept_id` 2, including former employees) into four equal groups by salary. Group 1 holds the highest salaries, and group 4 holds the lowest. Use `NTILE(4)`.
+
+      When two people have the same salary, the one with the lower `emp_id` comes first in the ordering.
+
+      Show `emp_id`, `first_name`, `salary` and `pay_group` (the result of `NTILE`). Sort by `pay_group`, then by `emp_id`.
+    solution: |
+      SELECT emp_id,
+             first_name,
+             salary,
+             NTILE(4) OVER (
+                 ORDER BY salary DESC, emp_id
+             ) AS pay_group
+      FROM employees
+      WHERE dept_id = 2
+      ORDER BY pay_group, emp_id;
+    ordered: true
+    hints:
+      - "NTILE(4) splits the ordered rows into four groups of nearly the same size, numbered 1 to 4."
+      - "To make group 1 the highest salaries, sort by salary DESC inside OVER. Add emp_id so that ties always fall in the same order."
+      - "NTILE(4) OVER (ORDER BY salary DESC, emp_id)"
+    explanation: |
+      `NTILE(n)` is a quick way to split rows into buckets, such as quartiles (4 groups) or deciles (10 groups). If the rows do not divide evenly, the first groups get one extra row.
+
+      The order inside `OVER` decides who goes in which group. Writing the tie-breaker `emp_id` makes the groups the same on every run.
+
+  - id: ch-i-050
+    title: Binge check with a 7-day range
+    difficulty: hard
+    dataset: movies
+    module: m11
+    tags: [window, range-frame, interval, timestamps]
+    prompt: |
+      FlickNest wants to see how many plays a viewer started in the last few days. For user `158`, count the plays in a 7-day window for each play.
+
+      For each play of this user, count every play of the same user, **including the play itself**, whose `started_at` is no earlier than 7 days before this play's `started_at`. Use `COUNT(*)` with a window that uses `RANGE` and an interval of 7 days.
+
+      Show `watch_id`, `started_at` and `plays_last_7_days`. Sort by `started_at`, then by `watch_id`.
+    solution: |
+      SELECT watch_id,
+             started_at,
+             COUNT(*) OVER (
+                 ORDER BY started_at
+                 RANGE BETWEEN INTERVAL '7 days'
+                           PRECEDING
+                           AND CURRENT ROW
+             ) AS plays_last_7_days
+      FROM watch_history
+      WHERE user_id = 158
+      ORDER BY started_at, watch_id;
+    ordered: true
+    hints:
+      - "A RANGE frame works on the value of the ORDER BY column, not on the row count. Here the value is a timestamp."
+      - "RANGE BETWEEN INTERVAL '7 days' PRECEDING AND CURRENT ROW includes every row whose started_at is within 7 days before the current row."
+      - "COUNT(*) OVER (ORDER BY started_at RANGE BETWEEN INTERVAL '7 days' PRECEDING AND CURRENT ROW)"
+    explanation: |
+      `ROWS` counts a fixed number of rows, while `RANGE` counts rows whose ordering value falls inside a range. With timestamps, a 7-day `RANGE` works even when the plays are not evenly spaced.
+
+      The default frame for a window with `ORDER BY` is `RANGE ... CURRENT ROW`, and it includes all rows with the same value as the current row. That is why a unique tie-breaker is so useful.
+
+  - id: ch-i-051
+    title: First and last transaction of each account
+    difficulty: hard
+    dataset: bank
+    module: m11
+    tags: [window, first-value, last-value, frame]
+    prompt: |
+      The bank wants one row per account, for accounts `1` to `10`, showing the amount of the first and the last transaction in time order. Order the transactions by `txn_time`, and by `txn_id` when two transactions share a time.
+
+      Show `account_id`, `first_amount` (the amount of the earliest transaction) and `last_amount` (the amount of the latest transaction). Use the window functions `FIRST_VALUE` and `LAST_VALUE`, and `DISTINCT` so that each account appears once.
+
+      Sort by `account_id`.
+    solution: |
+      SELECT DISTINCT account_id,
+             FIRST_VALUE(amount) OVER (
+                 PARTITION BY account_id
+                 ORDER BY txn_time, txn_id
+             ) AS first_amount,
+             LAST_VALUE(amount) OVER (
+                 PARTITION BY account_id
+                 ORDER BY txn_time, txn_id
+                 ROWS BETWEEN UNBOUNDED PRECEDING
+                          AND UNBOUNDED FOLLOWING
+             ) AS last_amount
+      FROM transactions
+      WHERE account_id BETWEEN 1 AND 10
+      ORDER BY account_id;
+    ordered: true
+    hints:
+      - "FIRST_VALUE and LAST_VALUE return a value from the window. Both depend on the window's order and frame."
+      - "LAST_VALUE with the default frame only looks up to the current row, so it returns the current row. Give it a frame that goes to UNBOUNDED FOLLOWING."
+      - "LAST_VALUE(amount) OVER (PARTITION BY account_id ORDER BY txn_time, txn_id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+    explanation: |
+      This is the **LAST_VALUE trap**. With `ORDER BY` and no frame, the default frame stops at the current row, so `LAST_VALUE` returns the current row itself. The fix is the frame `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+
+      Every row of an account gets the same first and last values, so `DISTINCT` keeps one row per account.
+
+  - id: ch-i-052
+    title: Median salary by department
+    difficulty: hard
+    dataset: company
+    module: m11
+    tags: [percentile, median, aggregation, group-by]
+    prompt: |
+      Pay analysts prefer the **median** salary to the average, because a few very high salaries can pull the average up. For each department, take the **current** employees (`terminated_on` is empty) and find the median salary with `PERCENTILE_CONT(0.5)`.
+
+      Show `department` (the department name), `employees` (the number of current employees in the department) and `median_salary` (rounded to 2 decimals). Employees with no department are left out, and a department with no current employees does not appear. Sort by `department`.
+    solution: |
+      SELECT d.name AS department,
+             COUNT(*) AS employees,
+             ROUND(PERCENTILE_CONT(0.5)
+                   WITHIN GROUP (ORDER BY e.salary)::numeric,
+                   2) AS median_salary
+      FROM employees e
+      JOIN departments d
+          ON d.dept_id = e.dept_id
+      WHERE e.terminated_on IS NULL
+      GROUP BY d.dept_id, d.name
+      ORDER BY department;
+    ordered: true
+    hints:
+      - "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary) is the median. It is an aggregate, so it works with GROUP BY."
+      - "Join employees to departments, filter the current employees, then group by department."
+      - "The result is a floating-point number, so cast it to numeric before you ROUND it: ...)::numeric, 2)."
+    explanation: |
+      `PERCENTILE_CONT(0.5)` gives the median: half the values are below it and half above. When there is an even number of values, it interpolates between the two middle values.
+
+      The average is pulled up by very large values, but the median is not. For salary reports, analysts often show both.
+
+  - id: ch-i-053
+    title: Where each comedy stands at the box office
+    difficulty: hard
+    dataset: movies
+    module: m11
+    tags: [window, percent-rank, join, distribution]
+    prompt: |
+      FlickNest wants to know where each **Comedy** film's box office stands among the Comedy films. Use only films that have the genre `Comedy` and a known `box_office_musd`.
+
+      For each of these films, show `title`, `box_office_musd` and `pct_rank`: the film's `PERCENT_RANK` among the Comedy films, rounded to 2 decimals. `PERCENT_RANK` is 0 for the lowest value and 1 for the highest.
+
+      Sort by `box_office_musd` from lowest to highest, then by `title`.
+    solution: |
+      SELECT m.title,
+             m.box_office_musd,
+             ROUND(PERCENT_RANK() OVER (
+                 PARTITION BY g.name
+                 ORDER BY m.box_office_musd
+             )::numeric, 2) AS pct_rank
+      FROM movies m
+      JOIN movie_genres mg
+          ON mg.movie_id = m.movie_id
+      JOIN genres g
+          ON g.genre_id = mg.genre_id
+      WHERE g.name = 'Comedy'
+        AND m.box_office_musd IS NOT NULL
+      ORDER BY m.box_office_musd, m.title;
+    ordered: true
+    hints:
+      - "A film is linked to genres through movie_genres, so join movies to movie_genres and then to genres."
+      - "PERCENT_RANK() OVER (ORDER BY box_office_musd) gives (rank - 1) / (rows - 1), which runs from 0 to 1."
+      - "PERCENT_RANK returns a floating-point number, so cast it to numeric before rounding."
+    explanation: |
+      `PERCENT_RANK` shows the relative position of a value inside its group. It is useful for percentiles on a dashboard, such as "this film is in the top 20% of comedies".
+
+      The `PARTITION BY g.name` restarts the ranking for each genre. The `WHERE` clause keeps only Comedy, so the ranking here compares only comedies.
+
+  - id: ch-i-054
+    title: Each customer's share of the segment
+    difficulty: hard
+    dataset: shop
+    module: m11
+    tags: [window, nested-aggregate, share, group-by]
+    prompt: |
+      The sales team wants each Home Office customer's share of the segment's revenue. Use **delivered** orders only, and only customers who have at least one delivered order.
+
+      For each customer, first add up their delivered revenue: the sum of `quantity * unit_price * (1 - discount)` over their delivered order lines. Then, next to each customer, show the total delivered revenue of the whole Home Office segment and the customer's share of it.
+
+      Show `customer_id`, `revenue` (rounded to 2 decimals), `segment_total` (the total for the whole segment, rounded to 2 decimals) and `share_pct` (the customer's revenue as a percentage of `segment_total`, rounded to 1 decimal). Only customers in the `Home Office` segment count.
+
+      Sort by `revenue` from highest to lowest, then by `customer_id`.
+    solution: |
+      SELECT c.customer_id,
+             ROUND(SUM(i.quantity * i.unit_price
+                   * (1 - i.discount)), 2) AS revenue,
+             ROUND(SUM(SUM(i.quantity * i.unit_price
+                   * (1 - i.discount))) OVER (
+                 PARTITION BY c.segment
+             ), 2) AS segment_total,
+             ROUND(100 * SUM(i.quantity * i.unit_price
+                   * (1 - i.discount))
+                   / SUM(SUM(i.quantity * i.unit_price
+                   * (1 - i.discount))) OVER (
+                 PARTITION BY c.segment
+             ), 1) AS share_pct
+      FROM customers c
+      JOIN orders o
+          ON o.customer_id = c.customer_id
+      JOIN order_items i
+          ON i.order_id = o.order_id
+      WHERE c.segment = 'Home Office'
+        AND o.status = 'delivered'
+      GROUP BY c.customer_id, c.segment
+      ORDER BY revenue DESC, c.customer_id;
+    ordered: true
+    hints:
+      - "First group by customer to get one revenue per customer. A window function can then work on those grouped rows."
+      - "SUM(SUM(...)) OVER (PARTITION BY c.segment) adds up the per-customer sums across the segment. It is allowed because the window runs after GROUP BY."
+      - "Share = 100 * customer revenue / segment total. Write the customer's SUM first, then divide by the window SUM."
+    explanation: |
+      A window function can use an aggregate as its input. `SUM(SUM(x)) OVER (...)` first groups the rows by customer, then adds the customer totals over the whole partition.
+
+      Because the window runs after `GROUP BY`, every customer row can see the segment total. The same row can then show its own revenue and its share of the total.
+
+  - id: ch-i-055
+    title: Two rankings with named windows
+    difficulty: hard
+    dataset: movies
+    module: m11
+    tags: [window, named-window, rank, partition-by]
+    prompt: |
+      FlickNest wants to compare recent films, released in 2021, 2022, 2023 or 2024, that have a known `box_office_musd`. For each of these films, show two rankings by box office, highest first:
+
+      - `year_rank`: the rank among the films with the same `release_year`
+      - `rating_rank`: the rank among the films with the same `age_rating`
+
+      Use `RANK()` for both. Give tied films the same rank.
+
+      Show `title`, `release_year`, `age_rating`, `box_office_musd`, `year_rank` and `rating_rank`. Sort by `release_year`, then by `year_rank`, then by `title`.
+    solution: |
+      SELECT m.title,
+             m.release_year,
+             m.age_rating,
+             m.box_office_musd,
+             RANK() OVER by_year AS year_rank,
+             RANK() OVER by_rating AS rating_rank
+      FROM movies m
+      WHERE m.release_year BETWEEN 2021 AND 2024
+        AND m.box_office_musd IS NOT NULL
+      WINDOW by_year AS (
+          PARTITION BY m.release_year
+          ORDER BY m.box_office_musd DESC
+      ),
+      by_rating AS (
+          PARTITION BY m.age_rating
+          ORDER BY m.box_office_musd DESC
+      )
+      ORDER BY m.release_year, year_rank, m.title;
+    ordered: true
+    hints:
+      - "Define each window once in a WINDOW clause after WHERE, then refer to it by name in OVER."
+      - "The two windows differ only in their PARTITION BY: release_year for one, age_rating for the other."
+      - "WINDOW by_year AS (PARTITION BY ... ORDER BY ... DESC), by_rating AS (...)"
+    explanation: |
+      The `WINDOW` clause gives a window a name, so long definitions are written once and reused. Here two rankings use two different partitions over the same rows.
+
+      `RANK` gives tied films the same number and then skips the next number. Sorting by `title` as the last key makes the rows come out in the same order every time.
+
+  - id: ch-i-056
+    title: Register a new customer
+    difficulty: medium
+    dataset: shop
+    module: m12
+    tags: [dml, insert, check, defaults]
+    prompt: |
+      A new customer has joined the shop. Add her to the `customers` table with these values:
+
+      - `customer_id`: 151
+      - `first_name`: `Mira`
+      - `last_name`: `Okafor`
+      - `email`: `mira.okafor@example.com`
+      - `city`: `Austin`
+      - `state`: `TX`
+      - `signup_date`: `2024-12-31`
+      - `segment`: `Consumer`
+
+      Leave `phone` and `birth_date` empty. Write only your `INSERT` statement. The app then shows the new customer's row.
+    solution: |
+      INSERT INTO customers (
+          customer_id, first_name, last_name, email,
+          city, state, signup_date, segment
+      )
+      VALUES (
+          151, 'Mira', 'Okafor', 'mira.okafor@example.com',
+          'Austin', 'TX', '2024-12-31', 'Consumer'
+      );
+    check: |
+      SELECT customer_id,
+             first_name,
+             last_name,
+             email,
+             city,
+             segment
+      FROM customers
+      WHERE customer_id = 151;
+    ordered: true
+    hints:
+      - "INSERT adds new rows. Name the columns you have values for, then list the values in the same order."
+      - "Columns you leave out (like phone and birth_date) are filled with NULL, because they allow empty values."
+      - "INSERT INTO customers (customer_id, first_name, ...) VALUES (151, 'Mira', ...);"
+    explanation: |
+      An `INSERT` with a column list is safer than one without: the values are matched to the names you wrote, not to the table's column order. Any column that you leave out gets its default value, or `NULL` if it has none.
+
+      Write text values in single quotes, and dates as `'YYYY-MM-DD'`. The customer id is written by hand here, because this table does not generate ids.
+
+  - id: ch-i-057
+    title: Switch off the expired coupons
+    difficulty: medium
+    dataset: blank
+    module: m12
+    tags: [dml, update, where, dates]
+    setup: |
+      CREATE TABLE coupons (
+          coupon_id INTEGER PRIMARY KEY,
+          code TEXT NOT NULL,
+          percent_off INTEGER NOT NULL,
+          expires_on DATE NOT NULL,
+          active BOOLEAN NOT NULL DEFAULT TRUE
+      );
+      INSERT INTO coupons
+          (coupon_id, code, percent_off, expires_on, active)
+      VALUES
+          (1, 'SPRING24', 10, '2024-05-31', TRUE),
+          (2, 'WELCOME', 15, '2025-12-31', TRUE),
+          (3, 'SUMMER24', 20, '2024-08-31', TRUE),
+          (4, 'FLASH50', 50, '2024-02-29', TRUE),
+          (5, 'LOYAL5', 5, '2024-06-30', FALSE),
+          (6, 'VIP25', 25, '2026-01-31', TRUE),
+          (7, 'SHIP10', 10, '2024-05-01', TRUE);
+    prompt: |
+      The marketing team keeps a small table called `coupons`. Every coupon that expired **before 1 June 2024** must be switched off by setting `active` to `FALSE`.
+
+      All other coupons must stay exactly as they are. Coupon 5 is already switched off, and it expired after 1 June, so leave it alone.
+
+      Write only your `UPDATE` statement. The app then shows the whole `coupons` table sorted by `coupon_id`.
+    solution: |
+      UPDATE coupons
+      SET active = FALSE
+      WHERE expires_on < DATE '2024-06-01';
+    check: |
+      SELECT coupon_id,
+             code,
+             percent_off,
+             expires_on,
+             active
+      FROM coupons
+      ORDER BY coupon_id;
+    ordered: true
+    hints:
+      - "An UPDATE changes rows that already exist. SET names the column and its new value."
+      - "The WHERE clause decides which rows change. Compare expires_on with 1 June 2024 and use < to exclude that day."
+      - "UPDATE coupons SET active = FALSE WHERE expires_on ___ DATE '2024-06-01';"
+    explanation: |
+      `UPDATE` without a `WHERE` changes every row in the table, so always write the condition. The safest habit is to run the same `WHERE` as a `SELECT` first, to see which rows will change.
+
+      `expires_on < DATE '2024-06-01'` keeps the coupons that expired on or before 31 May. A coupon that already had `active = FALSE` is also updated to `FALSE`, which leaves it unchanged.
+
+  - id: ch-i-058
+    title: Archive the cancelled December orders
+    difficulty: medium
+    dataset: shop
+    module: m12
+    tags: [dml, insert-select, copy, archive]
+    setup: |
+      CREATE TABLE archived_orders (
+          order_id INTEGER PRIMARY KEY,
+          customer_id INTEGER NOT NULL,
+          order_date DATE NOT NULL,
+          status TEXT NOT NULL
+      );
+    prompt: |
+      Old cancelled orders are moved to an archive. The table `archived_orders` already exists and is empty. It has the columns `order_id`, `customer_id`, `order_date` and `status`.
+
+      Copy every order from `orders` whose `status` is `cancelled` and whose `order_date` is in **December 2023** (from 1 December 2023 up to and including 31 December 2023) into `archived_orders`. Copy those four columns only.
+
+      Write only your `INSERT ... SELECT` statement. The app then shows the rows of `archived_orders`, sorted by `order_id`.
+    solution: |
+      INSERT INTO archived_orders
+          (order_id, customer_id, order_date, status)
+      SELECT order_id, customer_id, order_date, status
+      FROM orders
+      WHERE status = 'cancelled'
+        AND order_date >= '2023-12-01'
+        AND order_date < '2024-01-01';
+    check: |
+      SELECT order_id,
+             customer_id,
+             order_date,
+             status
+      FROM archived_orders
+      ORDER BY order_id;
+    ordered: true
+    hints:
+      - "INSERT ... SELECT copies the rows that a SELECT returns. The number and types of the selected columns must match the target list."
+      - "Filter the orders with WHERE on status, and on a date range that goes from 2023-12-01 up to, but not including, 2024-01-01."
+      - "INSERT INTO archived_orders (order_id, customer_id, order_date, status) SELECT ... FROM orders WHERE ___;"
+    explanation: |
+      `INSERT ... SELECT` copies data in one statement, without listing the values by hand. It is the usual way to archive, back up or move rows.
+
+      For a whole month, `>= first day` and `< first day of next month` is safer than `BETWEEN`, because it works whatever time of day an order has.
+
+  - id: ch-i-059
+    title: Clear the old log entries
+    difficulty: medium
+    dataset: blank
+    module: m12
+    tags: [dml, delete, nulls, safety]
+    setup: |
+      CREATE TABLE event_log (
+          event_id INTEGER PRIMARY KEY,
+          logged_on DATE,
+          message TEXT NOT NULL
+      );
+      INSERT INTO event_log (event_id, logged_on, message)
+      VALUES
+          (1, '2024-01-15', 'Store opened late'),
+          (2, '2024-02-28', 'Card reader reset'),
+          (3, '2024-03-01', 'Stock count started'),
+          (4, NULL, 'Date missing from import'),
+          (5, '2024-01-02', 'Holiday schedule posted'),
+          (6, '2024-04-10', 'New supplier added'),
+          (7, '2023-12-31', 'Year-end backup'),
+          (8, NULL, 'Manual note'),
+          (9, '2024-02-29', 'Leap day sales report');
+    prompt: |
+      Log entries from before **1 March 2024** are no longer needed. Delete them from `event_log`.
+
+      Keep every entry from 1 March 2024 onward. Keep the entries whose `logged_on` is empty (NULL), because their date is unknown and they might still matter.
+
+      Write only your `DELETE` statement. The app then shows the rows left in `event_log`, sorted by `event_id`.
+    solution: |
+      DELETE FROM event_log
+      WHERE logged_on < DATE '2024-03-01';
+    check: |
+      SELECT event_id,
+             logged_on,
+             message
+      FROM event_log
+      ORDER BY event_id;
+    ordered: true
+    hints:
+      - "A DELETE removes the rows that match its WHERE clause. Test the condition with a SELECT first."
+      - "Use < DATE '2024-03-01'. A row with a NULL date is not less than anything, so it is not deleted."
+      - "DELETE FROM event_log WHERE logged_on < ___;"
+    explanation: |
+      `NULL` means "unknown", and any comparison with it (`<`, `=`, `>`) gives `NULL`, which is not true. So `WHERE logged_on < ...` never deletes a row with an empty date.
+
+      That is a useful safety net, but it also means you must check for `NULL` on purpose when you want those rows. Use `WHERE logged_on IS NULL` to find them.
+
+  - id: ch-i-060
+    title: Promote the most loyal customers
+    difficulty: hard
+    dataset: shop
+    module: m12
+    tags: [dml, update-from, subquery, aggregation]
+    prompt: |
+      The sales team promotes the most loyal customers to the `Corporate` segment. A loyal customer is one with **at least 20** orders, counting every order whatever its status.
+
+      Change the `segment` of these customers to `Corporate` with `UPDATE ... FROM`, using a subquery that counts the orders of each customer. Leave all other customers unchanged.
+
+      Write only your `UPDATE` statement. The app then shows how many customers are in each segment, sorted by `segment`.
+    solution: |
+      UPDATE customers c
+      SET segment = 'Corporate'
+      FROM (
+          SELECT customer_id
+          FROM orders
+          GROUP BY customer_id
+          HAVING COUNT(*) >= 20
+      ) AS loyal
+      WHERE c.customer_id = loyal.customer_id;
+    check: |
+      SELECT segment,
+             COUNT(*) AS customers
+      FROM customers
+      GROUP BY segment
+      ORDER BY segment;
+    ordered: true
+    hints:
+      - "Build a list of the loyal customer_ids first, in a subquery with GROUP BY and HAVING."
+      - "UPDATE ... FROM lets you join the table you update to another source. Match the two with a WHERE on customer_id."
+      - "UPDATE customers c SET segment = 'Corporate' FROM (SELECT customer_id FROM orders GROUP BY customer_id HAVING ___) AS loyal WHERE ___;"
+    explanation: |
+      `UPDATE ... FROM` updates a table using values from another query, in a single statement. The `WHERE` decides which customer rows match the list.
+
+      Filtering with `HAVING COUNT(*) >= 20` happens on the groups, so the subquery returns one id per loyal customer. A customer with fewer orders is never touched.
+
+  - id: ch-i-061
+    title: Add a delivery to the stock with an upsert
+    difficulty: hard
+    dataset: blank
+    module: m12
+    tags: [dml, upsert, on-conflict, excluded]
+    setup: |
+      CREATE TABLE stock (
+          sku TEXT PRIMARY KEY,
+          qty INTEGER NOT NULL CHECK (qty >= 0),
+          last_counted DATE NOT NULL
+      );
+      INSERT INTO stock (sku, qty, last_counted)
+      VALUES
+          ('MUG-01', 20, '2024-05-01'),
+          ('PEN-07', 100, '2024-05-01'),
+          ('BAG-03', 8, '2024-04-15');
+    prompt: |
+      A delivery arrives on 15 June 2024 with three product lines:
+
+      | sku | qty | counted on |
+      |---|---|---|
+      | MUG-01 | 12 | 2024-06-15 |
+      | PEN-07 | 5 | 2024-06-15 |
+      | NOTE-02 | 30 | 2024-06-15 |
+
+      Add the delivery to the `stock` table in **one** `INSERT` statement:
+
+      - If the `sku` already exists, add the delivered `qty` to the stock `qty`, and set `last_counted` to the new date.
+      - If the `sku` is new, insert it as a new row.
+
+      Write only your `INSERT` statement. The app then shows the `stock` table sorted by `sku`.
+    solution: |
+      INSERT INTO stock (sku, qty, last_counted)
+      VALUES
+          ('MUG-01', 12, DATE '2024-06-15'),
+          ('PEN-07', 5, DATE '2024-06-15'),
+          ('NOTE-02', 30, DATE '2024-06-15')
+      ON CONFLICT (sku) DO UPDATE
+          SET qty = stock.qty + EXCLUDED.qty,
+              last_counted = EXCLUDED.last_counted;
+    check: |
+      SELECT sku,
+             qty,
+             last_counted
+      FROM stock
+      ORDER BY sku;
+    ordered: true
+    hints:
+      - "ON CONFLICT (sku) DO UPDATE runs only when the new row clashes with an existing sku."
+      - "Inside DO UPDATE, the table's current row is named stock, and the row you tried to insert is named EXCLUDED."
+      - "... ON CONFLICT (sku) DO UPDATE SET qty = stock.qty + EXCLUDED.qty, last_counted = ___;"
+    explanation: |
+      An **upsert** is an `INSERT` that becomes an `UPDATE` when the row already exists. `ON CONFLICT` says which column must be unique, and `EXCLUDED` is the row you were trying to insert.
+
+      Here `stock.qty + EXCLUDED.qty` adds the delivery to the current stock. Without `ON CONFLICT`, the statement would fail on the first sku that already exists.
+
+  - id: ch-i-062
+    title: Sync the price list with MERGE
+    difficulty: hard
+    dataset: blank
+    module: m12
+    tags: [dml, merge, sync, not-matched-by-source]
+    setup: |
+      CREATE TABLE price_list (
+          product TEXT PRIMARY KEY,
+          price NUMERIC(8,2) NOT NULL
+      );
+      CREATE TABLE price_import (
+          product TEXT PRIMARY KEY,
+          price NUMERIC(8,2) NOT NULL
+      );
+      INSERT INTO price_list (product, price)
+      VALUES ('Apple', 1.20), ('Bread', 2.50),
+             ('Cheese', 4.80), ('Donut', 1.10);
+      INSERT INTO price_import (product, price)
+      VALUES ('Apple', 1.35), ('Cheese', 4.80),
+             ('Eggs', 3.90);
+    prompt: |
+      The shop has a current price list in `price_list`, and a new file, `price_import`, that is the complete new list. Use **one** `MERGE` statement so that `price_list` matches `price_import` exactly:
+
+      - a product in both tables gets its price from `price_import`
+      - a product that only exists in `price_import` is added to `price_list`
+      - a product that only exists in `price_list` is removed, because it is no longer on the new list
+
+      Write only your `MERGE` statement. The app then shows `price_list` sorted by `product`.
+    solution: |
+      MERGE INTO price_list AS t
+      USING price_import AS s
+          ON t.product = s.product
+      WHEN MATCHED THEN
+          UPDATE SET price = s.price
+      WHEN NOT MATCHED BY TARGET THEN
+          INSERT (product, price)
+          VALUES (s.product, s.price)
+      WHEN NOT MATCHED BY SOURCE THEN
+          DELETE;
+    check: |
+      SELECT product,
+             price
+      FROM price_list
+      ORDER BY product;
+    ordered: true
+    hints:
+      - "MERGE compares a target table with a source table, then applies one action to each kind of match."
+      - "WHEN MATCHED handles rows in both tables, WHEN NOT MATCHED BY TARGET handles new rows, and WHEN NOT MATCHED BY SOURCE handles target rows missing from the source."
+      - "MERGE INTO price_list AS t USING price_import AS s ON t.product = s.product WHEN MATCHED THEN UPDATE SET price = s.price WHEN ___ THEN INSERT ... WHEN ___ THEN DELETE;"
+    explanation: |
+      `MERGE` is one statement that can insert, update and delete, depending on how each row matches. It is the standard way to keep a table in step with a fresh copy of the data.
+
+      `WHEN NOT MATCHED BY SOURCE` is what removes the products that are gone from the new list. Leaving that clause out would keep the old products, and the result would no longer match the source.
+
+  - id: ch-i-063
+    title: Move closed tickets in one statement
+    difficulty: hard
+    dataset: blank
+    module: m12
+    tags: [dml, delete, returning, cte, data-modifying]
+    setup: |
+      CREATE TABLE active_tickets (
+          ticket_id INTEGER PRIMARY KEY,
+          opened_on DATE NOT NULL,
+          status TEXT NOT NULL
+      );
+      CREATE TABLE closed_tickets (
+          ticket_id INTEGER PRIMARY KEY,
+          opened_on DATE NOT NULL,
+          status TEXT NOT NULL
+      );
+      INSERT INTO active_tickets (ticket_id, opened_on, status)
+      VALUES
+          (101, '2024-03-02', 'open'),
+          (102, '2024-03-05', 'closed'),
+          (103, '2024-03-07', 'waiting'),
+          (104, '2024-03-09', 'closed'),
+          (105, '2024-03-12', 'open');
+    prompt: |
+      Closed tickets must leave the `active_tickets` table and go to `closed_tickets`. Do it in **one** statement, so that a ticket can never be copied without being removed, or removed without being copied.
+
+      Move every ticket whose `status` is `closed`. Each moved ticket keeps its `ticket_id`, `opened_on` and `status`.
+
+      Write only your statement. Use a data-modifying `WITH` query: delete the closed tickets with `RETURNING *`, and insert what it returns into `closed_tickets`. The app then shows the tickets in both tables.
+    solution: |
+      WITH moved AS (
+          DELETE FROM active_tickets
+          WHERE status = 'closed'
+          RETURNING *
+      )
+      INSERT INTO closed_tickets
+          (ticket_id, opened_on, status)
+      SELECT ticket_id, opened_on, status
+      FROM moved;
+    check: |
+      SELECT 'still open' AS location,
+             ticket_id
+      FROM active_tickets
+      UNION ALL
+      SELECT 'closed' AS location,
+             ticket_id
+      FROM closed_tickets
+      ORDER BY location, ticket_id;
+    ordered: true
+    hints:
+      - "DELETE ... RETURNING * gives back the rows it deleted, as if they were a table."
+      - "A WITH query can contain a DELETE. The rows it returns can then be used by the main INSERT in the same statement."
+      - "WITH moved AS (DELETE FROM active_tickets WHERE ___ RETURNING *) INSERT INTO closed_tickets (...) SELECT ... FROM moved;"
+    explanation: |
+      A **data-modifying CTE** does the delete and the insert together. Both happen inside one statement, so either both work or neither does. That protects the tickets from being lost halfway through.
+
+      `RETURNING` shows the rows that were changed, and it saves you from writing the same condition twice. It works with `INSERT`, `UPDATE` and `DELETE`.
+
+  - id: ch-i-064
+    title: Design a books table with the right types
+    difficulty: medium
+    dataset: blank
+    module: m13
+    tags: [ddl, create-table, data-types, constraints]
+    prompt: |
+      A bookshop is building a `books` table. Create it with exactly these columns, in this order:
+
+      - `book_id`: a whole number, the primary key
+      - `title`: text, required (it cannot be empty)
+      - `isbn`: text of up to 13 characters, optional, and it must be unique (`UNIQUE`)
+      - `published_on`: a date, optional
+      - `price`: a number with up to 6 digits, 2 of them after the decimal point, required
+      - `in_print`: true or false, required, and it is `TRUE` when no value is given
+
+      Write only your `CREATE TABLE` statement. The app then shows the structure of the `books` table: each column's name, type, size, whether it can be empty, and its default.
+    solution: |
+      CREATE TABLE books (
+          book_id INTEGER PRIMARY KEY,
+          title TEXT NOT NULL,
+          isbn VARCHAR(13) UNIQUE,
+          published_on DATE,
+          price NUMERIC(6,2) NOT NULL,
+          in_print BOOLEAN NOT NULL DEFAULT TRUE
+      );
+    check: |
+      SELECT column_name,
+             data_type,
+             character_maximum_length,
+             numeric_precision,
+             is_nullable,
+             column_default
+      FROM information_schema.columns
+      WHERE table_name = 'books'
+      ORDER BY ordinal_position;
+    ordered: true
+    hints:
+      - "Each column needs a name and a data type, then optional rules such as NOT NULL, UNIQUE or DEFAULT."
+      - "VARCHAR(13) is text of up to 13 characters. NUMERIC(6,2) is a number with 6 digits in total, 2 after the point."
+      - "CREATE TABLE books (book_id INTEGER PRIMARY KEY, title TEXT NOT NULL, isbn VARCHAR(13) ___, ...);"
+    explanation: |
+      Choosing the right type is the first design decision. `NUMERIC(6,2)` stores money exactly, which `REAL` or `DOUBLE PRECISION` cannot do, because they round in binary.
+
+      `NOT NULL` makes a column required, `UNIQUE` stops two rows sharing a value, and `DEFAULT` fills in a value when the insert does not give one. A `PRIMARY KEY` is both unique and required.
+
+  - id: ch-i-065
+    title: Add a plan column to existing members
+    difficulty: medium
+    dataset: blank
+    module: m13
+    tags: [ddl, alter-table, default, not-null]
+    setup: |
+      CREATE TABLE members (
+          member_id INTEGER PRIMARY KEY,
+          full_name TEXT NOT NULL,
+          joined_on DATE NOT NULL
+      );
+      INSERT INTO members (member_id, full_name, joined_on)
+      VALUES
+          (1, 'Ana Ruiz', '2023-09-01'),
+          (2, 'Ben Okoye', '2024-01-15'),
+          (3, 'Chloe Martin', '2024-05-20');
+    prompt: |
+      The gym club wants every member to have a membership `plan`. The table `members` already exists and already holds three members.
+
+      Add a column called `plan` to `members`. It holds short text of up to 10 characters, it cannot be empty, and its default value is `free`. The three existing members must get `free` automatically.
+
+      Write only your `ALTER TABLE` statement. The app then shows each member's `member_id`, `full_name` and `plan`.
+    solution: |
+      ALTER TABLE members
+      ADD COLUMN plan VARCHAR(10) NOT NULL DEFAULT 'free';
+    check: |
+      SELECT member_id,
+             full_name,
+             plan
+      FROM members
+      ORDER BY member_id;
+    ordered: true
+    hints:
+      - "ALTER TABLE changes a table that already exists. ADD COLUMN adds a new column."
+      - "When you add a NOT NULL column to a table that has rows, the DEFAULT gives the existing rows a value."
+      - "ALTER TABLE members ADD COLUMN plan VARCHAR(10) NOT NULL ___;"
+    explanation: |
+      `ALTER TABLE ... ADD COLUMN` changes the structure of a table without losing its data. Adding `NOT NULL` to a table with rows only works if a `DEFAULT` is given, because the existing rows need a value.
+
+      Plan the change before you run it on a real table. Adding a column is quick and safe, but changing a column's type can rewrite the whole table.
+
+  - id: ch-i-066
+    title: Delete an author and their books
+    difficulty: hard
+    dataset: blank
+    module: m13
+    tags: [ddl, foreign-key, on-delete-cascade, referential-integrity]
+    prompt: |
+      A small library needs two tables. Write the `CREATE TABLE` statements for both:
+
+      - `authors`: `author_id` (a whole number, the primary key) and `name` (text, required)
+      - `books`: `book_id` (a whole number, the primary key), `title` (text, required) and `author_id` (a whole number). `author_id` must always point to an existing author, and when an author is deleted, their books must be deleted too (`ON DELETE CASCADE`).
+
+      Create `authors` before `books`. Write only your `CREATE TABLE` statements. The app then adds two authors and three books, deletes author 1, and shows the books that are left, sorted by `book_id`.
+    solution: |
+      CREATE TABLE authors (
+          author_id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL
+      );
+      CREATE TABLE books (
+          book_id INTEGER PRIMARY KEY,
+          title TEXT NOT NULL,
+          author_id INTEGER NOT NULL
+              REFERENCES authors (author_id)
+              ON DELETE CASCADE
+      );
+    check: |
+      INSERT INTO authors (author_id, name)
+      VALUES (1, 'Lena Park'), (2, 'Omar Haddad');
+      INSERT INTO books (book_id, title, author_id)
+      VALUES (10, 'Quiet Rivers', 1),
+             (11, 'Salt and Stone', 2),
+             (12, 'Paper Bridges', 1);
+      DELETE FROM authors
+      WHERE author_id = 1;
+      SELECT book_id,
+             title,
+             author_id
+      FROM books
+      ORDER BY book_id;
+    ordered: true
+    hints:
+      - "A FOREIGN KEY column refers to the primary key of another table. Write it as REFERENCES authors (author_id)."
+      - "ON DELETE CASCADE is written after the REFERENCES part. It tells the database to delete the child rows too."
+      - "author_id INTEGER REFERENCES authors (author_id) ___"
+    explanation: |
+      A **foreign key** keeps your data consistent: a book cannot point to an author who does not exist. `ON DELETE CASCADE` decides what happens when the parent row is deleted. Other options include `RESTRICT` (refuse the delete) and `SET NULL` (keep the book but clear its author).
+
+      Without a foreign key, you could leave orphan books that belong to nobody. Notice that the check deletes the author, and the books for that author disappear automatically.
+
+  - id: ch-i-067
+    title: Let the database number the rows
+    difficulty: hard
+    dataset: blank
+    module: m13
+    tags: [ddl, identity, generated-column, stored]
+    prompt: |
+      A café records its order lines. Create a table called `order_lines` with these columns, in this order:
+
+      - `line_id`: a whole number that the database numbers by itself, starting at 1 (use `GENERATED ALWAYS AS IDENTITY`), and the primary key
+      - `product`: text, required
+      - `qty`: a whole number, required, that must be greater than 0 (use `CHECK`)
+      - `unit_price`: `NUMERIC(8,2)`, required
+      - `line_total`: a value the database calculates from `qty * unit_price` and stores with the row (use `GENERATED ALWAYS AS (qty * unit_price) STORED`)
+
+      Write only your `CREATE TABLE` statement. The app then adds three lines without giving `line_id` or `line_total`, and shows the table sorted by `line_id`.
+    solution: |
+      CREATE TABLE order_lines (
+          line_id INTEGER
+              GENERATED ALWAYS AS IDENTITY
+              PRIMARY KEY,
+          product TEXT NOT NULL,
+          qty INTEGER NOT NULL CHECK (qty > 0),
+          unit_price NUMERIC(8,2) NOT NULL,
+          line_total NUMERIC(10,2)
+              GENERATED ALWAYS AS (qty * unit_price) STORED
+      );
+    check: |
+      INSERT INTO order_lines (product, qty, unit_price)
+      VALUES ('Tea', 2, 3.50),
+             ('Cake', 1, 4.25),
+             ('Coffee', 3, 2.10);
+      SELECT line_id,
+             product,
+             qty,
+             unit_price,
+             line_total
+      FROM order_lines
+      ORDER BY line_id;
+    ordered: true
+    hints:
+      - "An identity column is filled in by the database. You leave it out of INSERT and it still gets a value."
+      - "A generated column is written as GENERATED ALWAYS AS (expression) STORED. The expression can use other columns in the same row."
+      - "line_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, and line_total NUMERIC(10,2) GENERATED ALWAYS AS (___) STORED"
+    explanation: |
+      `GENERATED ALWAYS AS IDENTITY` replaces the older `SERIAL` type. The database hands out the numbers, so two users never get the same id.
+
+      `STORED` means the calculated value is saved with the row, so reads are fast. Because it is generated, you cannot insert or update it by hand.
+
+  - id: ch-i-068
+    title: Many-to-many recipes and ingredients
+    difficulty: hard
+    dataset: blank
+    module: m13
+    tags: [ddl, junction-table, many-to-many, foreign-key]
+    prompt: |
+      A cookbook app needs to know which ingredients each recipe uses. A recipe can use many ingredients, and an ingredient can appear in many recipes. Create three tables:
+
+      - `recipes`: `recipe_id` (a whole number, the primary key) and `name` (text, required)
+      - `ingredients`: `ingredient_id` (a whole number, the primary key) and `name` (text, required)
+      - `recipe_ingredients`: a **junction table**, with `recipe_id` and `ingredient_id`, each a foreign key to its table, and `amount` (text, required). Together, `recipe_id` and `ingredient_id` form the primary key, so the same ingredient cannot be listed twice in one recipe.
+
+      Write only your `CREATE TABLE` statements. The app then adds two recipes, three ingredients and four links, and shows how many ingredients each recipe uses, sorted by `recipe_id`.
+    solution: |
+      CREATE TABLE recipes (
+          recipe_id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL
+      );
+      CREATE TABLE ingredients (
+          ingredient_id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL
+      );
+      CREATE TABLE recipe_ingredients (
+          recipe_id INTEGER NOT NULL
+              REFERENCES recipes (recipe_id),
+          ingredient_id INTEGER NOT NULL
+              REFERENCES ingredients (ingredient_id),
+          amount TEXT NOT NULL,
+          PRIMARY KEY (recipe_id, ingredient_id)
+      );
+    check: |
+      INSERT INTO recipes (recipe_id, name)
+      VALUES (1, 'Pancakes'), (2, 'Omelette');
+      INSERT INTO ingredients (ingredient_id, name)
+      VALUES (1, 'Flour'), (2, 'Egg'), (3, 'Milk');
+      INSERT INTO recipe_ingredients
+          (recipe_id, ingredient_id, amount)
+      VALUES (1, 1, '200 g'), (1, 2, '2'),
+             (1, 3, '250 ml'), (2, 2, '3');
+      SELECT r.name AS recipe,
+             COUNT(ri.ingredient_id) AS ingredient_count
+      FROM recipes r
+      LEFT JOIN recipe_ingredients ri
+          ON ri.recipe_id = r.recipe_id
+      GROUP BY r.recipe_id, r.name
+      ORDER BY r.recipe_id;
+    ordered: true
+    hints:
+      - "A many-to-many relationship needs a third table in the middle. Each row of that table links one recipe to one ingredient."
+      - "A two-column PRIMARY KEY, written PRIMARY KEY (recipe_id, ingredient_id), makes each pair unique."
+      - "REFERENCES recipes (recipe_id) turns a column into a foreign key that must match an existing recipe."
+    explanation: |
+      A **junction table** (also called a bridge or link table) turns a many-to-many relationship into two one-to-many relationships. Each row says "this recipe uses this ingredient".
+
+      The composite primary key stops duplicate pairs. The foreign keys stop a link from pointing to a recipe or an ingredient that does not exist.
+
+  - id: ch-i-069
+    title: Turning text readings into numbers
+    difficulty: hard
+    dataset: blank
+    module: m13
+    tags: [ddl, alter-table, alter-column-type, using, nullif]
+    setup: |
+      CREATE TABLE sensor_readings (
+          reading_id INTEGER PRIMARY KEY,
+          reading TEXT
+      );
+      INSERT INTO sensor_readings (reading_id, reading)
+      VALUES (1, '12.50'), (2, 'n/a'), (3, '7'), (4, '3.25');
+    prompt: |
+      A sensor exported its readings as text. The `reading` column of the table `sensor_readings` is therefore `TEXT`. Change its type to `NUMERIC(6,2)`, so that it holds numbers with two decimals.
+
+      Two things need care:
+
+      - PostgreSQL cannot convert text to a number on its own, so the change needs a `USING` clause that says how to convert each value.
+      - One reading is `n/a` (not available). It must become an empty value (`NULL`), not an error.
+
+      Write only your `ALTER TABLE` statement. The app then shows each reading and its double, `reading * 2`, sorted by `reading_id`.
+    solution: |
+      ALTER TABLE sensor_readings
+      ALTER COLUMN reading TYPE NUMERIC(6,2)
+      USING NULLIF(reading, 'n/a')::NUMERIC(6,2);
+    check: |
+      SELECT reading_id,
+             reading,
+             reading * 2 AS doubled
+      FROM sensor_readings
+      ORDER BY reading_id;
+    ordered: true
+    hints:
+      - "ALTER COLUMN ... TYPE changes a column's type. Without USING, PostgreSQL refuses the change when it cannot convert the old values."
+      - "USING is followed by an expression that turns the old value into the new type, just like a cast."
+      - "NULLIF(reading, 'n/a') returns NULL when the value is 'n/a', and the value itself otherwise."
+    explanation: |
+      `USING` is an expression that runs once for each row during the change. Here `NULLIF` turns the text `n/a` into `NULL`, and `::NUMERIC(6,2)` converts the rest.
+
+      Changing a type can rewrite the whole table, so test the change on a copy first when a table is big. A `USING` expression that fails on one row stops the whole change.
+
+  - id: ch-i-070
+    title: Split a flat sales file into two tables
+    difficulty: hard
+    dataset: blank
+    module: m13
+    tags: [ddl, normalization, identity, insert-select, foreign-key]
+    setup: |
+      CREATE TABLE sales_flat (
+          sale_id INTEGER PRIMARY KEY,
+          customer_name TEXT NOT NULL,
+          customer_city TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          unit_price NUMERIC(8,2) NOT NULL,
+          qty INTEGER NOT NULL
+      );
+      INSERT INTO sales_flat
+          (sale_id, customer_name, customer_city,
+           product_name, unit_price, qty)
+      VALUES
+          (1, 'Ana Ruiz', 'Austin', 'Notebook', 4.50, 2),
+          (2, 'Ben Okoye', 'Seattle', 'Pen Pack', 3.20, 5),
+          (3, 'Ana Ruiz', 'Austin', 'Pen Pack', 3.20, 1),
+          (4, 'Chloe Martin', 'Denver', 'Notebook', 4.50, 3),
+          (5, 'Ben Okoye', 'Seattle', 'Stapler', 9.90, 1),
+          (6, 'Ana Ruiz', 'Austin', 'Stapler', 9.90, 2);
+    prompt: |
+      The table `sales_flat` already exists. It repeats each customer's name and city on every sale. Split the data into two new tables, and fill them from `sales_flat`:
+
+      - `customers`: `customer_id` (a whole number the database generates, with `GENERATED ALWAYS AS IDENTITY`, and the primary key), `name` (text) and `city` (text). Each customer appears **once**.
+      - `sales`: `sale_id` (a whole number, the primary key), `customer_id` (a foreign key to `customers`), `product_name` (text), `unit_price` (`NUMERIC(8,2)`) and `qty` (a whole number).
+
+      Write the `CREATE TABLE` statements and the `INSERT ... SELECT` statements. Keep `sales_flat` unchanged. The app then shows each sale with its customer's name and city, sorted by `sale_id`.
+    solution: |
+      CREATE TABLE customers (
+          customer_id INTEGER
+              GENERATED ALWAYS AS IDENTITY
+              PRIMARY KEY,
+          name TEXT NOT NULL,
+          city TEXT NOT NULL,
+          UNIQUE (name, city)
+      );
+      CREATE TABLE sales (
+          sale_id INTEGER PRIMARY KEY,
+          customer_id INTEGER NOT NULL
+              REFERENCES customers (customer_id),
+          product_name TEXT NOT NULL,
+          unit_price NUMERIC(8,2) NOT NULL,
+          qty INTEGER NOT NULL
+      );
+      INSERT INTO customers (name, city)
+      SELECT DISTINCT customer_name, customer_city
+      FROM sales_flat
+      ORDER BY customer_name, customer_city;
+      INSERT INTO sales
+          (sale_id, customer_id, product_name,
+           unit_price, qty)
+      SELECT f.sale_id,
+             c.customer_id,
+             f.product_name,
+             f.unit_price,
+             f.qty
+      FROM sales_flat f
+      JOIN customers c
+          ON c.name = f.customer_name
+         AND c.city = f.customer_city;
+    check: |
+      SELECT c.name,
+             c.city,
+             s.sale_id,
+             s.product_name,
+             s.qty
+      FROM sales s
+      JOIN customers c
+          ON c.customer_id = s.customer_id
+      ORDER BY s.sale_id;
+    ordered: true
+    hints:
+      - "Each customer should be stored once, so start with SELECT DISTINCT on the name and city columns of sales_flat."
+      - "Give customers a generated id, then copy each sale into sales with the customer_id found by matching name and city."
+      - "INSERT INTO customers (name, city) SELECT DISTINCT customer_name, customer_city FROM sales_flat; then INSERT INTO sales ... JOIN customers c ON ___."
+    explanation: |
+      This is **normalisation**: each fact is stored in one place. The customer's name and city now appear once, in `customers`, and each sale refers to the customer by `customer_id`.
+
+      Build the parent table first, so the ids exist before the child rows point to them. The join back to `customers` on name and city is how the new ids are found. Renaming a customer later means changing one row, not hundreds.

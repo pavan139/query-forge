@@ -951,6 +951,1572 @@ lessons:
           SELECT COUNT(*) FROM delivered;
         note: "Each CTE is a named step. Use -- for a comment on one line."
 
+  - id: m20-l03
+    title: "Find the bug before it finds you: debugging queries"
+    summary: Learn a calm routine for wrong numbers. Shrink the problem, count rows after each step, check what one row means, and handle NULL correctly.
+    minutes: 35
+    steps:
+      - type: read
+        title: A number that looks too big
+        md: |
+          Marcus is a finance analyst at ShopSmart. He compares your dashboard with
+          the finance report and says: "Your revenue is higher than ours. Which one
+          is right?"
+
+          You could panic, or you could investigate. Investigating is detective work.
+          You do not need to be a genius. You need a routine, and patience.
+
+          > [!ANALOGY]
+          > A mechanic who hears a strange noise does not replace the engine. They
+          > listen, test one part at a time, and write down what each test shows.
+
+      - type: read
+        title: A debugging routine
+        md: |
+          Use these five steps whenever a number looks wrong:
+
+          1. **Reproduce.** Run the query again and write down the number that looks wrong.
+          2. **Shrink.** Pick one customer, one month or a few rows, and check them by hand.
+          3. **Count.** Count the rows after each join and each filter.
+          4. **Check the grain.** Ask: what does one row stand for?
+          5. **Compare.** Check the total against a number from another source.
+
+          The rest of this lesson practises each step.
+
+      - type: stepper
+        title: Count the rows after each step
+        md: |
+          Each stage adds one piece of the query. Click through the stages and watch
+          the count. A sudden jump tells you where to look.
+        stages:
+          - label: Start with orders
+            md: One row per order. Count them first, so you know the starting point.
+            sql: |
+              SELECT COUNT(*) AS row_count
+              FROM orders;
+          - label: Join the order lines
+            md: Each order now has one row for each product line it contains. The count grows.
+            sql: |
+              SELECT COUNT(*) AS row_count
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id;
+          - label: Keep delivered orders
+            md: Add a filter, and count again.
+            sql: |
+              SELECT COUNT(*) AS row_count
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              WHERE o.status = 'delivered';
+          - label: Count orders, not rows
+            md: "COUNT(DISTINCT ...) counts each order once, however many lines it has."
+            sql: |
+              SELECT COUNT(DISTINCT o.order_id) AS order_count
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              WHERE o.status = 'delivered';
+
+      - type: read
+        title: What does one row mean?
+        md: |
+          The **grain** of a table is what one row stands for. The `orders` table has
+          one row per order. The `order_items` table has one row per product line
+          inside an order.
+
+          When you join the two, the grain changes. Each row is now one product line,
+          not one order. A query that counts rows after the join is counting lines.
+          Always ask yourself: after this step, one row is one what?
+
+      - type: example
+        title: Lines are not orders
+        md: Customer 6 has placed some orders. Count the orders, and count the rows after the join.
+        sql: |
+          SELECT COUNT(DISTINCT o.order_id) AS orders,
+                 COUNT(*) AS rows_after_join
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          WHERE o.customer_id = 6;
+        after: |
+          Customer 6 placed 23 orders, but the join returns 70 rows. Each order is
+          repeated once for every product line, and this repetition is called a
+          **fan-out**. `COUNT(*)` counts the lines. `COUNT(DISTINCT o.order_id)`
+          counts the orders.
+
+          > [!MISTAKE]
+          > If you add up an order's total after a join, the total of each order is
+          > repeated once for every line. The revenue becomes too big.
+
+      - type: example
+        title: Two payments, one order
+        md: Some orders are paid in two parts. Count the payment rows and the orders they belong to.
+        sql: |
+          SELECT COUNT(*) AS payment_rows,
+                 COUNT(DISTINCT order_id) AS paid_orders
+          FROM payments;
+        after: |
+          There are 778 payment rows, but only 758 different orders. Twenty orders
+          were paid in two parts, often a gift card plus a card. When you join
+          orders to payments, those twenty orders appear twice. Count the order
+          totals only once, or count the payments separately.
+
+      - type: read
+        title: NULL is not a value
+        md: |
+          `NULL` means "unknown" or "missing". It is not a number, not a text and not
+          an empty string. Because of that, `=` can never find it. The test
+          `discount_code = NULL` is never TRUE, so the query returns nothing, and
+          PostgreSQL does not warn you.
+
+          To find missing values, write `IS NULL`. To find values that exist, write
+          `IS NOT NULL`.
+
+      - type: example
+        title: The silent bug with = NULL
+        md: How many orders have no discount code? Look carefully at the test.
+        sql: |
+          SELECT COUNT(*) AS without_code
+          FROM orders
+          WHERE discount_code = NULL;
+        after: |
+          The answer is **0**, and there is no error. Nothing equals NULL, so no row
+          passes the filter. This kind of bug is silent, which makes it dangerous.
+          The correct test is `WHERE discount_code IS NULL`, which you will write in
+          an exercise.
+
+      - type: example
+        title: NOT IN and NULL in the same list
+        md: Is the code `WELCOME99` different from every discount code in `orders`? Two versions of the check.
+        sql: |
+          SELECT 'WELCOME99' NOT IN (SELECT discount_code FROM orders)
+                 AS with_null,
+                 'WELCOME99' NOT IN (
+                     SELECT discount_code
+                     FROM orders
+                     WHERE discount_code IS NOT NULL
+                 ) AS without_null;
+        after: |
+          The first answer is `NULL`, not TRUE. Many orders have no discount code,
+          so the list contains a NULL, and PostgreSQL cannot say for sure that
+          `WELCOME99` is different from that unknown value. The second version removes
+          the NULLs first, and the answer is `true`.
+
+          > [!TIP]
+          > When a list may contain NULL, a `NOT EXISTS` check (from the subqueries
+          > module) is safer than `NOT IN`.
+
+      - type: viz
+        viz: join
+        title: Where a WHERE clause quietly removes rows
+        md: |
+          Click **LEFT**. Chen appears with empty order columns. Now imagine a
+          `WHERE` clause that asks for `status = 'delivered'`. Every row whose status
+          is not delivered is removed, and Chen's empty row has no status at all.
+        config:
+          left: { name: customers, columns: [id, name], rows: [[1, Ana], [2, Ben], [3, Chen]] }
+          right: { name: orders, columns: [order_id, customer_id, status], rows: [[10, 1, delivered], [11, 1, cancelled], [12, 2, cancelled]] }
+          on: [id, customer_id]
+          types: [left, inner]
+
+      - type: example
+        title: The LEFT JOIN that became an INNER JOIN
+        md: Count all customers, and count the customers who have a delivered order. The total should be 150.
+        sql: |
+          SELECT COUNT(DISTINCT c.customer_id) AS customers
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          WHERE o.status = 'delivered';
+        after: |
+          The answer is 137, not 150. The `WHERE` clause runs after the join. A
+          customer with no delivered order has NULL in `o.status`, and NULL is not
+          `'delivered'`, so that customer is removed. The LEFT JOIN quietly behaved
+          like an INNER JOIN.
+
+          > [!MISTAKE]
+          > A condition on the right-hand table belongs in the `ON` clause when you
+          > use a LEFT JOIN, not in the `WHERE` clause.
+
+      - type: example
+        title: The same check, with the condition in ON
+        md: Move the condition into the join.
+        sql: |
+          SELECT COUNT(DISTINCT c.customer_id) AS customers
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+                AND o.status = 'delivered';
+        after: |
+          Now the answer is 150. Every customer stays in the result, and only the
+          delivered orders are matched to them. The 13 missing customers are the 10
+          who never ordered, and 3 who have orders but none of them delivered.
+
+      - type: quiz
+        id: m20-l03-q1
+        question: "Your join of orders (900 rows) to order_items returns 2,296 rows. What is the most likely reason?"
+        options:
+          - "The join has a typo, so the query is wrong"
+          - "Each order has one to five product lines, so each order is repeated once per line"
+          - "PostgreSQL counts the header row twice"
+          - "The orders table has 1,396 duplicate rows"
+        answer: 1
+        explanation: |
+          A join produces one row for each matching pair. Each order matches all of its
+          product lines, so 2,296 rows is normal. The count is only a problem if you
+          expected one row per order.
+
+      - type: predict
+        id: m20-l03-p1
+        question: "How many rows does this query count?"
+        sql: |
+          SELECT COUNT(*) AS matches
+          FROM customers
+          WHERE 'WELCOME99' NOT IN (SELECT discount_code FROM orders);
+        options: ["0", "150", "900", "An error"]
+        answer: 0
+        explanation: |
+          The list contains NULL, so `NOT IN` gives NULL for every customer. The
+          `WHERE` clause keeps only rows where the test is TRUE, so nothing passes
+          and the count is 0.
+
+      - type: predict
+        id: m20-l03-p2
+        question: "What does this query return?"
+        sql: |
+          SELECT COUNT(*) AS customer_rows,
+                 COUNT(o.order_id) AS matched_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          WHERE c.customer_id BETWEEN 141 AND 150;
+        options: ["10 and 10", "10 and 0", "0 and 0", "An error"]
+        answer: 1
+        explanation: |
+          Customers 141 to 150 never ordered. The LEFT JOIN keeps each of them once,
+          with NULL in the order columns, so `COUNT(*)` counts 10 rows. `COUNT(o.order_id)`
+          skips the NULLs, so it counts 0.
+
+      - type: fill
+        id: m20-l03-f1
+        prompt: "Count the orders that have a discount code. Complete the test. Remember that NULL cannot be compared with `=`."
+        template: |
+          SELECT COUNT(*)
+          FROM orders
+          WHERE discount_code ___;
+        answers:
+          - ["IS NOT NULL"]
+        explanation: "`IS NOT NULL` keeps the rows that have a value. The answer is 123 orders."
+
+      - type: exercise
+        id: m20-l03-e1
+        title: Orders and lines for one customer
+        prompt: |
+          For `customer_id` 12, show two columns:
+
+          - `orders`: the number of **different** orders
+          - `order_lines`: the number of order lines (rows in `order_items`)
+        solution: |
+          SELECT COUNT(DISTINCT o.order_id) AS orders,
+                 COUNT(*) AS order_lines
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          WHERE o.customer_id = 12;
+        columnNames: true
+        hints:
+          - Join `orders` to `order_items`, then filter to customer 12.
+          - Use `COUNT(DISTINCT o.order_id)` for the orders, and `COUNT(*)` for the lines.
+          - "SELECT COUNT(DISTINCT o.___) AS orders, COUNT(___) AS order_lines FROM orders AS o JOIN order_items AS i ON i.order_id = o.order_id WHERE o.customer_id = 12;"
+        explanation: |
+          Customer 12 has 3 orders with 7 product lines between them. The `DISTINCT`
+          keyword is what keeps the order count from being inflated by the join.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l03-e2
+        title: Payments and paid orders
+        prompt: |
+          From the `payments` table, show two columns:
+
+          - `paid_orders`: the number of **different** orders that have a payment
+          - `payment_rows`: the number of payment rows
+        solution: |
+          SELECT COUNT(DISTINCT order_id) AS paid_orders,
+                 COUNT(*) AS payment_rows
+          FROM payments;
+        columnNames: true
+        hints:
+          - You do not need a join. Everything is in one table.
+          - "`COUNT(DISTINCT order_id)` counts each order once."
+          - "SELECT COUNT(DISTINCT ___) AS paid_orders, COUNT(___) AS payment_rows FROM payments;"
+        explanation: |
+          The two numbers differ because some orders have two payments. Asking for
+          both numbers side by side is a quick way to check the grain of a table.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l03-e3
+        title: Fix the silent bug
+        prompt: |
+          The starter query should count the orders **without** a discount code, but
+          it always returns 0. Fix it so the column `without_code` shows the right
+          number.
+        starter: |
+          SELECT COUNT(*) AS without_code
+          FROM orders
+          WHERE discount_code = NULL;
+        solution: |
+          SELECT COUNT(*) AS without_code
+          FROM orders
+          WHERE discount_code IS NULL;
+        columnNames: true
+        hints:
+          - Nothing can be compared with `=` when the value is NULL.
+          - Use the NULL test that asks "is it missing?".
+          - "WHERE discount_code ___ NULL;"
+        explanation: |
+          `IS NULL` finds the missing values. The result is 777, because only 123
+          orders have a code and the rest are empty.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l03-e4
+        title: Keep every customer in the count
+        prompt: |
+          The starter counts customers who have a delivered order, but it
+          reports only 137 customers and it hides the others. Fix it so the result
+          has two columns:
+
+          - `all_customers`: every customer, with or without orders
+          - `with_delivered`: the customers who have at least one delivered order
+        starter: |
+          SELECT COUNT(DISTINCT c.customer_id) AS customers
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          WHERE o.status = 'delivered';
+        solution: |
+          SELECT COUNT(DISTINCT c.customer_id) AS all_customers,
+                 COUNT(DISTINCT c.customer_id)
+                     FILTER (WHERE o.status = 'delivered') AS with_delivered
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id;
+        columnNames: true
+        hints:
+          - The `WHERE` clause removes the customers that you want to keep.
+          - Remove the `WHERE` clause. Count all customers in the first column.
+          - "Use COUNT(DISTINCT c.customer_id) FILTER (WHERE o.status = 'delivered') for the second column."
+        explanation: |
+          With no `WHERE` clause, every customer stays in the join. `FILTER` counts only
+          the customers whose joined order is delivered. The result is 150 and 137.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l03-e5
+        title: Why is the revenue too big?
+        prompt: |
+          The starter below reports the revenue of delivered orders, but its answer is
+          too big: it shows `234468.96`. Find the join that repeats the rows, and remove
+          it.
+
+          The result must have two columns:
+
+          - `revenue`: the delivered revenue, rounded to 2 decimal places
+          - `delivered_orders`: the number of **different** delivered orders
+        starter: |
+          SELECT ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          JOIN payments AS p
+               ON p.order_id = o.order_id
+          WHERE o.status = 'delivered';
+        solution: |
+          SELECT ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS revenue,
+                 COUNT(DISTINCT o.order_id) AS delivered_orders
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id
+          WHERE o.status = 'delivered';
+        columnNames: true
+        hints:
+          - Look at each JOIN. Which table has more than one row for each order?
+          - The payments table has one or two rows for each order, so it repeats the order lines.
+          - Remove the join to `payments`. The revenue comes from `order_items` only.
+        explanation: |
+          The join to `payments` repeats each order line once for every payment. An
+          order with two payments has each of its lines counted twice. Without that
+          join, each line is counted once. The correct revenue is 229443.50.
+        difficulty: 3
+
+      - type: read
+        title: Summary
+        md: |
+          - Use the routine: reproduce, shrink, count, check the grain, compare.
+          - After a join, one row may stand for a line, not an order. Count `DISTINCT` ids when you need orders.
+          - `= NULL` never matches. Use `IS NULL` and `IS NOT NULL`.
+          - A condition on the right-hand table of a LEFT JOIN belongs in `ON`.
+
+    cheatsheet:
+      - title: Count rows and distinct ids
+        sql: |
+          SELECT COUNT(*) AS row_count,
+                 COUNT(DISTINCT o.order_id) AS order_count
+          FROM orders AS o
+          JOIN order_items AS i
+               ON i.order_id = o.order_id;
+        note: "If the two numbers differ, a join has repeated the orders."
+      - title: Test for missing values
+        sql: "WHERE discount_code IS NULL;"
+        note: "Never write discount_code = NULL. It is never true."
+      - title: Keep every row on the left
+        sql: |
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+                AND o.status = 'delivered';
+        note: "Put conditions on the right-hand table in ON, not in WHERE."
+      - title: Look at a small sample
+        sql: |
+          SELECT *
+          FROM orders
+          WHERE customer_id = 6
+          ORDER BY order_date, order_id
+          LIMIT 5;
+        note: "Shrink the problem to a few rows, and check them by hand."
+
+  - id: m20-l04
+    title: "Build a star: data warehousing"
+    summary: Organise data the way analysts report on it. Learn fact and dimension tables, surrogate keys and slowly changing dimensions, and build a small star schema from the shop data.
+    minutes: 40
+    steps:
+      - type: read
+        title: Every report needs the same six joins
+        md: |
+          Priya asks for revenue by category, by state and by year. You write the
+          query, and it works, but it joins six tables and you copy it again for every
+          new question. When a column changes, you fix it in five places.
+
+          A **data warehouse** solves this. It is a database built for reports, where
+          the data is arranged once, in a shape that is easy to query. The most common
+          shape is the **star schema**.
+
+      - type: read
+        title: Facts and dimensions
+        md: |
+          A star schema has two kinds of table.
+
+          - A **fact table** records things that happened and holds numbers you can
+            add up, such as `quantity` and `sales_amount`. Each row is one event. It
+            is usually the largest table.
+          - A **dimension table** describes the things around the facts: who, what,
+            where and when. It holds names, categories and locations, and it has fewer
+            rows.
+
+          > [!ANALOGY]
+          > A till receipt is a fact table: "2 apples, $3.00". The shop's product list
+          > and the loyalty card details are the dimensions. They explain what an apple
+          > is and who bought it.
+
+      - type: read
+        title: The shape of a star
+        md: |
+          The fact table sits in the middle, and the dimensions point at it, like the
+          points of a star:
+
+          ```text
+                    dim_customer
+                          |
+             dim_product--fact_sales
+          ```
+
+          Every report starts from the fact table, then adds the dimensions it needs.
+          That is why the report query is short: one fact table and a few simple joins.
+
+      - type: read
+        title: Choose the grain first
+        md: |
+          Before you build a fact table, write down its **grain** in one sentence. The
+          grain says what one row stands for.
+
+          For our sales fact table the grain is: **one row per order line**. Every
+          column must fit that sentence. The order date belongs there, because each
+          line has one. The product's category does not. It belongs to the product, so
+          it goes in a dimension table.
+
+      - type: example
+        title: A dimension with a surrogate key
+        md: |
+          `dim_customer` holds one row per customer. The `customer_key` column is a
+          number the warehouse makes up for each row, in customer order.
+        sql: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 first_name,
+                 last_name,
+                 state
+          FROM customers;
+
+          SELECT customer_key, customer_id, first_name, last_name
+          FROM dim_customer
+          ORDER BY customer_key
+          LIMIT 3;
+        after: |
+          `CREATE TABLE ... AS SELECT` builds a new table from a query. The result is
+          a real table you can query like any other. `ROW_NUMBER() OVER (ORDER BY
+          customer_id)` gives 1 to the first customer, 2 to the next, and so on.
+
+      - type: read
+        title: Why a new key?
+        md: |
+          A **surrogate key** is a key that the warehouse makes up, such as
+          `customer_key` 1, 2, 3. The shop system already has a key, `customer_id`.
+          Why do we need another one?
+
+          Source systems change. An id can be reused, a second system can have its
+          own ids, or a file can be reloaded with new numbers. If the fact table uses
+          the warehouse's own key, the link between facts and dimensions is safe, and
+          only the dimension needs a change.
+
+      - type: example
+        title: Flatten a dimension
+        md: |
+          `dim_product` copies the category name into each product. That way a report
+          needs one join less.
+        sql: |
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 p.name AS product_name,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+
+          SELECT product_key, product_name, category_name
+          FROM dim_product
+          ORDER BY product_key
+          LIMIT 3;
+        after: |
+          Each product still has one row. The join to `categories` adds the category
+          name to it. Storing a little repetition in a dimension is normal in a
+          warehouse, because it makes every report simpler.
+
+          > [!MISTAKE]
+          > A dimension must have **one row per key**. If the join to a dimension can
+          > return two rows for one product, every fact that points to it will be
+          > repeated.
+
+      - type: read
+        title: Build the fact table
+        md: |
+          The fact table has one row for each order line. For each line, it looks up
+          the two surrogate keys in the dimensions, and it keeps the numbers.
+
+          The line amount is `quantity * unit_price * (1 - discount)`, the same formula
+          you used in earlier modules. Storing it in the fact table means every report
+          uses the same number.
+
+          The next example builds the whole star in one script, and then answers a
+          question with it.
+
+      - type: example
+        title: The whole star, and one report
+        md: |
+          Two dimensions, one fact table and a report that joins them. Each part
+          is built in the same script, because every example starts from the
+          original shop data.
+        sql: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 state
+          FROM customers;
+
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+
+          CREATE TABLE fact_sales AS
+          SELECT i.order_item_id,
+                 dc.customer_key,
+                 dp.product_key,
+                 o.order_date,
+                 o.status AS order_status,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS sales_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          JOIN dim_customer AS dc
+               ON dc.customer_id = o.customer_id
+          JOIN dim_product AS dp
+               ON dp.product_id = i.product_id;
+
+          SELECT dp.category_name,
+                 ROUND(SUM(f.sales_amount), 2) AS revenue
+          FROM fact_sales AS f
+          JOIN dim_product AS dp
+               ON dp.product_key = f.product_key
+          WHERE f.order_status = 'delivered'
+            AND f.order_date >= '2024-01-01'
+            AND f.order_date < '2025-01-01'
+          GROUP BY dp.category_name
+          ORDER BY revenue DESC, dp.category_name
+          LIMIT 3;
+        after: |
+          The top three categories for delivered orders in 2024: Phones, Laptops and
+          Kitchen. The report joins only one dimension, and the fact table already has
+          the numbers and the order status.
+
+          Notice that the report does not touch `orders`, `order_items` or `customers`
+          at all. The warehouse did that work once.
+
+      - type: quiz
+        id: m20-l04-q1
+        question: "In a star schema, which table is the fact table?"
+        options:
+          - "customers, because it lists the people"
+          - "order_items, because each row is one measurable order line"
+          - "categories, because it groups the products"
+          - "dim_date, because it describes the calendar"
+        answer: 1
+        explanation: |
+          The fact table records events with numbers you can add up. Each order line
+          is one event. The others describe the facts, so they are dimensions.
+
+      - type: predict
+        id: m20-l04-p1
+        question: "How many rows does this join return? Think about the grain of each table."
+        sql: |
+          SELECT COUNT(*)
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+        options: ["14", "60", "74", "An error"]
+        answer: 1
+        explanation: |
+          Each product has exactly one category, and each category row is matched
+          once. The grain stays one row per product, so the result has 60 rows, not
+          14 (the categories) and not 74 (the sum).
+
+      - type: fill
+        id: m20-l04-f1
+        prompt: "Complete the query. The key must count 1, 2, 3 ... in supplier order."
+        template: |
+          SELECT ___ OVER (ORDER BY supplier_id) AS supplier_key,
+                 supplier_id,
+                 name AS supplier_name
+          FROM suppliers;
+        answers:
+          - ["ROW_NUMBER()"]
+        explanation: "`ROW_NUMBER()` numbers the rows in the order given by `ORDER BY`. Without an `ORDER BY`, the numbers could come out in any order."
+
+      - type: read
+        title: Dimensions change
+        md: |
+          Customers move. Products change category. A dimension whose values change
+          over time is called a **slowly changing dimension**, or **SCD**. Two common
+          ways to handle it:
+
+          - **Type 1** overwrites the old value. It is simple, but the history is lost.
+            After the update, every old report shows the new value.
+          - **Type 2** keeps every version as its own row. Each row has `valid_from`,
+            `valid_to` and `is_current` columns. History is kept, so a report for
+            last year still shows the old city.
+
+      - type: example
+        title: SCD Type 1 overwrites the value
+        md: Ana moves from Austin to Denver. Type 1 simply updates the row.
+        dataset: blank
+        sql: |
+          CREATE TABLE dim_customer_t1 (
+              customer_id INTEGER PRIMARY KEY,
+              city        TEXT NOT NULL
+          );
+
+          INSERT INTO dim_customer_t1
+          VALUES (1, 'Austin'), (2, 'Boston');
+
+          UPDATE dim_customer_t1
+          SET city = 'Denver'
+          WHERE customer_id = 1;
+
+          SELECT customer_id, city
+          FROM dim_customer_t1
+          ORDER BY customer_id;
+        after: |
+          Ana now lives in Denver, and the table is correct for today. But the fact
+          that she lived in Austin has disappeared. Type 1 is right when history does
+          not matter, such as fixing a typo in a name.
+
+      - type: example
+        title: SCD Type 2 keeps the history
+        md: The same move, this time keeping both versions of Ana.
+        dataset: blank
+        sql: |
+          CREATE TABLE dim_customer_t2 (
+              customer_sk INTEGER GENERATED ALWAYS AS IDENTITY
+                  PRIMARY KEY,
+              customer_id INTEGER NOT NULL,
+              city        TEXT NOT NULL,
+              valid_from  DATE NOT NULL,
+              valid_to    DATE NOT NULL,
+              is_current  BOOLEAN NOT NULL
+          );
+
+          INSERT INTO dim_customer_t2
+              (customer_id, city, valid_from, valid_to, is_current)
+          VALUES (1, 'Austin', '2023-01-01', '9999-12-31', TRUE);
+
+          UPDATE dim_customer_t2
+          SET valid_to = '2024-02-29', is_current = FALSE
+          WHERE customer_id = 1 AND is_current;
+
+          INSERT INTO dim_customer_t2
+              (customer_id, city, valid_from, valid_to, is_current)
+          VALUES (1, 'Denver', '2024-03-01', '9999-12-31', TRUE);
+
+          SELECT customer_id, city, valid_from, valid_to, is_current
+          FROM dim_customer_t2
+          ORDER BY valid_from;
+        after: |
+          Two rows now describe Ana. The Austin row ends on 2024-02-29, and the
+          Denver row starts on 2024-03-01. `is_current` shows which row is current.
+          The value `9999-12-31` is a common way to say "no end date yet".
+
+          > [!REAL-WORLD]
+          > Analysts use Type 2 for things that matter over time, such as the
+          > customer's segment, the product's category or a store's manager.
+
+      - type: quiz
+        id: m20-l04-q2
+        question: "A customer moves to a new city. Which approach is a Type 2 slowly changing dimension?"
+        options:
+          - "Overwrite the old city, so only the new value remains"
+          - "Keep the old row, mark it as no longer current, and add a new row with the new city"
+          - "Delete the customer and insert them again with a new name"
+          - "Store the new city only in the fact table"
+        answer: 1
+        explanation: |
+          Type 2 keeps every version as a row, with dates that show when each version
+          was valid. Overwriting the value is Type 1.
+
+      - type: exercise
+        id: m20-l04-e1
+        title: Build dim_customer
+        prompt: |
+          Create a table called `dim_customer` with the columns `customer_key`,
+          `customer_id`, `first_name`, `last_name` and `state`, in that order.
+
+          `customer_key` must be 1 for the customer with the lowest `customer_id`,
+          2 for the next one, and so on. Use `ROW_NUMBER()`, numbered by `customer_id`.
+        starter: |
+          CREATE TABLE dim_customer AS
+          SELECT customer_id
+          FROM customers;
+        solution: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 first_name,
+                 last_name,
+                 state
+          FROM customers;
+        check: |
+          SELECT customer_key, customer_id, first_name, last_name, state
+          FROM dim_customer
+          WHERE customer_key <= 5
+          ORDER BY customer_key;
+        columnNames: true
+        hints:
+          - You need `CREATE TABLE dim_customer AS SELECT ...`, with the columns named in the prompt.
+          - Add `ROW_NUMBER() OVER (ORDER BY customer_id) AS customer_key` as the first column.
+          - "SELECT ROW_NUMBER() OVER (ORDER BY ___) AS customer_key, customer_id, first_name, last_name, state FROM customers;"
+        explanation: |
+          The table is created by the query, so the check reads the first five keys.
+          The `ORDER BY customer_id` inside `OVER` decides which customer gets which
+          number. It is separate from the order of the rows you see when you query
+          the table, which needs its own `ORDER BY`.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l04-e2
+        title: Build dim_product
+        prompt: |
+          Create a table called `dim_product` with the columns `product_key`,
+          `product_id`, `product_name` and `category_name`, in that order.
+
+          `product_key` must be 1 for the product with the lowest `product_id`, 2 for
+          the next one, and so on. Get the category name from `categories`.
+        starter: |
+          CREATE TABLE dim_product AS
+          SELECT product_id
+          FROM products;
+        solution: |
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 p.name AS product_name,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+        check: |
+          SELECT product_key, product_id, product_name, category_name
+          FROM dim_product
+          WHERE product_key <= 5
+          ORDER BY product_key;
+        columnNames: true
+        hints:
+          - Join `products` to `categories` on `category_id`, as in the example.
+          - Use `p.name AS product_name` and `c.name AS category_name`, so the names are clear.
+          - "...SELECT ROW_NUMBER() OVER (ORDER BY p.___) AS product_key, p.product_id ... FROM products AS p JOIN categories AS c ON c.category_id = p.category_id;"
+        explanation: |
+          A join to `categories` gives every product its category name. Because each
+          product has one category, the table still has one row per product.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l04-e3
+        title: Build fact_sales
+        prompt: |
+          The tables `dim_customer` and `dim_product` already exist. They were built
+          as in the example, so you can use them.
+
+          Create a table called `fact_sales` with one row for each order line. Use
+          these columns, in this order:
+
+          - `order_item_id` from `order_items`
+          - `customer_key` from `dim_customer`
+          - `product_key` from `dim_product`
+          - `order_date` from `orders`
+          - `order_status` from `orders.status`
+          - `quantity`
+          - `sales_amount`, which is `quantity * unit_price * (1 - discount)`, with no rounding
+
+          Join each line to its order, and then to both dimensions.
+        setup: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 state
+          FROM customers;
+
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+        solution: |
+          CREATE TABLE fact_sales AS
+          SELECT i.order_item_id,
+                 dc.customer_key,
+                 dp.product_key,
+                 o.order_date,
+                 o.status AS order_status,
+                 i.quantity,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS sales_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          JOIN dim_customer AS dc
+               ON dc.customer_id = o.customer_id
+          JOIN dim_product AS dp
+               ON dp.product_id = i.product_id;
+        check: |
+          SELECT COUNT(*) AS fact_rows,
+                 COUNT(DISTINCT customer_key) AS customers,
+                 ROUND(SUM(sales_amount), 2) AS total_amount
+          FROM fact_sales;
+        columnNames: true
+        hints:
+          - Start from `order_items`, because the fact has one row for each of its lines.
+          - Join `orders` on `order_id`, then join `dim_customer` and `dim_product` for their keys.
+          - "...FROM order_items AS i JOIN orders AS o ON o.order_id = i.order_id JOIN dim_customer AS dc ON dc.customer_id = o.customer_id ___ dim_product AS dp ON dp.product_id = i.product_id;"
+        explanation: |
+          The fact table keeps the 2,296 order lines, one row each. The check counts
+          the rows, the customers and the total, so a join that repeats or loses
+          lines is caught immediately.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l04-e4
+        title: Revenue by category, 2024
+        prompt: |
+          Use the tables `dim_product` and `fact_sales`. They already exist, because
+          they were built in the exercise above.
+
+          Show `category_name` and `revenue`. The `revenue` is the sum of
+          `sales_amount` for **delivered** orders placed in **2024**, rounded to
+          2 decimal places.
+
+          Sort the rows by `revenue` from highest to lowest, then by `category_name`.
+        setup: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 state
+          FROM customers;
+
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+
+          CREATE TABLE fact_sales AS
+          SELECT i.order_item_id,
+                 dc.customer_key,
+                 dp.product_key,
+                 o.order_date,
+                 o.status AS order_status,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS sales_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          JOIN dim_customer AS dc
+               ON dc.customer_id = o.customer_id
+          JOIN dim_product AS dp
+               ON dp.product_id = i.product_id;
+        solution: |
+          SELECT dp.category_name,
+                 ROUND(SUM(f.sales_amount), 2) AS revenue
+          FROM fact_sales AS f
+          JOIN dim_product AS dp
+               ON dp.product_key = f.product_key
+          WHERE f.order_status = 'delivered'
+            AND f.order_date >= '2024-01-01'
+            AND f.order_date < '2025-01-01'
+          GROUP BY dp.category_name
+          ORDER BY revenue DESC, dp.category_name;
+        ordered: true
+        columnNames: true
+        hints:
+          - Filter the fact table first, on `order_status` and on the 2024 dates.
+          - Join to `dim_product` on `product_key`, and group by `category_name`.
+          - "...FROM fact_sales AS f JOIN dim_product AS dp ON dp.product_key = f.product_key WHERE f.order_status = ___ GROUP BY dp.category_name ORDER BY ___ DESC, ___;"
+        explanation: |
+          Only the fact table and one dimension are needed, because the status and the
+          date were copied into the fact table. Eleven categories sold delivered
+          goods in 2024. Phones is first, with $39,650.34.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l04-e5
+        title: Top three states, with a star
+        prompt: |
+          Use `dim_customer` and `fact_sales`. They already exist, because they were
+          built in the exercise above.
+
+          For **delivered** orders placed in **2024**, show three columns:
+
+          - `state`: the customer's state, from `dim_customer`
+          - `customers`: the number of **different** customers (`customer_key`)
+          - `revenue`: the sum of `sales_amount`, rounded to 2 decimal places
+
+          Show the **3 states with the highest revenue**. Sort by `revenue` from
+          highest to lowest, then by `state`.
+        setup: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 state
+          FROM customers;
+
+          CREATE TABLE dim_product AS
+          SELECT ROW_NUMBER() OVER (ORDER BY p.product_id)
+                 AS product_key,
+                 p.product_id,
+                 c.name AS category_name
+          FROM products AS p
+          JOIN categories AS c
+               ON c.category_id = p.category_id;
+
+          CREATE TABLE fact_sales AS
+          SELECT i.order_item_id,
+                 dc.customer_key,
+                 dp.product_key,
+                 o.order_date,
+                 o.status AS order_status,
+                 i.quantity * i.unit_price * (1 - i.discount)
+                     AS sales_amount
+          FROM order_items AS i
+          JOIN orders AS o
+               ON o.order_id = i.order_id
+          JOIN dim_customer AS dc
+               ON dc.customer_id = o.customer_id
+          JOIN dim_product AS dp
+               ON dp.product_id = i.product_id;
+        solution: |
+          SELECT dc.state,
+                 COUNT(DISTINCT f.customer_key) AS customers,
+                 ROUND(SUM(f.sales_amount), 2) AS revenue
+          FROM fact_sales AS f
+          JOIN dim_customer AS dc
+               ON dc.customer_key = f.customer_key
+          WHERE f.order_status = 'delivered'
+            AND f.order_date >= '2024-01-01'
+            AND f.order_date < '2025-01-01'
+          GROUP BY dc.state
+          ORDER BY revenue DESC, dc.state
+          LIMIT 3;
+        ordered: true
+        columnNames: true
+        hints:
+          - Group the report by the state, which lives in `dim_customer`.
+          - Count customers with `COUNT(DISTINCT f.customer_key)`, not `COUNT(*)`, so each customer counts once.
+          - "...GROUP BY dc.state ORDER BY ___ DESC, ___ LIMIT ___;"
+        explanation: |
+          `COUNT(DISTINCT ...)` counts each customer once, even when a customer has many
+          lines. Ordering by `state` after `revenue` makes the rows complete, and the
+          third place (New York, $17,151.14) is not tied with the next state.
+        difficulty: 3
+
+      - type: exercise
+        id: m20-l04-e6
+        title: Keep Ana's history
+        dataset: blank
+        prompt: |
+          Ana (`customer_id` 1) moved from Austin to Denver on **2024-03-01**. The
+          table `dim_customer_t2` already has her Austin row, which starts on
+          2023-01-01 and has no end yet.
+
+          Keep her history, Type 2 style. Write two statements:
+
+          1. Close the Austin row: set `valid_to` to `'2024-02-29'` and `is_current`
+             to `FALSE`.
+          2. Add a Denver row for customer 1 with `city` `'Denver'`, `valid_from`
+             `'2024-03-01'`, `valid_to` `'9999-12-31'` and `is_current` `TRUE`.
+
+          The starter below overwrites the city instead. That is Type 1, and it loses
+          the Austin history.
+        setup: |
+          CREATE TABLE dim_customer_t2 (
+              customer_sk INTEGER GENERATED ALWAYS AS IDENTITY
+                  PRIMARY KEY,
+              customer_id INTEGER NOT NULL,
+              city        TEXT NOT NULL,
+              valid_from  DATE NOT NULL,
+              valid_to    DATE NOT NULL,
+              is_current  BOOLEAN NOT NULL
+          );
+
+          INSERT INTO dim_customer_t2
+              (customer_id, city, valid_from, valid_to, is_current)
+          VALUES (1, 'Austin', '2023-01-01', '9999-12-31', TRUE);
+        starter: |
+          UPDATE dim_customer_t2
+          SET city = 'Denver'
+          WHERE customer_id = 1;
+        solution: |
+          UPDATE dim_customer_t2
+          SET valid_to = '2024-02-29',
+              is_current = FALSE
+          WHERE customer_id = 1
+            AND is_current;
+
+          INSERT INTO dim_customer_t2
+              (customer_id, city, valid_from, valid_to, is_current)
+          VALUES (1, 'Denver', '2024-03-01', '9999-12-31', TRUE);
+        check: |
+          SELECT customer_id, city, valid_from, valid_to, is_current
+          FROM dim_customer_t2
+          ORDER BY valid_from;
+        columnNames: true
+        hints:
+          - You need an UPDATE to close the old row, and an INSERT to add the new one.
+          - "The old row is the one where `is_current` is still TRUE, so filter with `WHERE customer_id = 1 AND is_current`."
+          - "UPDATE dim_customer_t2 SET valid_to = '2024-02-29', is_current = ___ WHERE customer_id = 1 AND is_current; INSERT INTO dim_customer_t2 (...) VALUES (1, 'Denver', ___, '9999-12-31', TRUE);"
+        explanation: |
+          Type 2 never overwrites history. It closes the old row with an end date and
+          adds a new row with a start date. The check shows two rows, and the report
+          for early 2024 can still find Ana in Austin.
+        difficulty: 3
+
+      - type: read
+        title: Summary
+        md: |
+          - A star schema has one **fact table** of events with numbers, and **dimension tables** that describe them.
+          - Decide the **grain** first. Write it in one sentence.
+          - Use **surrogate keys** (`ROW_NUMBER()`) to link facts and dimensions.
+          - **Type 1** overwrites a value. **Type 2** keeps every version with dates.
+
+    cheatsheet:
+      - title: Build a dimension table
+        sql: |
+          CREATE TABLE dim_customer AS
+          SELECT ROW_NUMBER() OVER (ORDER BY customer_id)
+                 AS customer_key,
+                 customer_id,
+                 state
+          FROM customers;
+        note: "CREATE TABLE ... AS SELECT builds a table from a query."
+      - title: Star report
+        sql: |
+          SELECT dp.category_name,
+                 ROUND(SUM(f.sales_amount), 2) AS revenue
+          FROM fact_sales AS f
+          JOIN dim_product AS dp
+               ON dp.product_key = f.product_key
+          GROUP BY dp.category_name;
+        note: "One fact table, then one join for each dimension you need."
+      - title: SCD Type 2, close and add
+        sql: |
+          UPDATE dim_customer_t2
+          SET valid_to = '2024-02-29', is_current = FALSE
+          WHERE customer_id = 1 AND is_current;
+
+          INSERT INTO dim_customer_t2
+              (customer_id, city, valid_from, valid_to, is_current)
+          VALUES (1, 'Denver', '2024-03-01', '9999-12-31', TRUE);
+        note: "Keep the old row, and add a new current row."
+
+  - id: m20-l05
+    title: "Trust, but verify: testing your queries"
+    summary: A query that runs is not always a query that is right. Test NULLs, duplicates, ties and empty groups, and reconcile your totals against a second source.
+    minutes: 35
+    steps:
+      - type: read
+        title: It ran, so it must be right?
+        md: |
+          You are about to send the quarterly revenue to Priya. The query ran without
+          an error, and the number looks sensible. Is it right?
+
+          "No error" only means the query was valid SQL. It says nothing about whether
+          the answer matches the business. Professional analysts test their results
+          before anyone relies on them. They do it the way a scientist does: they look
+          for a second way to get the same answer.
+
+      - type: read
+        title: A testing checklist
+        md: |
+          Before you trust a result, ask these five questions:
+
+          1. **NULLs.** Do missing values change the count or the sum?
+          2. **Duplicates.** Did a join repeat rows? Compare `COUNT(*)` with
+             `COUNT(DISTINCT id)`.
+          3. **Ties.** If two rows have the same value, does a `LIMIT` cut between them?
+          4. **Empty groups.** What happens when nothing matches? Is the answer `0`
+             or `NULL`?
+          5. **Reconciliation.** Do two independent sources of the same total agree?
+
+          The next examples test each of these in turn.
+
+      - type: example
+        title: Duplicates after a join
+        md: Every customer is joined to their orders. How many rows, and how many customers?
+        sql: |
+          SELECT COUNT(*) AS joined_rows,
+                 COUNT(DISTINCT c.customer_id) AS customers
+          FROM customers AS c
+          JOIN orders AS o
+               ON o.customer_id = c.customer_id;
+        after: |
+          The join gives 900 rows, one for each order, but only 140 different
+          customers. Both numbers are correct, and they measure different things. If
+          your report says "customers" and shows 900, a test like this one catches the
+          mistake.
+
+      - type: example
+        title: "Empty groups: no rows is not zero"
+        md: What is the total price of products that cost less than zero? There are none.
+        sql: |
+          SELECT SUM(price) AS total,
+                 COUNT(*) AS products
+          FROM products
+          WHERE price < 0;
+        after: |
+          The count is `0`, but the sum is `NULL`. `SUM` of no rows is not zero. It is
+          unknown, which PostgreSQL shows as `NULL`. In a report, use
+          `COALESCE(SUM(price), 0)` when you want to show a plain 0.
+
+      - type: read
+        title: Ties at the edge of a list
+        md: |
+          In the previous lesson you saw that a `LIMIT` needs a tie-breaker. The test
+          is to look at the values right at the edge. Group the top prices and count
+          how many products share each price.
+
+      - type: example
+        title: Who shares a price?
+        md: Count the products at each high price.
+        sql: |
+          SELECT price,
+                 COUNT(*) AS products
+          FROM products
+          WHERE price >= 800
+          GROUP BY price
+          ORDER BY price DESC;
+        after: |
+          Three prices belong to one product each. The price 899.99 belongs to two
+          products. A `LIMIT 4` would cut between them, so the fourth place is a tie.
+          Add a unique tie-breaker, such as `product_id`, or use `RANK()` as you will
+          in the exercises.
+
+      - type: example
+        title: Reconcile payments with orders
+        md: |
+          The payments table and the order lines are two independent sources. For every
+          order that has payments, the order total should equal the sum of its payments.
+        sql: |
+          WITH totals AS (
+              SELECT o.order_id,
+                     ROUND(SUM(i.quantity * i.unit_price
+                               * (1 - i.discount)), 2) AS total
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              GROUP BY o.order_id
+          ),
+          paid AS (
+              SELECT order_id,
+                     SUM(amount) AS paid_amount
+              FROM payments
+              GROUP BY order_id
+          )
+          SELECT COUNT(*) AS paid_orders,
+                 COUNT(*) FILTER (
+                     WHERE p.paid_amount <> t.total
+                 ) AS mismatches
+          FROM totals AS t
+          JOIN paid AS p
+               ON p.order_id = t.order_id;
+        after: |
+          758 orders have payments, and none of them mismatches. Two independent
+          calculations agree to the cent, and that agreement is what gives you
+          confidence.
+
+          `FILTER (WHERE ...)` counts only the rows that match the condition, here the
+          orders that differ.
+
+      - type: read
+        title: A mismatch is a question
+        md: |
+          When two totals do not agree, do not panic and do not hide the difference.
+          Ask what the difference means. In this database, 15 orders that were not
+          cancelled have **no payment row at all**. They are still waiting to be paid,
+          or the payment is missing. That is an important finding, and it is exactly
+          what a reconciliation is meant to find.
+
+          > [!MISTAKE]
+          > Do not "fix" a test by removing the rows that fail it. First explain them.
+
+      - type: quiz
+        id: m20-l05-q1
+        question: "Which pair of numbers tells you that a join repeated some rows?"
+        options:
+          - "COUNT(*) is larger than COUNT(DISTINCT id) for the same id"
+          - "The query returns exactly 10 rows"
+          - "The query has a LIMIT clause"
+          - "The result has NULL in the first column"
+        answer: 0
+        explanation: |
+          If `COUNT(*)` is bigger than the number of distinct ids, some ids appear
+          more than once. That is the fingerprint of a repeating join.
+
+      - type: predict
+        id: m20-l05-p1
+        question: "What does this query return?"
+        sql: |
+          SELECT SUM(price) AS total,
+                 COUNT(*) AS products
+          FROM products
+          WHERE price < 0;
+        options: ["0 and 0", "NULL and 0", "NULL and NULL", "An error"]
+        answer: 1
+        explanation: |
+          `COUNT(*)` of no rows is 0, but `SUM` of no rows is NULL. This is one of the
+          most common surprises in reports.
+
+      - type: fill
+        id: m20-l05-f1
+        prompt: "Show 0 instead of NULL when there are no products with a negative price. Complete the query."
+        template: |
+          SELECT COALESCE(___, 0) AS total
+          FROM products
+          WHERE price < 0;
+        answers:
+          - ["SUM(price)"]
+        explanation: "`COALESCE` returns the first value that is not NULL. The query returns one row with 0, instead of one row with NULL."
+
+      - type: exercise
+        id: m20-l05-e1
+        title: Orders and customers
+        prompt: |
+          From the `orders` table, show two columns:
+
+          - `orders`: the number of orders
+          - `customers`: the number of **different** customers who placed them
+        solution: |
+          SELECT COUNT(*) AS orders,
+                 COUNT(DISTINCT customer_id) AS customers
+          FROM orders;
+        columnNames: true
+        hints:
+          - "`COUNT(*)` counts rows. `COUNT(DISTINCT ...)` counts each value once."
+          - Use `COUNT(DISTINCT customer_id)` for the second column.
+          - "SELECT COUNT(___) AS orders, COUNT(DISTINCT ___) AS customers FROM orders;"
+        explanation: |
+          There are 900 orders, placed by 140 different customers. Comparing the two
+          numbers is a quick way to see how many orders each customer places.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l05-e2
+        title: Customers with and without orders
+        prompt: |
+          Use `customers` and `orders`. Show two columns:
+
+          - `with_orders`: the number of customers who have at least one order
+          - `without_orders`: the number of customers who have no order
+
+          Count each customer once.
+        solution: |
+          SELECT COUNT(DISTINCT c.customer_id)
+                     FILTER (WHERE o.order_id IS NOT NULL)
+                     AS with_orders,
+                 COUNT(DISTINCT c.customer_id)
+                     FILTER (WHERE o.order_id IS NULL)
+                     AS without_orders
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id;
+        columnNames: true
+        hints:
+          - A LEFT JOIN keeps the customers who have no orders. Their order columns are NULL.
+          - "`FILTER (WHERE o.order_id IS NULL)` counts only the customers without a match."
+          - "...COUNT(DISTINCT c.customer_id) FILTER (WHERE o.order_id ___ NULL) AS without_orders FROM customers AS c LEFT JOIN orders AS o ON ...;"
+        explanation: |
+          140 customers have at least one order, and 10 have none. The two counts add
+          up to the 150 customers, which is a useful check of your query.
+        difficulty: 1
+
+      - type: exercise
+        id: m20-l05-e3
+        title: Zero, not NULL
+        prompt: |
+          For the customers with `customer_id` from 138 to 142, show two columns:
+
+          - `customer_id`
+          - `total_spent`: the total of their orders, rounded to 2 decimal places.
+            A customer with no orders must show `0`, not `NULL`.
+
+          Sort the rows by `customer_id`.
+        starter: |
+          SELECT c.customer_id,
+                 ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2)
+                     AS total_spent
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          LEFT JOIN order_items AS i
+                 ON i.order_id = o.order_id
+          WHERE c.customer_id BETWEEN 138 AND 142
+          GROUP BY c.customer_id
+          ORDER BY c.customer_id;
+        solution: |
+          SELECT c.customer_id,
+                 COALESCE(ROUND(SUM(i.quantity * i.unit_price
+                                    * (1 - i.discount)), 2), 0)
+                     AS total_spent
+          FROM customers AS c
+          LEFT JOIN orders AS o
+                 ON o.customer_id = c.customer_id
+          LEFT JOIN order_items AS i
+                 ON i.order_id = o.order_id
+          WHERE c.customer_id BETWEEN 138 AND 142
+          GROUP BY c.customer_id
+          ORDER BY c.customer_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - The starter shows `NULL` for customers 141 and 142. Find out why.
+          - Wrap the rounded sum in `COALESCE(..., 0)`.
+          - "COALESCE(ROUND(SUM(...), 2), ___) AS total_spent"
+        explanation: |
+          Customers 141 and 142 have no order lines, so their sum is `NULL`. `COALESCE`
+          replaces that `NULL` with 0. The other three customers keep their totals.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l05-e4
+        title: Do the two totals agree?
+        prompt: |
+          Reconcile the payments with the orders. Show two columns:
+
+          - `payments_total`: the sum of **all** `amount` values in `payments`,
+            rounded to 2 decimal places
+          - `paid_order_total`: the sum of the **order totals** for orders that have at
+            least one payment, rounded to 2 decimal places
+
+          An order total is `quantity * unit_price * (1 - discount)`, summed over the
+          order's lines. Round each order total to 2 decimal places before you add them.
+        solution: |
+          WITH totals AS (
+              SELECT o.order_id,
+                     ROUND(SUM(i.quantity * i.unit_price
+                               * (1 - i.discount)), 2) AS total
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              GROUP BY o.order_id
+          )
+          SELECT ROUND((SELECT SUM(amount) FROM payments), 2)
+                     AS payments_total,
+                 ROUND(SUM(t.total), 2) AS paid_order_total
+          FROM totals AS t
+          WHERE t.order_id IN (SELECT order_id FROM payments);
+        columnNames: true
+        hints:
+          - First build one row per order with its total, in a CTE.
+          - Keep only the orders that appear in `payments`, using `WHERE order_id IN (...)`.
+          - "Use ROUND(SUM(amount), 2) on payments to get the other total."
+        explanation: |
+          Both totals are 263,983.37, so the two sources agree. This is a reconciliation.
+          If the numbers had differed, the next step would be to find the orders
+          that caused the gap.
+        difficulty: 2
+
+      - type: exercise
+        id: m20-l05-e5
+        title: Orders that have no payment
+        prompt: |
+          Find the orders that are **not cancelled** and have **no** payment rows.
+
+          Show four columns: `order_id`, `status`, `total` and `paid`. `total` is the
+          order total, rounded to 2 decimal places. `paid` is the amount paid, with
+          `0` when there is no payment.
+
+          Sort the rows by `order_id`.
+        solution: |
+          WITH totals AS (
+              SELECT o.order_id,
+                     o.status,
+                     ROUND(SUM(i.quantity * i.unit_price
+                               * (1 - i.discount)), 2) AS total
+              FROM orders AS o
+              JOIN order_items AS i
+                   ON i.order_id = o.order_id
+              GROUP BY o.order_id, o.status
+          ),
+          paid AS (
+              SELECT order_id,
+                     SUM(amount) AS paid_amount
+              FROM payments
+              GROUP BY order_id
+          )
+          SELECT t.order_id,
+                 t.status,
+                 t.total,
+                 COALESCE(p.paid_amount, 0) AS paid
+          FROM totals AS t
+          LEFT JOIN paid AS p
+                 ON p.order_id = t.order_id
+          WHERE t.status <> 'cancelled'
+            AND p.order_id IS NULL
+          ORDER BY t.order_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Build one row per order with its total, and one row per paid order. Then compare them.
+          - A LEFT JOIN from the totals to the payments leaves NULL where no payment exists.
+          - "...WHERE t.status ___ 'cancelled' AND p.order_id IS ___ ORDER BY t.order_id;"
+        explanation: |
+          Fifteen orders are waiting for payment or have a missing payment row. The
+          `COALESCE` makes the `paid` column show 0 for them. Finding these orders is the
+          reconciliation step; the next step is to decide what they mean.
+        difficulty: 3
+
+      - type: exercise
+        id: m20-l05-e6
+        title: Top four prices, including ties
+        prompt: |
+          Show every product whose price is in the **top 4 prices**, counting ties.
+          Use `RANK()` with the highest price first.
+
+          Show four columns: `product_id`, `name`, `price` and `price_rank`.
+          Sort the rows by `price_rank`, then by `product_id`.
+
+          Two products share the fourth place, so the result has more than 4 rows.
+        solution: |
+          SELECT product_id,
+                 name,
+                 price,
+                 price_rank
+          FROM (
+              SELECT product_id,
+                     name,
+                     price,
+                     RANK() OVER (ORDER BY price DESC) AS price_rank
+              FROM products
+          ) AS ranked
+          WHERE price_rank <= 4
+          ORDER BY price_rank, product_id;
+        ordered: true
+        columnNames: true
+        hints:
+          - Put the `RANK()` in a subquery, then filter on the rank in the outer query.
+          - "`RANK()` gives tied rows the same number, so both 899.99 products get 4."
+          - "SELECT ... FROM (SELECT ..., RANK() OVER (ORDER BY price ___) AS price_rank FROM products) AS ranked WHERE price_rank <= 4 ORDER BY ___, ___;"
+        explanation: |
+          `RANK()` gives equal prices the same rank, so ties at the edge stay together.
+          That is the honest answer to "the top 4 prices": five products. `ROW_NUMBER()`
+          would have cut one of them, and it would have chosen one arbitrarily.
+        difficulty: 3
+
+    cheatsheet:
+      - title: Rows versus distinct values
+        sql: |
+          SELECT COUNT(*) AS row_count,
+                 COUNT(DISTINCT customer_id) AS customer_count
+          FROM orders;
+        note: "If the two numbers differ, some ids repeat."
+      - title: Zero instead of NULL
+        sql: "SELECT COALESCE(SUM(price), 0) AS total FROM products WHERE price < 0;"
+        note: "SUM of no rows is NULL. COUNT of no rows is 0."
+      - title: Count only the matching rows
+        sql: |
+          SELECT COUNT(*) FILTER (WHERE status = 'cancelled')
+                 AS cancelled_orders
+          FROM orders;
+        note: "FILTER counts only the rows that match, in the same query as the other counts."
+      - title: Keep ties in a top list
+        sql: |
+          SELECT *
+          FROM (
+              SELECT name, price,
+                     RANK() OVER (ORDER BY price DESC) AS price_rank
+              FROM products
+          ) AS ranked
+          WHERE price_rank <= 4;
+        note: "RANK() keeps tied rows. ROW_NUMBER() would cut one of them."
+
   # @@NEXT_LESSON@@
 
 testPool:
