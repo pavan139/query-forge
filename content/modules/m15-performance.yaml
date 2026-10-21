@@ -111,14 +111,14 @@ lessons:
         md: |
           Mia's official "order total" query is long, so let's build it one clause at a time before we save it. Click through the stages. Each one runs and shows its result.
         stages:
-          - label: Orders
+          - "label: Orders"
             md: Start with the orders themselves.
             sql: |
               SELECT order_id, customer_id, order_date, status
               FROM orders
               ORDER BY order_id
               LIMIT 5;
-          - label: Join items
+          - "label: Join items"
             md: Each order has one or more lines in `order_items`. Join them.
             sql: |
               SELECT o.order_id, i.quantity, i.unit_price, i.discount
@@ -126,7 +126,7 @@ lessons:
               JOIN order_items i ON i.order_id = o.order_id
               ORDER BY o.order_id
               LIMIT 6;
-          - label: Line totals
+          - "label: Line totals"
             md: A line is worth quantity times unit price, minus its discount.
             sql: |
               SELECT o.order_id,
@@ -135,7 +135,7 @@ lessons:
               JOIN order_items i ON i.order_id = o.order_id
               ORDER BY o.order_id
               LIMIT 6;
-          - label: Group
+          - "label: Group"
             md: Add the lines up with `SUM`, one row per order.
             sql: |
               SELECT o.order_id, o.customer_id, o.order_date, o.status,
@@ -145,7 +145,7 @@ lessons:
               GROUP BY o.order_id, o.customer_id, o.order_date, o.status
               ORDER BY o.order_id
               LIMIT 5;
-          - label: Save it
+          - "label: Save it"
             md: Put `CREATE VIEW order_totals AS` in front. The query inside has no `LIMIT` or `ORDER BY`, because the view should hold *all* orders.
             sql: |
               CREATE VIEW order_totals AS
@@ -232,9 +232,9 @@ lessons:
         prompt: |
           Create a view called `category_stats` with three columns, in this order:
 
-          - `category`: the category name (`categories.name`)
-          - `products`: how many products are in that category
-          - `avg_price`: the average product price, rounded to 2 decimals
+          - "`category`: the category name (`categories.name`)"
+          - "`products`: how many products are in that category"
+          - "`avg_price`: the average product price, rounded to 2 decimals"
 
           Only categories that have at least one product will appear.
         starter: |
@@ -462,7 +462,7 @@ lessons:
           SELECT * FROM product_catalog ORDER BY product_name LIMIT 10;
         columnNames: true
         hints:
-          - 'Read the error: column "name" specified more than once. A view needs distinct column names.'
+          - "'Read the error: column "name" specified more than once. A view needs distinct column names.'"
           - Give each `name` column its own alias with `AS`.
           - "SELECT p.name AS ___, c.name AS ___ FROM products p JOIN categories c ON ..."
         explanation: |
@@ -668,8 +668,8 @@ lessons:
           Create a materialized view called `mv_payment_methods` from the `payments` table with three columns, in this order:
 
           - `method`
-          - `payments`: how many payments used that method
-          - `total`: the sum of `amount` for that method
+          - "`payments`: how many payments used that method"
+          - "`total`: the sum of `amount` for that method"
         starter: |
           CREATE MATERIALIZED VIEW mv_payment_methods AS
           SELECT
@@ -857,9 +857,9 @@ lessons:
         prompt: |
           Create a materialized view called `mv_category_revenue` with three columns, in this order:
 
-          - `category`: the category name
-          - `units`: total quantity sold
-          - `revenue`: total of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals
+          - "`category`: the category name"
+          - "`units`: total quantity sold"
+          - "`revenue`: total of `quantity * unit_price * (1 - discount)`, rounded to 2 decimals"
 
           Count only lines that belong to **delivered** orders.
         starter: |
@@ -1399,8 +1399,8 @@ lessons:
         prompt: |
           Compare the size of the `orders` table with the size of its primary key index. Show two columns:
 
-          - `table_size`: `pg_size_pretty(pg_relation_size('orders'))`
-          - `index_size`: `pg_size_pretty(pg_relation_size('orders_pkey'))`
+          - "`table_size`: `pg_size_pretty(pg_relation_size('orders'))`"
+          - "`index_size`: `pg_size_pretty(pg_relation_size('orders_pkey'))`"
         starter: |
           SELECT pg_size_pretty(pg_relation_size('orders')) AS table_size
         solution: |
@@ -1703,10 +1703,10 @@ lessons:
           EXPLAIN SELECT * FROM big_orders WHERE customer_id = 777;
           EXPLAIN SELECT * FROM big_orders WHERE order_id < 150000;
         after: |
-          - **Result 1**: one specific order, so an **Index Scan**.
-          - **Result 2**: the same lookup, but we only ask for `order_id`, which the index already holds. That allows an **Index Only Scan**.
-          - **Result 3**: customer 777 has 40 orders spread all over the table, so PostgreSQL first builds a **Bitmap** of the right pages, then reads them.
-          - **Result 4**: three quarters of the table matches. The planner decides that reading everything is cheaper than jumping through the index 150,000 times, so it uses a **Seq Scan even though an index exists**.
+          - "**Result 1**: one specific order, so an **Index Scan**."
+          - "**Result 2**: the same lookup, but we only ask for `order_id`, which the index already holds. That allows an **Index Only Scan**."
+          - "**Result 3**: customer 777 has 40 orders spread all over the table, so PostgreSQL first builds a **Bitmap** of the right pages, then reads them."
+          - "**Result 4**: three quarters of the table matches. The planner decides that reading everything is cheaper than jumping through the index 150,000 times, so it uses a **Seq Scan even though an index exists**."
 
           The planner compares the estimated cost of every option and picks the cheapest. That is why you never tell it which index to use.
 
@@ -1788,8 +1788,8 @@ lessons:
         prompt: |
           The planner's notes about each table are kept in the catalog `pg_class`. Show, for the table named `orders`, two columns:
 
-          - `est_rows`: `reltuples` converted to an integer (`reltuples::int`)
-          - `pages`: `relpages` (the number of 8 kB pages)
+          - "`est_rows`: `reltuples` converted to an integer (`reltuples::int`)"
+          - "`pages`: `relpages` (the number of 8 kB pages)"
         starter: |
           SELECT reltuples, relpages
           FROM pg_class;
@@ -1851,9 +1851,9 @@ lessons:
         prompt: |
           A DBA wants to know where to look first. Show every ordinary table in the `public` schema with three columns:
 
-          - `table_name`: the table's name (`relname`)
-          - `pages`: `relpages`
-          - `est_rows`: `reltuples` as an integer
+          - "`table_name`: the table's name (`relname`)"
+          - "`pages`: `relpages`"
+          - "`est_rows`: `reltuples` as an integer"
 
           Biggest first by `pages`, ties broken by `table_name`. Join `pg_class` (alias `c`) to `pg_namespace` (alias `n`) on `n.oid = c.relnamespace`, and keep only `c.relkind = 'r'` (ordinary tables) in the namespace named `public`.
         starter: |
@@ -1901,6 +1901,1276 @@ lessons:
           -- Index Scan / Index Only Scan: through an index
           -- Bitmap Heap Scan: pages marked by an index first
         note: "Read plans from the most indented line up. The planner picks the cheapest option."
+  - id: m15-l05
+    title: "Smarter indexes"
+    summary: Build composite, partial, expression, covering and GIN indexes, and pick the one that matches the question.
+    minutes: 30
+    steps:
+      - type: read
+        title: One index is not enough
+        md: |
+          Mia's team runs three reports against the 200,000-row order history. The first asks for **one customer's orders in a date range**. The second asks for **orders that are still processing**. The third looks up customers **by email, ignoring capital letters**.
+
+          A plain index on a single column helps only one of these questions. In this lesson you learn the right *shape* of index for each one. Every example builds its own practice table, so each one runs on its own.
+
+      - type: example
+        title: Two columns in one index
+        md: |
+          A **composite index** covers more than one column. This one is sorted by `customer_id` first, and by `order_date` inside each customer.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_cust_date
+              ON big_orders (customer_id, order_date);
+
+          ANALYZE big_orders;
+
+          SELECT COUNT(*) AS orders_found
+          FROM big_orders
+          WHERE customer_id = 777
+            AND order_date >= '2024-06-01';
+        after: |
+          Customer 777 has **13** orders since June 2024. PostgreSQL goes straight to customer 777 in the index, walks along the dates, and skips the other rows instead of reading all 200,000 of them.
+
+      - type: read
+        title: The order of the columns matters
+        md: |
+          Think of a phone book. It is sorted by **last name, then first name**. Finding every "Smith" is quick. Finding every "John" in the whole book is slow, because the Johns are spread across every section.
+
+          The same is true for an index. The **first** column is the one the index is sorted by.
+
+          > [!ANALOGY]
+          > A phone book is a composite index on `(last_name, first_name)`. It answers "all Smiths" instantly, but "all Johns" needs a look at every section.
+
+          A simple rule works well: put the columns you compare with `=` first, and the range column (`>`, `<`, `BETWEEN`) last. For "one customer, since a date", that is `(customer_id, order_date)`.
+
+          > [!MISTAKE]
+          > An index on `(customer_id, order_date)` does not help much when you filter by `order_date` alone. Build the index with the column you filter on first.
+
+      - type: example
+        title: The wrong order for a date-only question
+        md: |
+          Same table and same index. This time we ask only for one day. Look at the plan: it is the one from the phone-book mistake.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_cust_date
+              ON big_orders (customer_id, order_date);
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT COUNT(*)
+          FROM big_orders
+          WHERE order_date = '2024-06-01';
+        after: |
+          The plan is a **Seq Scan**: PostgreSQL reads the whole table and removes **199,727** rows with the filter. The index starts with `customer_id`, so it cannot find a date quickly. The planner is right to ignore it.
+
+          Lesson 4 taught you to read plans. Remember that the exact timings change on every run; the shape of the plan is what you learn from.
+
+      - type: quiz
+        id: m15-l05-q1
+        question: |
+          Your most common question is "orders for **one customer** placed **after a date**". Which index is the best fit?
+        options:
+          - "(order_date, customer_id)"
+          - "(customer_id, order_date)"
+          - "(status)"
+          - "(total)"
+        answer: 1
+        explanation: |
+          The equality column `customer_id` goes first, so the index jumps to one customer, and then `order_date` narrows the range inside that customer's entries. The other option reads a whole date range for every customer first.
+
+      - type: read
+        title: "Partial index: index only the rows you ask for"
+        md: |
+          A **partial index** holds only the rows that match a `WHERE` condition. It is smaller, cheaper to update, and very fast for the questions it was built for.
+
+          The second report wants the orders that are still `processing`. Only about 1 in 100 orders is in that state, so an index on just those rows is much smaller than an index on all of them.
+
+          > [!TIP]
+          > The query must repeat the index's condition. An index built `WHERE status = 'processing'` helps a query that says `WHERE status = 'processing'`.
+
+      - type: example
+        title: A small index for open orders
+        md: |
+          We build an index on `order_date`, but only for processing orders. Then we count the processing orders from 2024.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_open_orders
+              ON big_orders (order_date)
+              WHERE status = 'processing';
+
+          ANALYZE big_orders;
+
+          SELECT COUNT(*) AS open_orders_2024
+          FROM big_orders
+          WHERE status = 'processing'
+            AND order_date >= '2024-01-01';
+        after: |
+          The answer is **989** orders. The planner uses `idx_open_orders` because the query repeats its `WHERE status = 'processing'`. The index holds only about 2,000 entries, which is why it is so small. On the same table, a full index on `(status, order_date)` took about 1.4 MB, while this one took 56 kB.
+
+      - type: exercise
+        id: m15-l05-e1
+        title: Fix the column order
+        prompt: |
+          The reports filter by `customer_id` **first** and then by `order_date`.
+
+          Create an index named `idx_orders_cust_date` on the `orders` table with the columns **`customer_id`, then `order_date`**, in that order.
+
+          The check shows the index definition.
+        starter: |
+          CREATE INDEX idx_orders_cust_date
+              ON orders (order_date, customer_id);
+        solution: |
+          CREATE INDEX idx_orders_cust_date
+              ON orders (customer_id, order_date);
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_orders_cust_date';
+        hints:
+          - The starter has the two columns in the wrong order. Swap them.
+          - The first column in the brackets is the one the index is sorted by. It must be `customer_id`.
+          - "CREATE INDEX idx_orders_cust_date ON orders (___, ___);"
+        explanation: |
+          The index is now sorted by customer first and by date second. The starter sorted it by date first, so it would be useless for "one customer's orders" questions.
+        difficulty: 1
+
+      - type: exercise
+        id: m15-l05-e2
+        title: Index only the processing orders
+        prompt: |
+          Create a **partial index** named `idx_open_orders` on the `orders` table. It should index `order_date`, but only for rows where `status` is `'processing'`.
+
+          The check shows the index definition.
+        solution: |
+          CREATE INDEX idx_open_orders
+              ON orders (order_date)
+              WHERE status = 'processing';
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_open_orders';
+        hints:
+          - A partial index ends with a `WHERE` clause.
+          - "Put `WHERE status = 'processing'` after the column list."
+          - "CREATE INDEX idx_open_orders ON orders (___) WHERE ___ = ___;"
+        explanation: |
+          The `WHERE` at the end is what makes the index partial. Only the processing orders are stored in it, so it stays small even when the table grows.
+        difficulty: 2
+
+      - type: read
+        title: "Expression index: index the result of a function"
+        md: |
+          The third report must ignore capital letters in emails. The query looks like this: `WHERE lower(email) = 'ana@example.com'`.
+
+          A normal index on `email` cannot help, because it stores the emails as typed. An **expression index** stores the result of a function instead, such as `lower(email)`.
+
+          > [!MISTAKE]
+          > The query must use **the same expression** as the index. An index on `lower(email)` is not used by `WHERE email = ...`, so the query scans the whole table.
+
+      - type: example
+        title: Searching without caring about capitals
+        md: |
+          Emails are stored with mixed capitals, as sign-up forms often produce them. The index stores `lower(email)`, so the search also uses `lower(email)`.
+        sql: |
+          CREATE TABLE big_users AS
+          SELECT g AS user_id,
+                 'Person' || g || '@Mail.example.com' AS email
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_users_lower_email
+              ON big_users (lower(email));
+
+          ANALYZE big_users;
+
+          SELECT user_id, email
+          FROM big_users
+          WHERE lower(email) = 'person777@mail.example.com';
+        after: |
+          User 777 is found, even though her email is stored as `Person777@Mail.example.com`. Try the same search with `WHERE email = 'person777@mail.example.com'` and you get **no rows**: the stored text has a capital P, and the index is not used for that expression.
+
+      - type: exercise
+        id: m15-l05-e3
+        title: An index on lower(email)
+        prompt: |
+          Create an index named `idx_customers_lower_email` on the `customers` table that stores `lower(email)`.
+
+          The check shows the index definition.
+        solution: |
+          CREATE INDEX idx_customers_lower_email
+              ON customers (lower(email));
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_customers_lower_email';
+        hints:
+          - The function goes inside the brackets, around the column name.
+          - "Write `ON customers (lower(email))`."
+          - "CREATE INDEX idx_customers_lower_email ON customers (___(___));"
+        explanation: |
+          The brackets hold an expression, not just a column. Because the index stores `lower(email)`, a search with `WHERE lower(email) = ...` can use it.
+        difficulty: 2
+
+      - type: read
+        title: "Covering index: answer from the index alone"
+        md: |
+          An **Index Only Scan** is the fastest kind of read. If the index contains every column the query asks for, PostgreSQL answers from the index and never visits the table.
+
+          `INCLUDE` adds extra columns to the index for exactly this purpose. The included columns are stored in the index but are not used for searching or sorting.
+
+          Index-only scans also need the table's **visibility map** to be up to date, and `VACUUM` keeps it current. Lesson 7 explains `VACUUM`.
+
+      - type: example
+        title: Answer from the index alone
+        md: |
+          We add the order date and total to the index with `INCLUDE`. Then we ask for exactly those columns for customer 777.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_cust_incl
+              ON big_orders (customer_id)
+              INCLUDE (order_date, total);
+
+          VACUUM ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT customer_id, order_date, total
+          FROM big_orders
+          WHERE customer_id = 777;
+        after: |
+          The plan shows **Index Only Scan** and **Heap Fetches: 0**. Every column the query needs is in the index, so PostgreSQL never reads the table. Without `VACUUM` the visibility map would not be up to date, and PostgreSQL would still have to check the table rows.
+
+      - type: exercise
+        id: m15-l05-e4
+        title: A covering index for customers
+        prompt: |
+          Create an index named `idx_orders_cust_incl` on the `orders` table. The key column is `customer_id`. Include `order_date` and `status` with `INCLUDE`, so a query for those three columns can be answered from the index.
+
+          The check shows the index definition.
+        solution: |
+          CREATE INDEX idx_orders_cust_incl
+              ON orders (customer_id)
+              INCLUDE (order_date, status);
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_orders_cust_incl';
+        hints:
+          - The key column goes in the first brackets, and the extra columns go after the word INCLUDE.
+          - Use a second pair of brackets after INCLUDE.
+          - "CREATE INDEX idx_orders_cust_incl ON orders (___) INCLUDE (___, ___);"
+        explanation: |
+          `INCLUDE` columns are carried along in the index, not used to search. That makes the index bigger but lets some queries skip the table entirely.
+        difficulty: 2
+
+      - type: read
+        title: "GIN index: search inside arrays and jsonb"
+        md: |
+          Some columns hold **many values in one cell**: a list of tags, or a JSON document. A **GIN index** (Generalized Inverted Index) records, for each value inside the cell, which rows contain it. It works like the index at the back of a cookbook: find the ingredient, then the list of pages.
+
+          The operators a GIN index understands include `@>`, which means "contains". For example:
+
+          - `tags @> ARRAY['vintage']` finds rows whose array contains `'vintage'`.
+          - "`specs @> '{"recalled": true}'` finds JSON documents with that key and value."
+
+          > [!MISTAKE]
+          > `'vintage' = ANY(tags)` and `specs->>'recalled' = 'true'` look right, but a default GIN index does not help them. PostgreSQL scans the whole table. Use the operator the index understands.
+
+      - type: example
+        title: Find products by tag
+        md: |
+          We create a table of 200,000 products with a tags array, and a GIN index on the tags. Then we search for the rare tag `vintage`.
+        sql: |
+          CREATE TABLE product_tags AS
+          SELECT g AS product_id,
+                 CASE WHEN g % 500 = 0 THEN ARRAY['vintage', 'wired']
+                      WHEN g % 2 = 0 THEN ARRAY['wireless']
+                      ELSE ARRAY['wired'] END AS tags
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_tags
+              ON product_tags USING GIN (tags);
+
+          ANALYZE product_tags;
+
+          SELECT COUNT(*) AS vintage_products
+          FROM product_tags
+          WHERE tags @> ARRAY['vintage'];
+        after: |
+          **400** products carry the `vintage` tag. The GIN index holds one entry for each tag, so the search jumps straight to the products that have it.
+
+      - type: exercise
+        id: m15-l05-e5
+        title: Index a tags array
+        setup: |
+          CREATE TABLE product_tags (
+              product_id integer PRIMARY KEY,
+              tags text[]
+          );
+
+          INSERT INTO product_tags VALUES
+              (1, ARRAY['kitchen', 'sale']),
+              (2, ARRAY['garden']),
+              (3, ARRAY['kitchen']);
+        prompt: |
+          The `product_tags` table has a `tags` array column. Create a **GIN** index named `idx_product_tags` on `tags`.
+
+          The check shows the index definition.
+        starter: |
+          CREATE INDEX idx_product_tags
+              ON product_tags (tags);
+        solution: |
+          CREATE INDEX idx_product_tags
+              ON product_tags USING GIN (tags);
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_product_tags';
+        hints:
+          - The starter makes a normal B-tree index. Arrays need a different kind.
+          - Add `USING GIN` between the table name and the column list.
+          - "CREATE INDEX idx_product_tags ON product_tags USING ___ (tags);"
+        explanation: |
+          `USING GIN` tells PostgreSQL which kind of index to build. A GIN index is the right choice for arrays, jsonb and full-text search.
+        difficulty: 2
+
+      - type: predict
+        id: m15-l05-p1
+        question: |
+          How many rows does this query return? Think about which orders are `processing` and when they were placed.
+        sql: |
+          SELECT COUNT(*) AS processing_december
+          FROM orders
+          WHERE status = 'processing'
+            AND order_date >= '2024-12-01';
+        options: ["0", "7", "86", "An error"]
+        answer: 1
+        explanation: |
+          There are 7 processing orders in the shop, and the oldest was placed on 2024-12-24. So all 7 match. The 86 orders is the total for all of December 2024, not just processing ones.
+
+      - type: fill
+        id: m15-l05-f1
+        prompt: |
+          Finish the partial index so it covers only the **shipped** orders.
+        template: |
+          CREATE INDEX idx_shipped_date
+              ON orders (order_date)
+              WHERE ___ = ___;
+        answers:
+          - ["status"]
+          - ["'shipped'"]
+        explanation: |
+          The `WHERE` clause picks the rows that go into the index. `status = 'shipped'` keeps only the shipped orders.
+
+      - type: exercise
+        id: m15-l05-e6
+        title: Composite and partial together
+        prompt: |
+          Create an index named `idx_shipped_cust` on the `orders` table with the columns `customer_id` then `order_date`. Index **only** the rows where `status` is `'shipped'`.
+
+          The check shows the index definition.
+        solution: |
+          CREATE INDEX idx_shipped_cust
+              ON orders (customer_id, order_date)
+              WHERE status = 'shipped';
+        check: |
+          SELECT indexdef
+          FROM pg_indexes
+          WHERE indexname = 'idx_shipped_cust';
+        hints:
+          - Start from the composite index from the first exercise, then add a `WHERE` at the end.
+          - Keep `customer_id` first, then `order_date`.
+          - "CREATE INDEX idx_shipped_cust ON orders (___, ___) WHERE ___ = ___;"
+        explanation: |
+          Combining the two ideas gives the smallest index that still answers the question: only shipped orders, sorted by customer and then date.
+        difficulty: 3
+
+      - type: parsons
+        id: m15-l05-o1
+        prompt: |
+          Put the lines in the right order to index orders by customer and date, refresh the statistics, and count customer 7's orders since 2024-01-01.
+        lines:
+          - CREATE INDEX idx_orders_cust_date
+          - ON orders (customer_id, order_date);
+          - ANALYZE orders;
+          - SELECT COUNT(*) AS orders_found
+          - FROM orders
+          - WHERE customer_id = 7
+          - AND order_date >= '2024-01-01';
+        distractors:
+          - DROP TABLE orders;
+        explanation: |
+          First build the index, then `ANALYZE` so PostgreSQL knows the new index and the data sizes, and finally run the query. Never drop the table you are working with.
+    cheatsheet:
+      - title: Composite index
+        sql: |
+          CREATE INDEX idx_cust_date
+              ON orders (customer_id, order_date);
+        note: "Put the = column first and the range column last."
+      - title: Partial index
+        sql: |
+          CREATE INDEX idx_open_orders
+              ON orders (order_date)
+              WHERE status = 'processing';
+        note: "Only rows matching the WHERE are stored. The query must repeat the condition."
+      - title: Expression index
+        sql: |
+          CREATE INDEX idx_customers_lower_email
+              ON customers (lower(email));
+        note: "The query must use the same expression: WHERE lower(email) = ..."
+      - title: GIN index for arrays and jsonb
+        sql: |
+          CREATE INDEX idx_tags
+              ON product_tags USING GIN (tags);
+        note: "Use operators it understands, such as @> (contains)."
+
+  - id: m15-l06
+    title: "Writing fast queries"
+    summary: Write conditions the planner can use with an index, and paginate big lists without OFFSET.
+    minutes: 28
+    steps:
+      - type: read
+        title: The dashboard that hides its indexes
+        md: |
+          Mia's "recent orders" page is slow. The index on `order_date` exists, so why is it not used? The developer wrote the filter like this: `WHERE EXTRACT(YEAR FROM order_date) = 2024`.
+
+          The query is correct. It just hides the column inside a function, and that stops the index from helping. Most speed problems in everyday SQL are not missing indexes. They are conditions written in a way the index cannot understand.
+
+      - type: example
+        title: A function hides the column
+        md: |
+          We build a 200,000-row table with an index on `order_date`, then ask for the 2024 orders with `EXTRACT`.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_date ON big_orders (order_date);
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT COUNT(*)
+          FROM big_orders
+          WHERE EXTRACT(YEAR FROM order_date) = 2024;
+        after: |
+          The plan is a **Seq Scan**. PostgreSQL must work out `EXTRACT(YEAR ...)` for every row, so it reads the whole table and removes **100,009** rows with the filter. The index on `order_date` cannot help, because the condition asks about the year, not a range of dates.
+
+      - type: read
+        title: "Sargable: a condition the index can use"
+        md: |
+          **Sargable** is a fancy word (short for "search argument able") that means: *a condition the planner can use to search an index*.
+
+          A column compared with plain values is sargable: `order_date >= '2024-01-01'`. A column wrapped in a function or arithmetic usually is not: `EXTRACT(...)`, `order_date + 1`, `lower(email)`. (An expression index from lesson 5 is the exception.)
+
+          > [!ANALOGY]
+          > A phone book is sorted by name. Finding everyone whose name starts with "S" is quick. Finding everyone whose name has an "a" as its third letter means reading every entry, because the book is not sorted that way.
+
+          > [!TIP]
+          > Move the work to the other side of the comparison. Keep the column bare and change the constants you compare it with.
+
+      - type: example
+        title: The same answer, written so the index helps
+        md: |
+          Same table and index. We ask the same question with a date range, and check that the count matches the first version.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_date ON big_orders (order_date);
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT COUNT(*)
+          FROM big_orders
+          WHERE order_date >= '2024-01-01'
+            AND order_date < '2025-01-01';
+        after: |
+          The count is still **99,991**, but the plan now uses the index (a **Bitmap Index Scan** on `idx_date`), so PostgreSQL goes straight to the 2024 rows. A date range is the usual way to write "in 2024" so that an index on the date can be used.
+
+      - type: quiz
+        id: m15-l06-q1
+        question: |
+          Which condition lets PostgreSQL search an index on `order_date` directly?
+        options:
+          - "WHERE EXTRACT(YEAR FROM order_date) = 2024"
+          - "WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'"
+          - "WHERE TO_CHAR(order_date, 'YYYY') = '2024'"
+          - "WHERE order_date::text = '2024-06-01'"
+        answer: 1
+        explanation: |
+          Only the range keeps the column bare, so the index can be searched. The other three wrap `order_date` in a function or a cast, and PostgreSQL has to compute that for every row first.
+
+      - type: exercise
+        id: m15-l06-e1
+        title: Write the range yourself
+        prompt: |
+          Show the `order_id` and `order_date` of every order placed from **25 December 2024 to 31 December 2024**, both days included. Sort by `order_id`.
+
+          Do not wrap `order_date` in a function.
+        starter: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE order_date >= '2024-12-25'
+            AND order_date < '2025-01-01'
+          ORDER BY order_id;
+        hints:
+          - The end date is exclusive, so "before 1 January 2025" catches all of 31 December.
+          - Use two conditions joined with AND, one for the start date and one for the end.
+          - "WHERE order_date >= '2024-12-25' AND order_date ___ '2025-01-01'"
+        explanation: |
+          `>=` the start date and `<` the day after the end date covers the whole range, and it keeps `order_date` bare so the index can help. Thirteen orders match.
+        ordered: true
+        difficulty: 1
+
+      - type: read
+        title: OR versus UNION
+        md: |
+          Two conditions joined with `OR` are often fine. When each side has its own index, PostgreSQL can combine both results. But `UNION` is sometimes clearer and faster, especially when each side is a simple query.
+
+          Be careful with the two kinds of `UNION`:
+
+          - `UNION` joins the two lists and **removes duplicates**.
+          - `UNION ALL` joins the two lists and **keeps duplicates**. It skips the duplicate check, so it is quicker, but only use it when the two parts cannot overlap.
+
+      - type: example
+        title: Duplicates hide in UNION ALL
+        md: |
+          We list the customers who live in California or are in the Corporate segment, and use `UNION ALL` to join the two lists.
+        sql: |
+          SELECT COUNT(*) AS rows_returned
+          FROM (
+              SELECT customer_id
+              FROM customers
+              WHERE state = 'CA'
+              UNION ALL
+              SELECT customer_id
+              FROM customers
+              WHERE segment = 'Corporate'
+          ) AS matches;
+        after: |
+          The answer is **69**, but there are only **61** different customers in that set (`WHERE state = 'CA' OR segment = 'Corporate'` returns 61). The 8 customers who are both in California and Corporate were counted twice. `UNION` would have removed them.
+
+          > [!MISTAKE]
+          > `UNION ALL` is only correct when the two parts cannot share rows. If they can, switch to `UNION` or use one `WHERE` with `OR`.
+
+      - type: exercise
+        id: m15-l06-e2
+        title: Fix the duplicates
+        prompt: |
+          List the `customer_id` of every customer who lives in Washington (`state = 'WA'`) **or** is in the `Home Office` segment. Each customer must appear **once**. Sort by `customer_id`.
+
+          The starter returns some customers twice. Fix it.
+        starter: |
+          SELECT customer_id
+          FROM customers
+          WHERE state = 'WA'
+          UNION ALL
+          SELECT customer_id
+          FROM customers
+          WHERE segment = 'Home Office'
+          ORDER BY customer_id;
+        solution: |
+          SELECT customer_id
+          FROM customers
+          WHERE state = 'WA'
+          UNION
+          SELECT customer_id
+          FROM customers
+          WHERE segment = 'Home Office'
+          ORDER BY customer_id;
+        hints:
+          - Five customers are in both groups, and `UNION ALL` counts them twice.
+          - Change the keyword between the two SELECT statements.
+          - "SELECT customer_id FROM customers WHERE state = 'WA' ___ SELECT customer_id FROM customers WHERE segment = 'Home Office' ORDER BY customer_id;"
+        explanation: |
+          `UNION` removes the repeated rows, so each customer appears once. The answer is 38 customers. A single `WHERE state = 'WA' OR segment = 'Home Office'` gives the same list.
+        ordered: true
+        difficulty: 2
+
+      - type: read
+        title: NOT IN has a NULL trap; EXISTS does not
+        md: |
+          `NOT IN (...)` checks that a value is **not in a list**. The list comes from a subquery, and it may contain **NULL**, which means "unknown".
+
+          If the list contains a NULL, `NOT IN` can never be TRUE, so the query returns nothing, and it does not warn you.
+
+          `EXISTS` asks a simpler question: "is there at least one matching row?" It stops at the first match. `NOT EXISTS` is the safe way to find things that have **no** match, because NULLs cannot trick it.
+
+          In this database, `EXISTS` and `IN` gave the same join plan, so choose the one that is clearer and NULL-safe.
+
+      - type: example
+        title: NOT IN returns nothing
+        md: |
+          We look for products whose id is not in the list of supplier ids. Three products have no supplier, so that list contains NULL.
+        sql: |
+          SELECT COUNT(*) AS products_found
+          FROM products
+          WHERE product_id NOT IN (
+              SELECT supplier_id
+              FROM products
+          );
+        after: |
+          **0** products come back, and there is no error. Three rows of the subquery are NULL, and `product_id NOT IN (..., NULL)` is never TRUE. Replace `NOT IN` with `NOT EXISTS` when the list can contain NULL.
+
+          > [!MISTAKE]
+          > Many beginners write `NOT IN` and assume it is safe. It is only safe when the subquery cannot return NULL.
+
+      - type: predict
+        id: m15-l06-p1
+        question: |
+          How many customers have never placed an order? This query uses `NOT IN`, but the subquery column has no NULL values.
+        sql: |
+          SELECT COUNT(*) AS never_ordered
+          FROM customers
+          WHERE customer_id NOT IN (
+              SELECT customer_id
+              FROM orders
+          );
+        options: ["0", "10", "140", "150"]
+        answer: 1
+        explanation: |
+          `orders.customer_id` has no NULLs, so `NOT IN` works as expected. Customers 141 to 150 have never ordered, which is 10 customers. The 0 answer is the NULL trap from the example, and it does not apply here.
+
+      - type: exercise
+        id: m15-l06-e3
+        title: Customers who never ordered
+        prompt: |
+          List the `customer_id`, `first_name` and `last_name` of every customer who has **never placed an order**. Use `NOT EXISTS`. Sort by `customer_id`.
+        starter: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name
+          FROM customers AS c
+          WHERE NOT EXISTS (
+        solution: |
+          SELECT c.customer_id,
+                 c.first_name,
+                 c.last_name
+          FROM customers AS c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders AS o
+              WHERE o.customer_id = c.customer_id
+          )
+          ORDER BY c.customer_id;
+        hints:
+          - "The subquery looks for an order that belongs to this customer."
+          - "Inside the brackets, match `o.customer_id` with `c.customer_id`."
+          - "WHERE NOT EXISTS (SELECT 1 FROM orders AS o WHERE o.customer_id = ___);"
+        explanation: |
+          For each customer, `NOT EXISTS` checks whether any order matches. Ten customers (141 to 150) have none. The starter is unfinished, so it is not a valid query yet.
+        ordered: true
+        difficulty: 2
+
+      - type: read
+        title: SELECT * and ORDER BY with LIMIT
+        md: |
+          Two small habits make a big difference:
+
+          - **Ask only for the columns you need.** `SELECT *` asks for every column, so PostgreSQL must visit the table rows too. `SELECT customer_id` can be answered from an index alone, if one covers that column (lesson 5).
+          - **Ask for the top rows with an index that is already sorted.** If an index holds the rows in the order `ORDER BY` wants, PostgreSQL reads the first few entries and stops. Without a matching index it has to sort everything first.
+
+          > [!MISTAKE]
+          > `ORDER BY ... LIMIT 5` without a tie-breaker can return different rows on different runs. Always add a unique column such as `order_id` at the end of the `ORDER BY`.
+
+      - type: example
+        title: The five newest orders
+        md: |
+          We index `(order_date, order_id)`, so the rows are already in the newest-first order the dashboard wants.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_date_id
+              ON big_orders (order_date, order_id);
+
+          ANALYZE big_orders;
+
+          SELECT order_id, order_date
+          FROM big_orders
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 5;
+        after: |
+          The five newest orders are 199562, 198831, 198100, 197369 and 196638, all placed on 2024-12-31. PostgreSQL reads five index entries and stops. Without the index it would sort all 200,000 rows before choosing five.
+
+      - type: read
+        title: OFFSET gets slower as you go deeper
+        md: |
+          Pagination (showing a list one page at a time) often uses `LIMIT` with `OFFSET`:
+
+          ```sql
+          SELECT ...
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 10 OFFSET 150000;
+          ```
+
+          `OFFSET 150000` means "skip the first 150,000 rows". PostgreSQL has to produce those rows and throw them away before it can return page 15,001. The deeper the page, the more work.
+
+          **Keyset pagination** (also called seek pagination) avoids this. Remember the last row you showed, and ask for the rows that come after it. The index jumps straight to that position.
+
+          > [!MISTAKE]
+          > Keyset pagination needs a unique tie-breaker, such as `order_id`. If two rows share the same date and you only compare dates, rows can be skipped or shown twice.
+
+      - type: example
+        title: Why deep pages are slow
+        md: |
+          We ask for page 15,001 of the newest orders, 10 per page, using `OFFSET`.
+        sql: |
+          CREATE TABLE big_orders AS
+          SELECT g AS order_id,
+                 g % 5000 + 1 AS customer_id,
+                 DATE '2023-01-01' + g % 731 AS order_date,
+                 CASE WHEN g % 101 = 0 THEN 'processing'
+                      WHEN g % 101 < 71 THEN 'delivered'
+                      WHEN g % 101 < 91 THEN 'shipped'
+                      ELSE 'cancelled' END AS status,
+                 ROUND(9.99 + g % 197 * 1.5, 2) AS total
+          FROM generate_series(1, 200000) AS g;
+
+          CREATE INDEX idx_date_id
+              ON big_orders (order_date, order_id);
+
+          ANALYZE big_orders;
+
+          EXPLAIN ANALYZE
+          SELECT order_id, order_date
+          FROM big_orders
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 10 OFFSET 150000;
+        after: |
+          The plan says the index scan produced **150,010 rows** to return just 10. Those 150,000 extra rows were read and then dropped. Keyset pagination needs to read only the rows it returns, as the next exercise shows.
+
+      - type: exercise
+        id: m15-l06-e4
+        title: The next page, without OFFSET
+        prompt: |
+          The dashboard shows orders 3 per page, newest first. The last order on page 1 was **order 893**, placed on **2024-12-27**.
+
+          Write the query for page 2, using keyset pagination (no `OFFSET`). Show `order_id` and `order_date`. Sort by `order_date` newest first, then `order_id` descending. Return 3 rows.
+        starter: |
+          SELECT order_id, order_date
+          FROM orders
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 3;
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE (order_date, order_id) < (DATE '2024-12-27', 893)
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 3;
+        hints:
+          - The starter shows page 1 again. Page 2 needs rows that come after order 893.
+          - Compare the pair `(order_date, order_id)` with the pair `(DATE '2024-12-27', 893)`, using `<`.
+          - "SELECT order_id, order_date FROM orders WHERE (order_date, order_id) < (DATE '2024-12-27', ___) ORDER BY order_date ___, order_id ___ LIMIT 3;"
+        explanation: |
+          `(order_date, order_id) < (...)` compares the two columns as a pair, so rows on the same date with a smaller id still come next. The result is orders 892, 891 and 890, with no OFFSET needed.
+        columnNames: true
+        ordered: true
+        difficulty: 3
+
+      - type: fill
+        id: m15-l06-f1
+        prompt: |
+          Finish the query that shows the 5 newest orders.
+        template: |
+          SELECT order_id, order_date
+          FROM orders
+          ORDER BY order_date DESC, order_id DESC
+          ___ 5;
+        answers:
+          - ["LIMIT"]
+        explanation: |
+          `LIMIT` keeps only the first rows of the sorted result. Put it after `ORDER BY`, because the sort has to happen first.
+
+      - type: parsons
+        id: m15-l06-o1
+        prompt: |
+          Put the lines in the right order to fetch the next page of three orders after order 893 (placed 2024-12-27), using keyset pagination.
+        lines:
+          - SELECT order_id, order_date
+          - FROM orders
+          - WHERE (order_date, order_id) < (DATE '2024-12-27', 893)
+          - ORDER BY order_date DESC, order_id DESC
+          - LIMIT 3;
+        distractors:
+          - OFFSET 300;
+        explanation: |
+          Select the columns, pick the table, filter to rows after the last one shown, sort with the tie-breaker, and keep three rows. `OFFSET` is not needed in keyset pagination, so that line stays out.
+
+      - type: exercise
+        id: m15-l06-e5
+        title: Delivered orders, next page
+        prompt: |
+          Only delivered orders from 2024 should appear on this dashboard page. The last row on the previous page was **order 891**, placed on **2024-12-25**.
+
+          Show the next **3** delivered orders placed in 2024, after that row. Use a date range for 2024 (no function on `order_date`) and keyset pagination (no `OFFSET`). Show `order_id` and `order_date`, newest first, then `order_id` descending.
+        solution: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE status = 'delivered'
+            AND order_date >= '2024-01-01'
+            AND order_date < '2025-01-01'
+            AND (order_date, order_id) < (DATE '2024-12-25', 891)
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 3;
+        hints:
+          - Combine the status condition, the date range and the keyset comparison with AND.
+          - The keyset comparison is `(order_date, order_id) < (DATE '2024-12-25', 891)`.
+          - "WHERE status = 'delivered' AND order_date >= '2024-01-01' AND order_date ___ '2025-01-01' AND (order_date, order_id) < (___);"
+        explanation: |
+          Each condition keeps the query fast: the date range is sargable, the keyset comparison jumps to the position, and `LIMIT` stops early. The three rows are orders 890, 882 and 881.
+        columnNames: true
+        ordered: true
+        difficulty: 3
+    cheatsheet:
+      - title: Range instead of a function
+        sql: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+            AND order_date < '2025-01-01';
+        note: "Keep the column bare so an index on it can be used."
+      - title: Never ordered (NOT EXISTS)
+        sql: |
+          SELECT c.customer_id
+          FROM customers AS c
+          WHERE NOT EXISTS (
+              SELECT 1
+              FROM orders AS o
+              WHERE o.customer_id = c.customer_id
+          );
+        note: "Safe with NULLs, unlike NOT IN."
+      - title: Next page with keyset
+        sql: |
+          SELECT order_id, order_date
+          FROM orders
+          WHERE (order_date, order_id) < (DATE '2024-12-27', 893)
+          ORDER BY order_date DESC, order_id DESC
+          LIMIT 3;
+        note: "Use the last row you showed, plus a unique tie-breaker."
+      - title: Duplicates removed
+        sql: |
+          SELECT customer_id FROM customers WHERE state = 'WA'
+          UNION
+          SELECT customer_id FROM customers WHERE segment = 'Home Office';
+        note: "UNION removes duplicates; UNION ALL keeps them and is quicker."
+
+  - id: m15-l07
+    title: "Joins under the hood"
+    summary: See how PostgreSQL chooses a join method, and how ANALYZE and VACUUM keep its plans and tables healthy.
+    minutes: 30
+    steps:
+      - type: read
+        title: Same question, three ways to answer it
+        md: |
+          Mia's dashboard joins `customers`, `orders` and `order_items` for every chart. Sometimes it is instant, and sometimes it hangs. The SQL text is the same each time, so the difference must come from **how** PostgreSQL joins the tables.
+
+          For every join, the planner picks one of three **join methods**. It is not guessing: it estimates how many rows each step will produce, and it picks the method it expects to be cheapest. You do not choose the method yourself, but you can understand the choice and help the planner make it.
+
+      - type: read
+        title: The three join methods
+        md: |
+          - **Nested loop.** For each row on one side, look up the matching rows on the other side. It is excellent when one side is small and the other side has an index on the join column.
+          - **Hash join.** Read one side into a hash table in memory (a fast lookup table). Then read the other side once and look up each row in the table. It works only for equality joins (`=`), and it is the usual choice for big tables.
+          - **Merge join.** Make sure both sides are sorted by the join column, then walk down both lists side by side. It is very fast when the sorting is already done, for example when an index gives the rows in order.
+
+          > [!ANALOGY]
+          > Imagine matching guests with name tags. A **nested loop** checks each guest against a short list. A **hash join** sorts the name tags into a box by first letter, then goes through the guests once. A **merge join** lines up two sorted lists and compares them side by side.
+
+      - type: example
+        title: A nested loop with an index
+        md: |
+          Customer 7 is one row. The orders table has an index on `customer_id`, so the planner finds customer 7 first and then uses the index to find only her orders.
+        sql: |
+          CREATE INDEX idx_orders_cust
+              ON orders (customer_id);
+
+          ANALYZE orders;
+
+          SELECT c.first_name,
+                 o.order_id
+          FROM customers AS c
+          JOIN orders AS o
+            ON o.customer_id = c.customer_id
+          WHERE c.customer_id = 7
+          ORDER BY o.order_id;
+        after: |
+          Two orders, both from **Daniela** (order 152 and order 414). When one side has a single row and the other side is indexed, the planner uses a **Nested Loop** in the plan. Each step is quick, because the index does the searching.
+
+      - type: quiz
+        id: m15-l07-q1
+        question: |
+          A query joins a table that is filtered down to **one row** to a very large table, and the large table has an index on the join column. Which join method suits this best?
+        options:
+          - "Nested loop"
+          - "Hash join"
+          - "Merge join"
+          - "Cross join"
+        answer: 0
+        explanation: |
+          A nested loop does one fast index lookup per row of the small side. With a single row, that is one lookup. A cross join multiplies every row by every other row, which is the opposite of what you want here.
+
+      - type: example
+        title: A hash join for a big match
+        md: |
+          Now the join is between two large tables with no filter. Ask for the plan, and look for the word **Hash Join**.
+        sql: |
+          EXPLAIN
+          SELECT o.order_id,
+                 i.product_id
+          FROM orders AS o
+          JOIN order_items AS i
+            ON i.order_id = o.order_id;
+        after: |
+          The plan contains **Hash Join**. The planner builds a hash table from the `orders` side (the 900 rows), then reads the `order_items` side once and looks up each line. The plan is only an estimate, but the shape is the point: a hash table makes each lookup cheap, and no index is needed.
+
+      - type: read
+        title: Merge join and planner settings
+        md: |
+          A **merge join** needs both sides sorted by the join column. Sorting is extra work, unless an index already gives the rows in that order. When it is free, a merge join is a very efficient way to join.
+
+          To learn how the methods compare, you can switch one off for your session with `SET enable_hashjoin = off;`. The planner then has to choose something else. The answer does **not** change, only the way PostgreSQL gets it.
+
+          > [!MISTAKE]
+          > `SET enable_...` commands are for experiments only. In real work, leave the planner alone and fix the cause: a missing index, or statistics that are out of date.
+
+      - type: example
+        title: The same answer, another method
+        md: |
+          We switch hash joins off for this session and count the joined rows. Then we compare the answer with the earlier join.
+        sql: |
+          SET enable_hashjoin = off;
+
+          SELECT COUNT(*) AS joined_rows
+          FROM orders AS o
+          JOIN order_items AS i
+            ON i.order_id = o.order_id;
+        after: |
+          The answer is **2,296** order lines, the same as with a hash join. With hash joins off, the planner uses a **Merge Join**: both sides are read in `order_id` order, straight from existing indexes, so no sorting is needed.
+
+      - type: exercise
+        id: m15-l07-e1
+        title: Join warm-up
+        prompt: |
+          Show the `order_id` and the customer's `last_name` for every order placed on **2024-12-29**. Sort by `order_id`.
+        starter: |
+          SELECT o.order_id,
+                 c.last_name
+          FROM orders AS o
+          JOIN customers AS c
+          WHERE o.order_date = '2024-12-29'
+          ORDER BY o.order_id;
+        solution: |
+          SELECT o.order_id,
+                 c.last_name
+          FROM orders AS o
+          JOIN customers AS c
+            ON c.customer_id = o.customer_id
+          WHERE o.order_date = '2024-12-29'
+          ORDER BY o.order_id;
+        hints:
+          - The starter has no join condition, so it would multiply the rows. Add an `ON` clause.
+          - Match `o.customer_id` with `c.customer_id`.
+          - "FROM orders AS o JOIN customers AS c ___ c.customer_id = o.customer_id"
+        explanation: |
+          Every join needs a condition that says which rows belong together. Without it, the `JOIN` pairs every order with every customer, which is almost always a mistake.
+        ordered: true
+        columnNames: true
+        difficulty: 1
+
+      - type: read
+        title: "Statistics: the planner's notes"
+        md: |
+          The planner decides using **statistics**: notes about each table that PostgreSQL keeps in the catalog. They include an estimate of how many rows the table has, and for each column how many different values it holds (`n_distinct`), plus the most common values.
+
+          `ANALYZE` refreshes these notes by reading a sample of the table. Autovacuum runs `ANALYZE` in the background, but after a big load you can run it yourself, straight away.
+
+          > [!REAL-WORLD]
+          > When a plan suddenly gets slow after a bulk import, experienced developers run `ANALYZE` on the table first. Out-of-date statistics are one of the most common causes of bad plans.
+
+      - type: example
+        title: Read the notes the planner keeps
+        md: |
+          We refresh the notes for `customers`, then read the number of distinct values the planner recorded for three columns.
+        sql: |
+          ANALYZE customers;
+
+          SELECT attname,
+                 n_distinct
+          FROM pg_stats
+          WHERE schemaname = 'public'
+            AND tablename = 'customers'
+            AND attname IN ('state', 'segment', 'city')
+          ORDER BY attname;
+        after: |
+          The planner knows that `city` has **14** different values, `segment` has **3** and `state` has **12**. When it estimates how many customers are in a state, it uses these numbers.
+
+      - type: exercise
+        id: m15-l07-e2
+        title: What does the planner know about orders?
+        prompt: |
+          Read the planner's notes for the `orders` table. Show the `attname` and `n_distinct` of the `status` and `ship_city` columns only. Sort by `attname`.
+        starter: |
+          SELECT attname,
+                 n_distinct
+          FROM pg_stats
+          WHERE tablename = 'orders';
+        solution: |
+          SELECT attname,
+                 n_distinct
+          FROM pg_stats
+          WHERE schemaname = 'public'
+            AND tablename = 'orders'
+            AND attname IN ('status', 'ship_city')
+          ORDER BY attname;
+        hints:
+          - The starter lists the notes for every column. Keep only two of them.
+          - Add a condition on `attname` with `IN (...)`.
+          - "WHERE schemaname = 'public' AND tablename = 'orders' AND attname ___ ('status', 'ship_city')"
+        explanation: |
+          `pg_stats` has one row per column. `status` has 5 distinct values and `ship_city` has 14. Filtering on `attname` keeps only the columns you care about.
+        ordered: true
+        columnNames: true
+        difficulty: 2
+
+      - type: read
+        title: "VACUUM: cleaning up old row versions"
+        md: |
+          When you `UPDATE` or `DELETE` a row, PostgreSQL does not erase the old version straight away. Other sessions may still need it. The old version becomes a **dead row**, and it still takes up space in the table.
+
+          **`VACUUM`** removes dead rows so their space can be reused. It also updates the **visibility map**, which index-only scans rely on (lesson 5). Autovacuum runs `VACUUM` in the background, so you rarely need to run it yourself.
+
+          > [!TIP]
+          > `VACUUM ANALYZE` does both jobs in one command: it cleans the table and refreshes the statistics.
+
+      - type: example
+        title: VACUUM does not change your data
+        md: |
+          We clean and analyze the `reviews` table, then count the reviews. Nothing has been deleted, so the count stays the same.
+        sql: |
+          VACUUM ANALYZE reviews;
+
+          SELECT COUNT(*) AS reviews
+          FROM reviews;
+        after: |
+          The count is **320**, as before. `VACUUM` tidies up dead rows and keeps the notes current, but it never removes live data.
+
+      - type: example
+        title: VACUUM cannot run in a transaction
+        md: |
+          `VACUUM` cannot run inside a transaction, so trying to wrap it in `BEGIN` and `COMMIT` gives an error.
+        sql: |
+          BEGIN;
+
+          VACUUM reviews;
+
+          COMMIT;
+        expectError: true
+        after: |
+          The error says **VACUUM cannot run inside a transaction block**. Run `VACUUM` on its own, outside any `BEGIN ... COMMIT`.
+
+          > [!MISTAKE]
+          > Maintenance commands such as `VACUUM` are not part of a transaction, so they cannot be rolled back. Run them as their own statements.
+
+      - type: exercise
+        id: m15-l07-e3
+        title: Orders per segment
+        prompt: |
+          For each customer `segment`, count how many orders its customers placed. Show the `segment` and the count as `orders_placed`. Sort by `segment`.
+        starter: |
+          SELECT c.segment
+          FROM customers AS c
+          JOIN orders AS o
+            ON o.customer_id = c.customer_id
+          ORDER BY c.segment;
+        solution: |
+          SELECT c.segment,
+                 COUNT(*) AS orders_placed
+          FROM customers AS c
+          JOIN orders AS o
+            ON o.customer_id = c.customer_id
+          GROUP BY c.segment
+          ORDER BY c.segment;
+        hints:
+          - You need to count the orders, so you need a `GROUP BY` on the segment.
+          - Use `COUNT(*) AS orders_placed` in the SELECT list.
+          - "SELECT c.segment, COUNT(*) AS orders_placed FROM ... GROUP BY ___ ORDER BY c.segment;"
+        explanation: |
+          The join connects each order to its customer, and `GROUP BY` collapses the rows into one per segment. The three segments add up to the 900 orders in the shop.
+        ordered: true
+        columnNames: true
+        difficulty: 2
+
+      - type: predict
+        id: m15-l07-p1
+        question: |
+          This query uses `LEFT JOIN`, so every customer appears at least once. How many rows does it return?
+        sql: |
+          SELECT COUNT(*) AS rows_returned
+          FROM customers AS c
+          LEFT JOIN orders AS o
+            ON o.customer_id = c.customer_id;
+        options: ["900", "910", "150", "140"]
+        answer: 1
+        explanation: |
+          The 140 customers with orders contribute their 900 orders in total. The 10 customers without orders still appear once each, with empty order columns. 900 + 10 = 910.
+
+      - type: exercise
+        id: m15-l07-e4
+        title: Three tables in one join
+        prompt: |
+          For **delivered** orders only, count the order lines (rows in `order_items`) in each product category. Show the category `name` as `category_name` and the count as `delivered_lines`. Sort by `category_name`.
+
+          You will need to join four tables: `order_items`, `orders`, `products` and `categories`.
+        starter: |
+          SELECT cat.name AS category_name
+          FROM order_items AS i
+          JOIN orders AS o
+            ON o.order_id = i.order_id
+          JOIN products AS p
+            ON p.product_id = i.product_id
+          JOIN categories AS cat
+            ON cat.category_id = p.category_id
+          ORDER BY cat.name;
+        solution: |
+          SELECT cat.name AS category_name,
+                 COUNT(*) AS delivered_lines
+          FROM order_items AS i
+          JOIN orders AS o
+            ON o.order_id = i.order_id
+          JOIN products AS p
+            ON p.product_id = i.product_id
+          JOIN categories AS cat
+            ON cat.category_id = p.category_id
+          WHERE o.status = 'delivered'
+          GROUP BY cat.name
+          ORDER BY cat.name;
+        hints:
+          - Keep the joins from the starter. You only need to add a filter, a count and a grouping.
+          - Filter the orders with `WHERE o.status = 'delivered'`.
+          - "Add COUNT(*) AS delivered_lines and GROUP BY cat.name before ORDER BY."
+        explanation: |
+          Each join adds one table to the chain. Filtering on the orders table and grouping by category gives one row per category. The result has 11 categories, and Books is the largest with 312 lines.
+        ordered: true
+        columnNames: true
+        difficulty: 3
+
+      - type: fill
+        id: m15-l07-f1
+        prompt: |
+          Finish the command that cleans the `reviews` table **and** refreshes its statistics.
+        template: |
+          VACUUM ___ reviews;
+        answers:
+          - ["ANALYZE"]
+        explanation: |
+          `VACUUM ANALYZE` does both jobs at once. Plain `VACUUM` cleans up dead rows, and `ANALYZE` refreshes the statistics the planner uses.
+
+      - type: parsons
+        id: m15-l07-o1
+        prompt: |
+          Put the lines in the right order to refresh the statistics for `orders`, then check what the planner knows about the `status` column.
+        lines:
+          - ANALYZE orders;
+          - SELECT attname, n_distinct
+          - FROM pg_stats
+          - WHERE tablename = 'orders'
+          - AND attname = 'status';
+        distractors:
+          - CREATE INDEX idx_status ON orders (status);
+        explanation: |
+          Refresh first, then read the notes. Creating an index is not part of this check, so that line stays out.
+    cheatsheet:
+      - title: See the join method
+        sql: |
+          EXPLAIN
+          SELECT o.order_id, c.last_name
+          FROM orders AS o
+          JOIN customers AS c
+            ON c.customer_id = o.customer_id;
+        note: "Look for Nested Loop, Hash Join or Merge Join in the plan."
+      - title: Index for a nested loop
+        sql: |
+          CREATE INDEX idx_orders_cust
+              ON orders (customer_id);
+        note: "An index on the join column lets a nested loop find matches quickly."
+      - title: Refresh the statistics
+        sql: |
+          ANALYZE orders;
+        note: "Run it after a big load, so the planner's estimates are current."
+      - title: Clean up dead rows
+        sql: |
+          VACUUM ANALYZE reviews;
+        note: "Cannot run inside BEGIN ... COMMIT. Run it on its own."
+
 testPool:
   # ---------------------------------------------------------------- l01 Views
   - type: exercise
@@ -1925,3 +3195,767 @@ testPool:
       - "CREATE VIEW us_west_customers AS SELECT customer_id, first_name, last_name, state FROM customers WHERE state IN (___);"
     explanation: |
       The view lists the customers living in those three states. It stores no rows, so new customers from CA, OR or WA appear in it automatically.
+  # ---------------------------------------------------------------- l01 Views
+  - type: quiz
+    id: m15-t02
+    lesson: m15-l01
+    difficulty: 1
+    question: |
+      When you `SELECT` from a view, what does PostgreSQL actually run?
+    options:
+      - "A copy of the rows that were stored when the view was created"
+      - "The view's SELECT query, run again against the current tables"
+      - "Nothing: a view can only be listed, never queried"
+      - "A brand-new table with the same name as the view"
+    answer: 1
+    explanation: |
+      A view stores the question, not the answer. Each time you use it, PostgreSQL runs the saved SELECT, so the result always reflects the current data.
+  - type: exercise
+    id: m15-t03
+    lesson: m15-l01
+    difficulty: 2
+    prompt: |
+      Create a view named `orders_2024` that holds every column of the `orders` table for orders placed in 2024 (from 2024-01-01 to 2024-12-31). The check counts the rows in the view.
+    starter: |
+      CREATE VIEW orders_2024 AS
+      SELECT *
+      FROM orders;
+    solution: |
+      CREATE VIEW orders_2024 AS
+      SELECT *
+      FROM orders
+      WHERE order_date >= '2024-01-01'
+        AND order_date < '2025-01-01';
+    check: |
+      SELECT COUNT(*) AS orders_in_view
+      FROM orders_2024;
+    hints:
+      - The starter shows every order, not only the ones from 2024.
+      - Add a WHERE clause on order_date with a start date and an end date.
+      - "CREATE VIEW orders_2024 AS SELECT * FROM orders WHERE order_date >= '2024-01-01' AND order_date ___ '2025-01-01';"
+    explanation: |
+      The view stores the question, so it always reflects the current orders. 572 orders were placed in 2024. The starter returns all 900.
+  - type: exercise
+    id: m15-t04
+    lesson: m15-l01
+    difficulty: 3
+    prompt: |
+      Create a view named `active_products` with the columns `product_id`, `name` and `price`, for products where `is_active` is `TRUE`.
+
+      Then, **through that view**, change the price of product 2 to `99.50`.
+
+      The check shows product 2's price.
+    starter: |
+      CREATE VIEW active_products AS
+      SELECT product_id, name, price
+      FROM products
+      WHERE is_active = TRUE;
+    solution: |
+      CREATE VIEW active_products AS
+      SELECT product_id, name, price
+      FROM products
+      WHERE is_active = TRUE;
+
+      UPDATE active_products
+      SET price = 99.50
+      WHERE product_id = 2;
+    check: |
+      SELECT product_id, price
+      FROM products
+      WHERE product_id = 2;
+    hints:
+      - The starter only creates the view. You also need an UPDATE.
+      - A simple view that uses one table can be updated, so name the view after UPDATE.
+      - "UPDATE active_products SET price = ___ WHERE product_id = ___;"
+    explanation: |
+      A simple view that selects from one table can be updated, and PostgreSQL changes the matching row in `products`. Product 2 now costs 99.50.
+  # ---------------------------------------------------------- l02 Materialized views
+  - type: quiz
+    id: m15-t05
+    lesson: m15-l02
+    difficulty: 1
+    question: |
+      What does `REFRESH MATERIALIZED VIEW` do?
+    options:
+      - "Recalculates the stored result from the current data"
+      - "Creates a new index on the view"
+      - "Changes the query that the view is based on"
+      - "Deletes every row from the base tables"
+    answer: 0
+    explanation: |
+      A materialized view keeps a saved copy of its result. `REFRESH` takes a new copy from the current data. It never changes the base tables.
+  - type: exercise
+    id: m15-t06
+    lesson: m15-l02
+    difficulty: 2
+    prompt: |
+      Create a **materialized view** named `segment_totals` with two columns: `segment`, and `customers` (how many customers are in that segment).
+
+      The check reads the view, sorted by `segment`.
+    starter: |
+      CREATE MATERIALIZED VIEW segment_totals AS
+      SELECT segment
+      FROM customers;
+    solution: |
+      CREATE MATERIALIZED VIEW segment_totals AS
+      SELECT segment,
+             COUNT(*) AS customers
+      FROM customers
+      GROUP BY segment;
+    check: |
+      SELECT segment, customers
+      FROM segment_totals
+      ORDER BY segment;
+    ordered: true
+    hints:
+      - The starter lists every customer and does not count anything.
+      - Count the rows in each group with `COUNT(*)`, and group by `segment`.
+      - "CREATE MATERIALIZED VIEW segment_totals AS SELECT segment, COUNT(*) AS customers FROM customers ___ segment;"
+    explanation: |
+      The materialized view stores one row per segment: Consumer 89, Corporate 33 and Home Office 28. Together they make the 150 customers.
+  - type: predict
+    id: m15-t07
+    lesson: m15-l02
+    difficulty: 2
+    question: |
+      The materialized view `segment_counts` is created **before** one customer is deleted. What total does the last query return?
+    sql: |
+      CREATE MATERIALIZED VIEW segment_counts AS
+      SELECT segment, COUNT(*) AS n
+      FROM customers
+      GROUP BY segment;
+
+      DELETE FROM customers
+      WHERE customer_id = 150;
+
+      SELECT SUM(n) AS customers_in_view
+      FROM segment_counts;
+    options: ["149", "150", "140", "An error"]
+    answer: 1
+    explanation: |
+      The view is a saved copy, so it still counts the deleted customer and shows 150. It only catches up after REFRESH MATERIALIZED VIEW segment_counts;.
+  - type: parsons
+    id: m15-t25
+    lesson: m15-l02
+    difficulty: 1
+    prompt: |
+      Put the lines in the right order to create a materialized view that counts customers per city, sorted by city.
+    lines:
+      - CREATE MATERIALIZED VIEW city_counts AS
+      - SELECT city, COUNT(*) AS customers
+      - FROM customers
+      - GROUP BY city
+      - ORDER BY city;
+    distractors:
+      - REFRESH MATERIALIZED VIEW city_counts;
+    explanation: |
+      The view must be created before anything can refresh it. Refreshing is a later step, so that line stays out of the definition.
+  # ---------------------------------------------------------- l03 How indexes work
+  - type: quiz
+    id: m15-t08
+    lesson: m15-l03
+    difficulty: 1
+    question: |
+      What is the main price you pay for adding an index to a table?
+    options:
+      - "INSERT, UPDATE and DELETE get slower, and the index takes up disk space"
+      - "Every SELECT returns different rows"
+      - "The table can no longer be sorted"
+      - "The table is locked until the index is dropped"
+    answer: 0
+    explanation: |
+      Every change to the table must also update each index on it. Indexes make reads faster but writes slower, so only add the ones you need.
+  - type: exercise
+    id: m15-t09
+    lesson: m15-l03
+    difficulty: 2
+    prompt: |
+      Create a **unique** index named `uq_products_name` on the `name` column of the `products` table. A unique index stops two products from having the same name.
+
+      The check shows the index definition.
+    starter: |
+      CREATE INDEX uq_products_name
+          ON products (name);
+    solution: |
+      CREATE UNIQUE INDEX uq_products_name
+          ON products (name);
+    check: |
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE indexname = 'uq_products_name';
+    hints:
+      - The starter makes an ordinary index. One extra word after CREATE makes it unique.
+      - "CREATE ___ INDEX uq_products_name ON products (name);"
+      - All 60 product names are different, so the index can be built.
+    explanation: |
+      `CREATE UNIQUE INDEX` builds an index and enforces uniqueness at the same time. It works here because no two products share a name.
+  - type: fill
+    id: m15-t10
+    lesson: m15-l03
+    difficulty: 1
+    prompt: |
+      Complete the index on `orders.status`. Name the default index type explicitly: it is `btree`.
+    template: |
+      CREATE INDEX idx_orders_status
+          ON orders USING ___ (status);
+    answers:
+      - ["btree"]
+    explanation: |
+      `USING btree` names the index type. It is also the default, so leaving out `USING` builds the same kind of index.
+  # ---------------------------------------------------------- l04 Reading EXPLAIN
+  - type: exercise
+    id: m15-t11
+    lesson: m15-l04
+    difficulty: 2
+    prompt: |
+      Time an `UPDATE` with `EXPLAIN ANALYZE`, but **do not keep the change**. Set `is_active` to `FALSE` for every product with `stock_qty = 0`.
+
+      The check counts the active products. It should still be 56.
+    starter: |
+      EXPLAIN ANALYZE
+      UPDATE products
+      SET is_active = FALSE
+      WHERE stock_qty = 0;
+    solution: |
+      BEGIN;
+      EXPLAIN ANALYZE
+      UPDATE products
+      SET is_active = FALSE
+      WHERE stock_qty = 0;
+      ROLLBACK;
+    check: |
+      SELECT COUNT(*) AS active_products
+      FROM products
+      WHERE is_active;
+    hints:
+      - The starter really changes the rows. Wrap the statement in a transaction.
+      - Begin with BEGIN, and undo everything with ROLLBACK.
+      - "BEGIN; EXPLAIN ANALYZE UPDATE products SET ___ WHERE stock_qty = 0; ROLLBACK;"
+    explanation: |
+      `ROLLBACK` throws the change away, so all 56 products stay active. The starter keeps the change, and the count drops to 53.
+  - type: predict
+    id: m15-t12
+    lesson: m15-l04
+    difficulty: 2
+    question: |
+      Inside this transaction, how many reviews are left after the `DELETE`? The `ROLLBACK` at the end undoes the delete.
+    sql: |
+      BEGIN;
+
+      DELETE FROM reviews
+      WHERE rating >= 4;
+
+      SELECT COUNT(*) AS reviews_inside
+      FROM reviews;
+
+      ROLLBACK;
+    options: ["86", "234", "320", "0"]
+    answer: 0
+    explanation: |
+      There are 234 reviews with 4 or 5 stars, so 320 - 234 = 86 remain inside the transaction. The `ROLLBACK` brings all 234 back afterwards.
+  - type: quiz
+    id: m15-t13
+    lesson: m15-l04
+    difficulty: 2
+    question: |
+      In an `EXPLAIN ANALYZE` plan, a step estimates `rows=1`, but the actual count is 60,000. What is the most likely fix?
+    options:
+      - "Run ANALYZE on the table so the planner's statistics are current"
+      - "Add SELECT * to the query"
+      - "Delete the WHERE clause"
+      - "Run VACUUM FULL on the database"
+    answer: 0
+    explanation: |
+      A big gap between estimated and actual rows means the planner is working with bad information. Refreshing the statistics with ANALYZE usually fixes the plan. VACUUM FULL does not refresh them.
+  # ---------------------------------------------------------- l05 Smarter indexes
+  - type: quiz
+    id: m15-t14
+    lesson: m15-l05
+    difficulty: 2
+    question: |
+      Your query says `WHERE lower(email) = 'ana@example.com'`. Which index can the planner use for it?
+    options:
+      - "An index on email"
+      - "An index on (last_name, first_name)"
+      - "A partial index WHERE status = 'processing'"
+      - "An index on lower(email)"
+    answer: 3
+    explanation: |
+      The index must hold the same expression as the query. An index on `lower(email)` stores exactly what the search compares. A plain index on `email` stores the text as typed, so it cannot be used here.
+  - type: exercise
+    id: m15-t15
+    lesson: m15-l05
+    difficulty: 2
+    prompt: |
+      Create a partial index named `idx_reviews_five_star` on `product_id` in the `reviews` table. It should hold **only** the reviews with `rating = 5`.
+
+      The check shows the index definition.
+    starter: |
+      CREATE INDEX idx_reviews_five_star
+          ON reviews (product_id);
+    solution: |
+      CREATE INDEX idx_reviews_five_star
+          ON reviews (product_id)
+          WHERE rating = 5;
+    check: |
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE indexname = 'idx_reviews_five_star';
+    hints:
+      - The starter indexes every review. Add a condition at the end.
+      - Use `WHERE rating = 5` after the column list.
+      - "CREATE INDEX idx_reviews_five_star ON reviews (product_id) ___ rating = 5;"
+    explanation: |
+      Only the 136 five-star reviews go into this index, so it is much smaller than an index on all 320 reviews.
+  - type: exercise
+    id: m15-t16
+    lesson: m15-l05
+    difficulty: 2
+    prompt: |
+      Create a covering index named `idx_reviews_prod_incl` on `reviews`. The key column is `product_id`. Include `rating` and `created_at` with `INCLUDE`.
+
+      The check shows the index definition.
+    starter: |
+      CREATE INDEX idx_reviews_prod_incl
+          ON reviews (product_id, rating, created_at);
+    solution: |
+      CREATE INDEX idx_reviews_prod_incl
+          ON reviews (product_id)
+          INCLUDE (rating, created_at);
+    check: |
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE indexname = 'idx_reviews_prod_incl';
+    hints:
+      - The starter makes all three columns part of the search key. Only `product_id` belongs in the first brackets.
+      - Put `rating` and `created_at` inside brackets after the word `INCLUDE`.
+      - "CREATE INDEX idx_reviews_prod_incl ON reviews (___) INCLUDE (___, ___);"
+    explanation: |
+      `INCLUDE` columns travel with the index but are not part of its sort order. A query for these three columns can then be answered from the index alone, once VACUUM has run.
+  - type: predict
+    id: m15-t17
+    lesson: m15-l05
+    difficulty: 2
+    question: |
+      How many shipped orders were placed before 1 December 2024? These are the stuck shipments.
+    sql: |
+      SELECT COUNT(*) AS stuck_shipments
+      FROM orders
+      WHERE status = 'shipped'
+        AND order_date < '2024-12-01';
+    options: ["0", "7", "14", "320"]
+    answer: 1
+    explanation: |
+      The shop has 14 shipped orders in total, but only 7 were placed before December 2024. The other 7 were placed in December.
+  # ---------------------------------------------------------- l06 Writing fast queries
+  - type: quiz
+    id: m15-t18
+    lesson: m15-l06
+    difficulty: 2
+    question: |
+      A dashboard shows 10 orders per page. Which approach stays fast when a user jumps to page 15,000?
+    options:
+      - "Keep OFFSET: page 15,000 is LIMIT 10 OFFSET 149990"
+      - "Keyset pagination: WHERE (order_date, order_id) < (the last row shown), then LIMIT 10"
+      - "SELECT * and then pick the rows in the application"
+      - "Remove the ORDER BY, so PostgreSQL has less to do"
+    answer: 1
+    explanation: |
+      OFFSET reads and discards every row before the page, so deep pages get slower. Keyset pagination jumps straight to the position after the last row shown. Removing ORDER BY would make the pages meaningless.
+  - type: exercise
+    id: m15-t19
+    lesson: m15-l06
+    difficulty: 3
+    prompt: |
+      Show the `review_id`, `rating` and `created_at` of the 5-star reviews (`rating = 5`) written in 2023. Use a date range for 2023, not a function on `created_at`.
+
+      Sort by `created_at` newest first, then by `review_id` descending. Keep only the top 3 rows.
+    starter: |
+      SELECT review_id, rating, created_at
+      FROM reviews
+      WHERE rating = 5
+      ORDER BY created_at DESC
+      LIMIT 3;
+    solution: |
+      SELECT review_id, rating, created_at
+      FROM reviews
+      WHERE rating = 5
+        AND created_at >= '2023-01-01'
+        AND created_at < '2024-01-01'
+      ORDER BY created_at DESC, review_id DESC
+      LIMIT 3;
+    hints:
+      - The starter shows the newest 5-star reviews from every year, so it needs a date filter.
+      - "Add two conditions on `created_at`: a start date and an end date."
+      - "AND created_at >= '2023-01-01' AND created_at ___ '2024-01-01'"
+    columnNames: true
+    ordered: true
+    explanation: |
+      The date range keeps `created_at` bare, so an index on it can be used. `review_id` breaks ties, so `LIMIT 3` always returns the same rows. The answer is reviews 103, 99 and 97.
+  - type: fill
+    id: m15-t20
+    lesson: m15-l06
+    difficulty: 1
+    prompt: |
+      Complete the query so it skips 6 orders and then returns the next 3.
+    template: |
+      SELECT order_id
+      FROM orders
+      ORDER BY order_id
+      ___ 3 ___ 6;
+    answers:
+      - ["LIMIT"]
+      - ["OFFSET"]
+    explanation: |
+      `LIMIT 3 OFFSET 6` skips the first six rows and returns the next three: orders 7, 8 and 9.
+  - type: predict
+    id: m15-t21
+    lesson: m15-l06
+    difficulty: 2
+    question: |
+      How many products have never been sold? Look at the `order_items` table.
+    sql: |
+      SELECT COUNT(*) AS never_sold
+      FROM products
+      WHERE product_id NOT IN (
+          SELECT product_id
+          FROM order_items
+      );
+    options: ["0", "5", "52", "60"]
+    answer: 1
+    explanation: |
+      `order_items.product_id` has no NULLs, so `NOT IN` is safe here. Five products (5, 34, 46, 56 and 60) never appear in an order.
+  # ---------------------------------------------------------- l07 Joins under the hood
+  - type: fill
+    id: m15-t22
+    lesson: m15-l07
+    difficulty: 2
+    prompt: |
+      Complete the query that reads the planner's notes about the `segment` column of `customers`.
+    template: |
+      SELECT attname, n_distinct
+      FROM ___
+      WHERE tablename = 'customers'
+        AND attname = 'segment';
+    answers:
+      - ["pg_stats"]
+    explanation: |
+      `pg_stats` has one row per column with the statistics the planner uses. For `segment` it shows 3 distinct values.
+  - type: parsons
+    id: m15-t23
+    lesson: m15-l07
+    difficulty: 2
+    prompt: |
+      Put the lines in the right order to count, for each state, the orders its customers placed. Customers without any orders must still appear, with a count of 0.
+    lines:
+      - SELECT c.state,
+      - COUNT(o.order_id) AS order_count
+      - FROM customers AS c
+      - LEFT JOIN orders AS o
+      - ON o.customer_id = c.customer_id
+      - GROUP BY c.state
+      - ORDER BY c.state;
+    distractors:
+      - WHERE o.status = 'returned'
+    explanation: |
+      A `LEFT JOIN` keeps every customer, and `COUNT(o.order_id)` counts only real orders, so customers with none get 0. A `WHERE` on the orders table would drop those customers again, so that line stays out.
+  - type: exercise
+    id: m15-t24
+    lesson: m15-l07
+    difficulty: 3
+    prompt: |
+      For each `state`, count the **different** customers who have at least one **delivered** order. Show `state` and `buyers`. Sort by `state`.
+    starter: |
+      SELECT c.state,
+             COUNT(*) AS buyers
+      FROM customers AS c
+      JOIN orders AS o
+        ON o.customer_id = c.customer_id
+      WHERE o.status = 'delivered'
+      GROUP BY c.state
+      ORDER BY c.state;
+    solution: |
+      SELECT c.state,
+             COUNT(DISTINCT c.customer_id) AS buyers
+      FROM customers AS c
+      JOIN orders AS o
+        ON o.customer_id = c.customer_id
+      WHERE o.status = 'delivered'
+      GROUP BY c.state
+      ORDER BY c.state;
+    hints:
+      - The starter counts orders, not customers. One customer can have several orders.
+      - Count only the distinct customer ids, with `DISTINCT` inside `COUNT`.
+      - "COUNT(___ c.customer_id) AS buyers"
+    columnNames: true
+    ordered: true
+    explanation: |
+      `COUNT(*)` counts joined rows (orders). `COUNT(DISTINCT c.customer_id)` counts each customer once per state. The result has 12 states, and California has 33 buyers.
+project:
+  id: m15-proj
+  title: Speed Up the Dashboard
+  icon: "🚀"
+  dataset: shop
+  md: |
+    Mia runs ShopSmart. Every Monday she opens the **dashboard**, and it has become painfully slow. Every chart runs its own query over the same tables, and most of them filter by date.
+
+    You will fix it in six steps. Each step builds on the one before:
+
+    1. Give every order one row with its total, saved as a view.
+    2. Save the monthly sales chart as a materialized view.
+    3. Index the date column the widgets filter on.
+    4. Rewrite a slow date filter so an index can help.
+    5. Page through the "recent orders" list without `OFFSET`.
+    6. Refresh the chart without blocking the managers who are reading it.
+
+    Each task starts with the earlier pieces already in place, so you only write the new part. Read the prompt carefully: it says which columns to show and in which order.
+  tasks:
+    - type: exercise
+      id: m15-proj-1
+      title: One row per order
+      prompt: |
+        Mia needs one row per order, with its total, for every chart. Create a **view** named `order_totals` that shows these columns for each order:
+
+        `order_id`, `customer_id`, `order_date`, `status` and `total`
+
+        The `total` is the sum of `quantity * unit_price * (1 - discount)` over the order's lines, rounded to 2 decimals. The check shows the number of orders and the revenue.
+      starter: |
+        CREATE VIEW order_totals AS
+        SELECT order_id, status
+        FROM orders;
+      solution: |
+        CREATE VIEW order_totals AS
+        SELECT o.order_id,
+               o.customer_id,
+               o.order_date,
+               o.status,
+               ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+        FROM orders AS o
+        JOIN order_items AS i
+          ON i.order_id = o.order_id
+        GROUP BY o.order_id,
+                 o.customer_id,
+                 o.order_date,
+                 o.status;
+      check: |
+        SELECT COUNT(*) AS orders,
+               ROUND(SUM(total), 2) AS revenue
+        FROM order_totals;
+      hints:
+        - Join `orders` to `order_items` on `order_id`, then add up the lines for each order.
+        - GROUP BY the order columns, and put the SUM in the SELECT list with `AS total`.
+        - "The line total is `quantity * unit_price * (1 - discount)`."
+      explanation: |
+        The view joins the two tables and groups them once, so every chart can read one row per order. There are 900 orders, with revenue of 314,851.15.
+      difficulty: 1
+
+    - type: exercise
+      id: m15-proj-2
+      title: Monthly sales, saved
+      setup: |
+        CREATE VIEW order_totals AS
+        SELECT o.order_id,
+               o.customer_id,
+               o.order_date,
+               o.status,
+               ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+        FROM orders AS o
+        JOIN order_items AS i
+          ON i.order_id = o.order_id
+        GROUP BY o.order_id,
+                 o.customer_id,
+                 o.order_date,
+                 o.status;
+      prompt: |
+        The managers open a sales chart of **delivered** orders, one row per month. Save it as a **materialized view** named `monthly_sales` with three columns:
+
+        - "`month`: the year and month as text, like `'2024-11'` (use `to_char(order_date, 'YYYY-MM')`)"
+        - "`orders`: the number of delivered orders in that month"
+        - "`revenue`: the sum of their `total`"
+
+        Use the `order_totals` view from the first task. The check counts the months and adds up the orders.
+      starter: |
+        CREATE MATERIALIZED VIEW monthly_sales AS
+        SELECT to_char(order_date, 'YYYY-MM') AS month,
+               COUNT(*) AS orders,
+               SUM(total) AS revenue
+        FROM order_totals
+        GROUP BY to_char(order_date, 'YYYY-MM');
+      solution: |
+        CREATE MATERIALIZED VIEW monthly_sales AS
+        SELECT to_char(order_date, 'YYYY-MM') AS month,
+               COUNT(*) AS orders,
+               SUM(total) AS revenue
+        FROM order_totals
+        WHERE status = 'delivered'
+        GROUP BY to_char(order_date, 'YYYY-MM');
+      check: |
+        SELECT COUNT(*) AS months,
+               SUM(orders) AS delivered_orders
+        FROM monthly_sales;
+      hints:
+        - The starter counts every order, but the chart only shows delivered ones.
+        - Add `WHERE status = 'delivered'` before the GROUP BY.
+        - "FROM order_totals WHERE ___ = ___ GROUP BY to_char(order_date, 'YYYY-MM');"
+      explanation: |
+        The materialized view stores the monthly totals, so the chart reads 24 rows instead of adding up 900 orders each time. The 24 months contain 650 delivered orders.
+      difficulty: 2
+
+    - type: exercise
+      id: m15-proj-3
+      title: An index for the recent orders list
+      prompt: |
+        The "recent orders" widget filters orders by `order_date`, and it is slow. Create an index named `idx_orders_date` on the `order_date` column of `orders`.
+
+        The check shows the index definition.
+      starter: |
+        CREATE INDEX idx_orders_date
+            ON orders (status);
+      solution: |
+        CREATE INDEX idx_orders_date
+            ON orders (order_date);
+      check: |
+        SELECT indexdef
+        FROM pg_indexes
+        WHERE indexname = 'idx_orders_date';
+      hints:
+        - The starter indexes the wrong column.
+        - Put `order_date` inside the brackets.
+        - "CREATE INDEX idx_orders_date ON orders (___);"
+      explanation: |
+        A plain index on the date column lets the widget jump to a date range instead of reading every order. The next task shows the kind of filter that can use it.
+      difficulty: 2
+
+    - type: exercise
+      id: m15-proj-4
+      title: Big orders in 2024, with a range
+      setup: |
+        CREATE VIEW order_totals AS
+        SELECT o.order_id,
+               o.customer_id,
+               o.order_date,
+               o.status,
+               ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+        FROM orders AS o
+        JOIN order_items AS i
+          ON i.order_id = o.order_id
+        GROUP BY o.order_id,
+                 o.customer_id,
+                 o.order_date,
+                 o.status;
+      prompt: |
+        The "big orders in 2024" widget counts **delivered** orders from 2024 whose `total` is at least 500. The first version used `EXTRACT(YEAR FROM order_date) = 2024`, which hides the date from the index.
+
+        Write the query with a **date range** instead. Show one row with `COUNT(*) AS big_orders_2024`.
+      starter: |
+        SELECT COUNT(*) AS big_orders_2024
+        FROM order_totals
+        WHERE status = 'delivered'
+          AND total >= 500;
+      solution: |
+        SELECT COUNT(*) AS big_orders_2024
+        FROM order_totals
+        WHERE status = 'delivered'
+          AND total >= 500
+          AND order_date >= '2024-01-01'
+          AND order_date < '2025-01-01';
+      hints:
+        - The starter counts big delivered orders from every year. It needs a filter for 2024.
+        - "Add two conditions on `order_date`: a start date and an end date."
+        - "AND order_date >= '2024-01-01' AND order_date ___ '2025-01-01'"
+      explanation: |
+        The answer is 93. The date range keeps `order_date` bare, which is the form an index can search. The `EXTRACT` version returns the same count but hides the date inside a function.
+      difficulty: 2
+
+    - type: exercise
+      id: m15-proj-5
+      title: Next page of recent orders
+      setup: |
+        CREATE VIEW order_totals AS
+        SELECT o.order_id,
+               o.customer_id,
+               o.order_date,
+               o.status,
+               ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+        FROM orders AS o
+        JOIN order_items AS i
+          ON i.order_id = o.order_id
+        GROUP BY o.order_id,
+                 o.customer_id,
+                 o.order_date,
+                 o.status;
+      prompt: |
+        The "recent orders" list shows 5 orders per page, newest first. The last order on the previous page was **order 850**, placed on **2024-12-12**.
+
+        Write the query for the next page using **keyset pagination** (no `OFFSET`). Show `order_id`, `order_date` and `total` for the next 5 orders. Sort by `order_date` newest first, then by `order_id` descending.
+      starter: |
+        SELECT order_id, order_date, total
+        FROM order_totals
+        ORDER BY order_date DESC, order_id DESC
+        LIMIT 5;
+      solution: |
+        SELECT order_id, order_date, total
+        FROM order_totals
+        WHERE (order_date, order_id) < (DATE '2024-12-12', 850)
+        ORDER BY order_date DESC, order_id DESC
+        LIMIT 5;
+      hints:
+        - The starter shows the newest page again. The next page starts after order 850.
+        - Compare the pair `(order_date, order_id)` with `(DATE '2024-12-12', 850)` using `<`.
+        - "WHERE (order_date, order_id) ___ (DATE '2024-12-12', 850)"
+      columnNames: true
+      ordered: true
+      explanation: |
+        The next five orders are 849, 848, 847, 846 and 845. Orders 849 and 848 share a date, and the pair comparison keeps them in order, with no repeats or gaps.
+      difficulty: 3
+
+    - type: exercise
+      id: m15-proj-6
+      title: A refresh that does not block readers
+      setup: |
+        CREATE VIEW order_totals AS
+        SELECT o.order_id,
+               o.customer_id,
+               o.order_date,
+               o.status,
+               ROUND(SUM(i.quantity * i.unit_price * (1 - i.discount)), 2) AS total
+        FROM orders AS o
+        JOIN order_items AS i
+          ON i.order_id = o.order_id
+        GROUP BY o.order_id,
+                 o.customer_id,
+                 o.order_date,
+                 o.status;
+
+        CREATE MATERIALIZED VIEW monthly_sales AS
+        SELECT to_char(order_date, 'YYYY-MM') AS month,
+               COUNT(*) AS orders,
+               SUM(total) AS revenue
+        FROM order_totals
+        WHERE status = 'delivered'
+        GROUP BY to_char(order_date, 'YYYY-MM');
+      prompt: |
+        Every night `monthly_sales` is refreshed, and managers are reading it at the same time. A normal refresh blocks readers while it runs.
+
+        Make it safe. Create a **UNIQUE** index named `idx_monthly_sales_month` on the `month` column of `monthly_sales`, then run `REFRESH MATERIALIZED VIEW CONCURRENTLY monthly_sales;`.
+
+        The check shows the index definition.
+      starter: |
+        CREATE INDEX idx_monthly_sales_month
+            ON monthly_sales (month);
+      solution: |
+        CREATE UNIQUE INDEX idx_monthly_sales_month
+            ON monthly_sales (month);
+
+        REFRESH MATERIALIZED VIEW CONCURRENTLY monthly_sales;
+      check: |
+        SELECT indexdef
+        FROM pg_indexes
+        WHERE indexname = 'idx_monthly_sales_month';
+      hints:
+        - The starter is missing the word that makes the index unique.
+        - "The word CONCURRENTLY needs a unique index on the view. Create that first."
+        - "CREATE ___ INDEX idx_monthly_sales_month ON monthly_sales (month); REFRESH MATERIALIZED VIEW ___ monthly_sales;"
+      explanation: |
+        `REFRESH ... CONCURRENTLY` rebuilds the data while readers keep seeing the old rows. PostgreSQL allows it only when a unique index exists on the view, and `month` is unique here because each month appears once.
+      difficulty: 3
