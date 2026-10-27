@@ -10,7 +10,7 @@ description: |
 
   In this module you learn the four **set operations**. `UNION` and `UNION ALL` stack results.
   `INTERSECT` finds what two lists have in common. `EXCEPT` finds what is on one list but not the other.
-  You will build contact lists, spot missing data, add a TOTAL row to a report, and learn the
+  You will build guest lists, spot missing data, add a TOTAL row to a report, and learn the
   rules that stop these queries from crashing.
 dataset: shop
 lessons:
@@ -78,6 +78,9 @@ lessons:
           WHERE role = 'Cashier';
         after: |
           **9 rows** this time. The two Chloes were identical rows (the same text), so `UNION` kept only one.
+
+          Careful: they are two different **people**, but `UNION` only sees identical text. For name tags that
+          would lose a tag.
 
           Remember: `UNION` = stack **and** remove duplicates. It judges the *whole row*, so with
           several columns two rows only count as copies if **every** column matches.
@@ -149,10 +152,12 @@ lessons:
           | | `UNION ALL` | `UNION` |
           |---|---|---|
           | Duplicates | kept | removed |
-          | Speed | fast | slower (it must compare rows) |
+          | Speed | fast | usually slower (it has to compare rows) |
           | Use it for | counting, adding up, "show me everything" | a clean unique list |
 
-          Maria's name tags are a clean list, so `UNION` fits. A report that adds up numbers needs `UNION ALL`.
+          Maria needs one name tag per **person**, so `UNION ALL` is the right choice for her tags. `UNION` fits
+          when you want each value **once**, for example "which different first names are coming?". A report that
+          adds up numbers needs `UNION ALL`.
 
           > [!MISTAKE]
           > Using `UNION` when you are going to **count or add up** the result. If two different orders look
@@ -160,10 +165,14 @@ lessons:
           > small, with no error message. When in doubt, use `UNION ALL`.
 
       - type: example
-        title: Maria's complete party list
+        title: One cupcake per first name
         md: |
-          Now the real thing: every customer and every staff member, each first name once, A to Z.
-          `ORDER BY` goes **once, at the very end**, and sorts the whole stacked list.
+          Maria also wants to order party cupcakes, with **one cupcake for each different first name** among the
+          guests (people who share a first name share a cupcake). That is a "each value once" question, so it
+          is a job for `UNION`.
+
+          Every customer and every staff member, A to Z. `ORDER BY` goes **once, at the very end**, and sorts
+          the whole stacked list.
         sql: |
           SELECT first_name
           FROM customers
@@ -172,9 +181,9 @@ lessons:
           FROM staff
           ORDER BY first_name;
         after: |
-          **35 name tags.** Stacking all 28 customers and all 10 staff would give 38 rows, but 3 cards were
-          copies: Chloe and Hannah (one customer and one staff member each) and Dmitri (two customers
-          share that first name). `UNION` kept one card for each.
+          **35 cupcakes.** Stacking all 28 customers and all 10 staff would give 38 rows, but 3 first names are
+          shared: Chloe and Hannah (one customer and one staff member each) and Dmitri (two customers). `UNION`
+          kept one row for each. Name tags for all 38 people would need `UNION ALL` instead.
 
       - type: exercise
         id: m08-l01-e2
@@ -246,7 +255,8 @@ lessons:
         title: Fix the crash
         prompt: |
           This query should list the **full names** of the Denver customers and the bakers in one column
-          called `full_name`, but it crashes. Fix it by making both queries return **one** column.
+          called `full_name`, but it crashes. Fix it by making both queries return **one** column, and
+          keep `UNION ALL`.
         starter: |
           SELECT first_name, last_name
           FROM customers
@@ -292,7 +302,8 @@ lessons:
 
       - type: quiz
         id: m08-l01-q1
-        question: Which of these pairs of queries can be stacked with `UNION`? (Choose all that apply.)
+        question: |
+          Which of these pairs of queries can be stacked with `UNION` **without an error**?
         options:
           - "SELECT name, role FROM staff   +   SELECT first_name FROM customers"
           - "SELECT name FROM staff   +   SELECT price FROM menu_items"
@@ -300,8 +311,9 @@ lessons:
           - "SELECT quantity FROM orders   +   SELECT price FROM menu_items"
         answer: [2, 3]
         explanation: |
-          The first pair has 2 columns against 1. The second pair stacks text with a number. The third pair is
-          date with date, and the fourth is a whole number with a decimal number, which PostgreSQL can mix.
+          **C and D** work. Pair A has 2 columns against 1. Pair B stacks text with a number. Pair C is date with
+          date. Pair D is a whole number (`quantity`) with a decimal number (`price`), and PostgreSQL happily
+          mixes different kinds of numbers.
 
       - type: example
         title: The quiet mix-up
@@ -553,6 +565,9 @@ lessons:
 
           Only the first query names the column (`AS student`). The second query just has to return the same
           kind of value, one text column, in the same position.
+
+          We compare **full names** here because every student at Maple High has a different name. In real
+          data, two people can share a name, so comparing ids is safer.
 
       - type: viz
         viz: set-ops
@@ -833,21 +848,25 @@ lessons:
         id: m08-l02-o1
         prompt: |
           Put the lines in order to list the student ids that are in the **2025-Spring** enrollments but **not**
-          in the **2024-Fall** enrollments. Sort by student id.
+          in the **2024-Fall** enrollments. Start from the spring list, and sort by student id.
+
+          The same table is used twice, so each copy has its own name (`spring` and `fall`). That also makes
+          every line different.
         lines:
-          - SELECT student_id
-          - FROM enrollments
-          - WHERE term = '2025-Spring'
+          - SELECT spring.student_id
+          - FROM enrollments AS spring
+          - WHERE spring.term = '2025-Spring'
           - EXCEPT
-          - SELECT student_id
-          - FROM enrollments
-          - WHERE term = '2024-Fall'
+          - SELECT fall.student_id
+          - FROM enrollments AS fall
+          - WHERE fall.term = '2024-Fall'
           - ORDER BY student_id;
         distractors:
           - INTERSECT
         explanation: |
           `EXCEPT` goes between the two halves, and the spring list is the first one, because it is the list you
-          are starting from. `INTERSECT` is the wrong keyword for "not in".
+          are starting from. `INTERSECT` is the wrong keyword for "not in". The final `ORDER BY student_id` uses
+          the column name from the first query. The result is 3 ids: 118, 119 and 120.
 
       - type: exercise
         id: m08-l02-e4
@@ -856,7 +875,8 @@ lessons:
           Show one column called `student` with the full name of every student who is in **exactly one** of the
           **Chess Club** and the **Book Club**, but not both. Sort A to Z.
 
-          The starter below runs without an error, but it gives the wrong answer. Fix it.
+          The starter below runs without an error, but it gives the wrong answer. Fix it. Any approach that
+          gives the right list is fine.
         starter: |
           SELECT s.first_name || ' ' || s.last_name AS student
           FROM club_members AS cm
@@ -986,200 +1006,6 @@ lessons:
           `ORDER BY reason, name` puts 'Discontinued' first (D comes before U), then sorts the names inside each
           group. Two sort columns with no ties make the order total.
 
-      - type: example
-        title: Find the products nobody has bought
-        md: |
-          Here you compare two tables. The product catalog lists every product, and `order_items` lists the
-          products that were sold. `EXCEPT` keeps the catalog names that never appear in a sale.
-
-          The `JOIN` gives the order lines their product names (module 6).
-        sql: |
-          SELECT name
-          FROM products
-          EXCEPT
-          SELECT p.name
-          FROM order_items AS oi
-          JOIN products AS p ON p.product_id = oi.product_id
-          ORDER BY name;
-        after: |
-          **5 products** have never been sold: Mysteries of the Deep Sea, Natural Bamboo Hairbrush, Science Lab
-          Starter Kit, Standing Desk 140cm and Zephyr Gaming Laptop X. This is a short list Priya can act on.
-
-      - type: fill
-        id: m08-l03-f1
-        prompt: |
-          Complete the query so it lists the customers who ordered in **2024** but **never** before 2024.
-          Keep only the `customer_id`s.
-        template: |
-          SELECT customer_id
-          FROM orders
-          WHERE order_date >= '2024-01-01'
-          ___
-          SELECT customer_id
-          FROM orders
-          WHERE order_date < '2024-01-01';
-        answers:
-          - ["EXCEPT"]
-        explanation: |
-          `EXCEPT` removes every customer who had an order before 2024. In this data that leaves **49 new
-          customers**. Using `UNION` here would add the old customers back in.
-
-      - type: viz
-        viz: set-ops
-        title: Which buyers were lost, and which are new?
-        md: |
-          These two small lists are made up for illustration: buyers in one year and buyers in the next. Click
-          each button and watch which names survive. Then ask yourself: which list does `EXCEPT` start from?
-        config:
-          a: { name: buyers_2023, values: [Ana, Ben, Chen, Dee] }
-          b: { name: buyers_2024, values: [Ben, Dee, Eli] }
-
-      - type: example
-        title: Combine two summary lines
-        md: |
-          Each part of a `UNION ALL` can be a whole question of its own. Here each part counts customers, so
-          the stacked result is a two-line summary. A sub-query in `FROM` (module 7) holds each `EXCEPT`.
-        sql: |
-          SELECT 'Ordered in 2023 only' AS report,
-                 COUNT(*) AS customers
-          FROM (
-              SELECT customer_id FROM orders
-              WHERE order_date < '2024-01-01'
-              EXCEPT
-              SELECT customer_id FROM orders
-              WHERE order_date >= '2024-01-01'
-          ) AS only_2023
-          UNION ALL
-          SELECT 'Ordered in 2024 only',
-                 COUNT(*)
-          FROM (
-              SELECT customer_id FROM orders
-              WHERE order_date >= '2024-01-01'
-              EXCEPT
-              SELECT customer_id FROM orders
-              WHERE order_date < '2024-01-01'
-          ) AS only_2024;
-        after: |
-          **2 rows**: 6 customers ordered in 2023 and never came back in 2024, and 49 customers are new in 2024.
-          Each line of the report is a complete question, and `UNION ALL` stacks the answers with their labels.
-
-      - type: example
-        title: Each part with its own LIMIT
-        md: |
-          Priya also wants the two cheapest and the two most expensive products, each group labelled. Each
-          part needs its own `ORDER BY` and `LIMIT`, so each part goes in **parentheses**.
-        sql: |
-          (SELECT 'Cheapest' AS group_name, name, price
-           FROM products
-           ORDER BY price ASC
-           LIMIT 2)
-          UNION ALL
-          (SELECT 'Priciest', name, price
-           FROM products
-           ORDER BY price DESC
-           LIMIT 2)
-          ORDER BY price;
-        after: |
-          **4 rows**, sorted by price: Screen Protector 3-Pack at $9.99 and Natural Bamboo Hairbrush at $12.49
-          are the Cheapest. Zephyr Gaming Laptop X at $1,299.99 and Aurora 16-inch Pro Laptop at $1,499.99
-          are the Priciest.
-
-          The single `ORDER BY price` at the bottom sorts the whole stacked list.
-
-      - type: read
-        title: Which parts need parentheses?
-        md: |
-          Use plain `ORDER BY` or `LIMIT` in the middle of a set operation, and PostgreSQL stops with a syntax
-          error. Wrap that part in parentheses and the error goes away.
-
-          Set operations also have a precedence rule (which operator runs first). `INTERSECT` runs **before**
-          `UNION` and `EXCEPT`, even though the query is read from left to right.
-
-          > [!MISTAKE]
-          > Assuming that `1 UNION 2 INTERSECT 2` is read from left to right. It is not: `INTERSECT` runs
-          > first. Wrap any part you are unsure about in parentheses, and the order is clear to the next reader.
-
-      - type: predict
-        id: m08-l03-p1
-        question: |
-          `INTERSECT` runs before `UNION`. How many rows does this query return?
-        sql: |
-          SELECT 1 AS n
-          UNION
-          SELECT 2
-          INTERSECT
-          SELECT 2;
-        options: ["1 row", "2 rows", "3 rows", "An error"]
-        answer: 1
-        explanation: |
-          First `2 INTERSECT 2` gives 2. Then `UNION` stacks 1 on top of it, so you get 1 and 2: **2 rows**.
-          If you read from left to right, `1 UNION 2` comes first, and `INTERSECT 2` then leaves only 1 row.
-
-      - type: quiz
-        id: m08-l03-q1
-        question: |
-          You want the 2 cheapest and the 2 most expensive products, stacked in one list, with each group labelled.
-          Which query is correct?
-        options:
-          - "SELECT name, price FROM products ORDER BY price LIMIT 2 UNION ALL SELECT name, price FROM products ORDER BY price DESC LIMIT 2"
-          - "(SELECT name, price FROM products ORDER BY price LIMIT 2) UNION ALL (SELECT name, price FROM products ORDER BY price DESC LIMIT 2)"
-          - "SELECT name, price FROM products UNION ALL SELECT name, price FROM products ORDER BY price LIMIT 4"
-        answer: 1
-        explanation: |
-          Only option 2 wraps each part in parentheses. Option 1 fails with a syntax error, because `LIMIT` sits in
-          the middle. Option 3 gives the wrong rows: one `LIMIT 4` at the end keeps the first four rows of the
-          whole list, not two from each side.
-
-      - type: example
-        title: Count the rows from each source
-        md: |
-          Wrap a stacked list in a sub-query, then use `GROUP BY` (module 5) on the label. This counts how many
-          rows each source contributed. Use `UNION ALL`: `UNION` would drop a row that matches another row
-          exactly.
-        sql: |
-          SELECT reason, COUNT(*) AS items
-          FROM (
-              SELECT 'Discontinued' AS reason, name
-              FROM products
-              WHERE is_active = false
-              UNION ALL
-              SELECT 'Under $15', name
-              FROM products
-              WHERE price < 15
-              UNION ALL
-              SELECT 'Over $1,000', name
-              FROM products
-              WHERE price > 1000
-          ) AS review
-          GROUP BY reason
-          ORDER BY reason;
-        after: |
-          **3 rows**: Discontinued 4, Over $1,000 3, Under $15 4. Nothing is counted twice, because no product
-          is in two groups.
-
-      - type: parsons
-        id: m08-l03-o1
-        prompt: |
-          Put the lines in order to count how many rows each source contributes. Sort by the source label.
-        lines:
-          - SELECT reason, COUNT(*) AS items
-          - FROM (
-          - SELECT 'Discontinued' AS reason, name
-          - FROM products
-          - WHERE is_active = false
-          - UNION ALL
-          - SELECT 'Under $15', name
-          - FROM products
-          - WHERE price < 15
-          - ) AS review
-          - GROUP BY reason
-          - ORDER BY reason;
-        distractors:
-          - UNION
-        explanation: |
-          `UNION ALL` joins the two sources and keeps every row, so the counts are correct. `UNION` would be the
-          wrong choice when you are counting.
-
       - type: exercise
         id: m08-l03-e1
         title: A labelled stack
@@ -1215,6 +1041,59 @@ lessons:
           **7 rows**: 4 discontinued products, then 3 premium products (the laptops priced above $1,000). Because
           'Discontinued' comes before 'Premium' in the alphabet, the discontinued rows come first.
         difficulty: 1
+
+      - type: example
+        title: Find the products nobody has ordered
+        md: |
+          Here you compare two tables. The product catalog lists every product, and `order_items` lists the
+          products that appear in orders. `EXCEPT` keeps the catalog names that never appear in an order line.
+
+          The `JOIN` gives the order lines their product names (module 6).
+        sql: |
+          SELECT name
+          FROM products
+          EXCEPT
+          SELECT p.name
+          FROM order_items AS oi
+          JOIN products AS p ON p.product_id = oi.product_id
+          ORDER BY name;
+        after: |
+          **5 products** have never been ordered: Mysteries of the Deep Sea, Natural Bamboo Hairbrush, Science Lab
+          Starter Kit, Standing Desk 140cm and Zephyr Gaming Laptop X. This is a short list Priya can act on.
+
+          Comparing **names** works here because every product name is different. You could also find the same
+          products with a `LEFT JOIN` and `IS NULL` (module 6) or with `NOT EXISTS` (module 7). `EXCEPT` is the
+          shortest to read when both sides list the same kind of thing.
+
+      - type: fill
+        id: m08-l03-f1
+        prompt: |
+          Complete the query so it lists the customers who ordered in **2024** but **never** before 2024.
+          Keep only the `customer_id`s.
+        template: |
+          SELECT customer_id
+          FROM orders
+          WHERE order_date >= '2024-01-01'
+          ___
+          SELECT customer_id
+          FROM orders
+          WHERE order_date < '2024-01-01';
+        answers:
+          - ["EXCEPT"]
+        explanation: |
+          `EXCEPT` removes every customer who had an order before 2024. In this data that leaves **49 new
+          customers**. Using `UNION` here would add the old customers back in.
+
+      - type: viz
+        viz: set-ops
+        title: Which buyers were lost, and which are new?
+        md: |
+          These two small lists are made up for illustration: the buyers in one year and the buyers in the next.
+          Click each button and watch which names survive. **EXCEPT** starts from list A, so it shows the buyers
+          who were **lost** (Ana and Chen). To find the **new** buyers, you would start from list B instead.
+        config:
+          a: { name: buyers_2023, values: [Ana, Ben, Chen, Dee] }
+          b: { name: buyers_2024, values: [Ben, Dee, Eli] }
 
       - type: exercise
         id: m08-l03-e2
@@ -1262,6 +1141,35 @@ lessons:
           2024, and `IN` then looks up their names. Sorting by last name and then first name gives an order with
           no ties.
         difficulty: 2
+
+      - type: example
+        title: Combine two summary lines
+        md: |
+          Each part of a `UNION ALL` can be a whole question of its own. Here each part counts customers, so
+          the stacked result is a two-line summary. A sub-query in `FROM` (module 7) holds each `EXCEPT`.
+        sql: |
+          SELECT 'Ordered in 2023 only' AS report,
+                 COUNT(*) AS customers
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date < '2024-01-01'
+              EXCEPT
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+          ) AS only_2023
+          UNION ALL
+          SELECT 'Ordered in 2024 only',
+                 COUNT(*)
+          FROM (
+              SELECT customer_id FROM orders
+              WHERE order_date >= '2024-01-01'
+              EXCEPT
+              SELECT customer_id FROM orders
+              WHERE order_date < '2024-01-01'
+          ) AS only_2024;
+        after: |
+          **2 rows**: 6 customers ordered in 2023 and never came back in 2024, and 49 customers are new in 2024.
+          Each line of the report is a complete question, and `UNION ALL` stacks the answers with their labels.
 
       - type: exercise
         id: m08-l03-e3
@@ -1323,13 +1231,177 @@ lessons:
         columnNames: true
         hints:
           - "Each of the first two lines is a single query that counts different customers. The third line is the tricky one."
-          - "For the total, a `UNION` of the two years removes the customers who ordered in both years, so counting its rows gives the number of different customers."
+          - "For the total, a `UNION` of the two years' customer ids keeps each id only once, so counting its rows gives the number of different customers."
           - "... ___ SELECT 'TOTAL (either year)', COUNT(*) FROM ( SELECT customer_id FROM orders WHERE ... UNION SELECT customer_id FROM orders WHERE ... ) AS either_year;"
         explanation: |
           **91 customers ordered in 2023, 134 in 2024, and 140 in either year.** The total is less than 91 + 134,
-          because 85 customers ordered in both years. `UNION` removes that overlap, so the total row counts each
-          customer once.
+          because 85 customers ordered in both years. `UNION` keeps each customer id once, so the total row counts
+          every customer a single time.
+
+          A shorter way to get the same total is one query with `COUNT(DISTINCT customer_id)` over both years.
+          The `UNION` version is worth knowing, because it also works when the two lists come from different tables.
         difficulty: 2
+
+      - type: example
+        title: Each part with its own LIMIT
+        md: |
+          Priya also wants the two cheapest and the two most expensive products, each group labelled. Each
+          part needs its own `ORDER BY` and `LIMIT`, so each part goes in **parentheses**.
+        sql: |
+          (SELECT 'Cheapest' AS group_name, name, price
+           FROM products
+           ORDER BY price ASC
+           LIMIT 2)
+          UNION ALL
+          (SELECT 'Priciest', name, price
+           FROM products
+           ORDER BY price DESC
+           LIMIT 2)
+          ORDER BY price;
+        after: |
+          **4 rows**, sorted by price: Screen Protector 3-Pack at $9.99 and Natural Bamboo Hairbrush at $12.49
+          are the Cheapest. Zephyr Gaming Laptop X at $1,299.99 and Aurora 16-inch Pro Laptop at $1,499.99
+          are the Priciest.
+
+          The single `ORDER BY price` at the bottom sorts the whole stacked list.
+
+      - type: read
+        title: Which parts need parentheses?
+        md: |
+          Use plain `ORDER BY` or `LIMIT` in the middle of a set operation, and PostgreSQL stops with a syntax
+          error. Wrap that part in parentheses and the error goes away.
+
+          Set operations also have a precedence rule (which operator runs first). `INTERSECT` runs **before**
+          `UNION` and `EXCEPT`. Those two then run from left to right.
+
+          > [!ANALOGY]
+          > It works like arithmetic. In `1 + 2 × 3` the multiplication happens first, even though it sits on the
+          > right. `INTERSECT` is the "multiplication" of set operations, so it goes before `UNION` and `EXCEPT`.
+
+          > [!MISTAKE]
+          > Assuming that `1 UNION 2 INTERSECT 2` is read from left to right. It is not: `INTERSECT` runs
+          > first. Wrap any part you are unsure about in parentheses, and the order is clear to the next reader.
+
+      - type: predict
+        id: m08-l03-p1
+        question: |
+          `INTERSECT` runs before `UNION`. How many rows does this query return?
+        sql: |
+          SELECT 1 AS n
+          UNION
+          SELECT 2
+          INTERSECT
+          SELECT 2;
+        options: ["1 row", "2 rows", "3 rows", "An error"]
+        answer: 1
+        explanation: |
+          First `2 INTERSECT 2` gives 2. Then `UNION` stacks 1 on top of it, so you get 1 and 2: **2 rows**.
+          If you read from left to right, `1 UNION 2` comes first, and `INTERSECT 2` then leaves only 1 row.
+
+      - type: quiz
+        id: m08-l03-q1
+        question: |
+          You want the 2 cheapest and the 2 most expensive products, stacked in one list. Which query is correct?
+        options:
+          - "SELECT name, price FROM products ORDER BY price LIMIT 2 UNION ALL SELECT name, price FROM products ORDER BY price DESC LIMIT 2"
+          - "(SELECT name, price FROM products ORDER BY price LIMIT 2) UNION ALL (SELECT name, price FROM products ORDER BY price DESC LIMIT 2)"
+          - "SELECT name, price FROM products UNION ALL SELECT name, price FROM products ORDER BY price LIMIT 4"
+        answer: 1
+        explanation: |
+          **B** is the only option that wraps each part in parentheses. Option A fails with a syntax error, because
+          `ORDER BY` and `LIMIT` sit in the middle. Option C runs, but gives the wrong rows: one `LIMIT 4` at the
+          end keeps the first four rows of the whole sorted list (the two cheapest products, each twice), not two
+          from each side.
+
+      - type: exercise
+        id: m08-l03-e5
+        title: Budget and flagship picks
+        prompt: |
+          Show two columns, `label` and `name`. Include the **2 cheapest** products, labelled `'Budget'`, and the
+          **1 most expensive** product, labelled `'Flagship'`. Sort by `label`, then by `name`.
+        starter: |
+          (SELECT 'Budget' AS label, name
+           FROM products
+           ORDER BY price
+           LIMIT 2)
+          ___
+          (SELECT 'Flagship', name
+           FROM products
+           ORDER BY price DESC
+           LIMIT 1)
+          ORDER BY label, name;
+        solution: |
+          (SELECT 'Budget' AS label, name
+           FROM products
+           ORDER BY price
+           LIMIT 2)
+          UNION ALL
+          (SELECT 'Flagship', name
+           FROM products
+           ORDER BY price DESC
+           LIMIT 1)
+          ORDER BY label, name;
+        ordered: true
+        columnNames: true
+        hints:
+          - "Each part needs its own ORDER BY and LIMIT, so each part goes in parentheses, as in the cheapest and priciest example."
+          - "Use the keyword that stacks two results and keeps every row."
+          - "(SELECT 'Budget' AS label, name FROM products ORDER BY price LIMIT 2) ___ (SELECT 'Flagship', name FROM products ORDER BY price DESC LIMIT 1) ORDER BY label, name;"
+        explanation: |
+          **3 rows**: Natural Bamboo Hairbrush and Screen Protector 3-Pack as Budget, then Aurora 16-inch Pro Laptop
+          as Flagship. The prices at the cut-off are all different, so the picks are not ambiguous.
+        difficulty: 2
+
+      - type: example
+        title: Count the rows from each source
+        md: |
+          Wrap a stacked list in a sub-query, then use `GROUP BY` (module 5) on the label. This counts how many
+          rows each source contributed. Use `UNION ALL`: `UNION` would drop a row that matches another row
+          exactly.
+        sql: |
+          SELECT reason, COUNT(*) AS items
+          FROM (
+              SELECT 'Discontinued' AS reason, name
+              FROM products
+              WHERE is_active = false
+              UNION ALL
+              SELECT 'Under $15', name
+              FROM products
+              WHERE price < 15
+              UNION ALL
+              SELECT 'Over $1,000', name
+              FROM products
+              WHERE price > 1000
+          ) AS review
+          GROUP BY reason
+          ORDER BY reason;
+        after: |
+          **3 rows**: Discontinued 4, Over $1,000 3, Under $15 4. Nothing is counted twice, because no product
+          is in two groups.
+
+      - type: parsons
+        id: m08-l03-o1
+        prompt: |
+          The shop's search box suggests both product names and category names. Put the lines in order to count
+          how many names each source contributes: the product names first (labelled `'Product'`), then the
+          category names (labelled `'Category'`). Sort by the label.
+        lines:
+          - SELECT source, COUNT(*) AS items
+          - FROM (
+          - SELECT 'Product' AS source, name
+          - FROM products
+          - UNION ALL
+          - SELECT 'Category', name
+          - FROM categories
+          - ) AS everything
+          - GROUP BY source
+          - ORDER BY source;
+        distractors:
+          - UNION
+        explanation: |
+          `UNION ALL` stacks the two sources and keeps every row, so the counts are correct: 14 categories and 60
+          products. `UNION` would be the wrong choice when you are counting, because it could merge two rows that
+          look the same.
 
       - type: exercise
         id: m08-l03-e4
@@ -1339,7 +1411,8 @@ lessons:
           `'Dropped'`, and the products that were sold **only in 2024**, labelled `'New'`. Each product appears
           once. Sort by `movement`, then by `product`.
 
-          A product was sold in a year if it appears in an order line for an order placed in that year.
+          A product was sold in a year if it appears in an order line for an order placed in that year. Do not
+          look at the order's `status`: every order counts.
         starter: |
           SELECT 'Dropped' AS movement, product
           FROM (
@@ -1422,45 +1495,6 @@ lessons:
           'Dropped' before 'New', then sorts by product name.
         difficulty: 3
 
-      - type: exercise
-        id: m08-l03-e5
-        title: Budget and flagship picks
-        prompt: |
-          Show two columns, `label` and `name`. Include the **2 cheapest** products, labelled `'Budget'`, and the
-          **1 most expensive** product, labelled `'Flagship'`. Sort by `label`, then by `name`.
-        starter: |
-          (SELECT 'Budget' AS label, name
-           FROM products
-           ORDER BY price
-           LIMIT 2)
-          ___
-          (SELECT 'Flagship', name
-           FROM products
-           ORDER BY price DESC
-           LIMIT 1)
-          ORDER BY label, name;
-        solution: |
-          (SELECT 'Budget' AS label, name
-           FROM products
-           ORDER BY price
-           LIMIT 2)
-          UNION ALL
-          (SELECT 'Flagship', name
-           FROM products
-           ORDER BY price DESC
-           LIMIT 1)
-          ORDER BY label, name;
-        ordered: true
-        columnNames: true
-        hints:
-          - "Each part needs its own ORDER BY and LIMIT, so each part goes in parentheses, as in the cheapest and priciest example."
-          - "Use the keyword that stacks two results and keeps every row."
-          - "(SELECT 'Budget' AS label, name FROM products ORDER BY price LIMIT 2) ___ (SELECT 'Flagship', name FROM products ORDER BY price DESC LIMIT 1) ORDER BY label, name;"
-        explanation: |
-          **3 rows**: Natural Bamboo Hairbrush and Screen Protector 3-Pack as Budget, then Aurora 16-inch Pro Laptop
-          as Flagship. The prices at the cut-off are all different, so the picks are not ambiguous.
-        difficulty: 2
-
     cheatsheet:
       - title: Label each part of a stacked report
         sql: |
@@ -1497,12 +1531,24 @@ testPool:
     lesson: m08-l01
     difficulty: 1
     question: |
-      Which keyword stacks two query results **and** removes rows that are exact copies of each other?
-    options: ["UNION ALL", "UNION", "JOIN", "WHERE"]
+      You stack these two queries with `UNION`. What happens?
+    sql: |
+      SELECT name
+      FROM staff
+      UNION
+      SELECT hired_on
+      FROM staff;
+    expectError: true
+    options:
+      - "It works: the dates are listed under the names."
+      - "It fails: a text column and a date column cannot be stacked."
+      - "It fails: UNION needs an ORDER BY."
+      - "It works, but the dates are removed."
     answer: 1
     explanation: |
-      `UNION` stacks the rows and then removes identical copies. `UNION ALL` stacks them and keeps every copy.
-      `JOIN` adds columns side by side, rather than rows underneath each other.
+      Columns in the same position must have compatible types. `name` is text and `hired_on` is a date, so
+      PostgreSQL stops with *UNION types text and date cannot be matched*. You could cast the date to text
+      (`hired_on::text`) if you really wanted to stack them.
 
   - type: predict
     id: m08-t02
@@ -1530,7 +1576,7 @@ testPool:
     title: Managers and cashiers
     prompt: |
       Show one column called `person` with the full name of every staff member whose `role` is `'Manager'`
-      or `'Cashier'`. Keep every row, and sort A to Z.
+      or `'Cashier'`. Build it from two queries (one per role) stacked with `UNION ALL`, and sort A to Z.
     solution: |
       SELECT name AS person
       FROM staff
@@ -1560,7 +1606,8 @@ testPool:
       returns two columns, `person` and `place`. For Denver customers, show the full name and the city. For
       bakers, show the staff name and the text `'Bakery'`. Keep every row.
     starter: |
-      SELECT first_name || ' ' || last_name AS person, city AS place
+      SELECT first_name || ' ' || last_name AS person,
+             city AS place
       FROM customers
       WHERE city = 'Denver'
       UNION ALL
@@ -1568,7 +1615,8 @@ testPool:
       FROM staff
       WHERE role = 'Baker';
     solution: |
-      SELECT first_name || ' ' || last_name AS person, city AS place
+      SELECT first_name || ' ' || last_name AS person,
+             city AS place
       FROM customers
       WHERE city = 'Denver'
       UNION ALL
@@ -1728,8 +1776,8 @@ testPool:
       - "SELECT first_name, grade_level FROM students WHERE grade_level = 9 UNION SELECT first_name FROM students WHERE grade_level = 10 ORDER BY first_name;"
     answer: 1
     explanation: |
-      Option 2 is correct: `ORDER BY` goes at the very end of the whole statement. Option 1 puts `ORDER BY` in
-      the middle, option 3 puts it before `WHERE`, and option 4 gives the two halves different numbers of columns.
+      **B** is correct: `ORDER BY` goes at the very end of the whole statement. Option A puts `ORDER BY` in
+      the middle, option C puts it before `WHERE`, and option D gives the two halves different numbers of columns.
 
   - type: exercise
     id: m08-t12
@@ -1773,24 +1821,21 @@ testPool:
     lesson: m08-l02
     difficulty: 2
     prompt: |
-      Put the lines in order to list the student ids that are in **both** the **Debate Team** and the
-      **Drama Society**. Sort by student id.
+      Put the lines in order to list the ids of the **grade 12** students who also belong to **at least one
+      club**. Put the grade 12 list first, then the club members, and sort by student id.
     lines:
-      - SELECT cm.student_id
-      - FROM club_members AS cm
-      - JOIN clubs AS cl ON cl.club_id = cm.club_id
-      - WHERE cl.name = 'Debate Team'
+      - SELECT s.student_id
+      - FROM students AS s
+      - WHERE s.grade_level = 12
       - INTERSECT
       - SELECT cm.student_id
       - FROM club_members AS cm
-      - JOIN clubs AS cl ON cl.club_id = cm.club_id
-      - WHERE cl.name = 'Drama Society'
       - ORDER BY student_id;
     distractors:
       - EXCEPT
     explanation: |
-      `INTERSECT` keeps the ids found on both lists. The first query names the column `student_id`, so the
-      final `ORDER BY student_id` can use that name.
+      `INTERSECT` keeps the ids found on both lists: a senior who is also a club member. The first query names
+      the column `student_id`, so the final `ORDER BY student_id` can use that name.
 
   - type: exercise
     id: m08-t14
@@ -1848,7 +1893,7 @@ testPool:
   - type: predict
     id: m08-t16
     lesson: m08-l03
-    difficulty: 2
+    difficulty: 3
     question: |
       How many rows does this query return?
     sql: |
@@ -1871,7 +1916,7 @@ testPool:
     title: Pricey products nobody bought
     prompt: |
       Show one column called `product` with the names of products priced **$100 or more** that were
-      **never sold**. Sort A to Z.
+      **never ordered**, meaning they appear in no row of `order_items`. Sort A to Z.
     solution: |
       SELECT name AS product
       FROM products
@@ -1889,7 +1934,7 @@ testPool:
       - "SELECT name AS product FROM products WHERE price >= 100 ___ SELECT p.name FROM order_items AS oi JOIN products AS p ON ... ORDER BY product;"
     explanation: |
       **2 products**: Standing Desk 140cm ($449.99) and Zephyr Gaming Laptop X ($1,299.99). The price filter goes
-      on the first query, and the second query supplies every name that was sold.
+      on the first query, and the second query supplies every name that appears in an order line.
 
   - type: exercise
     id: m08-t18
@@ -1927,26 +1972,29 @@ testPool:
   - type: parsons
     id: m08-t19
     lesson: m08-l03
-    difficulty: 2
+    difficulty: 3
     prompt: |
-      Put the lines in order to show the cheapest product and the most expensive product, each labelled, sorted
-      by price.
+      Put the lines in order to show the dates of the **2 latest orders** (labelled `'Order'`) and the date of
+      the **latest review** (labelled `'Review'`). Keep every row. Put the orders first, then the reviews, and
+      sort the result by day, then by event.
     lines:
-      - (SELECT 'Cheapest' AS label, name, price
-      - FROM products
-      - ORDER BY price
-      - LIMIT 1)
+      - (SELECT 'Order' AS event, order_date AS day
+      - FROM orders
+      - ORDER BY order_date DESC
+      - LIMIT 2)
       - UNION ALL
-      - (SELECT 'Most expensive', name, price
-      - FROM products
-      - ORDER BY price DESC
+      - (SELECT 'Review', created_at
+      - FROM reviews
+      - ORDER BY created_at DESC
       - LIMIT 1)
-      - ORDER BY price;
+      - ORDER BY day, event;
     distractors:
-      - INTERSECT
+      - UNION
     explanation: |
-      Each part needs its own `ORDER BY` and `LIMIT`, so each part is wrapped in parentheses. The result has
-      2 rows: Screen Protector 3-Pack at $9.99, and Aurora 16-inch Pro Laptop at $1,499.99.
+      Each part needs its own `ORDER BY` and `LIMIT`, so each part is wrapped in parentheses. The last
+      `ORDER BY` sorts the whole stacked result. The result has 3 rows: the orders of 2024-12-30 and 2024-12-31,
+      and a review dated 2024-12-31. `UNION ALL` keeps every row, as the prompt asks. Plain `UNION` could quietly
+      merge two orders that fall on the same day.
 
   - type: fill
     id: m08-t20

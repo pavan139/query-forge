@@ -55,3 +55,7 @@ glossary:
     definition: "A clause, available since PostgreSQL 14, that goes after a recursive CTE. It sets a flag column to true on the row where a node repeats on the same route, so you can filter those rows out with WHERE NOT."
     example: "CYCLE stop SET is_cycle USING visited_path"
     module: m09
+  - term: Materialized CTE
+    definition: "A CTE that PostgreSQL calculates once and keeps, so the main query reads the stored rows. NOT MATERIALIZED does the opposite and merges the CTE into the main query. The answer is the same either way; only the speed can differ."
+    example: "WITH big AS MATERIALIZED (SELECT * FROM orders) SELECT COUNT(*) FROM big;"
+    module: m09

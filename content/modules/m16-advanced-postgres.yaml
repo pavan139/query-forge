@@ -41,7 +41,7 @@ lessons:
           ORDER BY event_id
           LIMIT 3;
         after: |
-          Each `properties` value is one JSON object: curly brackets around `"key": value` pairs. The first two rows show a `plan` and a `price`. The keys are different from event to event, but they all live in the same column.
+          Each `properties` value is one JSON object: curly brackets around `"key": value` pairs. These three rows each hold a `plan` and a `price`. Other kinds of event, such as `app_open`, store different keys in the same column.
 
       - type: read
         title: "The two arrows: -> and ->>"
@@ -194,7 +194,7 @@ lessons:
         answers:
           - ["->>"]
           - ["->>"]
-          - ["int", "integer"]
+          - ["int", "integer", "int4", "bigint", "int8", "smallint"]
         explanation: |
           `->>` gives text for both keys. `::int` casts the duration text into a whole number. Use `numeric` instead when a value can have decimals, such as a price.
 
@@ -415,7 +415,7 @@ lessons:
       - type: read
         title: Build arrays and objects with aggregates
         md: |
-          Aggregates from lesson m05 have JSON versions too.
+          The aggregates you met in module m05 have JSON versions too.
 
           - `jsonb_agg(value)` gathers values into one **JSON array**.
           - `jsonb_object_agg(key, value)` gathers key and value pairs into one **JSON object**.
@@ -457,7 +457,7 @@ lessons:
       - type: read
         title: "JSON_TABLE: turn JSON into normal columns"
         md: |
-          `JSON_TABLE` describes the columns you want, and each `PATH` says which key fills each column. It makes the JSON look like an ordinary table. It arrived in PostgreSQL 17, so you can use it in PostgreSQL 18.
+          `JSON_TABLE` describes the columns you want, and each `PATH` says which key fills each column (`$` means "the whole JSON value", so `$.plan` is its `plan` key). It makes the JSON look like an ordinary table. It arrived in PostgreSQL 17, so you can use it in PostgreSQL 18.
 
           > [!MISTAKE]
           > JSON needs **double quotes** around keys and text values. `{plan: annual}` is not valid JSON and fails with `invalid input syntax for type json`. Write the whole JSON inside single quotes in SQL, like `'{"plan": "annual"}'`.
@@ -493,7 +493,7 @@ lessons:
               ON events USING GIN (properties);
           ```
 
-          You will learn how indexes work in module m15. For now, remember that this one line helps `@>` and `?` searches on `properties`.
+          You met indexes in module m15. This is the JSON version of the same idea: this one line helps `@>` and `?` searches on `properties`.
 
       - type: quiz
         id: m16-l02-q1
@@ -761,6 +761,26 @@ lessons:
         after: |
           Fourteen films have `Sci-Fi` in their genre list. The inner query is the same as the example before, and the new part is the `WHERE` line, which searches inside the array with `= ANY`.
 
+      - type: example
+        title: Films that are both Action and Adventure
+        md: Press **Run**. The `@>` operator keeps the lists that contain **every** item you name.
+        sql: |
+          SELECT tagged.movie_id,
+                 tagged.title
+          FROM (
+              SELECT m.movie_id,
+                     m.title,
+                     ARRAY_AGG(g.name ORDER BY g.name) AS genres
+              FROM movies m
+              JOIN movie_genres mg ON mg.movie_id = m.movie_id
+              JOIN genres g ON g.genre_id = mg.genre_id
+              GROUP BY m.movie_id, m.title
+          ) AS tagged
+          WHERE tagged.genres @> ARRAY['Action', 'Adventure']
+          ORDER BY tagged.movie_id;
+        after: |
+          Six films are tagged with both genres, from `Ashfall Run` (movie 4) to `Jungle Express 1912` (movie 103). A film with only `Action` would not match, because `@>` needs every item on the right to be in the list on the left.
+
       - type: read
         title: "unnest: an array back into rows"
         md: |
@@ -901,7 +921,7 @@ lessons:
           - "The condition in `WHERE` is `'Sci-Fi' = ANY(tagged.genres)`."
           - "SELECT tagged.movie_id, tagged.title FROM (...) AS tagged WHERE '___' = ANY(tagged.___) ORDER BY tagged.movie_id;"
         explanation: |
-          Fourteen films. The genre list has to be built first, because `= ANY` needs the whole array to exist before it can search it. Writing the search directly in the join would not work.
+          Fourteen films. The genre list has to be built first, because `= ANY` needs the whole array to exist before it can search it. If you only need one genre, a plain `WHERE g.name = 'Sci-Fi'` on the joined rows gives the same films. The array version is the one to use when the whole list is already stored in a column.
         ordered: true
 
       - type: exercise
@@ -1033,7 +1053,7 @@ lessons:
       - type: read
         title: A list of dates
         md: |
-          Give `generate_series` two dates and the step `'1 day'`, and it returns one date after another. The result of adding a day to a `date` is a timestamp, so cast the value to `date` with `::date` to see only the day.
+          Give `generate_series` two dates and the step `'1 day'`, and it returns one date after another. With dates as input, `generate_series` returns **timestamps** (a date plus a time, here 00:00), so cast each value to `date` with `::date` to see only the day.
 
           > [!REAL-WORLD]
           > Analysts call this list a **date spine**. Every report that shows "per day" or "per month" should start from one, so that quiet days still appear.
@@ -1101,7 +1121,7 @@ lessons:
           GROUP BY h
           ORDER BY h;
         after: |
-          The hour from 07:00 had no events. `wrong_count` says 1, because the empty hour still produced one row. `events` says 0, which is correct. Hours with no events are the reason for a spine.
+          Three of the five hours (07:00, 09:00 and 10:00) had no events. For those hours `wrong_count` says 1, because the empty hour still produced one row. `events` says 0, which is correct. Quiet hours like these are the reason for a spine.
 
       - type: quiz
         id: m16-l04-q1
@@ -1139,7 +1159,7 @@ lessons:
         answers:
           - ["2"]
         explanation: |
-          A step of 2 gives 2, 4, 6, 8 and 10. The step can be any number, and it can be negative for a countdown.
+          A step of 2 gives 2, 4, 6, 8 and 10. The step can be negative for a countdown (for example `generate_series(10, 1, -3)`), but it can never be 0.
 
       - type: parsons
         id: m16-l04-o1
@@ -1251,7 +1271,7 @@ lessons:
           - "Put the event name test in the `ON` clause, and count `e.event_id`."
           - "... LEFT JOIN events e ON e.event_time::date = d::date AND e.event_name = '___' GROUP BY ___ ORDER BY ___;"
         explanation: |
-          Days 1, 3 and 6 have no completed workouts, so they show 0. Days 2 and 4 to 7 have one or more. `COUNT(e.event_id)` is the safe choice, because empty days count as 0 instead of 1.
+          Days 1, 3 and 6 have no completed workouts, so they show 0. Days 2, 4, 5 and 7 have at least one. `COUNT(e.event_id)` is the safe choice, because empty days count as 0 instead of 1.
         ordered: true
         columnNames: true
 
@@ -1260,7 +1280,7 @@ lessons:
         title: Weekly steps for user 2
         difficulty: 3
         prompt: |
-          For user 2, show the total steps for each week in March 2024. Use every day from 2024-03-01 to 2024-03-31, and count missing days as 0. Show three columns, in this order: `week_start` (the Monday of that week, as a date), `total_steps` and `days_with_data` (how many days had a real value). Sort by `week_start`.
+          For user 2, show the total steps for each week in March 2024. Use every day from 2024-03-01 to 2024-03-31, and count missing days as 0. The first week starts on Monday 26 February, but it only counts the days from 1 March on. Show three columns, in this order: `week_start` (the Monday of that week, as a date), `total_steps` and `days_with_data` (how many days had a real value). Sort by `week_start`.
 
           Hint: `date_trunc('week', day)` gives the Monday of the week.
         starter: |
@@ -1562,7 +1582,7 @@ lessons:
         title: Two latest orders per customer
         difficulty: 2
         prompt: |
-          For customers 1 to 5, show their two most recent orders. Show three columns: `customer_id`, `order_id` and `order_date`. Use `customer_id` from `customers`, and keep every one of those customers even if they have no orders.
+          For customers 1 to 5, show their two most recent orders. If two orders share a date, the one with the higher `order_id` counts as more recent. Show three columns: `customer_id`, `order_id` and `order_date`. Use `customer_id` from `customers`, and keep every one of those customers even if they have no orders.
 
           Sort by `customer_id`, then by `order_date` from newest to oldest, then by `order_id` from highest to lowest.
         starter: |
@@ -1669,9 +1689,9 @@ lessons:
     dataset: shop
     steps:
       - type: read
-        title: Three reports in one query
+        title: Several reports in one query
         md: |
-          Mia needs a revenue report with three levels: one row per category, a subtotal for the whole store, and no other clutter. The usual way is three queries stuck together with `UNION ALL`. That works, but it is long, and every copy can drift apart.
+          Mia needs a revenue report with one row per category **and** a total row for the whole store. One way is two queries stuck together with `UNION ALL`. That works, but it is long, and the copies can drift apart when someone edits only one of them.
 
           PostgreSQL has a better way. One `GROUP BY` can ask for several groupings at once.
 
@@ -1970,7 +1990,7 @@ lessons:
           - "`GROUPING(x.yr) = 1` is true on the grand total row, and `GROUPING(x.status) = 1` is true on each year's subtotal row."
           - "Cast the year to text in the ELSE branch so that both branches of each CASE are text."
         explanation: |
-          Twelve rows: a subtotal row per year, a status row for each combination, and the grand total. Sorting text in PostgreSQL uses character codes, so `All years` comes after `2024`, and `All statuses` comes before the lowercase statuses.
+          Twelve rows: a subtotal row per year, a status row for each combination, and the grand total. In this course's database, text sorts by character codes (capital letters first), so `All years` comes after `2024`, and `All statuses` comes before the lowercase statuses.
         ordered: true
         columnNames: true
 
@@ -2008,6 +2028,21 @@ lessons:
           > Imagine a pile of receipts for each customer, sorted by date. `DISTINCT ON` lets you pick the top receipt from each pile and throw the rest away.
 
       - type: example
+        title: Five users and their subscriptions
+        md: |
+          Press **Run**. Users 34, 171 and 219 cancelled a subscription and later bought a new one. Users 1 and 3 have just one each.
+        sql: |
+          SELECT user_id,
+                 subscription_id,
+                 plan,
+                 started_at
+          FROM subscriptions
+          WHERE user_id IN (1, 3, 34, 171, 219)
+          ORDER BY user_id, started_at;
+        after: |
+          Eight rows for five users. Three users appear twice. Support wants **one** row per user, the latest one.
+
+      - type: example
         title: The latest subscription of each user
         md: Press **Run**. The `ORDER BY` sorts each user's subscriptions newest first, so the top row of each user is the latest one.
         sql: |
@@ -2017,12 +2052,12 @@ lessons:
                  plan,
                  started_at
           FROM subscriptions
-          WHERE user_id <= 25
+          WHERE user_id IN (1, 3, 34, 171, 219)
           ORDER BY user_id,
                    started_at DESC,
                    subscription_id DESC;
         after: |
-          Eleven rows, one per user who subscribed. The `DISTINCT ON` columns (`user_id`) come first in `ORDER BY`, and the rest of the `ORDER BY` decides which row is first.
+          Five rows, one per user, down from eight. Users 34 and 171 now show their newer `annual` plan, and user 219 shows the subscription from 9 July. The `DISTINCT ON` column (`user_id`) comes first in `ORDER BY`, and the rest of the `ORDER BY` decides which row is first.
 
       - type: read
         title: "The rule: ORDER BY starts with the same columns"
@@ -2051,12 +2086,12 @@ lessons:
                                   s.subscription_id DESC
                      ) AS rn
               FROM subscriptions s
-              WHERE s.user_id <= 25
+              WHERE s.user_id IN (1, 3, 34, 171, 219)
           ) AS t
           WHERE t.rn = 1
           ORDER BY t.user_id;
         after: |
-          The same eleven rows as the `DISTINCT ON` example. `DISTINCT ON` is shorter, but `ROW_NUMBER` works in more databases and lets you keep more than one row per group, for example `rn <= 3`.
+          The same five rows as the `DISTINCT ON` example. `DISTINCT ON` is shorter, but `ROW_NUMBER` works in more databases and lets you keep more than one row per group, for example `rn <= 3`.
 
       - type: read
         title: The most common DISTINCT ON error
@@ -2138,15 +2173,15 @@ lessons:
         answers:
           - ["DISTINCT"]
         explanation: |
-          `SELECT DISTINCT ON (user_id)` keeps the first row for each user. Without `DISTINCT`, the query would not compile.
+          `SELECT DISTINCT ON (user_id)` keeps the first row for each user. Without the word `DISTINCT`, the query is a syntax error.
 
       - type: parsons
         id: m16-l07-o1
-        prompt: Put the lines in the right order to show the latest subscription for each user from 1 to 25.
+        prompt: Put the lines in the right order to show the latest subscription of each of the users 1, 3, 34, 171 and 219.
         lines:
           - SELECT DISTINCT ON (user_id) user_id, plan, price
           - FROM subscriptions
-          - WHERE user_id <= 25
+          - WHERE user_id IN (1, 3, 34, 171, 219)
           - ORDER BY user_id, started_at DESC, subscription_id DESC;
         distractors:
           - GROUP BY user_id
@@ -2158,73 +2193,72 @@ lessons:
         title: The first subscription of each user
         difficulty: 1
         prompt: |
-          For users 1 to 25, show each user's **first** subscription, meaning the earliest start date. Show three columns: `user_id`, `plan` and `started_at`. Sort by `user_id`.
+          For users 1, 3, 34, 171 and 219, show each user's **first** subscription, meaning the earliest start date. Show three columns: `user_id`, `plan` and `started_at`. Sort by `user_id`.
         starter: |
           SELECT user_id,
                  plan,
                  started_at
           FROM subscriptions
-          WHERE user_id <= 25;
+          WHERE user_id IN (1, 3, 34, 171, 219);
         solution: |
           SELECT DISTINCT ON (user_id)
                  user_id,
                  plan,
                  started_at
           FROM subscriptions
-          WHERE user_id <= 25
+          WHERE user_id IN (1, 3, 34, 171, 219)
           ORDER BY user_id,
                    started_at ASC,
                    subscription_id ASC;
         hints:
-          - Start from the first example, and sort the dates in the other direction.
+          - Start from the "latest subscription" example, and sort the dates in the other direction.
           - "`ASC` puts the earliest start date first."
           - "... ORDER BY user_id, started_at ___, subscription_id ___;"
         explanation: |
-          Eleven users. Each user has only one subscription in this range, so the first and the latest are the same. The `subscription_id` tie-breaker is there for users with two subscriptions on the same day.
+          Five rows. Users 34, 171 and 219 show their **monthly** plan, because that was their first subscription. In the earlier example the same users showed their newer plan. The only change is the direction of the sort. The `subscription_id` tie-breaker handles two subscriptions that start on the same day.
         ordered: true
         columnNames: true
 
       - type: exercise
         id: m16-l07-e2
-        title: Users whose latest plan is still active
+        title: Users whose latest plan is monthly
         difficulty: 2
         prompt: |
-          For users 1 to 25, find each user's **latest** subscription (the most recent `started_at`). Keep only the users whose latest subscription has not been cancelled (`cancelled_at` is empty). Show `user_id`, `plan`, `price` and `started_at`. Sort by `user_id`.
+          Look at users 1, 3, 34, 171 and 219. Find each user's **latest** subscription (the most recent `started_at`, then the highest `subscription_id`). Keep only the users whose latest subscription is on the `monthly` plan. Show `user_id`, `subscription_id`, `plan` and `started_at`. Sort by `user_id`.
 
           Hint: first find the latest row per user, then filter the result.
         starter: |
           SELECT user_id,
+                 subscription_id,
                  plan,
-                 price,
                  started_at
           FROM subscriptions
-          WHERE user_id <= 25;
+          WHERE user_id IN (1, 3, 34, 171, 219);
         solution: |
           SELECT latest.user_id,
+                 latest.subscription_id,
                  latest.plan,
-                 latest.price,
                  latest.started_at
           FROM (
               SELECT DISTINCT ON (user_id)
                      user_id,
+                     subscription_id,
                      plan,
-                     price,
-                     started_at,
-                     cancelled_at
+                     started_at
               FROM subscriptions
-              WHERE user_id <= 25
+              WHERE user_id IN (1, 3, 34, 171, 219)
               ORDER BY user_id,
                        started_at DESC,
                        subscription_id DESC
           ) AS latest
-          WHERE latest.cancelled_at IS NULL
+          WHERE latest.plan = 'monthly'
           ORDER BY latest.user_id;
         hints:
           - Put the `DISTINCT ON` query in a subquery, and give it a name such as `latest`.
-          - "Filter with `WHERE latest.cancelled_at IS NULL` **outside** the subquery, so the filter runs after the latest row is chosen."
-          - "Filtering inside the subquery first would pick an old, still-active subscription by mistake."
+          - "Filter with `WHERE latest.plan = 'monthly'` **outside** the subquery, so the filter runs after the latest row is chosen."
+          - "Filtering inside the subquery first would also pick the old monthly subscriptions of users who later switched to annual."
         explanation: |
-          Six users. Their newest subscription has no cancellation date. The filter comes after `DISTINCT ON`, because filtering first would keep an older active subscription that is not the latest.
+          Two users: 3 and 219. Users 34 and 171 are left out, because their latest subscription is `annual`. Their monthly plan was an older one. If you filtered on `monthly` inside the subquery, before `DISTINCT ON`, they would wrongly come back with that old row. Pick first, then filter.
         ordered: true
         columnNames: true
 
@@ -2265,37 +2299,41 @@ lessons:
 
       - type: exercise
         id: m16-l07-e4
-        title: Active subscription first, otherwise the latest
+        title: The top athlete of each workout type
         difficulty: 3
         prompt: |
-          For users 1 to 25, show one subscription per user. If the user has a subscription that is still active (`cancelled_at` is empty), show that one. Otherwise show the user's latest subscription (by `started_at`, then `subscription_id`).
+          For each workout type, find the user who has the most `workout_completed` events of that type. If two users tie, take the one with the lower `user_id`.
 
-          Show four columns: `user_id`, `subscription_id`, `plan` and `cancelled_at`. Sort by `user_id`.
+          Show three columns: `workout_type`, `user_id` and `workouts` (that user's number of completed workouts of that type). Sort by `workout_type`.
         starter: |
-          SELECT user_id,
-                 subscription_id,
-                 plan,
-                 cancelled_at
-          FROM subscriptions
-          WHERE user_id <= 25;
-        solution: |
-          SELECT DISTINCT ON (user_id)
+          SELECT properties->>'workout_type' AS workout_type,
                  user_id,
-                 subscription_id,
-                 plan,
-                 cancelled_at
-          FROM subscriptions
-          WHERE user_id <= 25
-          ORDER BY user_id,
-                   (cancelled_at IS NOT NULL),
-                   started_at DESC,
-                   subscription_id DESC;
+                 COUNT(*) AS workouts
+          FROM events
+          WHERE event_name = 'workout_completed'
+          GROUP BY 1, 2;
+        solution: |
+          SELECT DISTINCT ON (workout_type)
+                 workout_type,
+                 user_id,
+                 workouts
+          FROM (
+              SELECT properties->>'workout_type' AS workout_type,
+                     user_id,
+                     COUNT(*) AS workouts
+              FROM events
+              WHERE event_name = 'workout_completed'
+              GROUP BY 1, 2
+          ) AS per_user
+          ORDER BY workout_type,
+                   workouts DESC,
+                   user_id;
         hints:
-          - "Put the active-or-not test in the `ORDER BY`, right after `user_id`."
-          - "`cancelled_at IS NOT NULL` is `false` for active rows, and `false` sorts before `true`."
-          - "... ORDER BY user_id, (cancelled_at IS NOT NULL), started_at ___, subscription_id ___;"
+          - "First count the completed workouts for each workout type **and** user in a subquery. That is a `GROUP BY` on two things."
+          - "Then use `DISTINCT ON (workout_type)` on that subquery, and sort each type's users so that the highest count comes first."
+          - "... SELECT DISTINCT ON (workout_type) workout_type, user_id, workouts FROM (...) AS per_user ORDER BY workout_type, workouts ___, ___;"
         explanation: |
-          Eleven users. For users such as 1 and 15 the active subscription wins, and for users such as 3 and 9, whose subscriptions have all been cancelled, the latest one wins. The sort does both jobs in one `ORDER BY`.
+          Five rows, one per workout type. For example, user 80 leads cycling with 36 workouts. Swim and yoga both go to user 95 with 17 each. In swim, user 111 also has 17, so the `user_id` tie-breaker decides. Counting in a subquery and then using `DISTINCT ON` is the quickest way to ask for "the top one in each group".
         ordered: true
         columnNames: true
 
@@ -2348,7 +2386,7 @@ lessons:
                      AS any_case
           FROM products;
         after: |
-          `case_sensitive` is 0, because every product spells it `Pro` with a capital P. `any_case` is 4, because `~*` ignores the capital. Which one you need depends on whether the capitals matter for your question.
+          `case_sensitive` is 0, because every product writes it with a capital P, as in `Blender Pro 1200`. `any_case` is 4, because `~*` ignores the capital. It also finds `Protector` and `Programmable`: a pattern matches letters inside words too. Which operator you need depends on whether the capitals matter for your question.
 
       - type: read
         title: Anchors and character classes
@@ -2376,7 +2414,7 @@ lessons:
       - type: read
         title: Extracting and replacing text
         md: |
-          Matching gives you yes or no. To **pull out** a piece of text, use `regexp_substr(text, pattern)`, which returns the first match. To **change** text, use `regexp_replace(text, pattern, replacement)`. Add `'g'` as a fourth argument to replace every match, not only the first.
+          Matching gives you yes or no. To **pull out** a piece of text, use `regexp_substr(text, pattern)`, which returns the first match. To get **every** match, one per row, use `regexp_matches(text, pattern, 'g')`. To **change** text, use `regexp_replace(text, pattern, replacement)`. Add `'g'` as a fourth argument to replace every match, not only the first.
 
       - type: example
         title: The size in each product name
@@ -2399,15 +2437,28 @@ lessons:
                  phone,
                  regexp_replace(phone, '[^0-9]', '', 'g') AS phone_digits
           FROM customers
-          WHERE customer_id BETWEEN 3 AND 5
+          WHERE customer_id <= 4
           ORDER BY customer_id;
         after: |
-          `(213) 555-0100` becomes `2135550100`. The `'g'` flag replaces every match, so all the brackets, spaces and dashes disappear at once. A missing phone stays `NULL`.
+          `(213) 555-0100` becomes `2135550100`. The `'g'` flag replaces every match, so the brackets, space and dash disappear at once. Customers 1 and 2 have no phone, so their result stays `NULL`.
+
+      - type: example
+        title: Find every number in a sentence
+        md: |
+          Press **Run**. `regexp_matches` with the `'g'` flag returns one row for **every** match.
+        sql: |
+          SELECT regexp_matches(
+                     'Order 41 and order 77',
+                     '[0-9]+',
+                     'g'
+                 ) AS found;
+        after: |
+          Two rows: `{41}` and `{77}`. Each match comes back as an **array** (the curly brackets), which you met in the arrays lesson. Without `'g'` you would get only the first match. Use `regexp_substr` when you just want the first match as plain text.
 
       - type: read
         title: Special characters need escaping
         md: |
-          Some characters have a special meaning in patterns: `( ) . * + ? [ ] ^ $ \`. To search for the real character, put a backslash in front of it, as in `\.` for a full stop. A broken pattern does not match nothing: it stops with an error.
+          Some characters have a special meaning in patterns: `( ) . * + ? [ ] { } | ^ $ \`. To search for the real character, put a backslash in front of it, as in `\.` for a full stop. A broken pattern does not quietly match nothing: it stops with an error.
 
           > [!MISTAKE]
           > An opening bracket `(` must have a closing `)`. A pattern like `'(Pro'` is not valid, and PostgreSQL reports that the parentheses are not balanced. Check your brackets when a query fails.
@@ -2469,7 +2520,7 @@ lessons:
 
       - type: parsons
         id: m16-l08-o1
-        prompt: Put the lines in the right order to show the first number in every product name that contains `inch`.
+        prompt: Put the lines in the right order to show each product's id, its name and the first number in its name, for the products whose name contains `inch`.
         lines:
           - SELECT product_id,
           - name,

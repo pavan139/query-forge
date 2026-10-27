@@ -32,14 +32,18 @@ glossary:
     example: "WITH ranked AS (SELECT dept_id, first_name, ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rn FROM employees) SELECT * FROM ranked WHERE rn <= 3;"
     module: m10
   - term: Running total
-    definition: A total that grows row by row. You create one with SUM() OVER (ORDER BY ...). Each row shows the total of its own value and every row before it in that order.
+    definition: A total that grows row by row. You create one with SUM() OVER (ORDER BY ...). Each row shows the total of its own value and every row before it in that order. Rows with equal ORDER BY values are counted together, so add a tie-breaker.
     example: "SUM(revenue) OVER (ORDER BY month) AS running_revenue"
     module: m10
   - term: LAG()
-    definition: A window function that looks back to a previous row in the window's order and returns the value from that row. It returns NULL when there is no previous row, such as the first row of each group.
+    definition: A window function that looks back to a previous row in the window's order and returns the value from that row. It returns NULL when there is no previous row (the first row of each group), unless you give a default value.
     example: "LAG(salary) OVER (PARTITION BY emp_id ORDER BY effective_date) AS previous_salary"
     module: m10
   - term: LEAD()
     definition: A window function that looks ahead to the next row in the window's order and returns that row's value. It returns NULL on the last row. It is the mirror image of LAG().
     example: "LEAD(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS next_order_date"
+    module: m10
+  - term: Tie-breaker
+    definition: An extra column added at the end of an ORDER BY so that no two rows tie, usually a unique id. It makes ROW_NUMBER and running totals give the same answer every time.
+    example: "ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id)"
     module: m10

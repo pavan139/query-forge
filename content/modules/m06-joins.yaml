@@ -547,7 +547,7 @@ lessons:
           - "Both tables have product_id. Match them in the ON rule."
           - "ON order_items.product_id = products.product_id"
         explanation: |
-          Four lines: a blender, a water bottle, a sleeping bag and a cookbook. Each `order_items` row found
+          Four lines: a blender, a water bottle, a sleeping bag and a sourdough guide. Each `order_items` row found
           its product through `product_id`.
         difficulty: 1
 
@@ -615,7 +615,8 @@ lessons:
         title: Returned orders in Texas
         prompt: |
           Show `order_id`, `order_date`, `first_name` and `last_name` for orders with status `'returned'`
-          that were placed in 2024 (on or after `'2024-01-01'`) by customers whose `state` is `'TX'`.
+          that were placed in 2024 (on or after `'2024-01-01'` and on or before `'2024-12-31'`) by customers
+          whose `state` is `'TX'`.
           Sort by `order_date`, then `order_id`.
         starter: |
           SELECT order_id, order_date, first_name, last_name
@@ -631,6 +632,7 @@ lessons:
               ON orders.customer_id = customers.customer_id
           WHERE status = 'returned'
             AND order_date >= '2024-01-01'
+            AND order_date <= '2024-12-31'
             AND state = 'TX'
           ORDER BY order_date, order_id;
         ordered: true
@@ -700,7 +702,7 @@ lessons:
         answer: 2
         explanation: |
           An INNER JOIN keeps **only** pairs that match. Customer 145 has no orders to pair with, so they
-          vanish from the result. The next-but-one lesson (LEFT JOIN) shows how to keep them.
+          vanish from the result. The LEFT JOIN lesson (lesson 4) shows how to keep them.
 
       - type: fill
         id: m06-l02-f1
@@ -1068,7 +1070,7 @@ lessons:
         prompt: |
           How many products does each supplier country provide? Join `products` (alias `p`) to `suppliers`
           (alias `s`) and show `country` and the number of products as `products`. Sort by the number of
-          products (most first), then by `country`.
+          products (most first), then by `country`. Products with no supplier are left out.
         starter: |
           SELECT s.country, COUNT(*) AS products
           FROM products AS p
@@ -1503,7 +1505,7 @@ lessons:
              AND o.status = 'cancelled';
         after: |
           **202 rows, all 150 customers.** The rule says "match a customer to their *cancelled* orders". Customers
-          with no cancelled orders still get one row with NULLs: 127 cancelled orders + 75 customers without any.
+          with no cancelled orders still get one row with NULLs: 127 cancelled orders + 75 customers with no cancelled order.
 
       - type: example
         title: Filter in WHERE, the LEFT JOIN is undone
@@ -1542,7 +1544,8 @@ lessons:
           > [!TIP]
           > - Conditions about the **left** table (the rows you want to keep) go in `WHERE`.
           > - Conditions about the **right** table that decide *what counts as a match* go in `ON`.
-          > - The only `WHERE` test on the right table that makes sense is `IS NULL` (the anti-join).
+          > - A `WHERE` test on a right-table column usually undoes the LEFT JOIN. The one you will use again
+          >   and again is `IS NULL` (the anti-join).
 
       - type: exercise
         id: m06-l04-e5
@@ -1722,7 +1725,7 @@ lessons:
           FROM employees
           WHERE dept_id IS NULL;
         after: |
-          Two contractors, Kwame and Jia, have not been assigned to a department. An INNER JOIN between
+          Two employees, Kwame and Jia, have not been assigned to a department. An INNER JOIN between
           `employees` and `departments` would silently drop them.
 
       - type: read
@@ -1919,7 +1922,7 @@ lessons:
           > your FULL JOIN turns into something smaller. Use `IS NULL` tests, or move the condition into `ON`.
 
           > [!TIP]
-          > Which one should I use? **LEFT JOIN** for 95% of cases. **RIGHT JOIN** only when it reads better
+          > Which one should I use? **LEFT JOIN** most of the time. **RIGHT JOIN** only when it reads better
           > (it can always be rewritten as a LEFT JOIN). **FULL JOIN** when you need unmatched rows from both
           > sides, which is usually a data comparison or an audit.
 
@@ -2057,7 +2060,7 @@ lessons:
 
       - type: fill
         id: m06-l05-f1
-        prompt: Complete the query so every department is kept, even when it has no employees.
+        prompt: Complete the query so every department is kept, even when it has no employees. Employees without a department must not appear.
         template: |
           SELECT d.name, e.first_name
           FROM employees AS e
@@ -2237,7 +2240,7 @@ lessons:
           - "The first ON links order_items to products; the second links products to categories."
           - "ON oi.product_id = p.product_id ... ON p.category_id = c.category_id"
         explanation: |
-          A blender and water bottle (2 each), a sleeping bag and a sourdough cookbook (1 each). Because the
+          A blender and water bottle (2 each), a sleeping bag and a sourdough guide (1 each). Because the
           sort is on the `product` alias, you can write `ORDER BY product`.
         difficulty: 1
 
@@ -2330,7 +2333,7 @@ lessons:
             AND o.order_date >= '2024-12-01'
           ORDER BY o.order_id, p.name;
         after: |
-          Order 853 had three products: a blender (Kitchen), an ultrabook (Laptops) and a cookbook
+          Order 853 had three products: a blender (Kitchen), an ultrabook (Laptops) and a sourdough guide
           (Books). This time we started `FROM customers` and walked the route in the other direction. The
           result is the same, because a join is just a matching rule: it doesn't care which end you start from.
 
@@ -2496,14 +2499,15 @@ lessons:
           - "WHERE cat.name = 'Camping' AND o.status = 'delivered' AND o.order_date >= '2024-11-15'"
         explanation: |
           Fourteen lines. Notice that the filter on the **category name** sits at the far end of the chain,
-          yet it works exactly like a filter on any other column. Camp stoves and headlamps show up most often.
-          before Christmas.
+          yet it works exactly like a filter on any other column. Portable Camp Stove (6 lines) and Headlamp 400
+          Lumens (4) show up most often. All 14 lines were placed between 15 November and 20 December 2024.
         difficulty: 2
 
       - type: fill
         id: m06-l06-f1
         prompt: |
-          Complete the chain so each payment shows the first name of the customer who paid.
+          Complete the chain so each payment shows the first name of the customer who paid. Write each blank
+          as an alias and a column, like `py.order_id`.
         template: |
           SELECT cu.first_name, py.amount
           FROM payments AS py
@@ -2580,7 +2584,8 @@ lessons:
         id: m06-l06-e4
         title: Categories nothing was sold in
         prompt: |
-          Which categories have **no order lines at all** (no product in them has ever been ordered)? Show
+          Which categories have **no order lines at all**? A product counts only in the category it is filed
+          under, not in that category's sub-categories. Show
           `category_id` and `name`, sorted by `category_id`. Hint: start from `categories`, `LEFT JOIN` the
           products and then the order lines, group, and keep groups where the count of lines is 0.
         starter: |
@@ -3014,7 +3019,8 @@ lessons:
       - type: example
         title: Colleagues of Jun Zhang
         md: |
-          Jun Zhang (employee 19) leads a frontend team of four. Which pairs of teammates exist?
+          Jun Zhang (employee 19, Frontend Team Lead) has four people reporting to them. Which pairs of those
+          people exist?
         sql: |
           SELECT a.first_name AS person_a,
                  b.first_name AS person_b
@@ -3082,7 +3088,7 @@ lessons:
           - "AND a.salary = b.salary AND a.emp_id < b.emp_id"
         explanation: |
           Nine pairs. Hana, Mariana and Tariq all earn 88,000 in the same department, so they form three
-          pairs among themselves. The two contractors with no department (`dept_id` is NULL) can never match,
+          pairs among themselves. The two employees with no department (`dept_id` is NULL) can never match,
           because `NULL = NULL` is not true. Careful: the rule `a.emp_id < b.emp_id` is what stops each pair
           from showing up twice.
         difficulty: 3
@@ -3158,8 +3164,9 @@ lessons:
           ORDER BY e.emp_id;
         after: |
           Diego (the CEO) has no manager and no grand-boss: two NULLs. Ming reports straight to Diego, so
-          only the grand-boss is NULL. Vikram Kumar reports to Jun Zhang, who reports to Layla Khan. Each
-          LEFT JOIN kept the row even when the next step up didn't exist.
+          only the grand-boss is NULL. Olivia Brooks reports to Thiago Rodriguez, who reports to Diego.
+          Vikram Kumar reports to Jun Zhang, who reports to Layla Khan. Scarlett Walker reports to Oliver
+          Wu, who reports to Oliver Jones. Each LEFT JOIN kept the row even when the next step up didn't exist.
 
       - type: exercise
         id: m06-l07-e6
@@ -3241,8 +3248,8 @@ lessons:
       - type: read
         title: Two joins that don't match keys
         md: |
-          Every join so far matched a foreign key to a primary key with `=`. That covers about nine joins
-          out of ten. Today you'll meet two more tools for the tenth:
+          Every join so far matched a foreign key to a primary key with `=`. That covers most joins you
+          will write. Today you'll meet two more tools for the rest:
 
           1. **CROSS JOIN**: pair **every** row of one table with **every** row of another. No matching
              rule at all.
@@ -3447,7 +3454,7 @@ lessons:
           - "ON p.supplier_id = s.supplier_id AND p.category_id = c.category_id"
         explanation: |
           Eight rows (2 x 4). Jade River has 5 Phones but no Outdoor products; Nordlys has only Kitchen
-          items. Counting `p.product_id` (not `*`) is what makes the empty cells show 0.
+          items among these four categories. Counting `p.product_id` (not `*`) is what makes the empty cells show 0.
         difficulty: 2
 
       - type: quiz
@@ -3594,8 +3601,8 @@ lessons:
       - type: fill
         id: m06-l08-f1
         prompt: |
-          Complete the range join so it keeps only orders placed in the first 30 days after the customer
-          signed up (both end days count).
+          Complete the range join so it keeps only orders placed from the signup day up to 30 days later
+          (both end days count). Use the range keyword from the promotion example.
         template: |
           SELECT c.customer_id, o.order_id
           FROM customers AS c
@@ -4108,17 +4115,19 @@ lessons:
           > `SUM(DISTINCT amount)` looks like a quick fix, but it is **not**. It removes repeated *values*,
           > not repeated *rows*. Two different payments of exactly $50 would be reduced to one.
 
-      - type: example
+      - type: read
         title: Why SUM(DISTINCT) is not a fix
         md: |
-          Over the whole `payments` table, with no joins at all, compare the honest sum with `SUM(DISTINCT)`.
-        sql: |
+          Over the whole `payments` table, with no joins at all, compare the honest sum with `SUM(DISTINCT)`:
+
+          ```sql
           SELECT SUM(amount) AS real_total,
                  SUM(DISTINCT amount) AS distinct_total,
                  COUNT(*) AS payments,
                  COUNT(DISTINCT amount) AS different_amounts
           FROM payments;
-        after: |
+          ```
+
           There are 778 payments but only 599 different amounts. `SUM(DISTINCT amount)` threw away every
           repeated amount and returned $240,715.20, about $23,000 less than the true $263,983.37. With a
           join in the mix it would be wrong **and** unrelated to the true figure.
@@ -4488,7 +4497,7 @@ testPool:
       - "ON reviews.product_id = products.product_id"
       - "JOIN products ON reviews.product_id = ___.product_id"
     explanation: |
-      Five reviews have a single star: the Sourdough guide twice (reviews 39 and 178), Vitamin C Moisturizer,
+      Five reviews have a single star: The Beginner's Guide to Sourdough twice (reviews 39 and 178), Vitamin C Moisturizer,
       Air Fryer 5L and the Programmable Coffee Maker. The `ON` rule matches each review's foreign key with
       the primary key of the product it is about.
 
@@ -4648,7 +4657,7 @@ testPool:
       - "After a LEFT JOIN, products without reviews have NULL in the review columns. Test one with IS NULL, and add a second condition for the price."
       - "WHERE r.review_id IS NULL AND p.price > ___"
     explanation: |
-      Five products: Atlas of Hidden Cities, Laptop Stand Aluminum, Science Lab Starter Kit, Standing Desk 140cm
+      Five products: Atlas of Hidden Cities, Laptop Stand, Aluminum, Science Lab Starter Kit, Standing Desk 140cm
       and Zephyr Gaming Laptop X. The three other unreviewed products cost less than 30 and were filtered out by
       the second condition. A condition on the **left** table (`p.price`) is safe in `WHERE`.
 
@@ -4683,7 +4692,7 @@ testPool:
       - "Move the status test into the ON rule of the LEFT JOIN, so it decides what counts as a match."
       - "ON o.customer_id = c.customer_id AND o.status = 'delivered' ... WHERE o.order_id IS NULL"
     explanation: |
-      13 customers: the 10 who never ordered (141 to 150) plus 3 who ordered but never received anything
+      13 customers: the 10 who never ordered (141 to 150) plus 3 who placed orders but have no delivered order
       (customers 8, 68 and 132). With the status test in `ON`, only delivered orders count as a match, so a
       customer with only cancelled or returned orders is left with NULLs and shows up in the anti-join.
 
@@ -4952,7 +4961,7 @@ testPool:
       - "    ON s.supplier_id = oi.supplier_id"
       - JOIN categories AS cat
     explanation: |
-      Order 300 has two lines: a Cast Iron Skillet (Lumen Trading Co.) and The Midnight Gardener (Orchid & Oak
+      Order 300 has two lines: a Cast Iron Skillet 12-inch (Lumen Trading Co.) and The Midnight Gardener (Orchid & Oak
       Imports). `suppliers` has to be joined after `products`, because the supplier id lives in `products`.
       The decoy `oi.supplier_id` doesn't exist: order lines don't store suppliers.
 
@@ -5003,7 +5012,8 @@ testPool:
     difficulty: 3
     dataset: company
     prompt: |
-      Find the employees of department 3 (`dept_id = 3`) who do **not manage anybody**: nobody has their
+      Find the **current** employees (`terminated_on IS NULL`) of department 3 (`dept_id = 3`) who do
+      **not manage anybody**: nobody has their
       `emp_id` as `manager_id`. Show `emp_id`, `first_name`, `last_name` and `job_title`, sorted by `emp_id`.
     starter: |
       SELECT e.emp_id, e.first_name, e.last_name, e.job_title
@@ -5018,15 +5028,17 @@ testPool:
       LEFT JOIN employees AS r
           ON r.manager_id = e.emp_id
       WHERE e.dept_id = 3
+        AND e.terminated_on IS NULL
         AND r.emp_id IS NULL
       ORDER BY e.emp_id;
     ordered: true
     hints:
       - "Think of `r` as 'a person who reports to e'. Which employees have nobody like that?"
       - "LEFT JOIN employees AS r ON r.manager_id = e.emp_id keeps everyone; then look for r.emp_id IS NULL."
-      - "WHERE e.dept_id = 3 AND r.emp_id IS NULL"
+      - "WHERE e.dept_id = 3 AND e.terminated_on IS NULL AND r.emp_id IS NULL"
     explanation: |
-      Six people: five Account Executives and a Sales Development Rep. This combines a self join with an
+      Five current people: four Account Executives and a Sales Development Rep. Mariana Hernandez (41) left
+      in June 2024, so she is not counted. This combines a self join with an
       anti-join: the second copy of the table plays the role of "direct reports", and a NULL there means the
       person has none. The `dept_id` test is on the left table, so it is safe in `WHERE`.
 
@@ -5174,7 +5186,7 @@ testPool:
     difficulty: 3
     prompt: |
       Build a supplier scorecard from **all** orders (any status). Show `supplier` (the supplier's `name`),
-      `products` (how many products it supplies), `products_ordered` (how many of those products appear in
+      `products` (how many different products it supplies), `products_ordered` (how many of those products appear in
       at least one order line) and `units` (total `quantity` sold, or 0 if none). Every supplier must appear.
       Sort by `units`, highest first.
     starter: |
@@ -5484,8 +5496,8 @@ project:
       id: m06-proj-5
       title: "Section 3: the silent corporate customers"
       prompt: |
-        The account managers want feedback from the **Corporate** customers (`segment = 'Corporate'`), starting
-        with those who have **never written a review**. Show `customer_id`, `first_name`, `last_name` and
+        The account managers want feedback from the **Corporate** customers (`segment = 'Corporate'`) who have
+        **never written a review**. Show `customer_id`, `first_name`, `last_name` and
         `state`. Sort by `customer_id`.
       starter: |
         SELECT c.customer_id,

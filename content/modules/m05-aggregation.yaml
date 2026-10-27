@@ -644,7 +644,8 @@ lessons:
         prompt: |
           For orders placed in 2024 (`order_date` from `2024-01-01` up to but not including `2025-01-01`),
           what is the average number of days between `order_date` and `shipped_date`?
-          Round to 1 decimal and call the column `avg_days_to_ship`.
+          Orders with no `shipped_date` (cancelled or still processing) have no number of days, so they
+          are not part of the average. Round to 1 decimal and call the column `avg_days_to_ship`.
         starter: |
           SELECT AVG(shipped_date - order_date) AS avg_days_to_ship
           FROM orders;
@@ -691,7 +692,7 @@ lessons:
           - Use COUNT(*), MIN(price), MAX(price) and ROUND(AVG(price), 2).
           - "SELECT COUNT(*) AS products, MIN(price) AS cheapest, ___(price) AS priciest, ROUND(AVG(price), 2) AS avg_price FROM products WHERE category_id = 8;"
         explanation: |
-          There are **8** phone products, from **9.99** (a screen protector) to **899.99**, averaging
+          There are **8** phone products, from **9.99** (a 3-pack of screen protectors) to **899.99**, averaging
           **245.62**. This is the classic "fact sheet" pattern: several aggregates, one `WHERE`.
         difficulty: 3
     cheatsheet:
@@ -1370,10 +1371,11 @@ lessons:
           ORDER BY month;
         answers:
           - ["DATE_TRUNC"]
-          - ["month", "DATE_TRUNC('month', paid_at)::date", "DATE_TRUNC('month', paid_at)"]
+          - ["month", "1", "DATE_TRUNC('month', paid_at)::date", "DATE_TRUNC('month', paid_at)"]
         explanation: |
           `DATE_TRUNC('month', ...)` rounds each date down to the first of its month. Grouping by the alias
-          `month` (or by repeating the expression) gives one row per month.
+          `month` (or by repeating the expression) gives one row per month. Grouping by position (`1`) also
+          works, but a name is easier to read.
 
       - type: exercise
         id: m05-l04-e4
@@ -1726,36 +1728,36 @@ lessons:
           `SELECT`, which is why it can use aliases.)
 
           > [!MISTAKE]
-          > `HAVING customers > 8` fails with *column "customers" does not exist*. Write `HAVING COUNT(*) > 8` instead.
+          > `HAVING customer_count > 8` fails with *column "customer_count" does not exist*. Write `HAVING COUNT(*) > 8` instead.
 
       - type: exercise
         id: m05-l05-e4
         title: Fix the alias bug
         prompt: |
           This query should list the cities with **more than 8** customers, but it fails.
-          Fix it so it returns `city` and `customers`, with the biggest city first and ties in
+          Fix it so it returns `city` and `customer_count`, with the biggest city first and ties in
           alphabetical order.
         starter: |
-          SELECT city, COUNT(*) AS customers
+          SELECT city, COUNT(*) AS customer_count
           FROM customers
           GROUP BY city
-          HAVING customers > 8
-          ORDER BY customers DESC, city;
+          HAVING customer_count > 8
+          ORDER BY customer_count DESC, city;
         solution: |
-          SELECT city, COUNT(*) AS customers
+          SELECT city, COUNT(*) AS customer_count
           FROM customers
           GROUP BY city
           HAVING COUNT(*) > 8
-          ORDER BY customers DESC, city;
+          ORDER BY customer_count DESC, city;
         ordered: true
         columnNames: true
         hints:
           - The error says a column doesn't exist. Which name is that?
-          - "`HAVING` can't use the alias `customers`. Write the aggregate there instead."
-          - "... GROUP BY city HAVING ___(*) > 8 ORDER BY customers DESC, city;"
+          - "`HAVING` can't use the alias `customer_count`. Write the aggregate there instead."
+          - "... GROUP BY city HAVING ___(*) > 8 ORDER BY customer_count DESC, city;"
         explanation: |
           Nine cities pass: Los Angeles (24), New York (17), Seattle (15), four cities with 12, and Boston and
-          Houston with 9. `ORDER BY customers` is still fine, because ORDER BY runs after SELECT.
+          Houston with 9. `ORDER BY customer_count` is still fine, because ORDER BY runs after SELECT.
         difficulty: 2
 
       - type: quiz
@@ -1825,14 +1827,14 @@ lessons:
       - type: parsons
         id: m05-l05-o1
         prompt: |
-          Arrange the lines to list the states with at least 10 customers, biggest first.
-          One line does not belong in the query: leave it out.
+          Arrange the lines to list the states with at least 10 customers, biggest first (ties: alphabetical
+          by state). One line does not belong in the query: leave it out.
         lines:
           - SELECT state, COUNT(*) AS customers
           - FROM customers
           - GROUP BY state
           - HAVING COUNT(*) >= 10
-          - ORDER BY customers DESC;
+          - ORDER BY customers DESC, state;
         distractors:
           - WHERE COUNT(*) >= 10
         explanation: |
@@ -1871,6 +1873,8 @@ lessons:
           - "... GROUP BY month HAVING COUNT(*) > ___ ORDER BY month;"
         explanation: |
           Six months pass: May (32), July (33), August (36), October (48), November (65) and December (55).
+          April and September have exactly 30 delivered orders, so they are out. That is why the test is
+          `> 30`, not `>= 30`.
           This is the full pattern: `WHERE` (rows) then `GROUP BY` (piles) then `HAVING` (piles to keep)
           then `ORDER BY`.
         difficulty: 3
@@ -2171,7 +2175,7 @@ lessons:
       - type: quiz
         id: m05-l06-q1
         question: |
-          What is the difference between `WHERE status = 'cancelled'` at the end of a query and
+          What is the difference between a `WHERE status = 'cancelled'` clause and
           `COUNT(*) FILTER (WHERE status = 'cancelled')` inside the SELECT list?
         options:
           - "No difference: they always give the same result"
@@ -2181,8 +2185,8 @@ lessons:
         answer: 1
         explanation: |
           A `WHERE` clause decides which rows the **whole query** sees. A `FILTER` applies to **one
-          aggregate only**, so other columns in the same SELECT can still count the other rows. That is what makes side-by-side
-          columns possible.
+          aggregate only**, so other columns in the same SELECT can still count the other rows. That is
+          what makes side-by-side columns possible.
 
       - type: fill
         id: m05-l06-f1
@@ -2378,7 +2382,7 @@ lessons:
           Return one value called `states`: every **different** state code from `customers`, from
           A to Z, separated by `', '`.
 
-          (Tip: when you use `DISTINCT` inside an aggregate, the part inside the brackets that arranges the list must use the same column.)
+          (Tip: if you add `DISTINCT`, the ordering inside the brackets must use that same column.)
         starter: |
           SELECT STRING_AGG(state, ', ' ORDER BY state) AS states
           FROM customers;
@@ -2536,7 +2540,8 @@ lessons:
           - STRING_AGG(product_id::text, ', ' ORDER BY product_id) AS products
           - FROM order_items
           - WHERE order_id <= 3
-          - GROUP BY order_id;
+          - GROUP BY order_id
+          - ORDER BY order_id;
         distractors:
           - STRING_AGG(product_id, ', ') AS products
         explanation: |
@@ -2683,7 +2688,7 @@ lessons:
 
           > [!MISTAKE]
           > Any column that appears in `SELECT`, `HAVING` or `ORDER BY` must be grouped or aggregated.
-          > `WHERE` is the only clause that is allowed to look at the raw rows.
+          > `WHERE` runs before the grouping, so it can use any column of each raw row.
 
       - type: exercise
         id: m05-l08-e1
@@ -2754,8 +2759,9 @@ lessons:
           - Sort by the count, biggest first, and add the tie-breaker.
           - "... GROUP BY customer_id ORDER BY ___ DESC, customer_id LIMIT 5;"
         explanation: |
-          Five customers (6, 14, 39, 44 and 64) all placed **23** orders: a five-way tie! That's why the
-          tie-breaker matters. The next customer has only 20 orders, so the top 5 is exactly this group.
+          Five customers (6, 14, 39, 44 and 64) all placed **23** orders: a five-way tie! The next customer
+          has only 20 orders, so these five are exactly the top 5. The tie-breaker decides the order of these
+          rows, which keeps the result the same every time.
         difficulty: 2
 
       - type: read
@@ -2791,24 +2797,22 @@ lessons:
             GROUP BY customer_id
           ) AS per_customer;
         after: |
-          A customer who has ordered places about **6.43** orders on average (900 orders divided by 140
+          On average, a customer who has ordered places about **6.43** orders (900 orders divided by 140
           customers). Don't worry about the syntax yet. The point is: when you need an aggregate of an
           aggregate, you build the report in two steps.
 
-      - type: predict
-        id: m05-l08-p1
-        question: |
-          Does the grouping column have to appear in the SELECT list? How many rows does this return?
+      - type: example
+        title: Grouping without showing the column
+        md: |
+          Does the grouping column have to appear in the `SELECT` list? Run it and count the rows.
         sql: |
           SELECT COUNT(*)
           FROM orders
           GROUP BY status;
-        options: ["1", "5", "900", "An error"]
-        answer: 1
-        explanation: |
+        after: |
           It works! You can group by a column without showing it. There are 5 statuses, so you get **5 rows**,
           each with one count. You just can't tell which count belongs to which status. That's why the grouping
-          column is nearly always in the SELECT list too.
+          column is nearly always in the `SELECT` list too.
 
       - type: predict
         id: m05-l08-p2
@@ -2882,7 +2886,8 @@ lessons:
           has just one row, so there is no doubt about which `name` or `price` you mean.
 
           It's rarely useful on its own, because one row per group means there is nothing to summarize. But in
-          module 6, when you join tables, `GROUP BY customer_id` plus `SELECT first_name` will work thanks to it.
+          module 6, when you join tables, grouping by `c.customer_id` also lets you select `c.first_name`, for
+          the same reason.
 
       - type: example
         title: Grouping by the primary key
@@ -3125,7 +3130,7 @@ testPool:
       columns, in this order:
 
       - `reviews`: how many reviews
-      - `with_text`: how many of them have a written comment (`review_text` is not empty)
+      - `with_text`: how many of them have a written comment (`review_text` is filled in, not `NULL`)
       - `products`: how many different products were reviewed
       - `reviewers`: how many different customers wrote them
     starter: |
@@ -3305,10 +3310,10 @@ testPool:
       for each product. Show `product_id` and `revenue` (rounded to 2 decimals), highest revenue first, and
       return only the top 3.
     starter: |
-      SELECT product_id, SUM(quantity) AS revenue
+      SELECT product_id, SUM(quantity) AS units
       FROM order_items
       GROUP BY product_id
-      ORDER BY revenue DESC
+      ORDER BY units DESC
       LIMIT 3;
     solution: |
       SELECT product_id,
@@ -3398,7 +3403,7 @@ testPool:
       ORDER BY quarter;
     answers:
       - ["quarter"]
-      - ["quarter", "1"]
+      - ["quarter", "1", "DATE_TRUNC('quarter', paid_at)::date", "DATE_TRUNC('quarter', paid_at)"]
     explanation: |
       `DATE_TRUNC('quarter', ...)` rounds each date down to the first day of its quarter (January, April, July or
       October). You get 8 rows, from 16098.97 in the first quarter of 2023 up to **63929.53** in the last quarter
@@ -3518,9 +3523,10 @@ testPool:
       - "Keep the date rule in `WHERE`, and put both group rules in one `HAVING`, joined with AND."
       - "... GROUP BY product_id HAVING COUNT(*) >= ___ AND AVG(rating) >= ___ ORDER BY avg_rating DESC, product_id;"
     explanation: |
-      Five products pass: 28 (4.89 from 9 reviews), 50 (4.88), 51 (4.86), 17 (4.60) and 54 (4.50 from 12 reviews).
-      Rows are filtered by `WHERE` first, groups are filtered by `HAVING` second, and `HAVING` can combine several
-      aggregate tests with `AND`. (You can't use the alias `avg_rating` inside `HAVING`.)
+      Five products pass: 28 (4.89 from 9 reviews), 50 (4.88), 51 (4.86), 17 (4.60) and 54 (4.50 from 12
+      reviews). Product 54 sits exactly on 4.5, and "at least" includes it. Rows are filtered by `WHERE`
+      first, groups by `HAVING` second, and `HAVING` can combine several aggregate tests with `AND`. (You
+      can't use the alias `avg_rating` inside `HAVING`.)
 
   # ---------------------------------------------------------------- l06 Conditional aggregation
   - type: exercise
@@ -3628,7 +3634,7 @@ testPool:
       - COUNT(*) WHERE method = 'card' AS by_card
     explanation: |
       The result is 491 payments, 285 of them by card. `FILTER (WHERE ...)` sits right after the aggregate it belongs
-      to. The outer `WHERE` at the end limits which rows reach *both* counts.
+      to. The `WHERE` clause limits which rows reach *both* counts.
 
   # ---------------------------------------------------------------- l07 STRING_AGG, ARRAY_AGG & friends
   - type: exercise

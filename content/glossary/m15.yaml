@@ -1,7 +1,7 @@
 glossary:
   - term: View
     definition: "A saved query with a name. You use it like a table, but it stores no rows of its own: each time you use it, PostgreSQL runs the saved SELECT again on the current data."
-    example: "CREATE VIEW us_west_customers AS SELECT * FROM customers WHERE state IN ('CA', 'OR', 'WA');"
+    example: "CREATE VIEW northwest_customers AS SELECT customer_id, first_name, state FROM customers WHERE state IN ('OR', 'WA');"
     module: m15
 
   - term: Materialized view
@@ -59,14 +59,14 @@ glossary:
     example: "WHERE (order_date, order_id) < (DATE '2024-12-27', 893) ORDER BY order_date DESC, order_id DESC LIMIT 3"
     module: m15
 
-  - term: Nested loop
-    definition: "A join method that, for each row on one side, looks up the matching rows on the other side. It is fast when one side is small and the other side has an index on the join column."
-    example: "One customer row joined to orders through an index on orders (customer_id)."
+  - term: Join method
+    definition: "How PostgreSQL physically joins two tables. A nested loop looks up matching rows one by one (fast when one side is small and indexed). A hash join builds an in-memory lookup table from one side and reads the other side once (the usual choice for big tables and = joins). A merge join walks two sorted lists side by side."
+    example: "EXPLAIN SELECT o.order_id, i.product_id FROM orders AS o JOIN order_items AS i ON i.order_id = o.order_id;"
     module: m15
 
-  - term: Hash join
-    definition: "A join method that builds a hash table (a fast lookup table) from one side in memory, then reads the other side once and looks up each row. It works for equality joins (=) on large inputs."
-    example: "FROM orders AS o JOIN order_items AS i ON i.order_id = o.order_id"
+  - term: Statistics (ANALYZE)
+    definition: "The notes PostgreSQL keeps about each table, such as how many rows it has and how many different values each column holds. The planner uses them to estimate row counts. ANALYZE refreshes them."
+    example: "ANALYZE orders;"
     module: m15
 
   - term: VACUUM

@@ -57,7 +57,8 @@ lessons:
         md: Press **Run**. The first statement adds Priya's supplier. The second one shows the whole table.
         sql: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+          VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                  'hello@summitoutdoor.example.com');
 
           SELECT *
           FROM suppliers
@@ -96,7 +97,8 @@ lessons:
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
           VALUES
               (11, 'Bright Lantern Co.', 'Canada', NULL),
-              (12, 'Mesa Imports', 'Mexico', 'hola@mesaimports.example.com'),
+              (12, 'Mesa Imports', 'Mexico',
+               'hola@mesaimports.example.com'),
               (13, 'Fjord Outfitters', 'Norway', NULL);
 
           SELECT COUNT(*) AS suppliers_now
@@ -110,7 +112,8 @@ lessons:
         md: |
           Each order line in `order_items` has a `discount` column. We add a line and leave `discount` out.
         sql: |
-          INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price)
+          INSERT INTO order_items
+              (order_item_id, order_id, product_id, quantity, unit_price)
           VALUES (2297, 1, 9, 1, 49.99);
 
           SELECT *
@@ -126,8 +129,9 @@ lessons:
           Notice that you have to choose `supplier_id` yourself. ShopSmart's tables don't number their rows for
           you, so you must pick a number nobody else is using.
 
-          Tables can also have **rules**. The database checks every new row against them and refuses the whole
-          statement if one row breaks a rule. Two common refusals are shown next.
+          Tables can also have **rules**, which databases call **constraints**. The database checks every new
+          row against them and refuses the whole statement if one row breaks a rule. Two common refusals are
+          shown next.
 
       - type: example
         title: "Refused: the id already exists"
@@ -151,7 +155,7 @@ lessons:
         expectError: true
         after: |
           The error mentions `products_price_check`. The `products` table has a rule that a price must be
-          **greater than 0**, and the database enforces it. Nothing was added, not even the other columns.
+          **greater than 0**, and the database enforces it. A refused statement changes nothing at all.
 
       - type: quiz
         id: m12-l01-q1
@@ -200,7 +204,8 @@ lessons:
           VALUES ();
         solution: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (9, 'Harbor Light Trading', 'Canada', 'sales@harborlight.example.com');
+          VALUES (9, 'Harbor Light Trading', 'Canada',
+                  'sales@harborlight.example.com');
         check: |
           SELECT *
           FROM suppliers
@@ -232,7 +237,8 @@ lessons:
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
           VALUES
               (10, 'Ember Peak Outfitters', 'Norway', NULL),
-              (11, 'Blue Harbour Supply', 'Portugal', 'orders@blueharbour.example.com');
+              (11, 'Blue Harbour Supply', 'Portugal',
+               'orders@blueharbour.example.com');
         check: |
           SELECT *
           FROM suppliers
@@ -255,10 +261,12 @@ lessons:
           Insert it into `order_items` with `order_item_id` `2297`. Leave the `discount` column out, so the
           table uses its default.
         solution: |
-          INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price)
+          INSERT INTO order_items
+              (order_item_id, order_id, product_id, quantity, unit_price)
           VALUES (2297, 2, 9, 1, 49.99);
         check: |
-          SELECT order_item_id, order_id, product_id, quantity, unit_price, discount
+          SELECT order_item_id, order_id, product_id,
+                 quantity, unit_price, discount
           FROM order_items
           WHERE order_id = 2
           ORDER BY order_item_id;
@@ -275,8 +283,8 @@ lessons:
         md: |
           > [!MISTAKE]
           > If the number of names in the column list and the number of values differ, the statement fails
-          > before it adds anything. Count both lists before you press **Run**. The next exercise shows you the
-          > error, so you can recognise it.
+          > before it adds anything. Count both lists before you press **Run**. The "Fix the broken INSERT"
+          > exercise below shows you this error, so you can recognise it.
 
       - type: exercise
         id: m12-l01-e4
@@ -295,9 +303,11 @@ lessons:
 
           Use one `INSERT` with all nine columns listed.
         solution: |
-          INSERT INTO products (product_id, name, category_id, supplier_id, price, cost,
-                                stock_qty, is_active, created_at)
-          VALUES (61, 'Bamboo Desk Lamp', 10, 8, 64.00, 29.50, 25, TRUE, '2024-12-30');
+          INSERT INTO products
+              (product_id, name, category_id, supplier_id,
+               price, cost, stock_qty, is_active, created_at)
+          VALUES (61, 'Bamboo Desk Lamp', 10, 8, 64.00, 29.50,
+                  25, TRUE, '2024-12-30');
         check: |
           SELECT *
           FROM products
@@ -325,7 +335,8 @@ lessons:
           VALUES (9, 'Maple Ridge Co.', 'Canada');
         solution: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (9, 'Maple Ridge Co.', 'Canada', 'info@mapleridge.example.com');
+          VALUES (9, 'Maple Ridge Co.', 'Canada',
+                  'info@mapleridge.example.com');
         check: |
           SELECT *
           FROM suppliers
@@ -539,7 +550,11 @@ lessons:
 
           > [!MISTAKE]
           > In `INSERT ... SELECT`, the columns in the list and the columns in the `SELECT` must match in
-          > **number, order and type**. The statement is refused if they don't.
+          > **number, order and type**. A different number of columns is always refused, and so is a value that
+          > cannot become the column's type (text going into a number column).
+          >
+          > But a wrong *order* with compatible types is accepted without a word, and your values land in the
+          > wrong columns. Read the two lists side by side before you run.
 
       - type: quiz
         id: m12-l02-q1
@@ -1076,7 +1091,7 @@ lessons:
 
       - type: exercise
         id: m12-l03-e5
-        title: Cheaper ingredients from Kestrel
+        title: Kestrel's new costs
         difficulty: 2
         prompt: |
           Kestrel Supply GmbH raised its costs, so we need to update our own cost for its products. Raise the
@@ -1104,7 +1119,7 @@ lessons:
 
       - type: exercise
         id: m12-l03-e6
-        title: European and Japanese suppliers
+        title: German and Japanese suppliers
         difficulty: 3
         prompt: |
           Raise the `cost` by `10%` (rounded to two decimal places) for every product whose supplier is based in
@@ -1187,7 +1202,7 @@ lessons:
         note: The WHERE line links the two tables, just like a JOIN.
   - id: m12-l04
     title: "DELETE and TRUNCATE: Removing Rows Safely"
-    summary: Remove matching rows with DELETE, remove a delete using another table, and empty a table with TRUNCATE.
+    summary: Remove matching rows with DELETE, remove rows based on another table with USING, and empty a table with TRUNCATE.
     minutes: 25
     steps:
       - type: read
@@ -1316,7 +1331,7 @@ lessons:
         title: Two habits that save jobs
         md: |
           1. **Look first.** Run the `WHERE` as a `SELECT` and check the rows. Count them if you can.
-          2. **Back up before a big delete or truncate.** One line makes a full copy:
+          2. **Back up before a big delete or truncate.** One short statement makes a full copy:
 
           ```sql
           CREATE TABLE reviews_backup AS
@@ -1432,11 +1447,11 @@ lessons:
 
       - type: exercise
         id: m12-l04-e2
-        title: Empty reviews with no text
+        title: Low ratings with no text
         difficulty: 1
         prompt: |
-          Delete every review that **has no written text** (`review_text` is empty) **and** has a rating of `2` or
-          lower.
+          Delete every review that **has no written text** (`review_text` is `NULL`) **and** has a rating of `2`
+          or lower.
 
           Reviews with stars and text should stay.
         solution: |
@@ -1453,7 +1468,7 @@ lessons:
           - "DELETE FROM reviews WHERE review_text IS NULL AND ___ <= ___;"
         explanation: |
           Seven reviews are both empty and rated 1 or 2. The check counts the reviews left and how many of them
-          still have text. `COUNT(review_text)` skips empty values, which is why it can be lower than the total.
+          still have text. `COUNT(review_text)` skips `NULL` values, which is why it can be lower than the total.
 
       - type: exercise
         id: m12-l04-e3
@@ -1505,7 +1520,7 @@ lessons:
           - "Then run TRUNCATE TABLE reviews; after the backup is created."
           - "CREATE TABLE reviews_backup AS SELECT * FROM reviews; TRUNCATE TABLE ___;"
         explanation: |
-          Backing up first means the data can always be recovered. The check shows zero reviews left in `reviews`
+          Backing up first means you can copy the rows back if you change your mind. The check shows zero reviews left in `reviews`
           and all 320 rows in the backup.
 
       - type: exercise
@@ -1543,6 +1558,11 @@ lessons:
           You can now delete the rows that match a condition, delete using a second table, and empty a table with
           `TRUNCATE`. Before every removal, remember the two habits: **look first with a SELECT**, and **back up
           before a big change**.
+
+          > [!REAL-WORLD]
+          > Many companies avoid deleting business data at all. They add a column such as `is_active` and use an
+          > `UPDATE` instead, so the history stays safe. You saw this with `products`: switching `is_active` to
+          > `FALSE` keeps every old order line pointing at a real product.
 
     cheatsheet:
       - title: Delete the matching rows
@@ -1652,8 +1672,9 @@ lessons:
       - type: example
         title: Archiving rows with RETURNING
         md: |
-          Before deleting the one-star reviews, we copy them into an archive table. The `WITH` part (from the CTE
-          lesson) deletes the rows and passes them on to the `INSERT`.
+          Before deleting the one-star reviews, we copy them into an archive table. This is a new trick: a `WITH`
+          query (from the CTE lesson) can hold a `DELETE`, as long as it has `RETURNING`. The deleted rows then
+          flow into the `INSERT`.
         sql: |
           CREATE TABLE deleted_reviews AS
           SELECT *
@@ -1800,7 +1821,7 @@ lessons:
           - "In RETURNING, old.price means the value before the change, and new.price means after."
           - "RETURNING product_id, old.price AS old_price, ___.price AS ___;"
         explanation: |
-          `old.` and `new.` are only available inside `RETURNING` in PostgreSQL 18. They let you show a before-and-after
+          `old.` and `new.` work inside `RETURNING` (they are new in PostgreSQL 18). They let you show a before-and-after
           comparison without storing the old value anywhere.
 
       - type: exercise
@@ -1951,7 +1972,8 @@ lessons:
         md: Supplier 2 has a new contact email in the feed. We upsert the whole row.
         sql: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'hello@kestrel.example.com')
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany',
+                  'hello@kestrel.example.com')
           ON CONFLICT (supplier_id)
           DO UPDATE SET contact_email = EXCLUDED.contact_email;
 
@@ -1965,33 +1987,40 @@ lessons:
       - type: example
         title: Upserting a product feed
         md: |
-          The feed sends full product rows. Product 1 already exists, so only its price and cost are updated. Product
-          61 is new, so it is inserted.
+          The feed sends full product rows. Product 1 already exists, so we update only its price and cost. (The
+          feed also says 99 units in stock, but we want to leave the stock alone.) Product 61 is new, so it is
+          inserted whole.
         sql: |
-          INSERT INTO products (product_id, name, category_id, supplier_id,
-                                price, cost, stock_qty, is_active, created_at)
+          INSERT INTO products
+              (product_id, name, category_id, supplier_id,
+               price, cost, stock_qty, is_active, created_at)
           VALUES
-              (1, 'Aurora 14-inch Laptop', 12, 4, 849.99, 611.09, 15, TRUE, '2022-12-11'),
-              (61, 'Trail Mix Pack', 14, 1, 9.99, 4.20, 100, TRUE, '2024-12-20')
+              (1, 'Aurora 14-inch Laptop', 12, 4,
+               849.99, 605.00, 99, TRUE, '2022-12-11'),
+              (61, 'Trail Mix Pack', 14, 1,
+               9.99, 4.20, 100, TRUE, '2024-12-20')
           ON CONFLICT (product_id)
           DO UPDATE SET price = EXCLUDED.price,
                         cost = EXCLUDED.cost;
 
-          SELECT product_id, name, price, cost
+          SELECT product_id, name, price, cost, stock_qty
           FROM products
           WHERE product_id IN (1, 61)
           ORDER BY product_id;
         after: |
-          Product 1 now costs **849.99** (it was 899.99), and its name and stock stayed as they were. Product 61 is
-          new, with a price of 9.99. Both changes happened in one statement.
+          Product 1 now has a price of **849.99** (it was 899.99) and a cost of **605.00** (it was 611.09). Its
+          stock is still **15**, not 99, because `DO UPDATE SET` only lists price and cost. Product 61 is new, so
+          every value from the feed was stored. Both things happened in one statement.
 
       - type: example
         title: Adding to an existing number
         md: A shipment of 30 HD Webcams arrives. The stock must grow, not be replaced.
         sql: |
-          INSERT INTO products (product_id, name, category_id, supplier_id,
-                                price, cost, stock_qty, is_active, created_at)
-          VALUES (9, 'HD Webcam 1080p', 13, 4, 49.99, 22.80, 30, TRUE, '2022-07-10')
+          INSERT INTO products
+              (product_id, name, category_id, supplier_id,
+               price, cost, stock_qty, is_active, created_at)
+          VALUES (9, 'HD Webcam 1080p', 13, 4, 49.99, 22.80,
+                  30, TRUE, '2022-07-10')
           ON CONFLICT (product_id)
           DO UPDATE SET stock_qty = products.stock_qty + EXCLUDED.stock_qty;
 
@@ -2006,15 +2035,18 @@ lessons:
         title: "Refused: the column is not unique"
         md: We try to use `name` as the conflict column. Is a product name unique?
         sql: |
-          INSERT INTO products (product_id, name, category_id, supplier_id,
-                                price, cost, stock_qty, is_active, created_at)
-          VALUES (61, 'Trail Mix Pack', 14, 1, 9.99, 4.20, 100, TRUE, '2024-12-20')
+          INSERT INTO products
+              (product_id, name, category_id, supplier_id,
+               price, cost, stock_qty, is_active, created_at)
+          VALUES (61, 'Trail Mix Pack', 14, 1, 9.99, 4.20,
+                  100, TRUE, '2024-12-20')
           ON CONFLICT (name) DO NOTHING;
         expectError: true
         after: |
           The error is `there is no unique or exclusion constraint matching the ON CONFLICT specification`. The
           database can only detect a conflict on a column that is guaranteed unique, such as the primary key
-          `product_id`. Names can repeat, so `name` cannot be used.
+          `product_id`. The table has no rule saying that product names must be different, so `name` cannot be
+          used.
 
       - type: read
         title: Choose the conflict column carefully
@@ -2118,7 +2150,8 @@ lessons:
           If supplier 2 already exists, update only its `contact_email`. Otherwise add the row.
         solution: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com')
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany',
+                  'orders@kestrel.example.com')
           ON CONFLICT (supplier_id)
           DO UPDATE SET contact_email = EXCLUDED.contact_email;
         check: |
@@ -2145,7 +2178,8 @@ lessons:
           and it starts with two rows: product 9 with 5 units and product 13 with 0 units.
 
           A shipment arrives with **10** units of product 9 and **12** units of product 22. Upsert the shipment into
-          `stock_levels`. A product already in the table gets its units **added** to. A new product is inserted.
+          `stock_levels`. For a product already in the table, **add** the shipment's units to its current units.
+          A new product is inserted as a new row.
         solution: |
           INSERT INTO stock_levels (product_id, units)
           VALUES (9, 10),
@@ -2175,7 +2209,8 @@ lessons:
           - `supplier_id` `7`, `name` `Orchid & Oak Imports`, `country` `United Kingdom`, `contact_email` `NULL`
 
           Update `contact_email` only when the feed has an email. Add a `WHERE` after `DO UPDATE SET` so that a
-          `NULL` email in the feed does not overwrite the stored value.
+          `NULL` email in the feed does not overwrite the stored value. For a supplier that already exists, only
+          `contact_email` may ever change.
         solution: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
           VALUES (3, 'Tanuki Goods Ltd.', 'Japan', 'sales@tanuki.example.com'),
@@ -2235,6 +2270,10 @@ lessons:
           An upsert is the right tool when a file arrives that may contain both new and known rows. Choose
           **DO NOTHING** to keep what is there, **DO UPDATE** to change it, and use `EXCLUDED` to reach the new values.
 
+          > [!REAL-WORLD]
+          > An upsert that replaces values (like `SET price = EXCLUDED.price`) ends in the same state if you run
+          > it twice. That makes nightly data loads easy to repeat when a job stops halfway.
+
     cheatsheet:
       - title: Skip existing rows
         sql: |
@@ -2245,7 +2284,8 @@ lessons:
       - title: Update existing rows from the feed
         sql: |
           INSERT INTO suppliers (supplier_id, name, country, contact_email)
-          VALUES (2, 'Kestrel Supply GmbH', 'Germany', 'hello@kestrel.example.com')
+          VALUES (2, 'Kestrel Supply GmbH', 'Germany',
+                  'hello@kestrel.example.com')
           ON CONFLICT (supplier_id)
           DO UPDATE SET contact_email = EXCLUDED.contact_email;
         note: EXCLUDED is the row you tried to insert.
@@ -2293,7 +2333,8 @@ lessons:
           list), using a condition such as `ON p.product_id = s.product_id`. Each row ends up in one of three groups:
 
           - **`WHEN MATCHED`**: the row is in both. Usually you update it.
-          - **`WHEN NOT MATCHED`**: the row is only in the source. Usually you insert it.
+          - **`WHEN NOT MATCHED`**: the row is only in the source. Usually you insert it. (Its longer name is
+            `WHEN NOT MATCHED BY TARGET`. Both mean the same thing.)
           - **`WHEN NOT MATCHED BY SOURCE`**: the row is only in the target. You can update it or delete it.
             This clause arrived in PostgreSQL 17.
 
@@ -2330,7 +2371,8 @@ lessons:
           CREATE TABLE supplier_feed AS
           SELECT *
           FROM (VALUES
-              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (2, 'Kestrel Supply GmbH', 'Germany',
+               'orders@kestrel.example.com'),
               (9, 'Summit Outdoor Co.', 'Norway', NULL)
           ) AS v(supplier_id, name, country, contact_email);
 
@@ -2375,8 +2417,12 @@ lessons:
           ORDER BY product_id;
         after: |
           Eight products in category 13 are shown. Products 9 and 13 were counted, so they have 12 and 4. The other
-          six are not on the sheet, so they now show **0**. The `AND p.category_id = 13` condition keeps the
-          rest of the store out of it.
+          six are not on the sheet, so they now show **0**. The status line says **8 rows affected**: 2 matched
+          plus 6 not matched by source.
+
+          The `AND p.category_id = 13` condition keeps the rest of the store out of it. Notice also that a
+          `NOT MATCHED BY SOURCE` clause can only use the target's columns (like `p.category_id`). There is no
+          source row there to read from.
 
       - type: read
         title: Watch out for BY SOURCE
@@ -2385,6 +2431,48 @@ lessons:
           > A `WHEN NOT MATCHED BY SOURCE` clause **without** a condition applies to every target row that is not in
           > the source. On a store with 60 products and a short count sheet, that could be almost every row. Always
           > add a condition, and check the matching rows with a `SELECT` first.
+
+      - type: stepper
+        title: "Building a MERGE, one piece at a time"
+        md: Each stage adds one piece. Click through, and run each one before you move on.
+        stages:
+          - label: Source
+            md: First look at the list we want to merge in. It is a small count sheet typed straight into the query.
+            sql: |
+              SELECT *
+              FROM (VALUES (9, 12), (13, 4)) AS v(product_id, counted);
+          - label: ON
+            md: Look first. Which products does the `ON` condition pair with a row of the sheet?
+            sql: |
+              SELECT p.product_id, p.name, p.stock_qty, s.counted
+              FROM products AS p
+              JOIN (VALUES (9, 12), (13, 4)) AS s(product_id, counted)
+                ON p.product_id = s.product_id
+              ORDER BY p.product_id;
+          - label: WHEN MATCHED
+            md: Now change exactly those rows. Each stock number is replaced by the counted number.
+            sql: |
+              MERGE INTO products AS p
+              USING (VALUES (9, 12), (13, 4)) AS s(product_id, counted)
+                 ON p.product_id = s.product_id
+              WHEN MATCHED THEN
+                  UPDATE SET stock_qty = s.counted
+              RETURNING p.product_id, p.stock_qty;
+          - label: BY SOURCE
+            md: Finally set the other Peripherals (category 13) to zero, and look at all of them.
+            sql: |
+              MERGE INTO products AS p
+              USING (VALUES (9, 12), (13, 4)) AS s(product_id, counted)
+                 ON p.product_id = s.product_id
+              WHEN MATCHED THEN
+                  UPDATE SET stock_qty = s.counted
+              WHEN NOT MATCHED BY SOURCE AND p.category_id = 13 THEN
+                  UPDATE SET stock_qty = 0;
+
+              SELECT product_id, name, stock_qty
+              FROM products
+              WHERE category_id = 13
+              ORDER BY product_id;
 
       - type: example
         title: "Refused: two source rows for the same product"
@@ -2406,7 +2494,7 @@ lessons:
 
       - type: example
         title: Seeing what MERGE did
-        md: PostgreSQL 18 lets `RETURNING` report the action taken for each row with `merge_action()`.
+        md: Since PostgreSQL 17, a `MERGE` can use `RETURNING`, and `merge_action()` reports the action taken for each row.
         sql: |
           CREATE TABLE count_sheet AS
           SELECT *
@@ -2534,7 +2622,8 @@ lessons:
         setup: |
           CREATE TABLE supplier_feed (supplier_id integer, name text, country text, contact_email text);
           INSERT INTO supplier_feed (supplier_id, name, country, contact_email) VALUES
-              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (2, 'Kestrel Supply GmbH', 'Germany',
+               'orders@kestrel.example.com'),
               (9, 'Summit Outdoor Co.', 'Norway', NULL);
         prompt: |
           The table `supplier_feed` holds this week's supplier list, with the same columns as `suppliers`.
@@ -2609,8 +2698,8 @@ lessons:
           CREATE TABLE new_watchlist (customer_id integer, product_id integer);
           INSERT INTO new_watchlist (customer_id, product_id) VALUES (1, 9), (1, 45);
         prompt: |
-          Customer 1 has a `watchlist` of products. Their new list is in `new_watchlist`. Both tables have the
-          columns `customer_id` and `product_id`.
+          Customer 1 has a `watchlist` of products (that table only holds customer 1's rows). Their new list is in
+          `new_watchlist`. Both tables have the columns `customer_id` and `product_id`.
 
           Use one `MERGE` to make `watchlist` match `new_watchlist` exactly:
 
@@ -2645,7 +2734,8 @@ lessons:
         setup: |
           CREATE TABLE supplier_feed (supplier_id integer, name text, country text, contact_email text);
           INSERT INTO supplier_feed (supplier_id, name, country, contact_email) VALUES
-              (2, 'Kestrel Supply GmbH', 'Germany', 'orders@kestrel.example.com'),
+              (2, 'Kestrel Supply GmbH', 'Germany',
+               'orders@kestrel.example.com'),
               (9, 'Summit Outdoor Co.', 'Norway', NULL);
         prompt: |
           Merge `supplier_feed` into `suppliers` (matched on `supplier_id`). Matched suppliers get their
@@ -2668,7 +2758,7 @@ lessons:
                     s.supplier_id AS supplier_id;
         columnNames: true
         hints:
-          - "Use the same MERGE as the previous exercise, then add RETURNING at the end."
+          - "Use the same MERGE as in \"Sync the supplier feed\", then add RETURNING at the end."
           - "merge_action() returns the action name for each row. Give it the alias action."
           - "... RETURNING merge_action() AS action, s.supplier_id AS supplier_id;"
         explanation: |
@@ -2686,8 +2776,12 @@ lessons:
           > Before you write a MERGE, write its `USING` part as a `SELECT` and check the source rows. Duplicate source
           > rows are the most common reason a MERGE fails.
 
+          > [!REAL-WORLD]
+          > Teams that feed reporting tables often load the new data into a staging table first, check it, and
+          > then use one `MERGE` to bring the real table in line.
+
     cheatsheet:
-      - title: Update matched, insert new
+      - title: Update the matched rows
         sql: |
           MERGE INTO products AS p
           USING count_sheet AS s
@@ -2695,11 +2789,11 @@ lessons:
           WHEN MATCHED THEN
               UPDATE SET stock_qty = s.counted;
         note: Add a WHEN NOT MATCHED THEN INSERT ... clause to also add new rows.
-      - title: Delete rows missing from the source
+      - title: Handle rows missing from the source
         sql: |
           WHEN NOT MATCHED BY SOURCE AND p.category_id = 13 THEN
               UPDATE SET stock_qty = 0;
-        note: Always add a condition so only the intended rows are changed.
+        note: Always add a condition. Write DELETE instead of the UPDATE to remove those rows.
       - title: Report what MERGE did
         sql: |
           RETURNING merge_action(), p.product_id, p.stock_qty;
@@ -2811,7 +2905,8 @@ testPool:
     title: Sub-categories under each top-level category
     prompt: |
       Create a table called `category_tree_sizes` with two columns: `parent_name` (the name of each top-level
-      category, where `parent_id` is empty) and `child_count` (how many sub-categories it has).
+      category, where `parent_id` is empty) and `child_count` (how many **direct** sub-categories it has, meaning
+      rows whose `parent_id` points at it).
 
       Top-level categories with no sub-categories must still appear, with a count of `0`.
     solution: |
@@ -3058,9 +3153,9 @@ testPool:
       VALUES (1, 'Electronics', NULL)
       ON CONFLICT (___) DO ___;
     answers:
-      - ["category_id"]
+      - ["category_id", "name"]
       - ["NOTHING"]
-    explanation: category_id is the primary key, so it is the conflict column. DO NOTHING skips the row.
+    explanation: category_id is the primary key, so it is the natural conflict column. In this table name is also unique, so name works too. DO NOTHING skips the row.
 
   - type: exercise
     id: m12-t22
@@ -3091,18 +3186,18 @@ testPool:
     id: m12-t23
     lesson: m12-l07
     difficulty: 3
-    title: Mark the unlisted Phones as inactive
+    title: Retire the Phones that were not counted
     setup: |
       CREATE TABLE count_sheet (product_id integer, counted integer);
-      INSERT INTO count_sheet (product_id, counted) VALUES (9, 2), (22, 0);
+      INSERT INTO count_sheet (product_id, counted) VALUES (17, 5), (22, 2);
     prompt: |
-      The table `count_sheet` (columns `product_id` and `counted`) holds the Phones count sheet, and it lists products
-      9 and 22.
+      The table `count_sheet` (columns `product_id` and `counted`) holds the count sheet for category `8` (Phones). It
+      lists products 17 and 22.
 
       Use one MERGE to:
 
       1. set `stock_qty` to the counted number for matching products
-      2. set `is_active` to `FALSE` for every **Phone** (category `8`) that is **not** on the sheet
+      2. set `is_active` to `FALSE` for every product in category `8` that is **not** on the sheet
     solution: |
       MERGE INTO products AS p
       USING count_sheet AS s
@@ -3120,7 +3215,7 @@ testPool:
       - "Use WHEN MATCHED for the stock, and WHEN NOT MATCHED BY SOURCE for the phones that are not on the sheet."
       - "Add AND p.category_id = 8 after WHEN NOT MATCHED BY SOURCE, so other categories are not touched."
       - "WHEN NOT MATCHED BY SOURCE AND p.category_id = ___ THEN UPDATE SET is_active = ___;"
-    explanation: Product 22 is on the sheet, so its stock becomes 0. The other seven phones are not on the sheet, so they become inactive. Product 9 is not a phone, so its category is not checked by this clause.
+    explanation: Products 17 and 22 are on the sheet, so their stock becomes 5 and 2. The other six products in category 8 are not on the sheet, so they become inactive. Other categories are never touched, because of the category condition.
 
   - type: parsons
     id: m12-t24
@@ -3167,7 +3262,7 @@ project:
   dataset: shop
   md: |
     It is the last Friday before the holiday rush at ShopSmart, and it is **Inventory Day**. The warehouse team has
-    been counting shelves since six in the morning. Lena, the operations manager, hands you the keyboard and a list
+    been counting shelves since six in the morning. Lena, the store manager, hands you the keyboard and a list
     of changes to make.
 
     The six tasks happen in order, and each one builds on the one before. The store already contains the changes
@@ -3188,7 +3283,8 @@ project:
         Insert the supplier. Add nothing else.
       solution: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
       check: |
         SELECT *
         FROM suppliers
@@ -3205,7 +3301,8 @@ project:
       difficulty: 1
       setup: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
       prompt: |
         Task 1 is already done, so supplier 9 is on file.
 
@@ -3213,9 +3310,11 @@ project:
         (category 14), supplied by supplier 9. Price 24.50, cost 11.20. It has no stock yet, because the count
         comes later. Active, created on 2024-12-30."*
       solution: |
-        INSERT INTO products (product_id, name, category_id, supplier_id,
-                              price, cost, stock_qty, is_active, created_at)
-        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        INSERT INTO products
+            (product_id, name, category_id, supplier_id,
+             price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20,
+                0, TRUE, '2024-12-30');
       check: |
         SELECT product_id, name, category_id, supplier_id, price, stock_qty
         FROM products
@@ -3233,10 +3332,13 @@ project:
       difficulty: 2
       setup: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
-        INSERT INTO products (product_id, name, category_id, supplier_id,
-                              price, cost, stock_qty, is_active, created_at)
-        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
+        INSERT INTO products
+            (product_id, name, category_id, supplier_id,
+             price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20,
+                0, TRUE, '2024-12-30');
       prompt: |
         The shelf count is in. Two changes are needed:
 
@@ -3270,10 +3372,13 @@ project:
       difficulty: 2
       setup: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
-        INSERT INTO products (product_id, name, category_id, supplier_id,
-                              price, cost, stock_qty, is_active, created_at)
-        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
+        INSERT INTO products
+            (product_id, name, category_id, supplier_id,
+             price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20,
+                0, TRUE, '2024-12-30');
         UPDATE products SET stock_qty = 40 WHERE product_id = 61;
         UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
       prompt: |
@@ -3302,10 +3407,13 @@ project:
       difficulty: 3
       setup: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
-        INSERT INTO products (product_id, name, category_id, supplier_id,
-                              price, cost, stock_qty, is_active, created_at)
-        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
+        INSERT INTO products
+            (product_id, name, category_id, supplier_id,
+             price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20,
+                0, TRUE, '2024-12-30');
         UPDATE products SET stock_qty = 40 WHERE product_id = 61;
         UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
         UPDATE products SET price = ROUND(price * 0.90, 2) WHERE category_id = 14;
@@ -3327,13 +3435,13 @@ project:
       check: |
         SELECT product_id, name
         FROM products
-        WHERE product_id IN (34, 46, 56, 60, 61)
+        WHERE product_id IN (5, 34, 46, 56, 60, 61)
         ORDER BY product_id;
       hints:
         - "Products that never sold are the ones whose product_id is not in order_items."
         - "Both conditions must be true, so join them with AND. The date is compared with '2024-01-01'."
         - "DELETE FROM products WHERE product_id NOT IN (SELECT ___ FROM order_items) AND created_at ___ '2024-01-01';"
-      explanation: Products 46 and 60 never sold and were added in 2022, so they are deleted. Product 34 and product 56 never sold either, but they were added in 2024, so they stay.
+      explanation: Products 46 and 60 never sold and were added in 2022, so they are deleted. Products 5, 34 and 56 never sold either, but they were added in 2024, so they stay.
 
     - type: exercise
       id: m12-proj-6
@@ -3341,10 +3449,13 @@ project:
       difficulty: 3
       setup: |
         INSERT INTO suppliers (supplier_id, name, country, contact_email)
-        VALUES (9, 'Summit Outdoor Co.', 'Norway', 'hello@summitoutdoor.example.com');
-        INSERT INTO products (product_id, name, category_id, supplier_id,
-                              price, cost, stock_qty, is_active, created_at)
-        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20, 0, TRUE, '2024-12-30');
+        VALUES (9, 'Summit Outdoor Co.', 'Norway',
+                'hello@summitoutdoor.example.com');
+        INSERT INTO products
+            (product_id, name, category_id, supplier_id,
+             price, cost, stock_qty, is_active, created_at)
+        VALUES (61, 'Trail Water Bottle 1L', 14, 9, 24.50, 11.20,
+                0, TRUE, '2024-12-30');
         UPDATE products SET stock_qty = 40 WHERE product_id = 61;
         UPDATE products SET stock_qty = stock_qty - 3 WHERE product_id = 34;
         UPDATE products SET price = ROUND(price * 0.90, 2) WHERE category_id = 14;

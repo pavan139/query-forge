@@ -189,8 +189,9 @@ lessons:
           But if your data mixes capitals and lowercase, the order can look odd.
 
           > [!NOTE]
-          > Many other databases are set up to sort in a more dictionary-like way that mostly ignores capitals, so
-          > the same query can give a slightly different order there. When you move to a new database, test it with a few words.
+          > Many other databases, and PostgreSQL servers set up with an English language setting, sort in a more
+          > dictionary-like way that mostly ignores capitals. The same query can then give a different order there.
+          > When you move to a new database, test it with a few words.
 
       - type: example
         title: "Preview: capitals first"
@@ -974,24 +975,13 @@ lessons:
       - type: read
         title: Sorting by something you do not show
         md: |
-          You can sort by a column that is not in your SELECT list. For example, show only `name` but sort by `price`.
-          This works in normal queries, but **not** when you use `SELECT DISTINCT`. Then PostgreSQL says
+          You can sort by a column that is not in your SELECT list. You already did this with calories per dollar:
+          the number decided the order, but it was never shown. For example, `SELECT name ... ORDER BY price` works.
+          It does **not** work with `SELECT DISTINCT`, though. Then PostgreSQL says
           *for SELECT DISTINCT, ORDER BY expressions must appear in select list*.
 
           > [!TIP]
           > Boolean columns sort too: `false` comes before `true`. `ORDER BY is_vegan DESC` puts the vegan items first.
-
-      - type: example
-        title: Sort by a hidden column
-        md: We show only `name`, but the order comes from `price`.
-        sql: |
-          SELECT name
-          FROM menu_items
-          ORDER BY price DESC, name
-          LIMIT 5;
-        after: |
-          The five most expensive items, by name only: Smoked Salmon Bagel, Turkey Club, Caprese Panini,
-          Veggie Hummus Wrap and Avocado Toast. The price drove the order, even though you cannot see it.
 
       - type: fill
         id: m03-l03-f1
@@ -1345,8 +1335,8 @@ lessons:
       - type: read
         title: When rows tie at the cut-off
         md: |
-          What if the 4th and 5th rows have the **same** value? Imagine "the 4 cheapest items". Three teas cost 2.75, and the 4th
-          place falls right in the middle of them. `LIMIT 4` has to pick just one tea, and nothing says which one.
+          What if the rows at the cut-off have the **same** value? Imagine "the 4 cheapest items". Three teas cost 2.75,
+          so they tie for 4th, 5th and 6th place. `LIMIT 4` has to pick just one of them, and nothing says which one.
 
           For fairness, SQL offers **`FETCH FIRST n ROWS WITH TIES`**: it returns the first *n* rows **plus any rows that tie
           with the last one**. There is no `LIMIT` spelling for this.
@@ -1562,7 +1552,7 @@ lessons:
         after: |
           `customer_id` tells you *who* ordered. It matches a `customer_id` in the customers table, which is how tables
           are linked. `status` is one of `processing`, `shipped`, `delivered`, `cancelled` or `returned`.
-          `shipped_date` is empty (NULL) until the order has left the warehouse.
+          `shipped_date` is empty (NULL) for orders that have not shipped yet.
 
           > [!MISTAKE]
           > Text values are case-sensitive and the statuses are written in lowercase. `WHERE status = 'Delivered'` finds **0 rows**
@@ -1651,12 +1641,12 @@ lessons:
         md: |
           Here is a complete query using every clause from this module. The comments (`--`) name each part.
         sql: |
-          SELECT name, price, stock_qty      -- pick columns
-          FROM products                      -- from this table
-          WHERE is_active                    -- keep for-sale items
-            AND stock_qty > 0                -- that we have in stock
-          ORDER BY price DESC, name          -- priciest first
-          LIMIT 3;                           -- keep three
+          SELECT name, price, stock_qty  -- pick columns
+          FROM products                  -- from this table
+          WHERE is_active                -- keep for-sale items
+            AND stock_qty > 0            -- that we have in stock
+          ORDER BY price DESC, name      -- priciest first
+          LIMIT 3;                       -- keep three
         after: |
           The three priciest products that are for sale and in stock: Aurora 16-inch Pro Laptop (1499.99), Zephyr Gaming Laptop X
           (1299.99) and Nimbus Air 13 Ultrabook (1099.99).
@@ -1801,7 +1791,7 @@ lessons:
         ordered: true
         hints:
           - Two filters (rating and text), then a two-column sort.
-          - "Use IS NOT NULL to test for written text, not <> ''."
+          - "Use IS NOT NULL to keep only reviews where the text is not missing (NULL)."
           - "WHERE rating = 5 AND review_text ___ ___ ___ ORDER BY created_at DESC, review_id DESC LIMIT 5;"
         explanation: |
           Reviews 320, 318 and 317 were all written on 2024-12-31, so the `review_id` tie-breaker sorts them. Reviews without text
@@ -2551,8 +2541,8 @@ project:
         - "ORDER BY created_at ___, name LIMIT ___;"
       explanation: |
         The five newest bargains are Science Lab Starter Kit (2024-12-05), Fast Charger 65W, Laptop Stand,
-        Hydrating Face Serum and Strategy Board Game. Even newer products, like the Zephyr Gaming Laptop X
-        (1299.99), are too expensive, so `WHERE` removed them before the sorting started.
+        Aluminum, Hydrating Face Serum and Strategy Board Game: Trade Winds. Recent products such as the Zephyr
+        Gaming Laptop X (1299.99) and the Standing Desk 140cm (449.99) are too expensive, so `WHERE` removed them.
       difficulty: 1
 
     - type: exercise
@@ -2560,7 +2550,7 @@ project:
       title: "Box 3: Fix the student club list"
       prompt: |
         *"Now the Student Club,"* says Sam. *"I want to invite the **6 youngest customers**."* Youngest
-        means the **latest `birth_date`**.
+        means the **latest `birth_date`**. A customer with no birth date cannot be the youngest, so leave them off.
 
         Show the `customer_id`, `first_name`, `last_name` and `birth_date` of those 6 customers, youngest
         first. If two customers had the same birth date, the lower `customer_id` would come first.
@@ -2616,7 +2606,7 @@ project:
       explanation: |
         Page 2 runs from review 311 to review 299. Several reviews share a date (311, 310 and 309 were all
         written on 2024-12-30), so the `review_id` tie-breaker matters. Without it, a review could appear on both pages, or on neither.
-        `IS NOT NULL` is the right test for "has text", because `<> ''` would not work on NULL.
+        `IS NOT NULL` is the clearest test for "has text". (`review_text <> ''` also drops missing text, but it reads less clearly.)
       difficulty: 2
 
     - type: exercise
@@ -2655,7 +2645,8 @@ project:
 
         Show the `name`, `price` and a column named `sale_price` for products that are **active**, **in
         stock** (`stock_qty` greater than 0) and have a sale price **below 50**. The sale price is
-        `ROUND(price * 0.85, 2)`.
+        `ROUND(price * 0.85, 2)`. (`ROUND(number, 2)` rounds to 2 decimal places. You will meet it properly in
+        module 4, so for now copy it exactly as shown.)
 
         Put the **highest sale price first**, use `name` as the tie-breaker, and keep the **top 8**. Use
         exactly the alias `sale_price`.

@@ -29,6 +29,11 @@ lessons:
 
           Easy, you think. You already know `AVG`. Let's try it and see what happens.
 
+          > [!NOTE]
+          > The `employees` table lists everyone who ever worked at Acme Corp, including five people who have
+          > left (their `terminated_on` date is filled in). In this module, "the HR department" means **every
+          > row with that `dept_id`**, leavers included, unless an exercise says **current** employees.
+
       - type: example
         title: The plain average
         md: Press **Run** to average the salaries of the Finance department (`dept_id = 5`).
@@ -101,9 +106,9 @@ lessons:
         id: m10-l01-e1
         title: The top HR salary
         prompt: |
-          For the HR department (`dept_id = 6`), show each person's `first_name` and `salary`, plus the
-          **highest HR salary** in a third column called `top_salary`. The highest salary should appear
-          on every row.
+          For the HR department (`dept_id = 6`, everyone on file, even people who have left), show each
+          person's `first_name` and `salary`, plus the **highest HR salary** in a third column called
+          `top_salary`. The highest salary should appear on every row.
         starter: |
           SELECT first_name, salary
           FROM employees
@@ -174,7 +179,9 @@ lessons:
           - **Difference from the average:** `salary - AVG(salary) OVER ()`
           - **Share of the total:** `100.0 * salary / SUM(salary) OVER ()`
 
-          Why `100.0` and not `100`? With `100.0` PostgreSQL uses decimals, so you don't lose the fractions.
+          Why `100.0` and not `100`? The `.0` makes PostgreSQL divide with decimals. `salary` is already a
+          decimal column, but with whole numbers (like ids or `COUNT`s) `100 * a / b` throws the fractions
+          away. Writing `100.0` every time is a safe habit.
 
           > [!REAL-WORLD]
           > "What percent of the total is this row?" is one of the most common questions in business reports:
@@ -203,8 +210,9 @@ lessons:
         id: m10-l01-e2
         title: Marketing vs. the average
         prompt: |
-          For the Marketing department (`dept_id = 4`), show `first_name`, `salary` and a column
-          `diff_from_avg`: the salary minus the Marketing average salary, **rounded to 2 decimals**.
+          For the Marketing department (`dept_id = 4`, everyone on file, even people who have left), show
+          `first_name`, `salary` and a column `diff_from_avg`: the salary minus the Marketing average
+          salary, **rounded to 2 decimals**.
         starter: |
           SELECT first_name, salary
           FROM employees
@@ -247,8 +255,9 @@ lessons:
         id: m10-l01-e3
         title: Share of the HR payroll
         prompt: |
-          For HR (`dept_id = 6`), show `first_name`, `salary` and `pct_of_hr`: each person's salary as a
-          **percentage of the total HR salary**, rounded to **1 decimal place**.
+          For HR (`dept_id = 6`, everyone on file, even people who have left), show `first_name`, `salary`
+          and `pct_of_hr`: each person's salary as a **percentage of the total HR salary**, rounded to
+          **1 decimal place**.
         starter: |
           SELECT first_name, salary
           FROM employees
@@ -457,23 +466,49 @@ lessons:
           They are partners, not enemies. Use `GROUP BY` when you want a summary table. Use `OVER` when you
           want to keep the detail rows and add context to them.
 
+          They can even work **together**: `GROUP BY` runs first and squashes the rows, and then a window
+          function can look at the squashed rows. Here is a small preview. Module 11 goes deeper.
+
+      - type: example
+        title: "Preview: a window on top of GROUP BY"
+        md: |
+          `GROUP BY` first makes one row per department. The window `SUM(SUM(e.salary)) OVER ()` then adds up
+          those department totals, so each department can be shown as a share of the whole.
+        sql: |
+          SELECT
+              d.name AS department,
+              SUM(e.salary) AS payroll,
+              ROUND(100.0 * SUM(e.salary)
+                    / SUM(SUM(e.salary)) OVER (), 1) AS pct
+          FROM employees e
+          JOIN departments d ON d.dept_id = e.dept_id
+          GROUP BY d.name
+          ORDER BY payroll DESC;
+        after: |
+          **6 rows**, one per department. Engineering is **41.0%** of the payroll, Sales **21.2%** and so on, and
+          the six percentages add up to 100. The two people with no department are left out by the `JOIN`.
+
+          The inner `SUM(e.salary)` is the normal aggregate (one total per department). The outer
+          `SUM(...) OVER ()` is the window over those six totals. Remember the order of work: `FROM` and
+          `JOIN`, `WHERE`, `GROUP BY`, then the window functions, and `ORDER BY` last.
+
           Next up: giving each **group** its own window with `PARTITION BY`.
     cheatsheet:
       - title: An aggregate that keeps its rows
         sql: |
-          SELECT name, salary,
+          SELECT first_name, salary,
                  AVG(salary) OVER () AS avg_salary
           FROM employees;
         note: "OVER () = the window is every row (after WHERE). No rows disappear."
       - title: Share of the total
         sql: |
-          SELECT name, salary,
+          SELECT first_name, salary,
                  ROUND(100.0 * salary / SUM(salary) OVER (), 1) AS pct
           FROM employees;
         note: "Use 100.0 (not 100) so you keep the decimals."
       - title: Difference from the average
         sql: |
-          SELECT name, salary - AVG(salary) OVER () AS diff
+          SELECT first_name, salary - AVG(salary) OVER () AS diff
           FROM employees;
         note: "Window functions are allowed in SELECT and ORDER BY, never in WHERE."
 
@@ -502,8 +537,8 @@ lessons:
           GROUP BY dept_id
           ORDER BY dept_id;
         after: |
-          **7 rows**: one per department. The last row, with a NULL `dept_id`, is the two contractors who
-          don't belong to a department yet. `GROUP BY` puts all NULLs in one group.
+          **7 rows**: six departments plus one last row with a NULL `dept_id`. That row is the two contractors
+          who don't belong to a department yet. `GROUP BY` puts all NULLs in one group.
 
           The numbers are right, but the people are gone. Sofia wants each person's salary **and** their
           department's average on one line.
@@ -657,9 +692,9 @@ lessons:
         id: m10-l02-e2
         title: Share of the department payroll
         prompt: |
-          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `salary` and `pct_of_dept`:
-          the person's salary as a **percentage of their own department's total salary**, rounded to
-          **1 decimal place**.
+          For Finance and HR (`dept_id IN (5, 6)`, everyone on file, even people who have left), show
+          `first_name`, `dept_id`, `salary` and `pct_of_dept`: the person's salary as a **percentage of
+          their own department's total salary**, rounded to **1 decimal place**.
         starter: |
           SELECT first_name, dept_id, salary
           FROM employees
@@ -869,12 +904,12 @@ lessons:
         title: A department report with names
         prompt: |
           Join `employees` (alias `e`) to `departments` (alias `d`). For the Executive, Finance and HR
-          departments (`dept_id IN (1, 5, 6)`) show:
+          departments (`dept_id IN (1, 5, 6)`, everyone on file, even people who have left) show:
 
           - `department`: the department name
           - `first_name`
           - `salary`
-          - `team_size`: the number of people in that department
+          - `team_size`: the number of rows (people on file) in that department
           - `pct_of_dept`: the salary as a percentage of the department's total salary (**1 decimal**)
 
           Sort by department name, then by salary from highest to lowest.
@@ -931,7 +966,8 @@ lessons:
         prompt: |
           Look only at **current** employees who belong to a department (`terminated_on IS NULL` and
           `dept_id IS NOT NULL`). Show `emp_id`, `dept_id`, `salary` and `pct_of_dept_avg`: the salary as a
-          percentage of the average salary of the person's own department (**1 decimal**).
+          percentage of the average salary of the person's own department (**1 decimal**). Work out each
+          average from these current employees only.
 
           Keep only the **5 people with the lowest percentage**, lowest first.
         starter: |
@@ -977,14 +1013,14 @@ lessons:
     cheatsheet:
       - title: One window per group
         sql: |
-          SELECT name, dept_id, salary,
+          SELECT first_name, dept_id, salary,
                  AVG(salary) OVER (PARTITION BY dept_id)
                      AS dept_avg
           FROM employees;
         note: "PARTITION BY goes inside OVER (...). Every row is kept."
       - title: Share of the group's total
         sql: |
-          SELECT name, dept_id,
+          SELECT first_name, dept_id,
                  ROUND(100.0 * salary
                    / SUM(salary) OVER (PARTITION BY dept_id), 1)
                      AS pct_of_dept
@@ -992,7 +1028,7 @@ lessons:
         note: "Each department's percentages add up to 100."
       - title: Group window and whole window together
         sql: |
-          SELECT name, salary,
+          SELECT first_name, salary,
                  AVG(salary) OVER (PARTITION BY dept_id) AS dept_avg,
                  AVG(salary) OVER () AS company_avg
           FROM employees;
@@ -1029,7 +1065,7 @@ lessons:
           | `DENSE_RANK()` | ties **share** a rank, **no skipping**: 1, 2, 2, 3 |
 
           They all have empty brackets `()`, because the work is done by the `OVER` clause. Inside it you
-          **must** say how to order the rows:
+          tell SQL **how to order the rows**, because a ranking only makes sense in an order:
 
           ```sql
           RANK() OVER (ORDER BY salary DESC)
@@ -1288,7 +1324,9 @@ lessons:
 
       - type: fill
         id: m10-l03-f1
-        prompt: Complete the query to rank Sales people from the highest salary down, sharing the rank on ties.
+        prompt: |
+          Complete the query to rank Sales people from the highest salary down. Tied people share a rank,
+          and the rank after a tie skips numbers (like 1, 2, 2, 4).
         template: |
           SELECT emp_id, salary,
                  ___() OVER (___ BY salary DESC) AS rnk
@@ -1444,8 +1482,9 @@ lessons:
           - "SELECT emp_id, job_title, salary, RANK() OVER (ORDER BY salary DESC) AS company_rank, RANK() OVER (PARTITION BY ___ ORDER BY salary DESC) AS dept_rank FROM employees ORDER BY company_rank, emp_id LIMIT 10;"
         explanation: |
           The five VPs are each 1st in their own department, but only the CEO is 1st in the company. The two
-          Platform/Product directors (198000) tie for **7th** in the company and are both **2nd** in
-          Engineering. The 10th row is safe: the next salary, 175000, is lower than the 185000 pair.
+          Engineering directors (198000) tie for **7th** in the company and are both **2nd** in Engineering.
+          The two Sales directors (185000) share **9th**, which fills the 10 rows exactly. The next person
+          (175000) is 11th, so the cut-off does not split a tie.
         difficulty: 3
 
       - type: read
@@ -1477,7 +1516,7 @@ lessons:
       - title: Tie-breaker for repeatable numbers
         sql: |
           ROW_NUMBER() OVER (ORDER BY salary DESC, emp_id)
-        note: "Without ORDER BY inside OVER, RANK gives everybody 1."
+        note: "A unique last column in ORDER BY makes ROW_NUMBER repeatable. Without any ORDER BY inside OVER, RANK gives everybody 1."
 
   - id: m10-l04
     title: "Top-N per Group & Removing Duplicates"
@@ -2155,7 +2194,8 @@ lessons:
         title: ORDER BY inside OVER makes it run
         md: |
           Until now `OVER ()` gave every row the whole window. If you add `ORDER BY` inside it, the window
-          **grows row by row**: each row sees the first row, up to and including itself.
+          **grows row by row**: each row sees the first row, up to and including itself. (There is one catch
+          when two rows have equal values. You'll meet it in a few minutes.)
 
           ```sql
           SUM(revenue) OVER (ORDER BY month)
@@ -2225,9 +2265,9 @@ lessons:
         id: m10-l05-e1
         title: Payroll as the company grew
         prompt: |
-          For the first ten employees (`emp_id <= 10`), show `emp_id`, `hire_date`, `salary` and
-          `running_salary`: the total of the salaries of everyone hired up to and including this person,
-          counting in order of `hire_date`. Sort the result by `hire_date`.
+          Look only at the first ten employees (`emp_id <= 10`). Show `emp_id`, `hire_date`, `salary` and
+          `running_salary`: the total of the salaries of those ten people hired up to and including this
+          person, counting in order of `hire_date`. Sort the result by `hire_date`.
         starter: |
           SELECT emp_id, hire_date, salary
           FROM employees
@@ -2305,8 +2345,9 @@ lessons:
           FROM monthly
           ORDER BY month;
         after: |
-          By the end of August, **53.1%** of the year's revenue is in. The last three months (October to
-          December) bring in the remaining **39.9%**, because of the busy Black Friday season.
+          By the end of August, **53.1%** of the year's revenue is in, and by the end of September **60.1%**.
+          The last three months (October to December) bring in the remaining **39.9%**, thanks to the busy
+          Black Friday and holiday season.
 
       - type: read
         title: A fresh start for every group
@@ -2351,9 +2392,9 @@ lessons:
         id: m10-l05-e2
         title: How many people so far?
         prompt: |
-          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `hire_date` and
-          `hired_so_far`: how many people of **that department** have been hired up to and including this
-          person's `hire_date`. Sort by `dept_id`, then `hire_date`.
+          For Finance and HR (`dept_id IN (5, 6)`, everyone on file, even people who have left), show
+          `first_name`, `dept_id`, `hire_date` and `hired_so_far`: how many people of **that department**
+          have been hired up to and including this person's `hire_date`. Sort by `dept_id`, then `hire_date`.
         starter: |
           SELECT first_name, dept_id, hire_date
           FROM employees
@@ -2498,7 +2539,7 @@ lessons:
           FROM monthly
           ORDER BY month;
         after: |
-          **24 rows**: 2023 and 2024. The 2023 column climbs to **83571.12** in December. In January 2024 the
+          **24 rows**: 2023 and 2024. The 2023 column climbs to **83571.14** in December. In January 2024 the
           total drops back to 7892.27 and starts climbing again. This "year to date" (YTD) number is a
           favourite in business reports.
 
@@ -2563,9 +2604,9 @@ lessons:
         id: m10-l05-e5
         title: Fix the flat total
         prompt: |
-          This query should show the **payroll so far** for Finance and HR: growing person by person in
-          `hire_date` order, and restarting for each department. But `payroll_so_far` shows the same number
-          for everyone in a department. Fix it.
+          This query should show the **payroll so far** for Finance and HR (everyone on file, even people
+          who have left): growing person by person in `hire_date` order, and restarting for each
+          department. But `payroll_so_far` shows the same number for everyone in a department. Fix it.
         starter: |
           SELECT first_name, dept_id, hire_date,
                  SUM(salary) OVER (PARTITION BY dept_id)
@@ -2616,10 +2657,10 @@ lessons:
         id: m10-l05-e6
         title: How close to the final payroll?
         prompt: |
-          For Finance and HR (`dept_id IN (5, 6)`), show `first_name`, `dept_id`, `hire_date` and
-          `pct_reached`: the payroll so far in the department (hire order) as a **percentage of the
-          department's full payroll**, rounded to **1 decimal place**. The last hire of each department
-          should show 100.0. Sort by `dept_id`, then `hire_date`.
+          For Finance and HR (`dept_id IN (5, 6)`, everyone on file, even people who have left), show
+          `first_name`, `dept_id`, `hire_date` and `pct_reached`: the payroll so far in the department
+          (hire order) as a **percentage of the department's full payroll**, rounded to **1 decimal
+          place**. The last hire of each department should show 100.0. Sort by `dept_id`, then `hire_date`.
         starter: |
           SELECT first_name, dept_id, hire_date
           FROM employees
@@ -2703,9 +2744,10 @@ lessons:
           (look ahead).
 
           > [!ANALOGY]
-          > You are standing in a queue. `LAG` is turning your head to see **the person behind you in line**
-          > (the one who arrived before you). `LEAD` is looking at **the person in front**, who is next to be
-          > served. The first person has nobody behind them, and the last has nobody ahead.
+          > You are standing in a queue, ordered by arrival time. `LAG` is looking at **the person just ahead of
+          > you**, who arrived before you. `LEAD` is looking at **the person just behind you**, who arrives
+          > after you. The first person in line has nobody ahead (so `LAG` gives NULL), and the last person
+          > has nobody behind (so `LEAD` gives NULL).
 
       - type: read
         title: LAG and LEAD in one minute
@@ -3118,7 +3160,7 @@ lessons:
           ORDER BY month;
         after: |
           **12 rows**. January has no previous month (NULL). February fell by 6 orders (23 vs. 29). The big
-          jump is in November: **+32** orders (91 vs. 59), thanks to Black Friday. December dipped slightly
+          jump is in November: **+32** orders (91 vs. 59), helped by Black Friday. December dipped slightly
           by 5.
 
           This "this month vs. last month" view is called **month-over-month** (MoM) change.
@@ -3350,7 +3392,8 @@ testPool:
       SELECT
           d.name,
           COUNT(*) AS headcount,
-          ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct_of_staff
+          ROUND(100.0 * COUNT(*)
+                / SUM(COUNT(*)) OVER (), 1) AS pct_of_staff
       FROM employees AS e
       JOIN departments AS d
           ON d.dept_id = e.dept_id
@@ -3410,7 +3453,8 @@ testPool:
     sql: |
       SELECT DISTINCT
           dept_id,
-          ROUND(AVG(salary) OVER (PARTITION BY dept_id), 2) AS dept_avg
+          ROUND(AVG(salary) OVER (
+              PARTITION BY dept_id), 2) AS dept_avg
       FROM employees
       WHERE terminated_on IS NULL;
     options: ["6", "7", "8", "50"]
@@ -3430,7 +3474,9 @@ testPool:
       SELECT
           first_name,
           salary,
-          ROUND(100.0 * salary / MAX(salary) OVER (PARTITION BY dept_id), 1) AS pct_of_top
+          ROUND(100.0 * salary
+                / MAX(salary) OVER (PARTITION BY dept_id), 1)
+              AS pct_of_top
       FROM employees
       WHERE dept_id = 5
         AND terminated_on IS NULL
@@ -3521,7 +3567,7 @@ testPool:
         AND terminated_on IS NULL
       ORDER BY unique_no;
     answers:
-      - ["hire_date", "hire_date ASC"]
+      - ["hire_date", "hire_date ASC", "hire_date, emp_id"]
     explanation: |
       Adding `hire_date` as a second sort key breaks each tie. Oscar (hired 2013) becomes number 2 and James (hired
       2016) becomes number 3. ROW_NUMBER never repeats a number, so each of the 11 people gets exactly one.
@@ -3607,7 +3653,8 @@ testPool:
     sql: |
       WITH ranked AS (
           SELECT first_name,
-                 DENSE_RANK() OVER (ORDER BY salary DESC) AS salary_level
+                 DENSE_RANK() OVER (
+                     ORDER BY salary DESC) AS salary_level
           FROM employees
           WHERE dept_id = 2
             AND terminated_on IS NULL
@@ -3669,7 +3716,8 @@ testPool:
     lines:
       - "WITH ranked AS ("
       - "    SELECT dept_id, first_name, salary,"
-      - "        ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC, emp_id) AS rn"
+      - "        ROW_NUMBER() OVER (PARTITION BY dept_id"
+      - "            ORDER BY salary DESC, emp_id) AS rn"
       - "    FROM employees"
       - "    WHERE terminated_on IS NULL AND dept_id IS NOT NULL"
       - ")"
@@ -3723,7 +3771,7 @@ testPool:
     id: m10-t22
     lesson: m10-l05
     difficulty: 2
-    question: You want to count how many current employees had been hired on or before each person's hire date. Which expression gives that running count?
+    question: You want a running headcount in hire order, so that each person's row shows how many employees were hired on or before their own hire date. Which expression gives that?
     options: ["COUNT(*) OVER (ORDER BY hire_date)", "COUNT(*) OVER (PARTITION BY hire_date)", "COUNT(*) OVER ()", "COUNT(*) GROUP BY hire_date"]
     answer: 0
     explanation: "ORDER BY inside OVER makes the window grow row by row, so COUNT(*) counts everyone hired up to that point. PARTITION BY hire_date would count only people hired on the same day, OVER () counts all the rows, and GROUP BY would squash the rows."
@@ -3792,7 +3840,8 @@ testPool:
               first_name,
               hire_date,
               emp_id,
-              SUM(salary) OVER (ORDER BY hire_date, emp_id) AS running_payroll
+              SUM(salary) OVER (
+                  ORDER BY hire_date, emp_id) AS running_payroll
           FROM employees
           WHERE dept_id = 2
             AND terminated_on IS NULL
@@ -3845,7 +3894,8 @@ testPool:
       SELECT
           name,
           price,
-          price - LAG(price) OVER (ORDER BY price, product_id) AS price_step
+          price - LAG(price) OVER (
+              ORDER BY price, product_id) AS price_step
       FROM products
       WHERE category_id = 4
       ORDER BY price, product_id;
@@ -3896,9 +3946,9 @@ testPool:
       - "MAX(raise) gives the biggest raise for each employee. The first salary row has no previous row, so its raise is NULL and MAX ignores it."
       - "WITH changes AS (SELECT emp_id, salary - LAG(salary) OVER (PARTITION BY ___ ORDER BY effective_date) AS raise FROM salary_history) SELECT emp_id, MAX(raise) AS biggest_raise FROM changes GROUP BY emp_id HAVING MAX(raise) >= 20000 ORDER BY biggest_raise DESC, emp_id;"
     explanation: |
-      Employee 3 had the biggest single raise, 29500.00. Employees 2 and 13 both received 21500.00, so emp_id decides
-      their order. Anyone whose biggest raise is under 20000.00 is not listed. Note that PARTITION BY emp_id keeps each
-      person's raises separate from everyone else's.
+      Six employees qualify. Employee 3 had the biggest single raise, 29500.00. Employees 2 and 13 both received
+      21500.00, so emp_id decides their order. Anyone whose biggest raise is under 20000.00 is not listed. Note that
+      PARTITION BY emp_id keeps each person's raises separate from everyone else's.
   - type: parsons
     id: m10-t30
     lesson: m10-l06
@@ -3935,8 +3985,9 @@ project:
     6. Which Sales people received the big raises?
     7. What does the one-page board summary look like?
 
-    Run each query and check the row count against the explanation. Every window function keeps all the rows,
-    so a result with fewer rows usually means a missing `WHERE` or a `GROUP BY` that does not belong.
+    Run each query and compare your row count with the explanation. A window function keeps every row, so if
+    a "one row per person" query (tasks 1 to 3) returns fewer rows than you expect, look for a missing `WHERE`
+    or a `GROUP BY` that does not belong. Tasks 4 to 7 filter or summarise on purpose.
 
     > [!TIP]
     > A window function cannot go in `WHERE`. When you need to filter on its result, calculate it in a CTE
@@ -3981,9 +4032,11 @@ project:
         SELECT
             first_name,
             salary,
-            ROUND(AVG(salary) OVER (PARTITION BY dept_id), 2) AS team_avg,
+            ROUND(AVG(salary) OVER (
+                PARTITION BY dept_id), 2) AS team_avg,
             CASE
-                WHEN salary > AVG(salary) OVER (PARTITION BY dept_id)
+                WHEN salary > AVG(salary) OVER (
+                    PARTITION BY dept_id)
                     THEN 'above'
                 ELSE 'at or below'
             END AS position
@@ -4013,7 +4066,8 @@ project:
             first_name,
             last_name,
             hire_date,
-            ROW_NUMBER() OVER (ORDER BY hire_date, emp_id) AS seniority
+            ROW_NUMBER() OVER (
+                ORDER BY hire_date, emp_id) AS seniority
         FROM employees
         WHERE dept_id = 2
           AND terminated_on IS NULL
@@ -4124,7 +4178,8 @@ project:
         SELECT
             first_name,
             effective_date,
-            ROUND(100.0 * (salary - prev_salary) / prev_salary, 1) AS raise_pct
+            ROUND(100.0 * (salary - prev_salary)
+                  / prev_salary, 1) AS raise_pct
         FROM changes
         WHERE prev_salary IS NOT NULL
           AND 100.0 * (salary - prev_salary) / prev_salary >= 12
@@ -4144,10 +4199,12 @@ project:
       title: The one-page board summary
       difficulty: 3
       prompt: |
-        Build the board summary: one row per department with **current** staff. Show `dept_name`, `headcount` (the number
-        of current people), `avg_salary` (rounded to 0 decimals), `top_earner` (the first name of the best-paid person,
-        with ties broken by the smaller `emp_id`) and `payroll_share` (the department's share of all current payroll,
-        as a percentage rounded to 1 decimal). Sort by `payroll_share` from highest to lowest, then by `dept_name`.
+        Build the board summary: one row per department with **current** staff (people with no department are
+        left out). Show `dept_name`, `headcount` (the number of current people), `avg_salary` (rounded to 0
+        decimals), `top_earner` (the first name of the best-paid person, with ties broken by the smaller
+        `emp_id`) and `payroll_share` (the department's current payroll as a percentage of the combined current
+        payroll of all these departments, rounded to 1 decimal). Sort by `payroll_share` from highest to lowest,
+        then by `dept_name`.
       solution: |
         WITH by_dept AS (
             SELECT
@@ -4179,7 +4236,8 @@ project:
             b.headcount,
             b.avg_salary,
             t.top_earner,
-            ROUND(100.0 * b.payroll / SUM(b.payroll) OVER (), 1) AS payroll_share
+            ROUND(100.0 * b.payroll
+                  / SUM(b.payroll) OVER (), 1) AS payroll_share
         FROM by_dept AS b
         JOIN top_paid AS t
             ON t.dept_name = b.dept_name
@@ -4193,5 +4251,5 @@ project:
         - "WITH by_dept AS (...), top_paid AS (...) SELECT b.dept_name, b.headcount, b.avg_salary, t.top_earner, ROUND(100.0 * b.payroll / SUM(___) OVER (), 1) AS payroll_share FROM by_dept AS b JOIN top_paid AS t ON t.dept_name = b.dept_name AND t.rn = 1 ORDER BY payroll_share DESC, b.dept_name;"
       explanation: |
         Engineering is the biggest slice of the payroll, at 40.3%, with Thiago as the top earner. Sales is next at
-        21.4%, led by Amina. The six shares add up to about 100 (the rounding leaves a gap of 0.1). This is the kind of
-        one-page table you can build from a few window functions and a couple of CTEs.
+        21.4%, led by Amina. The six shares add up to 100.1 instead of 100 because each one is rounded separately.
+        This is the kind of one-page table you can build from a few window functions and a couple of CTEs.

@@ -52,6 +52,6 @@ glossary:
     example: "Written: SELECT, FROM, WHERE, ORDER BY, LIMIT.  Run: FROM, WHERE, SELECT, ORDER BY, LIMIT."
     module: m03
   - term: Collation
-    definition: The set of rules a database uses to compare and sort text. In SQL Quest's database, text is compared by character code, so every capital letter sorts before every lowercase letter. Other databases often sort more like a dictionary.
+    definition: The set of rules a database uses to compare and sort text. In SQL Quest's database, text is compared by character code, so every capital letter sorts before every lowercase letter. Many other databases, and PostgreSQL servers with an English setting, often sort more like a dictionary.
     example: "Sorting 'Zebra' and 'apple' puts 'Zebra' first here."
     module: m03

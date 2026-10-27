@@ -44,7 +44,7 @@ glossary:
     example: "WHERE city IN ('Austin', 'Denver')   -- 7 customers"
     module: m02
   - term: BETWEEN
-    definition: Tests whether a value lies in a range, with both end values included. BETWEEN 400 AND 500 means >= 400 AND <= 500. With timestamps it can silently miss most of the last day, so prefer a half-open range there.
+    definition: Tests whether a value lies in a range, with both end values included. BETWEEN 400 AND 500 means >= 400 AND <= 500. With timestamps it silently misses everything after midnight on the last day, so prefer a half-open range there.
     example: "WHERE loyalty_points BETWEEN 400 AND 500   -- 5 customers"
     module: m02
   - term: LIKE
@@ -53,7 +53,7 @@ glossary:
     module: m02
   - term: ILIKE
     definition: A PostgreSQL version of LIKE that ignores the difference between capital and small letters.
-    example: "WHERE last_name ILIKE '%SON%'   -- finds Robinson (LIKE would find nothing)"
+    example: "WHERE last_name ILIKE '%SON%'   -- finds Noah and Hannah Robinson (LIKE finds none)"
     module: m02
   - term: IS NULL
     definition: The only correct way to test for a missing value. IS NULL keeps rows where the value is missing and IS NOT NULL keeps rows where a value exists. Never write = NULL, because it never matches anything.

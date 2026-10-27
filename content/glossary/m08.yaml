@@ -8,7 +8,7 @@ glossary:
     example: "SELECT 1 UNION SELECT 1;  -- 1 row"
     module: m08
   - term: UNION ALL
-    definition: Stacks the rows of two queries and keeps every copy. It is the faster choice, and the right one when you count or add up the results.
+    definition: Stacks the rows of two queries and keeps every copy. It is usually the faster choice, and the right one when you count or add up the results.
     example: "SELECT 1 UNION ALL SELECT 1;  -- 2 rows"
     module: m08
   - term: INTERSECT

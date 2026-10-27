@@ -91,8 +91,8 @@ lessons:
           A function that is used in a `SELECT` gives back **one value for each row**. That makes it
           easy to combine with the columns you already know.
 
-          Inside the function, the parameter `p_amount` works like a variable. The function gets a
-          fresh copy of the value each time it is called, so one call never changes another.
+          Inside the function, a parameter such as `p_account_id` works like a variable that holds the
+          input. It gets a fresh value each time the function is called, so one call never affects another.
 
       - type: example
         title: A function that makes a decision
@@ -118,8 +118,8 @@ lessons:
           WHERE txn_id IN (1, 2731, 3203)
           ORDER BY txn_id;
         after: |
-          Transaction 1 is a `5075.00` opening balance, so it is **large**. Transactions 2731 and 3203 are
-          card and cash payments out, so they are **negative**.
+          Transaction 1 is a `5075.00` opening balance, so it is **large**. Transaction 2731 is a cash
+          withdrawal and 3203 is a card purchase. Both are money going out, so they are **negative**.
 
       - type: example
         title: Use a function in WHERE
@@ -393,13 +393,14 @@ lessons:
         prompt: |
           Write two functions.
 
-          1. `account_balance(p_account_id INTEGER)` returns the account's balance, rounded to 2 decimals.
-             Use the same formula as the first example.
-          2. `balance_band(p_amount NUMERIC)` returns `'negative'` if the amount is below 0, `'small'` if it
-             is below 1000, and `'large'` otherwise. Use the same `CASE` as the second example.
+          1. `account_balance(p_account_id INTEGER)` returns the sum of the account's `amount` values
+             (0 if it has no transactions), rounded to 2 decimals. It is the formula from the first example.
+          2. `balance_band(p_amount NUMERIC)` returns the text `'negative'` if the amount is below 0,
+             `'small'` if it is 0 or more but below 1000, and `'large'` otherwise (1000 or more).
 
-          Then count the accounts in each band. Show two columns, `band` and `accounts`, ordered by `band`.
-          Use the bank's accounts table and call `balance_band(account_balance(account_id))`.
+          Then count the accounts in each band. Use the `accounts` table and call
+          `balance_band(account_balance(account_id))`. Show two columns, `band` and `accounts`, ordered by
+          `band`.
         starter: |
           -- 1. Write account_balance here.
 
@@ -452,7 +453,7 @@ lessons:
         prompt: |
           Write a function named `account_balance_on` with two parameters: `p_account_id` (an integer) and
           `p_day` (a `DATE`). It returns the account's balance, rounded to 2 decimals, counting every
-          transaction on or before `p_day`.
+          transaction from the start of the data up to the end of `p_day` (all times on `p_day` count).
 
           Then show `account_id` and `balance` (the result of the function on `2024-06-30`) for account 1.
         starter: |
@@ -491,7 +492,8 @@ lessons:
         id: m17-l01-e5
         title: Who was overdrawn on a given day?
         prompt: |
-          Write `account_balance_on(p_account_id INTEGER, p_day DATE)` as in the previous exercise.
+          Write `account_balance_on(p_account_id INTEGER, p_day DATE)` as in the previous exercise: the
+          rounded sum of every transaction up to the end of `p_day`.
 
           Then list `account_id` and `balance` for every account whose balance on `2024-06-30` is below
           zero. Use the function both in the `SELECT` and in the `WHERE`. Order the rows by `account_id`.
@@ -525,8 +527,8 @@ lessons:
           - "Skeleton: `SELECT account_id, account_balance_on(account_id, '2024-06-30') AS balance FROM accounts WHERE ___ ORDER BY account_id;`"
         explanation: |
           The function runs twice for each account, once for the `SELECT` and once for the `WHERE`. That is
-          fine for a small bank, but in a big table you would compute it once in a subquery. You will learn
-          how in a later module.
+          fine for a small bank, but on a big table you would compute it once in a subquery or a CTE and
+          reuse the result.
         difficulty: 3
 
     cheatsheet:

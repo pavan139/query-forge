@@ -33,7 +33,8 @@ lessons:
           > Think of a coffee filter. Water and coffee flow through, and the grounds stay behind. `WHERE` is
           > a filter for rows: rows that pass the rule flow into your result, and the others are held back.
 
-          Here is the shape of a query with a filter. `WHERE` always comes **after** `FROM`:
+          Here is the shape of a query with a filter. Each line that starts with a keyword is a
+          **clause**. `WHERE` always comes **after** `FROM`:
 
           ```sql
           SELECT columns
@@ -57,7 +58,8 @@ lessons:
       - type: read
         title: The comparison symbols
         md: |
-          A condition usually **compares** two things. Here are all six comparisons you need:
+          A condition usually **compares** two things. The symbols that do the comparing are called
+          **operators**. Here are all six you need:
 
           | Symbol | Means | Example |
           |---|---|---|
@@ -275,8 +277,8 @@ lessons:
           - In SQL the `<` or `>` always comes **first**, and the `=` comes second.
           - "SELECT name, price FROM menu_items WHERE price ___ 3;"
         explanation: |
-          The correct symbols are `<=` and `>=`. A helpful way to remember: the arrow points at the smaller
-          side first, and then comes the equals sign. Seven items cost 3 or less.
+          The correct symbols are `<=` and `>=`. The `<` or `>` always comes first, and the `=` comes
+          second. Seven items cost 3 or less, so those are the rows you should see.
         difficulty: 2
 
       - type: exercise
@@ -449,8 +451,8 @@ lessons:
           - Don't forget the single quotes around the word.
           - "SELECT name, price FROM menu_items WHERE category = '___';"
         explanation: |
-          Text in single quotes is matched exactly, so `'Pastry'` finds the 6 pastries (Croissant, Muffin,
-          Danish, Cinnamon Roll, Cookie and Banana Bread).
+          Text in single quotes is matched exactly, so `'Pastry'` finds the 6 pastries (Butter Croissant, Blueberry Muffin,
+          Almond Danish, Cinnamon Roll, Chocolate Chip Cookie and Vegan Banana Bread).
         difficulty: 1
 
       - type: example
@@ -477,7 +479,8 @@ lessons:
 
           > [!MISTAKE]
           > `WHERE category = "Tea"` fails, and so does `WHERE category = Tea` (no quotes at all). Both make
-          > the database look for a *column* named Tea. Words always need **single quotes**.
+          > the database look for a *column* with that name (without quotes, PostgreSQL even lowercases it to
+          > `tea`). Words always need **single quotes**.
 
           > [!TIP]
           > Typing on a phone or tablet? Some keyboards turn straight quotes `'` into curly quotes `’`.
@@ -1400,7 +1403,7 @@ lessons:
           - Use parentheses around the OR part, and join the rest with AND. A price range is two comparisons.
           - "WHERE (category = 'Pastry' OR category = '___') AND price >= 3 AND price ___ 5;"
         explanation: |
-          Six items match: five pastries (Croissant, Muffin, Danish, Cinnamon Roll and Banana Bread) and the
+          Six items match: five pastries (Butter Croissant, Blueberry Muffin, Almond Danish, Cinnamon Roll and Vegan Banana Bread) and the
           Chocolate Brownie. A range is just two comparisons joined by `AND`. Lesson 5 shows a shortcut for
           it.
         difficulty: 3
@@ -2001,7 +2004,7 @@ lessons:
         hints:
           - It is the opposite of a "contains" search.
           - Use NOT LIKE with a letter between two % signs.
-          - "SELECT name FROM menu_items WHERE name NOT LIKE '%___%';"
+          - "SELECT name FROM menu_items WHERE name NOT LIKE '%<letter>%';"
         explanation: |
           Six names have no lowercase e: Cappuccino, Mocha, Almond Danish, Cinnamon Roll, Avocado Toast and
           Tiramisu Cup. A capital `E` would not count, because `LIKE` cares about case.
@@ -2357,7 +2360,7 @@ lessons:
           (`NOT IN (1, 2)`) you would get 26 rows.
 
       - type: example
-        title: Bonus - a NULL-friendly "not equal"
+        title: Bonus preview - a NULL-friendly "not equal"
         md: |
           PostgreSQL has a special comparison, `IS DISTINCT FROM`, that treats NULL like an ordinary value.
           It never returns unknown. This query asks three questions straight to the database.
@@ -2623,8 +2626,8 @@ testPool:
     lesson: m02-l03
     difficulty: 2
     prompt: |
-      Show the `order_id` and `order_time` of every order placed **before 8:00 in the morning on
-      2024-10-02**. Write the moment as `'2024-10-02 08:00:00'`.
+      Show the `order_id` and `order_time` of every order placed **earlier than** the moment
+      `'2024-10-02 08:00:00'`. Any earlier day counts too, so orders from 1 October are included.
     starter: |
       SELECT order_id, order_time
       FROM orders
@@ -2638,8 +2641,8 @@ testPool:
       - Earlier means smaller, so you need `<`.
       - "SELECT order_id, order_time FROM orders WHERE order_time ___ '2024-10-02 08:00:00';"
     explanation: |
-      Three orders: #1 and #2 on 1 October, and #3 at 07:18 on 2 October. Order #4 was at 13:43, which is after
-      08:00.
+      Three orders: #1 and #2 on 1 October, and #3 at 07:18 on 2 October. Order #4 was at 13:43, which is after the cut-off.
+      If you only wanted 2 October, add `AND order_time >= '2024-10-02'`.
 
   - type: quiz
     id: m02-t10
@@ -2891,7 +2894,7 @@ testPool:
     hints:
       - You know how the name begins, but not how it ends.
       - Use LIKE with the letters first and a % after them.
-      - "SELECT name FROM menu_items WHERE name LIKE '___%';"
+      - "SELECT name FROM menu_items WHERE name LIKE '<start>%';"
     explanation: |
       Four items: Cappuccino, Caramel Latte, Caprese Panini and Carrot Ginger Juice.
 
@@ -2939,7 +2942,7 @@ testPool:
     hints:
       - Use one pattern that describes the start and the end.
       - The first letter can be anything (`_`), then `a`, then anything (`%`), then `e`.
-      - "WHERE name LIKE '_a%___';"
+      - "WHERE name LIKE '_a%<last letter>';"
     explanation: |
       Four names match: Vanilla Latte, Caramel Latte, Matcha Latte and Carrot Ginger Juice. `_` fixes the
       position of the second letter, and `%` covers everything in the middle.
@@ -3129,7 +3132,7 @@ project:
           AND order_time < '2024-11-01';
       hints:
         - Two rules joined by AND. One picks the items (a short list) and one picks the dates.
-        - "For the items, `IN (27, 28)` is handy. For the month, use `>=` the first day and `<` the first day of NEXT month, because `order_time` has a time of day."
+        - "For the items, `IN (27, 28)` is handy. For the month, use `>=` 1 October and `<` 1 November (times of day count)."
         - "WHERE item_id IN (___, ___) AND order_time >= '2024-10-01' AND order_time < '___';"
       explanation: |
         Two orders: **#26** (a walk-in, so `customer_id` is NULL) and **#54** (customer 4, on 31 October at
@@ -3192,7 +3195,7 @@ project:
       hints:
         - You need one pattern for the first name and one for the last name, joined by AND.
         - "`LIKE 'P%'` means: starts with P, followed by anything. Use one pattern per column."
-        - "WHERE first_name LIKE '___' AND last_name LIKE '___';"
+        - "WHERE first_name LIKE '<letter>%' AND last_name LIKE '<letter>%';"
       explanation: |
         Exactly one customer: **Paola Omondi** from Seattle, customer **4**, the same `customer_id` you found
         in Clue 3. Two independent clues agree, so the case is solved! Pavel Popov starts with P but his last

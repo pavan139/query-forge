@@ -251,7 +251,7 @@ lessons:
         id: m09-l01-e2
         title: Big categories
         prompt: |
-          The starter has a CTE `category_counts` that counts products per category.
+          The starter has a CTE `category_counts` that counts products per category. It counts **every** product, including discontinued ones (`is_active = FALSE`).
 
           Write the main query that joins it to `categories` and shows each category's `name` and `product_count`, only for categories with **5 or more** products. Show the biggest categories first; break ties alphabetically by `name`.
         starter: |
@@ -470,7 +470,11 @@ lessons:
         note: The names in parentheses are matched to the inner query's columns by position.
       - title: Use a CTE twice
         sql: |
-          WITH c AS (SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id)
+          WITH c AS (
+              SELECT customer_id, COUNT(*) AS n
+              FROM orders
+              GROUP BY customer_id
+          )
           SELECT * FROM c
           WHERE n > (SELECT AVG(n) FROM c);
         note: Write the logic once, refer to it as often as you like.
@@ -537,7 +541,8 @@ lessons:
                   GROUP BY order_id
               ),
               customer_spend AS (
-                  SELECT o.customer_id, COUNT(*) AS orders, SUM(t.total) AS spent
+                  SELECT o.customer_id, COUNT(*) AS orders,
+                         SUM(t.total) AS spent
                   FROM orders AS o
                   JOIN order_totals AS t ON t.order_id = o.order_id
                   WHERE o.status = 'delivered'
@@ -559,7 +564,8 @@ lessons:
                   GROUP BY order_id
               ),
               customer_spend AS (
-                  SELECT o.customer_id, COUNT(*) AS orders, SUM(t.total) AS spent
+                  SELECT o.customer_id, COUNT(*) AS orders,
+                         SUM(t.total) AS spent
                   FROM orders AS o
                   JOIN order_totals AS t ON t.order_id = o.order_id
                   WHERE o.status = 'delivered'
@@ -576,7 +582,8 @@ lessons:
                       END AS tier
                   FROM customer_spend
               )
-              SELECT tier, COUNT(*) AS customers, ROUND(AVG(spent), 2) AS avg_spent
+              SELECT tier, COUNT(*) AS customers,
+                     ROUND(AVG(spent), 2) AS avg_spent
               FROM tiers
               GROUP BY tier
               ORDER BY avg_spent DESC;
@@ -743,7 +750,7 @@ lessons:
 
           Use two CTEs: `orders_per_month` (from `orders`, by `order_date`) and `payments_per_month` (from `payments`, by `paid_at`). Then join them in the main query.
 
-          Show three columns: `month` (the first day of the month as a date), `orders` (number of orders) and `collected` (sum of `amount`, rounded to 2 decimals). Sort by `month`.
+          Show three columns: `month` (the first day of the month as a date), `orders` (the number of orders placed that month, whatever their status) and `collected` (the sum of the payment `amount`s received that month, rounded to 2 decimals). Sort by `month`.
         solution: |
           WITH orders_per_month AS (
               SELECT DATE_TRUNC('month', order_date)::date AS month,
@@ -769,7 +776,7 @@ lessons:
           - "Each CTE: DATE_TRUNC('month', ...)::date AS month, an aggregate, WHERE the date is in 2024, GROUP BY month. Join the two on month."
           - "WITH orders_per_month AS (SELECT DATE_TRUNC('month', order_date)::date AS month, COUNT(*) AS orders FROM orders WHERE ___ GROUP BY month), payments_per_month AS (___) SELECT o.month, o.orders, p.collected FROM orders_per_month AS o JOIN payments_per_month AS p ON ___ ORDER BY o.month;"
         explanation: |
-          The 2024 data runs from January to December, so you get 12 rows. December 2024 was the best month for money received: $27,587.81 from 86 orders.
+          The 2024 data runs from January to December, so you get 12 rows. December 2024 brought in the most money, $27,587.81 in payments, while November had the most orders (91).
 
           Both CTEs end at the same grain (one row per month), which is why a simple join on `month` works.
         difficulty: 2
@@ -833,7 +840,8 @@ lessons:
           WITH product_revenue AS (
               SELECT
                   i.product_id,
-                  SUM(i.quantity * i.unit_price * (1 - i.discount)) AS revenue
+                  SUM(i.quantity * i.unit_price * (1 - i.discount))
+                      AS revenue
               FROM order_items AS i
               JOIN orders AS o ON o.order_id = i.order_id
               WHERE o.status = 'delivered'
@@ -1206,7 +1214,7 @@ lessons:
       - type: read
         title: Another favourite refactoring
         md: |
-          A **correlated subquery** (a subquery that peeks at the outer row) runs once per row, and it is hard to read. A classic example: *products that cost more than 1.5 times the average price of their own category.*
+          A **correlated subquery** (a subquery that peeks at the outer row) behaves as if it runs again for every row, and it is hard to read. A classic example: *products that cost more than 1.5 times the average price of their own category.*
 
           ```sql
           SELECT p.name, p.price
@@ -1240,7 +1248,7 @@ lessons:
         after: |
           9 products, from the Lumio Phone S5 Plus ($899.99, in a category that averages $245.62) down to the Atlas of Hidden Cities.
 
-          The CTE calculated each category's average **once**. And because `a.avg_price` is a normal column now, we could easily put it in the `SELECT` list, which the old correlated version could not do.
+          The CTE calculated each category's average **once**. And because `a.avg_price` is a normal column now, it is easy to show it in the `SELECT` list. The old version could only do that by repeating the whole subquery.
 
       - type: exercise
         id: m09-l03-e1
@@ -1372,10 +1380,10 @@ lessons:
         md: |
           One more word you will meet: **materialized**. It describes *how* PostgreSQL runs a CTE. The answer never changes, only the speed might.
 
-          - **Materialized** means: calculate the CTE once, keep the rows in memory, and read them from there.
+          - **Materialized** means: calculate the CTE once, keep its rows ready, and read them from there.
           - **Not materialized** (also called *inlined*) means: paste the CTE's query into the main query, as if you had written a plain subquery.
 
-          Since PostgreSQL 12, PostgreSQL decides for you. A simple CTE that is used **once** is inlined. A CTE used **more than once** is materialized, so the work is done only once. (Before version 12, every CTE was materialized.)
+          Since PostgreSQL 12, PostgreSQL decides for you. A simple CTE that is used **once** is inlined. A CTE used **more than once** is materialized, so the work is done only once. (Before version 12, every CTE was materialized. A recursive CTE, which you meet in the next lesson, is always calculated on its own, because it has to loop.)
 
           You can override the choice:
 
@@ -1778,7 +1786,7 @@ lessons:
           SELECT year, balance
           FROM growth;
         after: |
-          11 rows, from $1,000.00 in year 0 to **$1,628.91** in year 10.
+          11 rows, from $1,000.00 in year 0 to **$1,628.91** in year 10 (the balance is rounded to cents each year).
 
           Notice that the recursive part updates **two** columns at once: the year goes up by one, and the balance grows by 5%. The stop rule watches the `year` column.
 
@@ -1881,7 +1889,7 @@ lessons:
         after: |
           PostgreSQL produced rows only until the main query had its 5. A `LIMIT` is a handy **seat belt** when you are testing a new recursive query.
 
-          But it is not a real stop rule. It does not work if the main query sorts or joins the rows first, because then PostgreSQL needs all of them. Always add a proper stop rule inside the CTE.
+          But it is not a real stop rule. It does not help if the main query must see every row first (for example with `ORDER BY`, `GROUP BY` or `SUM`), because then PostgreSQL has to produce all of them. Always add a proper stop rule inside the CTE.
 
       - type: example
         title: A calendar of dates
@@ -2135,7 +2143,7 @@ lessons:
           - D
         answer: 1
         explanation: |
-          B counts 1, 3, 5, 7, 9, 11 ... and jumps *over* 10, so the rule `n <> 10` is never false. A, C and D all end, because their rules (`<`, `<`, `>`) become false sooner or later.
+          B counts 1, 3, 5, 7, 9, 11 ... and jumps *over* 10, so the rule `n <> 10` is never false. The search only ends when it is cancelled or runs out of room. A, C and D all end, because their rules (`<`, `<`, `>`) become false sooner or later.
 
           Safer habit: use `<`, `<=` or `>` for stop rules, not `<>`, so a number that skips past the limit still stops.
 
@@ -2253,6 +2261,9 @@ lessons:
 
           A self join (module 6) can look **one** level down. How many levels are there? You cannot know in advance, and that is exactly the job for a recursive CTE.
 
+          > [!NOTE]
+          > Five people in the `employees` table have already left Acme (they have a date in `terminated_on`). Vikram Boateng above is one of them. In this lesson every row of the table counts as part of the chart, so the results include people who have left. Keeping only current employees is one extra `WHERE`, and you will do that in the project.
+
           > [!ANALOGY]
           > Imagine asking: "Who reports to Layla?" You get two names. Then you ask the same question about each of them, and then about each of *their* answers, until you hear "nobody". That repeated question is the recursive part.
 
@@ -2310,7 +2321,7 @@ lessons:
           FROM team
           ORDER BY depth, emp_id;
         after: |
-          Nine people: Layla (depth 0), her 2 team leads (depth 1), and 6 engineers (depth 2). That is what Priya asked for.
+          Nine people: Layla (depth 0), her 2 team leads (depth 1), and 6 team members (depth 2). That is what Priya asked for.
 
           The `depth` column counts the steps from Layla. It is a number we carry along and add 1 to in every round.
 
@@ -2350,7 +2361,7 @@ lessons:
                   WHERE t.depth < 1
               )
               SELECT * FROM team ORDER BY depth, emp_id;
-          - label: "Round 2: engineers"
+          - label: "Round 2: the teams"
             md: |
               Now it looks only at the newest rows (the two team leads) and finds their six reports at depth 2.
             sql: |
@@ -2368,7 +2379,7 @@ lessons:
               SELECT * FROM team ORDER BY depth, emp_id;
           - label: "Round 3: nobody"
             md: |
-              No engineer manages anyone, so round 3 finds no rows and the recursion ends by itself. This is the real query with no cap at all, and it returns the same nine people.
+              None of those six people manages anyone, so round 3 finds no rows and the recursion ends by itself. This is the real query with no cap at all, and it returns the same nine people.
             sql: |
               WITH RECURSIVE team(emp_id, name, depth) AS (
                   SELECT emp_id, first_name || ' ' || last_name, 0
@@ -2401,7 +2412,7 @@ lessons:
         prompt: |
           Oscar Lewis (`emp_id` 11, Director of Sales, Americas) wants to know who is in his organisation.
 
-          List Oscar himself (depth 0) and everyone below him. Show `emp_id`, `name` (first name, a space, last name) and `depth`, sorted by `depth`, then `emp_id`.
+          List Oscar himself (depth 0) and everyone below him, including people who have left. Show `emp_id`, `name` (first name, a space, last name) and `depth`, sorted by `depth`, then `emp_id`.
         starter: |
           WITH RECURSIVE team(emp_id, name, depth) AS (
               SELECT emp_id, first_name || ' ' || last_name, 0
@@ -2445,7 +2456,7 @@ lessons:
         prompt: |
           The CEO wants a one-page chart showing only the **first three levels** of Acme Corp: the CEO (level 1), the people reporting to the CEO (level 2) and their direct reports (level 3).
 
-          Start at the person with no manager (`manager_id IS NULL`). Show `emp_id`, `name` (first and last name with a space) and `level`, sorted by `level`, then `emp_id`. Add a stop rule so the recursion does not go deeper than level 3.
+          Start at the person with no manager (`manager_id IS NULL`). Every row of `employees` counts. Show `emp_id`, `name` (first and last name with a space) and `level`, sorted by `level`, then `emp_id`. Add a stop rule so the recursion does not go deeper than level 3.
         starter: |
           WITH RECURSIVE chart(emp_id, name, level) AS (
               SELECT emp_id, first_name || ' ' || last_name, 1
@@ -2481,7 +2492,7 @@ lessons:
           - The WHERE looks at the level of the row you already have (c.level). Keep going while it is below 3.
           - "... JOIN chart AS c ON e.manager_id = c.emp_id WHERE c.level < ___"
         explanation: |
-          16 people: 1 CEO, 6 people at level 2, and 9 at level 3.
+          16 people: 1 CEO, 6 people at level 2, and 9 at level 3. (Nobody at these top levels has left the company, so it makes no difference here whether you keep people who have left.)
 
           When you want only part of a tree, a stop rule on the depth is perfect. Check the **current** level (`c.level < 3`): a row at level 3 is kept, but it does not create level 4.
         difficulty: 2
@@ -2537,7 +2548,7 @@ lessons:
         id: m09-l05-e3
         title: Org chart paths for Marketing
         prompt: |
-          Isaac King (`emp_id` 5) is the VP of Marketing. Build the path of **last names** for everyone in his organisation, starting with Isaac himself (so the first path is just `King`).
+          Isaac King (`emp_id` 5) is the VP of Marketing. Build the path of **last names** for everyone in his organisation, including people who have left, starting with Isaac himself (so the first path is just `King`).
 
           Show `emp_id` and `path` (last names joined with `' > '`), sorted by `path`.
         solution: |
@@ -2645,7 +2656,7 @@ lessons:
         id: m09-l05-e5
         title: Fix the bug, upside-down chart
         prompt: |
-          This query should list Olivia Brooks's organisation (`emp_id` 8) and everyone **below** her, with `emp_id`, `first_name` and `depth`. But it shows her bosses instead.
+          This query should list Olivia Brooks's organisation (`emp_id` 8) and everyone **below** her (including people who have left), with `emp_id`, `first_name` and `depth`. But it shows her bosses instead.
 
           Fix the join so the query walks **down**, and sort it by `depth`, then `emp_id`.
         starter: |
@@ -2717,7 +2728,7 @@ lessons:
         prompt: |
           Using the path idea, show every category with the number of products that sit **directly** in it.
 
-          Return `path` (like `Electronics > Computers`) and `products` (count of products whose `category_id` is that category, 0 if none), sorted by `path`.
+          Return `path` (like `Electronics > Computers`) and `products` (the number of products whose `category_id` is that category, 0 if none; count every product, including discontinued ones), sorted by `path`.
         solution: |
           WITH RECURSIVE tree(category_id, path) AS (
               SELECT category_id, name
@@ -2753,7 +2764,7 @@ lessons:
 
           Hint: let every row of the tree remember the name of its top-level category (`root_name`). It starts as the category's own name in the anchor and is simply copied down in the recursive part.
 
-          Return `root_name` and `products` (all products below or at that top-level category), biggest first, ties by `root_name`.
+          Return `root_name` and `products` (all products below or at that top-level category, including discontinued ones), biggest first, ties by `root_name`.
         solution: |
           WITH RECURSIVE tree(category_id, root_name) AS (
               SELECT category_id, name
@@ -2799,7 +2810,7 @@ lessons:
         distractors:
           - "    JOIN team AS t ON e.emp_id = t.manager_id"
         explanation: |
-          4 people report to the VP of Finance (the Controller, the Senior Accountant, an Accountant and a Financial Analyst). `WHERE depth > 0` leaves out the VP herself.
+          4 people report to the VP of Finance (the Controller, the Senior Accountant, an Accountant and a Financial Analyst). `WHERE depth > 0` leaves out the VP.
 
           The distractor walks up instead of down (and `team` has no `manager_id` column, so it would fail).
 
@@ -2876,6 +2887,9 @@ lessons:
         title: The links as a table
         md: |
           A graph is stored in a table too. Each row is one link. This example creates a small `edges` table with 7 links. Every example in this lesson builds its own copy of `edges`, so each one runs on its own.
+
+          > [!NOTE]
+          > Preview: `CREATE TABLE` and `INSERT INTO` are the commands that build a table and fill it with rows. You learn them properly in modules 12 and 13. For now, treat those lines as set-up and look only at the final `SELECT`.
         sql: |
           CREATE TABLE edges (
               from_stop text,
@@ -3043,17 +3057,19 @@ lessons:
           ```
 
           > [!MISTAKE]
-          > Every round creates new rows, because `hops` keeps growing, so the search never runs out of work. The app cancels queries that run for about 20 seconds, but a query like this can freeze the page first. Always write the stop rule before you press Run.
+          > Every round creates new rows, because `hops` keeps growing, so the search never runs out of work. The app cancels queries that run for about 20 seconds, but on a real server a query like this keeps eating memory and disk until someone stops it. Always write the stop rule before you press Run.
 
       - type: read
         title: Keep a list of the stops visited
         md: |
-          There is a second way to stop a loop. Instead of counting hops, keep a **path**: the list of stops the van has already visited on this trip. PostgreSQL can store a list in one column, called an **array**. Four small pieces make the trick work:
+          There is a second way to stop a loop. Instead of counting hops, keep a **path**: the list of stops the van has already visited on this trip. PostgreSQL can store a list in one column, called an **array**. (Arrays get a lesson of their own in module 16. Here you only need four small pieces.)
 
           - `ARRAY['Harbor']` makes a list with one stop in it.
           - `r.path || e.to_stop` adds a new stop to the end of the list.
           - `e.to_stop = ANY(r.path)` asks: *is the new stop already in the list?*
           - `NOT (...)` turns the answer around, so only **new** stops are allowed.
+
+          To show a list as readable text, use `array_to_string(path, ' > ')`. It joins the items with the separator you choose.
 
           > [!ANALOGY]
           > It works like a guest list at the door. Before a new stop joins the trip, check the list. If it is already there, skip it.
@@ -3154,7 +3170,7 @@ lessons:
         id: m09-l06-e2
         title: Two hops is enough
         prompt: |
-          Search from Harbor with a hop counter, as in the example. This time stop the search **after 2 hops**.
+          Search from Harbor with a hop counter, as in the example. This time the search may travel **at most 2 hops**: a stop that is 2 hops from Harbor is shown, but the search does not follow any link out of it.
 
           Show each `stop` and its `hops`. Sort by `hops`, then by `stop`. Use the column names `stop` and `hops`.
         starter: |
@@ -3209,7 +3225,7 @@ lessons:
       - type: predict
         id: m09-l06-p1
         question: |
-          How many rows does this query return?
+          How many rows does this query return? (`VALUES` writes a tiny table by hand: each pair of brackets is one row. Here it plays the part of the `edges` table.)
         sql: |
           WITH RECURSIVE edges(from_stop, to_stop, minutes) AS (
               VALUES
@@ -3468,7 +3484,7 @@ lessons:
                  'Mill' = ___(ARRAY['Harbor', 'Mill']) AS already_there;
         answers:
           - ["||"]
-          - ["ANY"]
+          - ["ANY", "SOME"]
         explanation: |
           `||` joins two things, and with an array on the left it adds the new item to the end. `= ANY(list)` is TRUE when the value matches at least one item in the list. The route search uses both: `r.path || e.to_stop` and `NOT (e.to_stop = ANY(r.path))`.
 
@@ -3626,7 +3642,7 @@ lessons:
         prompt: |
           In real life many roads can be driven in **both** directions. Pretend that every link in `edges` also works in reverse, with the same minutes. The `edges` table is already loaded for you.
 
-          Find the fastest time from Harbor to each stop, using both directions. Show `stop` and `fastest` (the lowest minutes), sorted by `stop`.
+          Find the fastest time from Harbor to each stop, using both directions. Harbor itself is included, with 0 minutes. Show `stop` and `fastest` (the lowest minutes), sorted by `stop`.
         starter: |
           WITH RECURSIVE routes(stop, path, minutes) AS (
               SELECT 'Harbor', ARRAY['Harbor'], 0
@@ -3730,7 +3746,7 @@ testPool:
     lesson: m09-l01
     difficulty: 1
     prompt: |
-      Use a CTE named `category_prices` to show the average product price in each category. Show `category_id` and `avg_price` (the average `price`, rounded to 2 decimals). Sort by `category_id`.
+      Use a CTE named `category_prices` to show the average product price in each category. Average **all** products, including discontinued ones. Show `category_id` and `avg_price` (the average `price`, rounded to 2 decimals). Sort by `category_id`.
     starter: |
       WITH category_prices AS (
           SELECT category_id
@@ -3784,7 +3800,7 @@ testPool:
     lesson: m09-l02
     difficulty: 2
     prompt: |
-      Use two CTEs. The first, `order_totals`, adds up what each customer has spent: for every order, `quantity` times `unit_price` from `order_items`, summed per `customer_id`. Call the total `total_spent`. The second CTE, `big_spenders`, keeps only the customers whose `total_spent` is **above 6000**.
+      Use two CTEs. The first, `order_totals`, adds up what each customer has spent: `quantity` times `unit_price` from `order_items`, summed per `customer_id`. Keep it simple: ignore the `discount` column and include orders of every status. Call the total `total_spent`. The second CTE, `big_spenders`, keeps only the customers whose `total_spent` is **above 6000**.
 
       Show `customer_id` and `total_spent` for those customers. Sort by `total_spent` from highest to lowest, then by `customer_id`.
     starter: |
@@ -3873,10 +3889,10 @@ testPool:
     difficulty: 1
     question: What does `MATERIALIZED` do in `WITH cheap AS MATERIALIZED (SELECT ...)`?
     options:
-      - It runs the CTE once and keeps its rows, so the main query reads the saved result
-      - It turns the CTE into a permanent table
-      - It doubles the rows that the CTE returns
-      - It stops the CTE from being used more than once
+      - It runs the CTE once and keeps the rows for the main query
+      - It turns the CTE into a permanent table in the database
+      - It doubles the rows that the CTE returns to the main query
+      - It stops the CTE from being used more than once in a query
     answer: 0
     explanation: |
       `MATERIALIZED` tells PostgreSQL to compute the CTE on its own, once, and keep the result for the main query. Without it, PostgreSQL may merge a CTE that is used only once into the main query. `NOT MATERIALIZED` asks for that merge.
@@ -3929,7 +3945,7 @@ testPool:
       WITH cheap AS ___ (
           SELECT name, price
           FROM products
-          WHERE price < 5
+          WHERE price < 20
       )
       SELECT COUNT(*) AS cheap_products
       FROM cheap;
@@ -3995,7 +4011,7 @@ testPool:
     lesson: m09-l04
     difficulty: 1
     question: |
-      A recursive CTE has no stop rule (no `WHERE` in its recursive part), and the main query has no `LIMIT`. What happens?
+      A recursive CTE counts upwards with `SELECT n + 1 FROM counter`. It has no stop rule (no `WHERE` in its recursive part), and the main query has no `LIMIT`. What happens?
     options:
       - It keeps adding rows until the app cancels the query
       - It stops after one round
@@ -4116,9 +4132,9 @@ testPool:
     difficulty: 3
     dataset: company
     prompt: |
-      Noor Rahman (`emp_id` 29) wants to see her chain of command, all the way up to the CEO.
+      Noor Rahman (`emp_id` 29) wants to see the chain of command above Noor, all the way up to the CEO.
 
-      Show `emp_id`, `name` (the first name and last name joined with one space) and `depth`, where depth 0 is Noor herself, depth 1 is her manager, and so on up to the CEO. Sort by `depth`.
+      Show `emp_id`, `name` (the first name and last name joined with one space) and `depth`, where depth 0 is Noor, depth 1 is Noor's manager, and so on up to the CEO. Sort by `depth`.
     starter: |
       WITH RECURSIVE chain(emp_id, manager_id, depth) AS (
           SELECT emp_id, manager_id, 0
@@ -4225,7 +4241,8 @@ testPool:
     id: m09-t20
     lesson: m09-l06
     difficulty: 2
-    question: What single number of rows does this query return?
+    question: |
+      How many rows does this query return? (`VALUES` writes a tiny table by hand: each pair of brackets is one row. Here it plays the part of an `edges` table.)
     sql: |
       WITH RECURSIVE edges(from_stop, to_stop) AS (
           VALUES ('Ash', 'Birch'), ('Birch', 'Ash'), ('Ash', 'Cedar')
@@ -4250,10 +4267,10 @@ testPool:
     difficulty: 3
     question: Why does a loop in a recursive CTE need a stop rule when the query uses `UNION ALL`?
     options:
-      - UNION ALL keeps every repeated row, so each round can add rows forever unless a stop rule or a cycle check ends the search
-      - UNION ALL sorts the rows, which takes forever on a loop
-      - UNION ALL is not allowed in a recursive CTE, so the query fails
-      - UNION ALL only works on tables, not on CTEs
+      - UNION ALL keeps repeated rows, so a loop can add rows forever unless something stops it
+      - UNION ALL sorts all the rows, which takes forever when the data loops
+      - UNION ALL is not allowed in a recursive CTE, so every loop query fails
+      - UNION ALL only works on real tables, not on CTEs, so loops never happen
     answer: 0
     explanation: |
       `UNION ALL` never removes repeated rows. In a loop the same stops come back again and again, so only a stop rule (a `WHERE` on a counter, a path check or the `CYCLE` clause) can end the search. `UNION` would remove exact repeats, but only when the rows are identical.
@@ -4278,9 +4295,9 @@ testPool:
           ('Riverside', 'Hilltop', 10),
           ('Hilltop', 'Station', 30);
     prompt: |
-      The `edges` table is already loaded for you. Start at **Oakvale** and follow the links, counting hops. Stop the search at **2 hops**.
+      The `edges` table is already loaded for you. Start at **Oakvale** and follow the links, counting hops. The search may travel **at most 2 hops**: a stop that is 2 hops from Oakvale is shown, but the search does not follow any link out of it.
 
-      Show `stop` and `hops` for every stop reached. Sort by `hops`, then by `stop`.
+      Show `stop` and `hops` for every stop reached (Oakvale itself is included at 0 hops). Sort by `hops`, then by `stop`.
     starter: |
       WITH RECURSIVE reach(stop, hops) AS (
           SELECT 'Harbor', 0
@@ -4380,7 +4397,7 @@ testPool:
     lesson: m09-l06
     difficulty: 3
     prompt: |
-      Fill in the two blanks in the simple-route search. The first blank adds the new stop to the end of the path. The second blank checks the path, so a stop is never visited twice.
+      Fill in the two blanks in the simple-route search. The first blank adds the new stop to the end of the path. The second blank checks the path, so a stop is never visited twice. (`VALUES` writes a tiny `edges` table by hand: each pair of brackets is one row.)
     template: |
       WITH RECURSIVE edges(from_stop, to_stop) AS (
           VALUES ('Ash', 'Birch'), ('Birch', 'Ash'), ('Ash', 'Cedar')
@@ -4406,41 +4423,44 @@ testPool:
     lesson: m09-l02
     difficulty: 3
     prompt: |
-      Use two CTEs to find the busiest categories. The first CTE, `product_counts`, counts the products in each category (`category_id` and `product_count`). The second CTE, `busy`, keeps only the categories with **at least 3** products.
+      Find the categories whose products are, on average, **more expensive than the average product overall**. Use two chained CTEs:
 
-      Show the category `name` (from `categories`) and `product_count` for the busy categories. Sort by `product_count` from highest to lowest, then by `name`.
+      - `category_avg`: each category's average `price` (columns `category_id` and `avg_price`).
+      - `expensive`: reads `category_avg` and keeps the categories whose `avg_price` is higher than the average `price` of all products. Work out that overall average with a subquery instead of typing the number.
+
+      Average **all** products, including discontinued ones. Show the category `name` (from `categories`) and `avg_price` (rounded to 2 decimals), highest first.
     starter: |
-      WITH product_counts AS (
-          SELECT category_id, COUNT(*) AS product_count
+      WITH category_avg AS (
+          SELECT category_id, AVG(price) AS avg_price
           FROM products
           GROUP BY category_id
       )
-      SELECT category_id, product_count
-      FROM product_counts
-      ORDER BY product_count DESC;
+      SELECT category_id, avg_price
+      FROM category_avg
+      ORDER BY avg_price DESC;
     solution: |
-      WITH product_counts AS (
-          SELECT category_id, COUNT(*) AS product_count
+      WITH category_avg AS (
+          SELECT category_id, AVG(price) AS avg_price
           FROM products
           GROUP BY category_id
       ),
-      busy AS (
-          SELECT category_id, product_count
-          FROM product_counts
-          WHERE product_count >= 3
+      expensive AS (
+          SELECT category_id, avg_price
+          FROM category_avg
+          WHERE avg_price > (SELECT AVG(price) FROM products)
       )
-      SELECT c.name, b.product_count
-      FROM busy AS b
-      JOIN categories AS c ON c.category_id = b.category_id
-      ORDER BY b.product_count DESC, c.name;
+      SELECT c.name, ROUND(e.avg_price, 2) AS avg_price
+      FROM expensive AS e
+      JOIN categories AS c ON c.category_id = e.category_id
+      ORDER BY e.avg_price DESC;
     ordered: true
     columnNames: true
     hints:
       - Each CTE is one step. The second CTE can read the first one.
-      - Keep the rows where `product_count` is at least 3, then join to `categories` to get the name.
-      - "FROM busy AS b JOIN categories AS c ON c.category_id = ___"
+      - "`expensive` keeps the rows of `category_avg` where `avg_price` is bigger than `(SELECT AVG(price) FROM products)`. Then join to `categories` to get the name."
+      - "FROM expensive AS e JOIN categories AS c ON c.category_id = ___"
     explanation: |
-      Eleven categories have at least three products. Kitchen, Peripherals and Phones tie at 8, so the name decides their order. The CTE `busy` reads `product_counts`, which is why the order of the two CTEs matters.
+      The average product price is $193.04. Three categories are above it: Laptops ($1,069.99), Computers ($326.66) and Phones ($245.62). The CTE `expensive` reads `category_avg`, which is why the order of the two CTEs matters.
 
 project:
   id: m09-proj

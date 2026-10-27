@@ -12,7 +12,7 @@ glossary:
     example: "SELECT o.order_id, c.first_name FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id;"
     module: m06
   - term: ON condition
-    definition: The rule that tells a JOIN which rows belong together, usually a foreign key equal to a primary key. If two columns share the same name, USING (column) is a shorter way to write it. Without a rule, a JOIN matches the wrong rows or fails.
+    definition: The rule that tells a JOIN which rows belong together, usually a foreign key equal to a primary key. If two columns share the same name, USING (column) is a shorter way to write it. A wrong rule matches the wrong rows, and a missing rule is a syntax error.
     example: "JOIN customers AS c ON o.customer_id = c.customer_id   -- or: JOIN customers USING (customer_id)"
     module: m06
   - term: INNER JOIN
@@ -20,7 +20,7 @@ glossary:
     example: "customers JOIN orders ...  -- a customer who never ordered does not appear"
     module: m06
   - term: Table alias
-    definition: A short nickname for a table, given in the FROM or JOIN clause, such as orders AS o. Use it to prefix columns (o.order_id). This is required when two tables have a column with the same name, because PostgreSQL otherwise reports that the column reference is ambiguous.
+    definition: A short nickname for a table, given in the FROM or JOIN clause, such as orders AS o. Use it to prefix columns (o.order_id). Aliases are required in a self join. When two tables share a column name, prefix that column, or PostgreSQL reports that the column reference is ambiguous.
     example: "FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id"
     module: m06
   - term: LEFT JOIN
