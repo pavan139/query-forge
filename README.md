@@ -15,7 +15,7 @@ The [saved plan comparison](explain/demo.json) returns the same two groups with 
 ## Inspect a plan
 
 ```bash
-python -m pip install -e . --no-build-isolation
+python -m pip install -e .
 python -m query_forge demo --output artifacts/plan-comparison.json
 python -m query_forge explain --sql "SELECT COUNT(*) FROM events WHERE value IS NOT NULL"
 python -m query_forge query --sql "SELECT account_id, SUM(value) FROM events GROUP BY account_id LIMIT 5"
